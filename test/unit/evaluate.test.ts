@@ -80,14 +80,29 @@ test('cycles are rejected', () => {
   assert.throws(() => topologicalOrder(g, m2.id), /cycle/);
 });
 
-test('only the ancestors of the root are evaluated', () => {
+test('all reachable nodes are evaluated, with the root extracted as outputs', () => {
   const nodes = createCoreNodeRegistry();
   const g = createGraph();
   const red = addNode(g, 'core/color', { inputValues: { value: [1, 0, 0, 1] } });
-  const unrelated = addNode(g, 'core/color', { inputValues: { value: [9, 9, 9, 9] } });
-  // unrelated is in the graph but not connected to red.
+  const blue = addNode(g, 'core/color', { inputValues: { value: [0, 0, 1, 1] } });
+  // blue is in the graph but not connected to red — and yet it should be
+  // evaluated, so the editor can show a preview on the disconnected node.
 
   const result = evaluateGraph(g, nodes, { rootNodeId: red.id });
-  assert.deepEqual(result.order, [red.id]);
-  assert.ok(!result.order.includes(unrelated.id));
+  assert.ok(result.allOutputs.has(red.id));
+  assert.ok(result.allOutputs.has(blue.id));
+  approxEqual(result.outputs.color as number[], [1, 0, 0, 1]);
+});
+
+test('a node with required-but-missing inputs is skipped, not fatal', () => {
+  const nodes = createCoreNodeRegistry();
+  const g = createGraph();
+  const red = addNode(g, 'core/color', { inputValues: { value: [1, 0, 0, 1] } });
+  // core/material has a required Texture2D input (basecolor). Leaving it
+  // unconnected used to throw; now we skip it and let the rest evaluate.
+  const orphan = addNode(g, 'core/material');
+
+  const result = evaluateGraph(g, nodes, { rootNodeId: red.id });
+  assert.ok(result.allOutputs.has(red.id));
+  assert.ok(!result.allOutputs.has(orphan.id));
 });

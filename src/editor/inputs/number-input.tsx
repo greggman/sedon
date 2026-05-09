@@ -1,52 +1,155 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface NumberInputProps {
   value: number;
   onChange: (next: number) => void;
   integer?: boolean;
-  step?: number;
 }
 
-export function NumberInput({ value, onChange, integer, step }: NumberInputProps) {
-  // Local text state lets the user type intermediate values like "-" or "1."
-  // without the underlying number flipping to NaN.
-  const [text, setText] = useState(() => String(value));
+const DRAG_THRESHOLD = 3;
+
+function stepFor(v: number, integer: boolean, modifier: 'fine' | 'normal' | 'coarse'): number {
+  const m = modifier === 'fine' ? 0.1 : modifier === 'coarse' ? 10 : 1;
+  if (integer) {
+    return Math.max(1, Math.round(Math.abs(v) * 0.01)) * m;
+  }
+  return Math.max(0.001, Math.abs(v) * 0.005) * m;
+}
+
+function format(v: number, integer: boolean): string {
+  if (integer) return Math.round(v).toString();
+  if (!Number.isFinite(v)) return '0';
+  const str = v.toFixed(3);
+  // Strip trailing zeros and dangling decimal point.
+  return str.replace(/\.?0+$/, '');
+}
+
+export function NumberInput({ value, onChange, integer = false }: NumberInputProps) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(() => format(value, integer));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startXRef = useRef(0);
+  const startValueRef = useRef(value);
+  const draggedRef = useRef(false);
 
   useEffect(() => {
-    setText(String(value));
-  }, [value]);
+    if (!editing) setText(format(value, integer));
+  }, [value, integer, editing]);
 
-  const commit = (s: string) => {
-    const n = integer ? parseInt(s, 10) : parseFloat(s);
-    if (Number.isFinite(n) && n !== value) onChange(n);
-    else setText(String(value));
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    const n = integer ? parseInt(text, 10) : parseFloat(text);
+    if (Number.isFinite(n) && n !== value) {
+      onChange(integer ? Math.round(n) : n);
+    }
+    setEditing(false);
   };
 
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            setText(format(value, integer));
+            setEditing(false);
+          }
+        }}
+        style={inputStyle}
+      />
+    );
+  }
+
   return (
-    <input
-      type="number"
-      value={text}
-      step={step ?? (integer ? 1 : 0.01)}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={(e) => commit(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          commit((e.target as HTMLInputElement).value);
-          (e.target as HTMLInputElement).blur();
+    <div
+      role="slider"
+      aria-valuenow={value}
+      style={dragStyle}
+      title={
+        integer
+          ? 'drag to change · click to type · shift=coarse · ctrl=fine'
+          : 'drag to change · click to type · shift=coarse · ctrl=fine'
+      }
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        startXRef.current = e.clientX;
+        startValueRef.current = value;
+        draggedRef.current = false;
+      }}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        const dx = e.clientX - startXRef.current;
+        if (!draggedRef.current && Math.abs(dx) < DRAG_THRESHOLD) return;
+        draggedRef.current = true;
+        const modifier: 'fine' | 'normal' | 'coarse' = e.shiftKey
+          ? 'coarse'
+          : e.ctrlKey || e.metaKey
+            ? 'fine'
+            : 'normal';
+        const step = stepFor(startValueRef.current, integer, modifier);
+        const raw = startValueRef.current + dx * step;
+        const next = integer ? Math.round(raw) : raw;
+        if (next !== value) onChange(next);
+      }}
+      onPointerUp={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        if (!draggedRef.current) {
+          setText(format(value, integer));
+          setEditing(true);
         }
       }}
-      style={inputStyle}
-    />
+    >
+      {format(value, integer)}
+    </div>
   );
 }
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   background: '#1a1a1f',
-  border: '1px solid #555',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: '#666',
   borderRadius: 3,
   color: '#ddd',
   fontSize: 12,
   padding: '3px 6px',
   fontFamily: 'inherit',
+  boxSizing: 'border-box',
+};
+
+const dragStyle: React.CSSProperties = {
+  width: '100%',
+  background: '#1a1a1f',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: '#444',
+  borderRadius: 3,
+  color: '#ddd',
+  fontSize: 12,
+  padding: '3px 6px',
+  fontFamily: 'inherit',
+  cursor: 'ew-resize',
+  userSelect: 'none',
+  textAlign: 'center',
+  boxSizing: 'border-box',
+  lineHeight: '13px',
 };
