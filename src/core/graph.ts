@@ -161,6 +161,7 @@ export function validateGraph(
     const def = nodes.get(n.kind);
     if (!def) continue;
     for (const input of def.inputs) {
+      if (input.optional) continue;
       const hasEdge = incomingByTarget.has(`${n.id}/${input.name}`);
       const hasOverride = n.inputValues !== undefined && input.name in n.inputValues;
       const hasDefault = input.default !== undefined;

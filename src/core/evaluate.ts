@@ -121,6 +121,8 @@ export function evaluateGraph(
         inputs[input.name] = node.inputValues[input.name];
       } else if (input.default !== undefined) {
         inputs[input.name] = input.default;
+      } else if (input.optional) {
+        inputs[input.name] = undefined;
       } else {
         canEvaluate = false;
         break;

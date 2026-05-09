@@ -4,6 +4,7 @@ import { colorizeNode } from './colorize.js';
 import { gridNode } from './grid.js';
 import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
+import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
 import { solidColorNode } from './solid-color.js';
@@ -21,6 +22,7 @@ export const CORE_NODES = [
   blendNode,
   warpNode,
   colorizeNode,
+  normalFromHeightNode,
   materialNode,
   outputNode,
 ];
@@ -37,6 +39,7 @@ export {
   gridNode,
   materialNode,
   mixNode,
+  normalFromHeightNode,
   outputNode,
   perlinNode,
   solidColorNode,

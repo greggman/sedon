@@ -3,6 +3,11 @@ export interface InputDef {
   type: string;
   default?: unknown;
   description?: string;
+  // Marks an input as optional: when unconnected and no default and no
+  // inputValue, the evaluator passes `undefined` rather than skipping the
+  // node, and the validator does not flag it as missing. The node's evaluate()
+  // is responsible for handling the undefined case.
+  optional?: boolean;
 }
 
 export interface OutputDef {

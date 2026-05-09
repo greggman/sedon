@@ -1,4 +1,4 @@
-import type { GeometryValue, MaterialValue } from '../core/resources.js';
+import type { GeometryValue, MaterialValue, Texture2DValue } from '../core/resources.js';
 import type { Mat4 } from './mat4.js';
 import { createScenePipeline } from './pipeline.js';
 import shaderCode from './shader.wgsl';
@@ -12,6 +12,31 @@ export interface SceneRenderer {
     modelView: Mat4;
     projection: Mat4;
   }): void;
+}
+
+// Tangent-space "no perturbation": (0, 0, 1) → (0.5, 0.5, 1.0) when packed into
+// rgba8unorm. The shader unpacks via `n*2-1` so this maps back to (0, 0, 1).
+function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
+  const format: GPUTextureFormat = 'rgba8unorm';
+  const texture = device.createTexture({
+    size: [1, 1],
+    format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const pixel = new Uint8Array([128, 128, 255, 255]);
+  device.queue.writeTexture(
+    { texture },
+    pixel as BufferSource,
+    { bytesPerRow: 4 },
+    [1, 1],
+  );
+  return {
+    texture,
+    view: texture.createView(),
+    format,
+    width: 1,
+    height: 1,
+  };
 }
 
 export function createSceneRenderer(
@@ -35,8 +60,7 @@ export function createSceneRenderer(
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
-  // Material uniforms: { roughness: f32, metallic: f32 }. Pad to 16 bytes for
-  // the WebGPU uniform-buffer minimum.
+  // Material uniforms: { roughness: f32, metallic: f32 }. Pad to 16.
   const materialUniformBuffer = device.createBuffer({
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -46,6 +70,10 @@ export function createSceneRenderer(
   materialData[1] = material.metallic;
   device.queue.writeBuffer(materialUniformBuffer, 0, materialData as BufferSource);
 
+  // If the user didn't wire a normal map, plug in a 1×1 flat-normal default so
+  // the bind group always has a binding and the shader doesn't need a branch.
+  const normalTexture = material.normal ?? createFlatNormalTexture(device);
+
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
@@ -53,6 +81,7 @@ export function createSceneRenderer(
       { binding: 1, resource: material.basecolor.view },
       { binding: 2, resource: sampler },
       { binding: 3, resource: { buffer: materialUniformBuffer } },
+      { binding: 4, resource: normalTexture.view },
     ],
   });
 

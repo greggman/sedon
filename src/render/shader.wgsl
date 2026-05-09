@@ -12,6 +12,7 @@ struct Material {
 @group(0) @binding(1) var basecolor: texture_2d<f32>;
 @group(0) @binding(2) var basecolor_sampler: sampler;
 @group(0) @binding(3) var<uniform> material: Material;
+@group(0) @binding(4) var normal_map: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -32,9 +33,6 @@ fn vs_main(in: VsIn) -> VsOut {
   var out: VsOut;
   out.position = uniforms.projection * view_pos4;
   out.view_pos = view_pos4.xyz;
-  // Assumes modelView has no non-uniform scale, so the 3x3 of modelView is the
-  // correct normal transform. Replace with a real normal matrix when scaling
-  // arrives.
   let normal_mat = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
@@ -69,14 +67,40 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+// Build a tangent-space basis at the fragment from screen-space derivatives of
+// position and UV, so we don't need per-vertex tangents on the mesh. Christian
+// Schüler's formulation; quality drops where UVs stretch (poles of a sphere)
+// but works without changing the geometry pipeline.
+fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
+  let dp1 = dpdx(p);
+  let dp2 = dpdy(p);
+  let duv1 = dpdx(uv);
+  let duv2 = dpdy(uv);
+
+  let dp2perp = cross(dp2, n);
+  let dp1perp = cross(n, dp1);
+  let t = dp2perp * duv1.x + dp1perp * duv2.x;
+  let b = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  let invmax = inverseSqrt(max(dot(t, t), dot(b, b)));
+  return mat3x3f(t * invmax, b * invmax, n);
+}
+
+fn perturb_normal(n: vec3f, p: vec3f, uv: vec2f) -> vec3f {
+  let sample = textureSample(normal_map, basecolor_sampler, uv).rgb;
+  let map = sample * 2.0 - vec3f(1.0);
+  let tbn = cotangent_frame(n, p, uv);
+  return normalize(tbn * map);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo_sample = textureSample(basecolor, basecolor_sampler, in.uv);
   let albedo = albedo_sample.rgb;
-  let n = normalize(in.view_normal);
+  let n_geom = normalize(in.view_normal);
+  let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let v = normalize(-in.view_pos);
 
-  // View-space directional light, "from over the shoulder".
   let l = normalize(vec3f(0.4, 0.8, 0.6));
   let h = normalize(v + l);
   let light_color = vec3f(3.0);
@@ -86,7 +110,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n_dot_h = max(dot(n, h), 0.0);
   let h_dot_v = max(dot(h, v), 0.0);
 
-  // F0: 0.04 for dielectrics, albedo for metals.
   let f0 = mix(vec3f(0.04), albedo, material.metallic);
 
   let d = distribution_ggx(n_dot_h, material.roughness);

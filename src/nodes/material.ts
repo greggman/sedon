@@ -8,15 +8,17 @@ export const materialNode: NodeDef = {
     { name: 'basecolor', type: 'Texture2D' },
     { name: 'roughness', type: 'Float', default: 0.5 },
     { name: 'metallic', type: 'Float', default: 0 },
+    { name: 'normal', type: 'Texture2D', optional: true },
   ],
   outputs: [{ name: 'material', type: 'Material' }],
   evaluate(_ctx, inputs): { material: MaterialValue } {
-    return {
-      material: {
-        basecolor: inputs.basecolor as Texture2DValue,
-        roughness: inputs.roughness as number,
-        metallic: inputs.metallic as number,
-      },
+    const normal = inputs.normal as Texture2DValue | undefined;
+    const material: MaterialValue = {
+      basecolor: inputs.basecolor as Texture2DValue,
+      roughness: inputs.roughness as number,
+      metallic: inputs.metallic as number,
     };
+    if (normal) material.normal = normal;
+    return { material };
   },
 };
