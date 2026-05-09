@@ -11,7 +11,7 @@ export const gridNode: NodeDef = {
   inputs: [
     { name: 'fg', type: 'Color', default: [0, 0, 0, 1] },
     { name: 'bg', type: 'Color', default: [1, 1, 1, 1] },
-    { name: 'divisions', type: 'Vec2', default: [8, 8] },
+    { name: 'divisions', type: 'Vec2i', default: [8, 8] },
     { name: 'line_width', type: 'Float', default: 0.05 },
     { name: 'resolution', type: 'Int', default: 512 },
   ],

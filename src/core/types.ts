@@ -48,6 +48,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Int', color: '#ffeb3b', description: 'integer scalar' },
   { id: 'Bool', color: '#ffffff', description: 'boolean' },
   { id: 'Vec2', color: '#80deea', description: '2-component vector' },
+  { id: 'Vec2i', color: '#4dd0e1', description: '2-component integer vector' },
   { id: 'Vec3', color: '#42a5f5', description: '3-component vector' },
   { id: 'Vec4', color: '#1565c0', description: '4-component vector' },
   { id: 'Quaternion', color: '#5e35b1', description: 'unit quaternion (rotation)' },

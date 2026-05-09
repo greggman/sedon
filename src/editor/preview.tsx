@@ -73,7 +73,6 @@ export function Preview() {
       let depthTexture: GPUTexture | null = null;
       let lastWidth = 0;
       let lastHeight = 0;
-      const start = performance.now();
 
       const frame = () => {
         if (cancelled) return;
@@ -88,7 +87,9 @@ export function Preview() {
           lastHeight = canvas.height;
         }
 
-        const t = (performance.now() - start) / 1000;
+        // performance.now() is monotonic from page load, so the rotation keeps
+        // ticking smoothly across re-evals when the graph mutates.
+        const t = performance.now() / 1000;
         const aspect = canvas.width / canvas.height;
         const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
         const modelView = multiply(
