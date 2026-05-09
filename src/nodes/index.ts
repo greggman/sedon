@@ -1,5 +1,6 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendNode } from './blend.js';
+import { colorizeNode } from './colorize.js';
 import { gridNode } from './grid.js';
 import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
@@ -17,6 +18,7 @@ export const CORE_NODES = [
   perlinNode,
   worleyNode,
   blendNode,
+  colorizeNode,
   materialNode,
   outputNode,
 ];
@@ -29,6 +31,7 @@ export function createCoreNodeRegistry(): NodeRegistry {
 
 export {
   blendNode,
+  colorizeNode,
   gridNode,
   materialNode,
   mixNode,
