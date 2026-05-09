@@ -1,0 +1,247 @@
+import { useEffect, useRef, useState } from 'react';
+import type { GeometryValue, MaterialValue } from '../core/resources.js';
+import { generateCube } from '../render/cube.js';
+import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
+import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
+import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { generateSphere } from '../render/sphere.js';
+
+type Shape = 'sphere' | 'cube';
+
+interface MaterialPreviewProps {
+  device: GPUDevice;
+  material: MaterialValue;
+  size?: number;
+}
+
+interface RenderResources {
+  renderer: SceneRenderer;
+  geometry: GeometryValue;
+}
+
+export function MaterialPreview({ device, material, size = 128 }: MaterialPreviewProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<GPUCanvasContext | null>(null);
+  const formatRef = useRef<GPUTextureFormat | null>(null);
+  const depthRef = useRef<GPUTexture | null>(null);
+  const resourcesRef = useRef<RenderResources | null>(null);
+  const cameraRef = useRef({ yaw: 0, pitch: 0.4, distance: 3 });
+
+  const [shape, setShape] = useState<Shape>('sphere');
+
+  // Configure context once per device.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('webgpu');
+    if (!ctx) return;
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    ctx.configure({ device, format, alphaMode: 'opaque' });
+    ctxRef.current = ctx;
+    formatRef.current = format;
+    return () => {
+      ctx.unconfigure();
+      ctxRef.current = null;
+      formatRef.current = null;
+    };
+  }, [device]);
+
+  // Pointer handlers (set up once on mount) call renderRef.current() to
+  // re-render after camera updates. The geometry effect installs the real
+  // function; until then it's a no-op.
+  const renderRef = useRef<() => void>(() => {});
+
+  // Build geometry + scene renderer + render function when shape or material
+  // changes. The render function is installed BEFORE the initial render() call
+  // so the first frame paints — that was the previous bug (the function
+  // wasn't installed until a separate effect that ran later).
+  useEffect(() => {
+    const format = formatRef.current;
+    if (!format) return;
+
+    const mesh = shape === 'sphere' ? generateSphere(1, 32, 16) : generateCube(1.4);
+    const geometry = uploadMeshToGpu(device, mesh);
+    const renderer = createSceneRenderer(device, format, geometry, material);
+    resourcesRef.current = { renderer, geometry };
+
+    const render = () => {
+      const ctx = ctxRef.current;
+      const r = resourcesRef.current;
+      const canvas = canvasRef.current;
+      if (!ctx || !r || !canvas) return;
+
+      const w = canvas.width;
+      const h = canvas.height;
+      if (!depthRef.current || depthRef.current.width !== w || depthRef.current.height !== h) {
+        depthRef.current?.destroy();
+        depthRef.current = device.createTexture({
+          size: [w, h],
+          format: 'depth24plus',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+      }
+
+      const cam = cameraRef.current;
+      const aspect = w / h;
+      const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
+      const modelView = multiply(
+        multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+        rotationY(cam.yaw),
+      );
+
+      const encoder = device.createCommandEncoder();
+      r.renderer.render({
+        encoder,
+        colorView: ctx.getCurrentTexture().createView(),
+        depthView: depthRef.current.createView(),
+        clearColor: { r: 0.06, g: 0.06, b: 0.08, a: 1 },
+        modelView,
+        projection,
+      });
+      device.queue.submit([encoder.finish()]);
+    };
+
+    renderRef.current = render;
+    render();
+
+    return () => {
+      destroyGeometry(geometry);
+      resourcesRef.current = null;
+      renderRef.current = () => {};
+    };
+  }, [device, material, shape]);
+
+  // Wire orbit camera input on the canvas.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      const cam = cameraRef.current;
+      cam.yaw += dx * 0.01;
+      cam.pitch = Math.max(
+        -Math.PI / 2 + 0.01,
+        Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * 0.01),
+      );
+      renderRef.current();
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      dragging = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore — pointer may already have been released.
+      }
+    };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cam = cameraRef.current;
+      const factor = Math.exp(e.deltaY * 0.001);
+      cam.distance = Math.max(0.5, Math.min(50, cam.distance * factor));
+      renderRef.current();
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  const dpr = window.devicePixelRatio || 1;
+
+  return (
+    <div className="nodrag nopan" style={{ position: 'relative' }}>
+      <canvas
+        ref={canvasRef}
+        width={Math.round(size * dpr)}
+        height={Math.round(size * dpr)}
+        style={{
+          width: size,
+          height: size,
+          display: 'block',
+          margin: '0 auto',
+          borderRadius: 2,
+          background: '#000',
+          touchAction: 'none',
+          cursor: 'grab',
+        }}
+      />
+      <div style={shapeToggleStyle}>
+        <button
+          type="button"
+          onClick={() => setShape('sphere')}
+          style={shape === 'sphere' ? activeButtonStyle : buttonStyle}
+          title="Show sphere"
+        >
+          ●
+        </button>
+        <button
+          type="button"
+          onClick={() => setShape('cube')}
+          style={shape === 'cube' ? activeButtonStyle : buttonStyle}
+          title="Show cube"
+        >
+          ■
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const shapeToggleStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 4,
+  right: 4,
+  display: 'flex',
+  gap: 2,
+  fontSize: 10,
+};
+
+const buttonStyle: React.CSSProperties = {
+  width: 18,
+  height: 18,
+  padding: 0,
+  background: 'rgba(20,20,25,0.7)',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: '#555',
+  borderRadius: 2,
+  color: '#999',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  lineHeight: 1,
+};
+
+const activeButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: '#3a3a48',
+  color: '#ddd',
+  borderColor: '#888',
+};

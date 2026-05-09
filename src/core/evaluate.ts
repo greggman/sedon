@@ -9,8 +9,47 @@ export interface EvaluateOptions {
 export interface EvaluateResult {
   outputs: NodeOutputs;
   order: string[];
+  allOutputs: Map<string, NodeOutputs>;
 }
 
+// Topological order of every node in the graph (not just ancestors of any
+// particular root). Used by the editor evaluator so disconnected nodes still
+// get to produce previews.
+export function topologicalOrderAll(graph: Graph): string[] {
+  const incoming = new Map<string, GraphEdge[]>();
+  for (const e of graph.edges) {
+    const list = incoming.get(e.to.node) ?? [];
+    list.push(e);
+    incoming.set(e.to.node, list);
+  }
+
+  const order: string[] = [];
+  const visited = new Set<string>();
+  const onStack = new Set<string>();
+
+  function visit(nodeId: string) {
+    if (visited.has(nodeId)) return;
+    if (onStack.has(nodeId)) {
+      throw new Error(`cycle detected at node ${nodeId}`);
+    }
+    onStack.add(nodeId);
+    const incomingEdges = incoming.get(nodeId) ?? [];
+    for (const e of incomingEdges) {
+      visit(e.from.node);
+    }
+    onStack.delete(nodeId);
+    visited.add(nodeId);
+    order.push(nodeId);
+  }
+
+  for (const node of graph.nodes) {
+    visit(node.id);
+  }
+  return order;
+}
+
+// Topological order restricted to ancestors of `rootNodeId`. Kept for
+// callers that genuinely want minimal work (and for tests).
 export function topologicalOrder(graph: Graph, rootNodeId: string): string[] {
   const incoming = new Map<string, GraphEdge[]>();
   for (const e of graph.edges) {
@@ -47,7 +86,7 @@ export function evaluateGraph(
   registry: NodeRegistry,
   options: EvaluateOptions,
 ): EvaluateResult {
-  const order = topologicalOrder(graph, options.rootNodeId);
+  const order = topologicalOrderAll(graph);
   const ctx: NodeContext = options.context ?? {};
   const outputs = new Map<string, NodeOutputs>();
 
@@ -59,21 +98,23 @@ export function evaluateGraph(
 
   for (const nodeId of order) {
     const node = graph.nodes.find((n) => n.id === nodeId);
-    if (!node) {
-      throw new Error(`node ${nodeId} not found in graph`);
-    }
+    if (!node) continue;
     const def = registry.get(node.kind);
-    if (!def) {
-      throw new Error(`unknown node kind: ${node.kind}`);
-    }
+    if (!def) continue;
 
+    // Resolve inputs. If any required input has no source, skip this node so a
+    // node that just got added with required Texture2D inputs (e.g. Material
+    // with unconnected basecolor) doesn't blow up the whole eval — it just
+    // won't produce a preview until wired up.
     const inputs: Record<string, unknown> = {};
+    let canEvaluate = true;
     for (const input of def.inputs) {
       const upstream = incomingBySocket.get(`${nodeId}/${input.name}`);
       if (upstream) {
         const upstreamOutputs = outputs.get(upstream.node);
         if (!upstreamOutputs) {
-          throw new Error(`upstream node ${upstream.node} produced no outputs`);
+          canEvaluate = false;
+          break;
         }
         inputs[input.name] = upstreamOutputs[upstream.socket];
       } else if (node.inputValues !== undefined && input.name in node.inputValues) {
@@ -81,16 +122,22 @@ export function evaluateGraph(
       } else if (input.default !== undefined) {
         inputs[input.name] = input.default;
       } else {
-        throw new Error(`input ${input.name} on ${def.id} has no value, edge, or default`);
+        canEvaluate = false;
+        break;
       }
     }
+    if (!canEvaluate) continue;
 
-    outputs.set(nodeId, def.evaluate(ctx, inputs));
+    try {
+      outputs.set(nodeId, def.evaluate(ctx, inputs));
+    } catch (e) {
+      console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
+    }
   }
 
   const rootOutputs = outputs.get(options.rootNodeId);
   if (!rootOutputs) {
     throw new Error(`root node ${options.rootNodeId} produced no outputs`);
   }
-  return { outputs: rootOutputs, order };
+  return { outputs: rootOutputs, order, allOutputs: outputs };
 }

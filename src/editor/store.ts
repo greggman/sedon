@@ -1,23 +1,25 @@
 import { create } from 'zustand';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
+import type { NodeOutputs } from '../core/node-def.js';
 import type { GeometryValue, MaterialValue } from '../core/resources.js';
 import { createInitialGraph } from './initial-graph.js';
 
 export interface EvalResult {
   geometry: GeometryValue;
   material: MaterialValue;
+  allOutputs: Map<string, NodeOutputs>;
 }
 
 export interface EditorState {
-  // Compute graph. Mutates only when something computationally relevant changes
-  // (nodes added/removed, edges added/removed, inputValues edited). Visual
-  // state — node positions, dimensions, selection — lives in React Flow's
-  // local state, not here.
   graph: Graph;
   rootNodeId: string;
   evalResult: EvalResult | null;
+  // The shared GPU device, set once Preview has it. Other components (texture
+  // thumbnails on each node) need access to run their own render passes.
+  device: GPUDevice | null;
 
   setEvalResult: (evalResult: EvalResult | null) => void;
+  setDevice: (device: GPUDevice | null) => void;
 
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
@@ -32,8 +34,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   graph: initial.graph,
   rootNodeId: initial.rootNodeId,
   evalResult: null,
+  device: null,
 
   setEvalResult: (evalResult) => set({ evalResult }),
+  setDevice: (device) => set({ device }),
 
   addNode: (node) => {
     const graph = get().graph;

@@ -33,6 +33,7 @@ export function Preview() {
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
+  const setDevice = useEditorStore((s) => s.setDevice);
 
   // Init WebGPU once on mount.
   useEffect(() => {
@@ -51,7 +52,9 @@ export function Preview() {
     let cancelled = false;
     initWebGPU(canvas)
       .then((ctx) => {
-        if (!cancelled) setGpu(ctx);
+        if (cancelled) return;
+        setGpu(ctx);
+        setDevice(ctx.device);
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
@@ -62,8 +65,9 @@ export function Preview() {
     return () => {
       cancelled = true;
       observer.disconnect();
+      setDevice(null);
     };
-  }, []);
+  }, [setDevice]);
 
   // Wire up orbit camera input on the canvas.
   useEffect(() => {
@@ -135,7 +139,7 @@ export function Preview() {
       });
       const geometry = result.outputs.geometry as GeometryValue;
       const material = result.outputs.material as MaterialValue;
-      setEvalResult({ geometry, material });
+      setEvalResult({ geometry, material, allOutputs: result.allOutputs });
 
       const renderer = createSceneRenderer(device, format, geometry, material);
 

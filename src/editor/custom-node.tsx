@@ -1,14 +1,17 @@
 import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import type { InputDef, NodeDef } from '../core/node-def.js';
+import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
+import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
+import { MaterialPreview } from './material-preview.js';
 import { useEditorStore } from './store.js';
+import { TexturePreview } from './texture-preview.js';
 
 const nodes = createCoreNodeRegistry();
 const types = createCoreTypeRegistry();
@@ -16,6 +19,8 @@ const types = createCoreTypeRegistry();
 const HEADER_HEIGHT = 28;
 const ROW_HEIGHT = 28;
 const HANDLE_SIZE = 10;
+const PREVIEW_SIZE = 128;
+const PREVIEW_PADDING = 8;
 
 function typeColor(typeId: string): string {
   return types.get(typeId)?.color ?? '#888';
@@ -34,14 +39,47 @@ function getSocketType(
   return def.inputs.find((i) => i.name === socketName)?.type;
 }
 
+function isTexture2D(v: unknown): v is Texture2DValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'view' in v &&
+    'texture' in v &&
+    'format' in v
+  );
+}
+
+function isMaterial(v: unknown): v is MaterialValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'basecolor' in v &&
+    'roughness' in v &&
+    'metallic' in v
+  );
+}
+
+type PreviewTarget =
+  | { kind: 'texture'; value: Texture2DValue }
+  | { kind: 'material'; value: MaterialValue };
+
+function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | null {
+  if (!outputs) return null;
+  for (const v of Object.values(outputs)) {
+    if (isMaterial(v)) return { kind: 'material', value: v };
+    if (isTexture2D(v)) return { kind: 'texture', value: v };
+  }
+  return null;
+}
+
 interface TypedHandleProps {
   socketName: string;
   socketType: string;
   side: 'input' | 'output';
-  rowIndex: number;
+  top: number;
 }
 
-function TypedHandle({ socketName, socketType, side, rowIndex }: TypedHandleProps) {
+function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
   const connection = useConnection();
   const color = typeColor(socketType);
 
@@ -61,8 +99,6 @@ function TypedHandle({ socketName, socketType, side, rowIndex }: TypedHandleProp
       }
     }
   }
-
-  const top = HEADER_HEIGHT + rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
 
   const style: React.CSSProperties = {
     top,
@@ -143,8 +179,6 @@ export function CustomNode({ id, data }: NodeProps) {
   const kind = typeof data['kind'] === 'string' ? data['kind'] : undefined;
   const def: NodeDef | undefined = useMemo(() => (kind ? nodes.get(kind) : undefined), [kind]);
 
-  // Per-node subscriptions: only re-render when this node's own state or its
-  // incoming connections change.
   const inputValues = useEditorStore(
     (s) => s.graph.nodes.find((n) => n.id === id)?.inputValues,
   );
@@ -154,10 +188,17 @@ export function CustomNode({ id, data }: NodeProps) {
     ),
   );
   const setInputValue = useEditorStore((s) => s.setInputValue);
+  const myOutputs = useEditorStore((s) => s.evalResult?.allOutputs.get(id));
+  const device = useEditorStore((s) => s.device);
 
   if (!def) {
     return <div style={{ ...nodeStyle, padding: 8 }}>unknown: {kind ?? '(no kind)'}</div>;
   }
+
+  const previewTarget = previewTargetFor(myOutputs);
+  const showPreview = previewTarget !== null && device !== null;
+  const previewBlockHeight = showPreview ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
+  const inputsTop = HEADER_HEIGHT + previewBlockHeight;
 
   const valueOf = (input: InputDef) => {
     const v = inputValues?.[input.name];
@@ -168,13 +209,31 @@ export function CustomNode({ id, data }: NodeProps) {
     <div style={nodeStyle}>
       <div style={headerStyle}>{def.id}</div>
 
+      {showPreview && (
+        <div style={previewBlockStyle}>
+          {previewTarget.kind === 'material' ? (
+            <MaterialPreview
+              device={device}
+              material={previewTarget.value}
+              size={PREVIEW_SIZE}
+            />
+          ) : (
+            <TexturePreview
+              device={device}
+              value={previewTarget.value}
+              size={PREVIEW_SIZE}
+            />
+          )}
+        </div>
+      )}
+
       {def.inputs.map((input, i) => (
         <TypedHandle
           key={`h-in-${input.name}`}
           socketName={input.name}
           socketType={input.type}
           side="input"
-          rowIndex={i}
+          top={inputsTop + i * ROW_HEIGHT + ROW_HEIGHT / 2}
         />
       ))}
 
@@ -184,11 +243,7 @@ export function CustomNode({ id, data }: NodeProps) {
           ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
           : null;
         return (
-          <div
-            key={`row-in-${input.name}`}
-            style={inputRowStyle}
-            title={input.type}
-          >
+          <div key={`row-in-${input.name}`} style={inputRowStyle} title={input.type}>
             <span style={labelStyle}>{input.name}</span>
             {editor && (
               <span className="nodrag nopan" style={editorContainerStyle}>
@@ -205,7 +260,7 @@ export function CustomNode({ id, data }: NodeProps) {
           socketName={output.name}
           socketType={output.type}
           side="output"
-          rowIndex={def.inputs.length + i}
+          top={inputsTop + (def.inputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
         />
       ))}
       {def.outputs.map((output) => (
@@ -239,6 +294,12 @@ const headerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   fontWeight: 600,
+};
+
+const previewBlockStyle: React.CSSProperties = {
+  padding: PREVIEW_PADDING,
+  background: '#22222a',
+  borderBottom: '1px solid #555',
 };
 
 const inputRowStyle: React.CSSProperties = {
