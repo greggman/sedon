@@ -21,6 +21,7 @@
 * touch support? (iPad) - maybe iphone
 * need to be able to size split
 * support HDR output
+* colorize should be N stop? Instead of 2 stop? 
 * camera
   * orbit vs track control (option)
   * frame
