@@ -52,6 +52,9 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Vec4', color: '#1565c0', description: '4-component vector' },
   { id: 'Quaternion', color: '#5e35b1', description: 'unit quaternion (rotation)' },
   { id: 'Color', color: '#9c27b0', description: 'RGBA color' },
+  { id: 'Texture2D', color: '#4caf50', description: 'GPU 2D image' },
+  { id: 'Geometry', color: '#e53935', description: 'mesh: positions, normals, uvs, indices' },
+  { id: 'Material', color: '#ec407a', description: 'bundle of textures + scalar params' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

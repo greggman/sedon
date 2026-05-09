@@ -1,6 +1,7 @@
 export interface SphereMesh {
   positions: Float32Array;
   normals: Float32Array;
+  uvs: Float32Array;
   indices: Uint32Array;
 }
 
@@ -8,8 +9,10 @@ export function generateSphere(radius: number, segments: number, rings: number):
   const vertCount = (rings + 1) * (segments + 1);
   const positions = new Float32Array(vertCount * 3);
   const normals = new Float32Array(vertCount * 3);
+  const uvs = new Float32Array(vertCount * 2);
 
-  let v = 0;
+  let p = 0;
+  let u = 0;
   for (let r = 0; r <= rings; r++) {
     const phi = (Math.PI * r) / rings;
     const sinPhi = Math.sin(phi);
@@ -19,16 +22,21 @@ export function generateSphere(radius: number, segments: number, rings: number):
       const x = sinPhi * Math.cos(theta);
       const y = cosPhi;
       const z = sinPhi * Math.sin(theta);
-      positions[v] = x * radius;
-      positions[v + 1] = y * radius;
-      positions[v + 2] = z * radius;
-      normals[v] = x;
-      normals[v + 1] = y;
-      normals[v + 2] = z;
-      v += 3;
+      positions[p] = x * radius;
+      positions[p + 1] = y * radius;
+      positions[p + 2] = z * radius;
+      normals[p] = x;
+      normals[p + 1] = y;
+      normals[p + 2] = z;
+      uvs[u] = s / segments;
+      uvs[u + 1] = r / rings;
+      p += 3;
+      u += 2;
     }
   }
 
+  // Indices are wound CCW when viewed from outside the sphere, so default
+  // back-face culling drops the inside surface, not the outside.
   const indices = new Uint32Array(rings * segments * 6);
   let i = 0;
   const stride = segments + 1;
@@ -37,13 +45,13 @@ export function generateSphere(radius: number, segments: number, rings: number):
       const a = r * stride + s;
       const b = a + stride;
       indices[i++] = a;
-      indices[i++] = b;
       indices[i++] = a + 1;
       indices[i++] = b;
+      indices[i++] = a + 1;
       indices[i++] = b + 1;
-      indices[i++] = a + 1;
+      indices[i++] = b;
     }
   }
 
-  return { positions, normals, indices };
+  return { positions, normals, uvs, indices };
 }

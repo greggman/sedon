@@ -12,7 +12,7 @@ export interface OutputDef {
 }
 
 export interface NodeContext {
-  // Empty for now. GPU device, frame state, and other ambient state arrive in later phases.
+  device?: GPUDevice;
 }
 
 export type NodeInputs = Record<string, unknown>;

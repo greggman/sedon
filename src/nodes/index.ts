@@ -1,8 +1,19 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { colorNode } from './color.js';
+import { gridNode } from './grid.js';
+import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
+import { outputNode } from './output.js';
+import { sphereNode } from './sphere.js';
 
-export const CORE_NODES = [colorNode, mixNode];
+export const CORE_NODES = [
+  colorNode,
+  mixNode,
+  sphereNode,
+  gridNode,
+  materialNode,
+  outputNode,
+];
 
 export function createCoreNodeRegistry(): NodeRegistry {
   const r = createNodeRegistry();
@@ -10,4 +21,4 @@ export function createCoreNodeRegistry(): NodeRegistry {
   return r;
 }
 
-export { colorNode, mixNode };
+export { colorNode, mixNode, sphereNode, gridNode, materialNode, outputNode };

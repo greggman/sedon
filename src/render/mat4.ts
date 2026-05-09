@@ -8,15 +8,23 @@ export function identity(): Mat4 {
   return m;
 }
 
-export function perspective(fovYRadians: number, aspect: number, near: number, far: number): Mat4 {
-  const f = 1 / Math.tan(fovYRadians / 2);
-  const nf = 1 / (near - far);
+export function perspective(fovYRadians: number, aspect: number, zNear: number, zFar: number): Mat4 {
   const m = new Float32Array(16);
-  m[0] = f / aspect;
-  m[5] = f;
-  m[10] = (far + near) * nf;
+  const f = Math.tan(Math.PI * 0.5 - 0.5 * fovYRadians);
+
+  m[0]  = f / aspect;
+  m[5]  = f;
   m[11] = -1;
-  m[14] = 2 * far * near * nf;
+
+  if (Number.isFinite(zFar)) {
+    const rangeInv = 1 / (zNear - zFar);
+    m[10] = zFar * rangeInv;
+    m[14] = zFar * zNear * rangeInv;
+  } else {
+    m[10] = -1;
+    m[14] = -zNear;
+  }
+
   return m;
 }
 

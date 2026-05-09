@@ -6,7 +6,14 @@ See [TODO.md](TODO.md) for goals, [PLAN.md](PLAN.md) for the architecture and ph
 
 ## Status
 
-Phase 0 — scaffold. A hello-sphere renders in the browser via WebGPU. The node engine, type system, editor, and PBR all come later.
+Phases 0–2 complete:
+
+- A hello-sphere renders in the browser via WebGPU (`npm run dev`).
+- The graph engine evaluates typed node graphs in TypeScript: type registry, node definitions, `Graph` JSON serialization, validation, topological-order evaluation.
+- Built-in nodes: `core/color`, `core/mix`, `core/sphere`, `core/grid`, `core/material`, `core/output`.
+- The POC graph in code — Color → Grid texture → Material; Sphere → Output — produces a textured sphere with simple Lambertian shading.
+
+Next: Phase 3 brings the React Flow editor so the graph can be built and edited visually.
 
 ## Requirements
 

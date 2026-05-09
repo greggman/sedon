@@ -6,9 +6,26 @@ test('sphere has expected vertex and index counts', () => {
   const segments = 8;
   const rings = 4;
   const sphere = generateSphere(1, segments, rings);
-  assert.equal(sphere.positions.length, (rings + 1) * (segments + 1) * 3);
-  assert.equal(sphere.normals.length, (rings + 1) * (segments + 1) * 3);
+  const verts = (rings + 1) * (segments + 1);
+  assert.equal(sphere.positions.length, verts * 3);
+  assert.equal(sphere.normals.length, verts * 3);
+  assert.equal(sphere.uvs.length, verts * 2);
   assert.equal(sphere.indices.length, rings * segments * 6);
+});
+
+test('sphere uvs span the unit square', () => {
+  const sphere = generateSphere(1, 8, 4);
+  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (let i = 0; i < sphere.uvs.length; i += 2) {
+    minU = Math.min(minU, sphere.uvs[i]!);
+    maxU = Math.max(maxU, sphere.uvs[i]!);
+    minV = Math.min(minV, sphere.uvs[i + 1]!);
+    maxV = Math.max(maxV, sphere.uvs[i + 1]!);
+  }
+  assert.equal(minU, 0);
+  assert.equal(maxU, 1);
+  assert.equal(minV, 0);
+  assert.equal(maxV, 1);
 });
 
 test('sphere vertices lie on the expected radius', () => {

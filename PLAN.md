@@ -1,6 +1,6 @@
 # Sedon — Implementation Plan
 
-Status: planning. Nothing implemented yet.
+Status: Phases 0–2 complete. The POC graph (Color → Grid → Material with Sphere → Output) evaluates via WebGPU and renders a Lambertian-shaded textured sphere.
 
 This plan reflects decisions made in initial design discussion. See [TODO.md](TODO.md) for the project's overall goals and [NODES.md](NODES.md) for the node taxonomy.
 
