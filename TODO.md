@@ -5,6 +5,13 @@
 * WGSL snipped node - meta data for types (quat vs vec4f vs color) but parse for defaults
 * is core/grid a valid node. maybe should be list of colors with +/- to add to list?
 * is there a list/array entry type
+* solid-color should just be color (special case or give it 2 outputs)
+* editable texture? a node with a pixel editor?
+* camera
+  * orbit vs track control (option)
+  * frame
+  * ortho
+  * fly?
 
 
 --- old ---
