@@ -7,41 +7,22 @@ import {
   type Connection,
   type Edge,
   type IsValidConnection,
-  type Node,
   type OnConnect,
   type OnEdgesChange,
   type OnNodesChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCallback } from 'react';
-import { findNode, type Graph } from '../core/graph.js';
+import { findNode } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { CustomNode } from './custom-node.js';
+import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
 const nodeTypes = { sedon: CustomNode };
 const nodes = createCoreNodeRegistry();
 const types = createCoreTypeRegistry();
-
-function buildInitialNodes(graph: Graph): Node[] {
-  return graph.nodes.map((n, i) => ({
-    id: n.id,
-    type: 'sedon',
-    position: n.position ?? { x: i * 240, y: i * 80 },
-    data: { kind: n.kind },
-  }));
-}
-
-function buildInitialEdges(graph: Graph): Edge[] {
-  return graph.edges.map((e) => ({
-    id: e.id,
-    source: e.from.node,
-    target: e.to.node,
-    sourceHandle: e.from.socket,
-    targetHandle: e.to.socket,
-  }));
-}
 
 // Snapshot from the store at mount time. After this, React Flow's local state
 // owns visual representation; user actions sync compute-relevant changes back
@@ -49,8 +30,8 @@ function buildInitialEdges(graph: Graph): Edge[] {
 const seed = useEditorStore.getState().graph;
 
 export function NodeCanvas() {
-  const [rfNodes, , onRfNodesChange] = useNodesState(buildInitialNodes(seed));
-  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(buildInitialEdges(seed));
+  const [rfNodes, , onRfNodesChange] = useNodesState(graphToRfNodes(seed));
+  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed));
 
   const connect = useEditorStore((s) => s.connect);
   const removeEdges = useEditorStore((s) => s.removeEdges);

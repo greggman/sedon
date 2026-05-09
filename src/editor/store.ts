@@ -21,6 +21,11 @@ export interface EditorState {
   setEvalResult: (evalResult: EvalResult | null) => void;
   setDevice: (device: GPUDevice | null) => void;
 
+  // Wholesale replace the graph (used by load). Resets evalResult so the
+  // preview re-evaluates against the new graph; old GPU resources from the
+  // previous eval are dropped on the floor (existing leak).
+  setGraph: (graph: Graph, rootNodeId: string) => void;
+
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
@@ -38,6 +43,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setEvalResult: (evalResult) => set({ evalResult }),
   setDevice: (device) => set({ device }),
+  setGraph: (graph, rootNodeId) => set({ graph, rootNodeId, evalResult: null }),
 
   addNode: (node) => {
     const graph = get().graph;
