@@ -7,6 +7,20 @@
 * is there a list/array entry type
 * solid-color should just be color (special case or give it 2 outputs)
 * editable texture? a node with a pixel editor?
+* texture nodes need preview
+* texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
+* having color nodes is gross - solutions
+  (1) color inputs, like numbers, have a color
+  (2) color bank (a node with N colors and N outputs, maybe with labels)
+* node title areas should match output color?
+* nodes should be nameable - and searchable
+* need a node cleanup (re-layout)
+* material previews should use track camera, not orbit
+* preview sphere should be larger 
+* need undo/redo
+* touch support? (iPad) - maybe iphone
+* need to be able to size split
+* support HDR output
 * camera
   * orbit vs track control (option)
   * frame
