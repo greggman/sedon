@@ -7,6 +7,7 @@ import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
+import { worleyNode } from './worley.js';
 
 export const CORE_NODES = [
   mixNode,
@@ -14,6 +15,7 @@ export const CORE_NODES = [
   solidColorNode,
   gridNode,
   perlinNode,
+  worleyNode,
   blendNode,
   materialNode,
   outputNode,
@@ -34,4 +36,5 @@ export {
   perlinNode,
   solidColorNode,
   sphereNode,
+  worleyNode,
 };
