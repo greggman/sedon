@@ -9,16 +9,32 @@ import { useEditorStore } from './store.js';
 
 const registry = createCoreNodeRegistry();
 
+interface OrbitCamera {
+  yaw: number;
+  pitch: number;
+  distance: number;
+}
+
+const DEFAULT_CAMERA: OrbitCamera = {
+  yaw: 0,
+  pitch: 0.4,
+  distance: 3,
+};
+
 export function Preview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuContext | null>(null);
 
+  // Camera lives in a ref so the render loop reads fresh values without
+  // restarting on every drag.
+  const cameraRef = useRef<OrbitCamera>({ ...DEFAULT_CAMERA });
+
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
 
-  // 1. Initialize WebGPU exactly once when the canvas is mounted.
+  // Init WebGPU once on mount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -49,7 +65,60 @@ export function Preview() {
     };
   }, []);
 
-  // 2. On graph change (and once GPU is up), re-evaluate and run the render loop.
+  // Wire up orbit camera input on the canvas.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      const cam = cameraRef.current;
+      const sens = 0.005;
+      cam.yaw += dx * sens;
+      cam.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * sens));
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      dragging = false;
+      canvas.releasePointerCapture(e.pointerId);
+    };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const cam = cameraRef.current;
+      const factor = Math.exp(e.deltaY * 0.001);
+      cam.distance = Math.max(0.5, Math.min(50, cam.distance * factor));
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  // On graph change (and once GPU is up), re-evaluate and run the render loop.
   useEffect(() => {
     if (!gpu) return;
     const canvas = canvasRef.current;
@@ -87,14 +156,12 @@ export function Preview() {
           lastHeight = canvas.height;
         }
 
-        // performance.now() is monotonic from page load, so the rotation keeps
-        // ticking smoothly across re-evals when the graph mutates.
-        const t = performance.now() / 1000;
         const aspect = canvas.width / canvas.height;
         const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
+        const cam = cameraRef.current;
         const modelView = multiply(
-          multiply(translation(0, 0, -3), rotationX(0.4)),
-          rotationY(t * 0.5),
+          multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+          rotationY(cam.yaw),
         );
 
         const encoder = device.createCommandEncoder();
@@ -125,7 +192,16 @@ export function Preview() {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+      <canvas
+        ref={canvasRef}
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          touchAction: 'none',
+          cursor: 'grab',
+        }}
+      />
       {error !== null && (
         <div
           style={{
