@@ -52,6 +52,15 @@ export function rotationX(rad: number): Mat4 {
   return m;
 }
 
+export function rotationZ(rad: number): Mat4 {
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  const m = identity();
+  m[0] = c;  m[1] = s;
+  m[4] = -s; m[5] = c;
+  return m;
+}
+
 // out = a * b (column-major)
 export function multiply(a: Mat4, b: Mat4): Mat4 {
   const out = new Float32Array(16);

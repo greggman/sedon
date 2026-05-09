@@ -1,6 +1,7 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendNode } from './blend.js';
 import { colorizeNode } from './colorize.js';
+import { cubeNode } from './cube.js';
 import { gridNode } from './grid.js';
 import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
@@ -9,12 +10,15 @@ import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
+import { transformNode } from './transform.js';
 import { warpNode } from './warp.js';
 import { worleyNode } from './worley.js';
 
 export const CORE_NODES = [
   mixNode,
   sphereNode,
+  cubeNode,
+  transformNode,
   solidColorNode,
   gridNode,
   perlinNode,
@@ -36,6 +40,7 @@ export function createCoreNodeRegistry(): NodeRegistry {
 export {
   blendNode,
   colorizeNode,
+  cubeNode,
   gridNode,
   materialNode,
   mixNode,
@@ -44,6 +49,7 @@ export {
   perlinNode,
   solidColorNode,
   sphereNode,
+  transformNode,
   warpNode,
   worleyNode,
 };

@@ -19,6 +19,19 @@ export interface GeometryValue {
   indexBuffer: GPUBuffer;
   indexCount: number;
   indexFormat: GPUIndexFormat;
+  // Optional CPU-side copy of the mesh data. Modifiers that need to read
+  // vertices (Transform, future Subdivide, Distribute on Faces) require this
+  // to be present. Compute-shader-generated geometry won't have it.
+  mesh?: CpuMeshRef;
+}
+
+// Forward-declared to avoid a circular import: src/render/mesh.ts owns the
+// canonical CpuMesh type. Resources only needs the shape for typing.
+export interface CpuMeshRef {
+  positions: Float32Array;
+  normals: Float32Array;
+  uvs: Float32Array;
+  indices: Uint32Array;
 }
 
 export interface MaterialValue {
