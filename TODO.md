@@ -1,5 +1,14 @@
 # Sedon
 
+--- new ---
+
+* WGSL snipped node - meta data for types (quat vs vec4f vs color) but parse for defaults
+* is core/grid a valid node. maybe should be list of colors with +/- to add to list?
+* is there a list/array entry type
+
+
+--- old ---
+
 This is a data definition and library for generating 3d models
 and worlds from mostly procedural data.
 

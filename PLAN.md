@@ -180,6 +180,20 @@ Renderer: throwaway PBR-lite — basecolor texture on a sphere, hardcoded direct
 
 **Done when:** user can build the POC graph entirely in the UI, drag-connect typed handles, and see the rendered result update live.
 
+### Known UX debt (editor)
+
+Carried forward from Phase 3 slices. These don't block the next phases, but the editor will feel rough until they're addressed.
+
+- **Drag-to-edit numbers with adaptive step.** The current `NumberInput` is a thin wrapper around `<input type="number">` — keyboard-friendly but the spinner arrows are useless at the size we render them, and click-and-drag editing (Blender, Houdini, ComfyUI, Substance) is what users expect. Build a custom component: pointer-down + horizontal drag updates the value, sensitivity scales with the number's magnitude (a value in [0, 1] gets fine increments per pixel; a value near 1e6 gets coarse increments). Pointer-up commits; click without drag enters typing mode. Drop the spinner once the drag is in.
+- **Custom color picker (HDR, RGBA, multi-space).** Native `<input type="color">` is sRGB-only, no alpha, clamped to [0, 1]. We'll need:
+  - Real RGBA editing (alpha labeled, not a mystery slider).
+  - Values outside [0, 1] for emissive / HDR.
+  - Multiple color spaces (sRGB, Linear, HSV/HSL, LAB) — toggleable per editor.
+  - A popup with all of the above, plus eyedropper / hex / per-channel sliders.
+  Worth doing alongside the Phase 4 PBR work, since that's when HDR colors start mattering for output.
+
+These two cover the bulk of "the editor feels off" until the polish pass lands.
+
 ### Phase 4 — Real PBR renderer + texture-shader fusion (3–5 days)
 - PBR shader: basecolor, normal, roughness, metallic, AO, emissive. IBL or analytic lights.
 - Camera controls (orbit).
