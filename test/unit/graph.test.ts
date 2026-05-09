@@ -10,12 +10,12 @@ import {
   validateGraph,
 } from '../../src/core/graph.js';
 import { createCoreTypeRegistry } from '../../src/core/types.js';
-import { createCoreNodeRegistry } from '../../src/nodes/index.js';
+import { createRegistryForTests } from './test-nodes.js';
 
 test('graph round-trips through JSON', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/color', { inputValues: { value: [1, 0, 0, 1] } });
-  const b = addNode(g, 'core/color', { inputValues: { value: [0, 0, 1, 1] } });
+  const a = addNode(g, 'test/color-source', { inputValues: { value: [1, 0, 0, 1] } });
+  const b = addNode(g, 'test/color-source', { inputValues: { value: [0, 0, 1, 1] } });
   const mix = addNode(g, 'core/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
   addEdge(g, { node: b.id, socket: 'color' }, { node: mix.id, socket: 'b' });
@@ -33,8 +33,8 @@ test('fromJSON rejects wrong version', () => {
 
 test('removeNode also removes connected edges', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/color');
-  const b = addNode(g, 'core/color');
+  const a = addNode(g, 'test/color-source');
+  const b = addNode(g, 'test/color-source');
   const mix = addNode(g, 'core/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
   addEdge(g, { node: b.id, socket: 'color' }, { node: mix.id, socket: 'b' });
@@ -46,9 +46,9 @@ test('removeNode also removes connected edges', () => {
 
 test('validation accepts a well-formed graph', () => {
   const types = createCoreTypeRegistry();
-  const nodes = createCoreNodeRegistry();
+  const nodes = createRegistryForTests();
   const g = createGraph();
-  const a = addNode(g, 'core/color');
+  const a = addNode(g, 'test/color-source');
   const mix = addNode(g, 'core/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
 
@@ -58,7 +58,7 @@ test('validation accepts a well-formed graph', () => {
 
 test('validation rejects unknown node kinds', () => {
   const types = createCoreTypeRegistry();
-  const nodes = createCoreNodeRegistry();
+  const nodes = createRegistryForTests();
   const g = createGraph();
   addNode(g, 'core/does-not-exist');
 
@@ -69,9 +69,9 @@ test('validation rejects unknown node kinds', () => {
 
 test('validation rejects type-incompatible edges', () => {
   const types = createCoreTypeRegistry();
-  const nodes = createCoreNodeRegistry();
+  const nodes = createRegistryForTests();
   const g = createGraph();
-  const a = addNode(g, 'core/color');
+  const a = addNode(g, 'test/color-source');
   const mix = addNode(g, 'core/mix');
   // 'color' (Color) -> 'factor' (Float) is not allowed.
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'factor' });
@@ -83,9 +83,9 @@ test('validation rejects type-incompatible edges', () => {
 
 test('validation rejects edges referencing missing sockets', () => {
   const types = createCoreTypeRegistry();
-  const nodes = createCoreNodeRegistry();
+  const nodes = createRegistryForTests();
   const g = createGraph();
-  const a = addNode(g, 'core/color');
+  const a = addNode(g, 'test/color-source');
   const mix = addNode(g, 'core/mix');
   addEdge(g, { node: a.id, socket: 'no-such-output' }, { node: mix.id, socket: 'a' });
 
