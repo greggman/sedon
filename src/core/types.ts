@@ -56,6 +56,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Texture2D', color: '#4caf50', description: 'GPU 2D image' },
   { id: 'Geometry', color: '#e53935', description: 'mesh: positions, normals, uvs, indices' },
   { id: 'Material', color: '#ec407a', description: 'bundle of textures + scalar params' },
+  { id: 'PointCloud', color: '#9e9e9e', description: 'unstructured points with optional surface normals' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

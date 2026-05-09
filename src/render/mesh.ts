@@ -1,4 +1,4 @@
-import type { CpuMeshRef, GeometryValue } from '../core/resources.js';
+import type { CpuMeshRef, GeometryValue, PointCloudValue } from '../core/resources.js';
 import {
   multiply,
   rotationX,
@@ -109,4 +109,146 @@ export function transformMesh(
     uvs: mesh.uvs,
     indices: mesh.indices,
   };
+}
+
+// Mulberry32 PRNG. Deterministic for a given 32-bit seed; cheap; good enough
+// for "scatter points reproducibly" use cases. Not crypto-grade.
+function mulberry32(seed: number): () => number {
+  let state = (seed | 0) >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Distribute points across the surface of a mesh, weighted by triangle area.
+// `density` is points per unit of surface area; the per-triangle count is
+// stochastically rounded so small triangles still have a chance of getting a
+// point.
+export function distributeOnFaces(
+  mesh: CpuMesh,
+  density: number,
+  seed: number,
+): PointCloudValue {
+  const rand = mulberry32(Math.floor(seed * 1_000_000) || 1);
+
+  const outPositions: number[] = [];
+  const outNormals: number[] = [];
+
+  const p = mesh.positions;
+  const n = mesh.normals;
+  const ix = mesh.indices;
+
+  for (let t = 0; t < ix.length; t += 3) {
+    const i0 = ix[t]! * 3;
+    const i1 = ix[t + 1]! * 3;
+    const i2 = ix[t + 2]! * 3;
+
+    const p0x = p[i0]!,    p0y = p[i0 + 1]!,    p0z = p[i0 + 2]!;
+    const p1x = p[i1]!,    p1y = p[i1 + 1]!,    p1z = p[i1 + 2]!;
+    const p2x = p[i2]!,    p2y = p[i2 + 1]!,    p2z = p[i2 + 2]!;
+
+    const ax = p1x - p0x, ay = p1y - p0y, az = p1z - p0z;
+    const bx = p2x - p0x, by = p2y - p0y, bz = p2z - p0z;
+    const cx = ay * bz - az * by;
+    const cy = az * bx - ax * bz;
+    const cz = ax * by - ay * bx;
+    const area = 0.5 * Math.hypot(cx, cy, cz);
+
+    const exact = area * density;
+    let count = Math.floor(exact);
+    if (rand() < exact - count) count++;
+    if (count === 0) continue;
+
+    const n0x = n[i0]!,     n0y = n[i0 + 1]!,     n0z = n[i0 + 2]!;
+    const n1x = n[i1]!,     n1y = n[i1 + 1]!,     n1z = n[i1 + 2]!;
+    const n2x = n[i2]!,     n2y = n[i2 + 1]!,     n2z = n[i2 + 2]!;
+
+    for (let k = 0; k < count; k++) {
+      let u = rand();
+      let v = rand();
+      if (u + v > 1) {
+        u = 1 - u;
+        v = 1 - v;
+      }
+      const w = 1 - u - v;
+
+      outPositions.push(
+        w * p0x + u * p1x + v * p2x,
+        w * p0y + u * p1y + v * p2y,
+        w * p0z + u * p1z + v * p2z,
+      );
+
+      const nx = w * n0x + u * n1x + v * n2x;
+      const ny = w * n0y + u * n1y + v * n2y;
+      const nz = w * n0z + u * n1z + v * n2z;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      outNormals.push(nx / len, ny / len, nz / len);
+    }
+  }
+
+  return {
+    positions: new Float32Array(outPositions),
+    normals: new Float32Array(outNormals),
+    count: outPositions.length / 3,
+  };
+}
+
+// Realize a point cloud by copying the instance mesh at every point. Returns
+// one big merged mesh; the standard renderer can draw it without any
+// instancing infrastructure. For thousands of points this gets memory-heavy,
+// at which point we'd switch to true instanced draws.
+export function instanceOnPoints(
+  instance: CpuMesh,
+  points: PointCloudValue,
+  scale: number,
+): CpuMesh {
+  const vpi = instance.positions.length / 3; // vertices per instance
+  const ipi = instance.indices.length;       // indices per instance
+  const totalV = vpi * points.count;
+  const totalI = ipi * points.count;
+
+  const positions = new Float32Array(totalV * 3);
+  const normals = new Float32Array(totalV * 3);
+  const uvs = new Float32Array(totalV * 2);
+  const indices = new Uint32Array(totalI);
+
+  const ip = instance.positions;
+  const in_ = instance.normals;
+  const iu = instance.uvs;
+  const ii = instance.indices;
+  const pp = points.positions;
+
+  for (let p = 0; p < points.count; p++) {
+    const px = pp[p * 3]!;
+    const py = pp[p * 3 + 1]!;
+    const pz = pp[p * 3 + 2]!;
+    const baseV = p * vpi;
+
+    for (let v = 0; v < vpi; v++) {
+      const dst = (baseV + v) * 3;
+      const src = v * 3;
+      positions[dst] = ip[src]! * scale + px;
+      positions[dst + 1] = ip[src + 1]! * scale + py;
+      positions[dst + 2] = ip[src + 2]! * scale + pz;
+      normals[dst] = in_[src]!;
+      normals[dst + 1] = in_[src + 1]!;
+      normals[dst + 2] = in_[src + 2]!;
+
+      const dstUv = (baseV + v) * 2;
+      const srcUv = v * 2;
+      uvs[dstUv] = iu[srcUv]!;
+      uvs[dstUv + 1] = iu[srcUv + 1]!;
+    }
+
+    const baseI = p * ipi;
+    for (let k = 0; k < ipi; k++) {
+      indices[baseI + k] = ii[k]! + baseV;
+    }
+  }
+
+  return { positions, normals, uvs, indices };
 }

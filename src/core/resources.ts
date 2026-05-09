@@ -41,6 +41,12 @@ export interface MaterialValue {
   normal?: Texture2DValue;
 }
 
+export interface PointCloudValue {
+  positions: Float32Array; // 3 floats per point
+  normals?: Float32Array;  // optional, surface normals at each point
+  count: number;
+}
+
 export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
   if (!ctx.device) {
     throw new Error('this node requires a GPU device in NodeContext');
