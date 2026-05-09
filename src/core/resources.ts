@@ -23,6 +23,8 @@ export interface GeometryValue {
 
 export interface MaterialValue {
   basecolor: Texture2DValue;
+  roughness: number;
+  metallic: number;
 }
 
 export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {

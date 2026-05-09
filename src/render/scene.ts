@@ -30,24 +30,36 @@ export function createSceneRenderer(
     addressModeV: 'repeat',
   });
 
-  const uniformBuffer = device.createBuffer({
+  const sceneUniformBuffer = device.createBuffer({
     size: 128, // two mat4x4f
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  // Material uniforms: { roughness: f32, metallic: f32 }. Pad to 16 bytes for
+  // the WebGPU uniform-buffer minimum.
+  const materialUniformBuffer = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const materialData = new Float32Array(4);
+  materialData[0] = material.roughness;
+  materialData[1] = material.metallic;
+  device.queue.writeBuffer(materialUniformBuffer, 0, materialData as BufferSource);
+
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
-      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 0, resource: { buffer: sceneUniformBuffer } },
       { binding: 1, resource: material.basecolor.view },
       { binding: 2, resource: sampler },
+      { binding: 3, resource: { buffer: materialUniformBuffer } },
     ],
   });
 
   return {
     render({ encoder, colorView, depthView, clearColor, modelView, projection }) {
-      device.queue.writeBuffer(uniformBuffer, 0, modelView as BufferSource);
-      device.queue.writeBuffer(uniformBuffer, 64, projection as BufferSource);
+      device.queue.writeBuffer(sceneUniformBuffer, 0, modelView as BufferSource);
+      device.queue.writeBuffer(sceneUniformBuffer, 64, projection as BufferSource);
 
       const pass = encoder.beginRenderPass({
         colorAttachments: [
