@@ -24,9 +24,9 @@ function findFreePort(port, host = '0.0.0.0') {
 }
 
 const options = {
-  entryPoints: ['src/main.ts'],
+  entryPoints: ['src/main.tsx'],
   bundle: true,
-  outfile: 'dist/main.js',
+  outdir: 'dist',
   format: 'esm',
   target: 'es2022',
   sourcemap: true,

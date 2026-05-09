@@ -21,6 +21,8 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": false,
 
+    "jsx": "react-jsx",
+
     "noEmit": true
   },
   "include": ["src/**/*", "test/**/*", "scripts/**/*"]
