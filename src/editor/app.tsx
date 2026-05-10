@@ -1,6 +1,7 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useRef } from 'react';
 import { AddNodeMenu } from './add-node-menu.js';
+import { DemosMenu } from './demos-menu.js';
 import { FileMenu } from './file-menu.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
@@ -25,7 +26,10 @@ export function App() {
         >
           <NodeCanvas />
           <AddNodeMenu canvasRef={canvasPaneRef} />
-          <FileMenu />
+          <div style={topRightToolbarStyle}>
+            <DemosMenu />
+            <FileMenu />
+          </div>
         </div>
         <div style={{ background: '#0d0d10', overflow: 'hidden' }}>
           <Preview />
@@ -34,3 +38,12 @@ export function App() {
     </ReactFlowProvider>
   );
 }
+
+const topRightToolbarStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 8,
+  right: 8,
+  zIndex: 10,
+  display: 'flex',
+  gap: 4,
+};

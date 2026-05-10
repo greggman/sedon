@@ -5,6 +5,7 @@ import { cloudSlopeNode } from './cloud-slope.js';
 import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { cubeNode } from './cube.js';
+import { cylinderNode } from './cylinder.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridNode } from './grid.js';
 import { heightfieldNode } from './heightfield.js';
@@ -37,6 +38,7 @@ export const CORE_NODES = [
   mapRangeNode,
   sphereNode,
   cubeNode,
+  cylinderNode,
   planeNode,
   transformNode,
   mergeGeometryNode,
@@ -78,6 +80,7 @@ export {
   cloudStepNode,
   colorizeNode,
   cubeNode,
+  cylinderNode,
   distributeOnFacesNode,
   gridNode,
   heightfieldNode,

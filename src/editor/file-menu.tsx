@@ -77,25 +77,16 @@ export function FileMenu() {
   };
 
   return (
-    <div style={menuStyle}>
+    <>
       <button type="button" onClick={onSave} style={buttonStyle} title="Download graph as JSON">
         Save
       </button>
       <button type="button" onClick={onLoad} style={buttonStyle} title="Load graph from JSON">
         Load
       </button>
-    </div>
+    </>
   );
 }
-
-const menuStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 8,
-  right: 8,
-  zIndex: 10,
-  display: 'flex',
-  gap: 4,
-};
 
 const buttonStyle: React.CSSProperties = {
   background: '#3a3a48',
