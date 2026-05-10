@@ -1,5 +1,6 @@
 import { useReactFlow } from '@xyflow/react';
 import { useState } from 'react';
+import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
@@ -12,6 +13,10 @@ export function DemosMenu() {
   const loadDemo = (id: string) => {
     const demo = DEMOS.find((d) => d.id === id);
     if (!demo) return;
+    if (!confirmDiscardIfDirty()) {
+      setOpen(false);
+      return;
+    }
     const { graph, rootNodeId } = demo.build();
     setGraph(graph, rootNodeId);
     rf.setNodes(graphToRfNodes(graph));

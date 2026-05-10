@@ -1,6 +1,7 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useRef } from 'react';
 import { AddNodeMenu } from './add-node-menu.js';
+import { CleanupButton } from './cleanup-button.js';
 import { DemosMenu } from './demos-menu.js';
 import { FileMenu } from './file-menu.js';
 import { NodeCanvas } from './node-canvas.js';
@@ -17,6 +18,7 @@ export function App() {
           <AddNodeMenu canvasRef={canvasPaneRef} />
           <div className="sedon-top-toolbar">
             <DemosMenu />
+            <CleanupButton />
             <FileMenu />
           </div>
         </div>

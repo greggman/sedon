@@ -1,5 +1,6 @@
 import { useReactFlow } from '@xyflow/react';
 import { fromJSON, type Graph } from '../core/graph.js';
+import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
@@ -16,6 +17,7 @@ export function FileMenu() {
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
   const setGraph = useEditorStore((s) => s.setGraph);
+  const markClean = useEditorStore((s) => s.markClean);
 
   const onSave = () => {
     // Gather current positions from React Flow (the store doesn't track them)
@@ -41,9 +43,11 @@ export function FileMenu() {
     a.download = `sedon-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    markClean();
   };
 
   const onLoad = () => {
+    if (!confirmDiscardIfDirty()) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';

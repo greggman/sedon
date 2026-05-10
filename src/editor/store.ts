@@ -25,6 +25,9 @@ export interface EditorState {
   // RF themselves so they don't bump this; only graph-mutating-from-outside
   // events do.
   syncCounter: number;
+  // True when the graph has been mutated since the last load/save. Used to
+  // prompt before destructive operations (load file, switch demo).
+  dirty: boolean;
 
   setEvalResult: (evalResult: EvalResult | null) => void;
   setDevice: (device: GPUDevice | null) => void;
@@ -37,6 +40,9 @@ export interface EditorState {
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
   setInputValue: (nodeId: string, name: string, value: unknown) => void;
+
+  /** Mark the current state as the saved baseline (called after Save). */
+  markClean: () => void;
 
   undo: () => void;
   redo: () => void;
@@ -74,6 +80,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           rootNodeId: next.rootNodeId,
           undoStack: [...stack.slice(0, -1), merged],
           redoStack: [],
+          dirty: true,
           ...(opts.bumpSync ? { syncCounter: get().syncCounter + 1 } : {}),
         });
         return;
@@ -86,6 +93,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       rootNodeId: next.rootNodeId,
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
+      dirty: true,
       ...(opts.bumpSync ? { syncCounter: get().syncCounter + 1 } : {}),
     });
   }
@@ -98,15 +106,27 @@ export const useEditorStore = create<EditorState>((set, get) => {
     undoStack: [],
     redoStack: [],
     syncCounter: 0,
+    dirty: false,
 
     setEvalResult: (evalResult) => set({ evalResult }),
     setDevice: (device) => set({ device }),
 
+    // Replace the entire graph (load file, load demo). NOT undoable: clears
+    // both undo and redo stacks, since the prior history doesn't apply to
+    // the new graph. Marks state clean — the freshly loaded graph IS the
+    // baseline.
     setGraph: (graph, rootNodeId) => {
-      const before = { graph: get().graph, rootNodeId: get().rootNodeId };
-      const after = { graph, rootNodeId };
-      dispatch({ kind: 'replaceGraph', before, after }, { bumpSync: true });
+      set({
+        graph,
+        rootNodeId,
+        undoStack: [],
+        redoStack: [],
+        dirty: false,
+        syncCounter: get().syncCounter + 1,
+      });
     },
+
+    markClean: () => set({ dirty: false }),
 
     addNode: (node) => {
       dispatch({ kind: 'addNode', node });
