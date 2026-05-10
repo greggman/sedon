@@ -128,14 +128,25 @@ export interface LightingValue {
   skyTop: [number, number, number];
   /** RGB color at the bottom of the screen (sky-horizon / ground glow). */
   skyBottom: [number, number, number];
+  /**
+   * RGB color that distant geometry fades into. Usually matched to the
+   * horizon (skyBottom) so the scene blends smoothly into the sky.
+   */
+  fogColor: [number, number, number];
+  /**
+   * Fog density per world unit. 0 = no fog (existing behavior). Useful
+   * range ~0.02-0.2 for scenes with ~10-50 unit extents. Larger scenes
+   * want smaller values.
+   */
+  fogDensity: number;
 }
 
 /**
  * Default lighting matches the previous hardcoded values: white sun at
  * intensity 3 from (0.4, 0.8, 0.6) with 0.15 grey ambient. Sky defaults are
- * a daytime pale blue → warmer near the horizon — close to the previous
- * dark-grey clearColor on the value scale, but tinted toward atmospheric
- * blue.
+ * a daytime pale blue → warmer near the horizon. Fog defaults to density 0
+ * (off) so existing graphs and saves render identically; opt-in by setting
+ * fog_density on the Output node.
  */
 export function defaultLighting(): LightingValue {
   return {
@@ -144,6 +155,8 @@ export function defaultLighting(): LightingValue {
     ambient: [0.15, 0.15, 0.15],
     skyTop: [0.42, 0.6, 0.85],
     skyBottom: [0.78, 0.82, 0.78],
+    fogColor: [0.78, 0.82, 0.78],
+    fogDensity: 0,
   };
 }
 

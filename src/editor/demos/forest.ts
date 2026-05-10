@@ -183,6 +183,12 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 9, y: ROW * 2 },
+    inputValues: {
+      // Subtle horizon fog — far trees blend into the sky for atmospheric
+      // depth. Color matches the default sky bottom so the fade is seamless.
+      fog_density: 0.04,
+      fog_color: [0.78, 0.82, 0.78, 1],
+    },
   });
 
   // === Edges =============================================================

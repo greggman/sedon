@@ -50,6 +50,18 @@ export const outputNode: NodeDef = {
       default: [0.78, 0.82, 0.78, 1],
       description: 'sky color at the bottom of the screen (horizon); alpha ignored',
     },
+    {
+      name: 'fog_color',
+      type: 'Color',
+      default: [0.78, 0.82, 0.78, 1],
+      description: 'distant fog tint; usually matched to the horizon sky color',
+    },
+    {
+      name: 'fog_density',
+      type: 'Float',
+      default: 0,
+      description: 'fog per world unit; 0 = no fog. ~0.02-0.2 reads as atmospheric',
+    },
   ],
   outputs: [
     { name: 'scene', type: 'Scene' },
@@ -62,12 +74,16 @@ export const outputNode: NodeDef = {
     const amb = inputs.ambient as [number, number, number, number];
     const skyT = inputs.sky_top as [number, number, number, number];
     const skyB = inputs.sky_bottom as [number, number, number, number];
+    const fogC = inputs.fog_color as [number, number, number, number];
+    const fogD = inputs.fog_density as number;
     const lighting: LightingValue = {
       direction: dir,
       color: [col[0] * intensity, col[1] * intensity, col[2] * intensity],
       ambient: [amb[0], amb[1], amb[2]],
       skyTop: [skyT[0], skyT[1], skyT[2]],
       skyBottom: [skyB[0], skyB[1], skyB[2]],
+      fogColor: [fogC[0], fogC[1], fogC[2]],
+      fogDensity: fogD,
     };
     return { scene: inputs.scene, lighting };
   },

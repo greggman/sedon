@@ -97,15 +97,16 @@ export function createSceneRenderer(
 
   // 128 bytes for two mat4x4f (modelView, projection) + 48 bytes for three
   // vec3f-with-16-byte-stride lighting params (lightDirWorld, lightColor,
-  // ambient) = 176 bytes total. Each vec3f's trailing 4 bytes are padding
-  // to satisfy WGSL's 16-byte alignment for the next member.
+  // ambient) + 16 bytes for the fog vec4 (rgb color, density in .w) = 192
+  // bytes total. Each vec3f's trailing 4 bytes are padding to satisfy
+  // WGSL's 16-byte alignment for the next member.
   const sceneUniformBuffer = device.createBuffer({
-    size: 176,
+    size: 192,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
-  // Reused per-frame scratch for the lighting block. 12 floats = 3 vec3 ×
-  // (3 floats + 1 padding).
-  const lightingScratch = new Float32Array(12);
+  // Reused per-frame scratch for the lighting+fog block. 16 floats = 3 vec3
+  // (each padded to 4 floats) + 1 vec4 fog.
+  const lightingScratch = new Float32Array(16);
 
   // Sky uniform buffer + bind group + scratch. Layout: vec3 top, vec3 bottom,
   // each padded to 16 bytes (32 bytes total / 8 floats).
@@ -203,6 +204,10 @@ export function createSceneRenderer(
       lightingScratch[9]  = lighting.ambient[1];
       lightingScratch[10] = lighting.ambient[2];
       // [11] padding
+      lightingScratch[12] = lighting.fogColor[0];
+      lightingScratch[13] = lighting.fogColor[1];
+      lightingScratch[14] = lighting.fogColor[2];
+      lightingScratch[15] = lighting.fogDensity;
       device.queue.writeBuffer(sceneUniformBuffer, 128, lightingScratch as BufferSource);
 
       skyScratch[0] = lighting.skyTop[0];

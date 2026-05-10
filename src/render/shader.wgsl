@@ -6,6 +6,10 @@ struct Uniforms {
   lightDirWorld: vec3f,
   lightColor: vec3f,
   ambient: vec3f,
+  // Distance fog. fogColor is the tint distant geometry fades toward;
+  // fogDensity is per-world-unit (0 = off). Stored as vec4 (color in xyz,
+  // density in w) so we don't burn another vec3 padding slot.
+  fog: vec4f,
 };
 
 struct Material {
@@ -147,6 +151,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
 
   let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l;
   let ambient_term = albedo * uniforms.ambient;
+  let lit = direct + ambient_term;
 
-  return vec4f(direct + ambient_term, albedo_sample.a);
+  // Exponential distance fog. view_pos.z is negative for points in front
+  // of the camera (right-handed view space), so abs() gives forward
+  // distance. exp(-density * d) in [0,1]: 1 = fully visible, 0 = fully fogged.
+  let fog_density = uniforms.fog.w;
+  let dist = abs(in.view_pos.z);
+  let visibility = exp(-fog_density * dist);
+  let final_color = mix(uniforms.fog.xyz, lit, visibility);
+
+  return vec4f(final_color, albedo_sample.a);
 }
