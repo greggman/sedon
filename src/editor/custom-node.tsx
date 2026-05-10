@@ -21,9 +21,29 @@ const ROW_HEIGHT = 28;
 const HANDLE_SIZE = 10;
 const PREVIEW_SIZE = 128;
 const PREVIEW_PADDING = 8;
+const OUTPUT_BAR_HEIGHT = 5;
+const NODE_RADIUS = 4;
 
 function typeColor(typeId: string): string {
   return types.get(typeId)?.color ?? '#888';
+}
+
+// Hard-stop gradient where each output occupies an equal-width segment of
+// the bar, in declared order. Single-output nodes get a solid color.
+function outputBarBackground(def: NodeDef): string {
+  if (def.outputs.length === 0) return 'transparent';
+  if (def.outputs.length === 1) {
+    return typeColor(def.outputs[0]!.type);
+  }
+  const stops: string[] = [];
+  const n = def.outputs.length;
+  for (let i = 0; i < n; i++) {
+    const color = typeColor(def.outputs[i]!.type);
+    const a = (i / n) * 100;
+    const b = ((i + 1) / n) * 100;
+    stops.push(`${color} ${a}%`, `${color} ${b}%`);
+  }
+  return `linear-gradient(to right, ${stops.join(', ')})`;
 }
 
 function getSocketType(
@@ -223,7 +243,7 @@ export function CustomNode({ id, data }: NodeProps) {
   const previewTarget = previewTargetFor(myOutputs);
   const hasSlot = hasPreviewSlot(def);
   const previewBlockHeight = hasSlot ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
-  const inputsTop = HEADER_HEIGHT + previewBlockHeight;
+  const inputsTop = OUTPUT_BAR_HEIGHT + HEADER_HEIGHT + previewBlockHeight;
 
   const valueOf = (input: InputDef) => {
     const v = inputValues?.[input.name];
@@ -232,6 +252,14 @@ export function CustomNode({ id, data }: NodeProps) {
 
   return (
     <div style={nodeStyle}>
+      <div
+        style={{
+          height: OUTPUT_BAR_HEIGHT,
+          background: outputBarBackground(def),
+          borderTopLeftRadius: NODE_RADIUS - 1,
+          borderTopRightRadius: NODE_RADIUS - 1,
+        }}
+      />
       <div style={headerStyle}>{def.id}</div>
 
       {hasSlot && (
