@@ -69,13 +69,13 @@ function isTexture2D(v: unknown): v is Texture2DValue {
   );
 }
 
-function isMaterial(v: unknown): v is MaterialValue {
+// Only PBR materials get a sphere-on-cube material preview — terrain-splat
+// and future kinds like water need geometry the preview doesn't provide.
+function isMaterial(v: unknown): v is MaterialValue & { kind: 'pbr' } {
   return (
     typeof v === 'object' &&
     v !== null &&
-    'basecolor' in v &&
-    'roughness' in v &&
-    'metallic' in v
+    (v as { kind?: string }).kind === 'pbr'
   );
 }
 

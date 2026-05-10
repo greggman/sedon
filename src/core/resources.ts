@@ -34,11 +34,41 @@ export interface CpuMeshRef {
   indices: Uint32Array;
 }
 
-export interface MaterialValue {
+// Materials are a discriminated union of "kinds." Each kind ships its own
+// shader module + bind-group layout in the renderer (see render/materials/),
+// and the renderer dispatches the right pipeline per kind. Adding a new kind
+// — water, atmospheric sky, toon-shaded — means a new variant here, a new
+// kind module, and a new node that produces it. The rest of the engine
+// (scene graph, instance buffer, lighting/fog uniforms, sampler) stays
+// untouched.
+export type MaterialValue = PbrMaterial | TerrainSplatMaterial;
+
+/**
+ * Standard PBR Cook-Torrance (the only kind until we shipped this refactor).
+ * Single basecolor texture + scalar roughness/metallic + optional normal map.
+ */
+export interface PbrMaterial {
+  kind: 'pbr';
   basecolor: Texture2DValue;
   roughness: number;
   metallic: number;
   normal?: Texture2DValue;
+}
+
+/**
+ * Two-layer splat-painted terrain. Each layer is a basecolor + roughness;
+ * the mask's red channel selects between them per pixel (0 = layer A,
+ * 1 = layer B). This is the v1 form — multi-layer (4+) and per-layer
+ * normals/triplanar/heightblend are the natural extensions but out of
+ * scope for the initial seam.
+ */
+export interface TerrainSplatMaterial {
+  kind: 'terrain-splat';
+  layerA: Texture2DValue;
+  layerB: Texture2DValue;
+  mask: Texture2DValue;
+  roughnessA: number;
+  roughnessB: number;
 }
 
 // A renderable scene is a list of entities. Each entity carries a geometry +

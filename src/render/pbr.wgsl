@@ -1,14 +1,24 @@
+// PBR (Cook-Torrance GGX) material kind. The first kind to use the split
+// bind-group convention:
+//
+//   @group(0) — scene-level bindings shared across all material kinds:
+//     binding 0: scene uniforms (modelView, projection, lighting, fog)
+//     binding 1: shared sampler
+//
+//   @group(1) — kind-specific bindings:
+//     binding 0: basecolor texture
+//     binding 1: per-material params (roughness, metallic)
+//     binding 2: normal map (flat 1×1 placeholder when material has none)
+//
+// Adding a new kind means declaring its own @group(1) layout — @group(0)
+// stays exactly as below.
+
 struct Uniforms {
   modelView: mat4x4f,
   projection: mat4x4f,
-  // Scene-level lighting. Each vec3 is 16-byte aligned in WGSL uniforms
-  // (one float of trailing padding implicit), matching the JS-side packing.
   lightDirWorld: vec3f,
   lightColor: vec3f,
   ambient: vec3f,
-  // Distance fog. fogColor is the tint distant geometry fades toward;
-  // fogDensity is per-world-unit (0 = off). Stored as vec4 (color in xyz,
-  // density in w) so we don't burn another vec3 padding slot.
   fog: vec4f,
 };
 
@@ -18,22 +28,20 @@ struct Material {
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var basecolor: texture_2d<f32>;
-@group(0) @binding(2) var basecolor_sampler: sampler;
-@group(0) @binding(3) var<uniform> material: Material;
-@group(0) @binding(4) var normal_map: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+
+@group(1) @binding(0) var basecolor: texture_2d<f32>;
+@group(1) @binding(1) var<uniform> material: Material;
+@group(1) @binding(2) var normal_map: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
   @location(1) normal: vec3f,
   @location(2) uv: vec2f,
-  // Per-instance world transform. 4 vec4f columns of a column-major mat4.
-  // Stepped per-instance via the pipeline's vertex buffer layout.
   @location(3) inst_col0: vec4f,
   @location(4) inst_col1: vec4f,
   @location(5) inst_col2: vec4f,
   @location(6) inst_col3: vec4f,
-  // Per-instance color tint (RGBA), multiplied into basecolor in fs_main.
   @location(7) inst_tint: vec4f,
 };
 
@@ -54,8 +62,6 @@ fn vs_main(in: VsIn) -> VsOut {
   out.position = uniforms.projection * view_pos4;
   out.view_pos = view_pos4.xyz;
 
-  // Apply the instance's rotation to the normal, then the camera's. Assumes
-  // uniform scale; non-uniform scale would need an inverse-transpose 3x3.
   let inst_3x3 = mat3x3f(in.inst_col0.xyz, in.inst_col1.xyz, in.inst_col2.xyz);
   let world_normal = inst_3x3 * in.normal;
   let normal_mat = mat3x3f(
@@ -109,20 +115,14 @@ fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
 }
 
 fn perturb_normal(n: vec3f, p: vec3f, uv: vec2f) -> vec3f {
-  let sample = textureSample(normal_map, basecolor_sampler, uv).rgb;
-  let map = sample * 2.0 - vec3f(1.0);
+  let smp = textureSample(normal_map, samp, uv).rgb;
+  let map = smp * 2.0 - vec3f(1.0);
   let tbn = cotangent_frame(n, p, uv);
   return normalize(tbn * map);
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4f {
-  let albedo_sample = textureSample(basecolor, basecolor_sampler, in.uv);
-  let albedo = albedo_sample.rgb * in.tint.rgb;
-  let n_geom = normalize(in.view_normal);
-  let n = perturb_normal(n_geom, in.view_pos, in.uv);
-  let v = normalize(-in.view_pos);
-
+fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32) -> vec3f {
+  let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
@@ -138,28 +138,34 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n_dot_h = max(dot(n, h), 0.0);
   let h_dot_v = max(dot(h, v), 0.0);
 
-  let f0 = mix(vec3f(0.04), albedo, material.metallic);
-
-  let d = distribution_ggx(n_dot_h, material.roughness);
-  let g = geometry_smith(n_dot_v, n_dot_l, material.roughness);
+  let f0 = mix(vec3f(0.04), albedo, metallic);
+  let d = distribution_ggx(n_dot_h, roughness);
+  let g = geometry_smith(n_dot_v, n_dot_l, roughness);
   let f = fresnel_schlick(h_dot_v, f0);
-
   let specular = (d * g * f) / max(4.0 * n_dot_v * n_dot_l, 0.0001);
 
   let k_s = f;
-  let k_d = (vec3f(1.0) - k_s) * (1.0 - material.metallic);
+  let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
   let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l;
   let ambient_term = albedo * uniforms.ambient;
-  let lit = direct + ambient_term;
+  return direct + ambient_term;
+}
 
-  // Exponential distance fog. view_pos.z is negative for points in front
-  // of the camera (right-handed view space), so abs() gives forward
-  // distance. exp(-density * d) in [0,1]: 1 = fully visible, 0 = fully fogged.
-  let fog_density = uniforms.fog.w;
-  let dist = abs(in.view_pos.z);
-  let visibility = exp(-fog_density * dist);
-  let final_color = mix(uniforms.fog.xyz, lit, visibility);
+fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
+  let visibility = exp(-uniforms.fog.w * abs(view_pos_z));
+  return mix(uniforms.fog.xyz, lit, visibility);
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4f {
+  let albedo_sample = textureSample(basecolor, samp, in.uv);
+  let albedo = albedo_sample.rgb * in.tint.rgb;
+  let n_geom = normalize(in.view_normal);
+  let n = perturb_normal(n_geom, in.view_pos, in.uv);
+
+  let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic);
+  let final_color = apply_fog(lit, in.view_pos.z);
 
   return vec4f(final_color, albedo_sample.a);
 }

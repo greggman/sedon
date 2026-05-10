@@ -14,6 +14,7 @@ export const materialNode: NodeDef = {
   evaluate(_ctx, inputs): { material: MaterialValue } {
     const normal = inputs.normal as Texture2DValue | undefined;
     const material: MaterialValue = {
+      kind: 'pbr',
       basecolor: inputs.basecolor as Texture2DValue,
       roughness: inputs.roughness as number,
       metallic: inputs.metallic as number,

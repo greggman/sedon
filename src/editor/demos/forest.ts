@@ -71,17 +71,31 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
     inputValues: { min: [0.65, 0.65, 0.65], max: [1.1, 1.1, 1.1], seed: 0.7 },
   });
 
-  // === Ground ============================================================
-  const groundColor = addNode(g, 'core/solid-color', {
-    position: { x: COL, y: ROW * 1.5 },
-    inputValues: { color: [0.32, 0.24, 0.16, 1], resolution: 16 },
+  // === Ground material (terrain-splat kind: grass on flats, rock on steeps) ===
+  const grassColor = addNode(g, 'core/solid-color', {
+    position: { x: COL, y: ROW * 1.4 },
+    inputValues: { color: [0.22, 0.42, 0.16, 1], resolution: 16 },
   });
-  const groundMat = addNode(g, 'core/material', {
-    position: { x: COL * 2, y: ROW * 1.5 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+  const rockColor = addNode(g, 'core/solid-color', {
+    position: { x: COL, y: ROW * 2.2 },
+    inputValues: { color: [0.42, 0.36, 0.32, 1], resolution: 16 },
+  });
+  // Slope mask derived from the same heightfield; steep regions read as
+  // rock, flat as grass.
+  const slopeMap = addNode(g, 'core/slope-from-height', {
+    position: { x: COL * 2, y: ROW * 1.8 },
+    inputValues: { strength: 6, resolution: 256 },
+  });
+  // The terrain material is its own material kind — the renderer dispatches
+  // to a different shader pipeline (terrain-splat.wgsl) than for PBR
+  // materials, with per-layer roughness so the rock layer is glossier than
+  // grass even though both share an albedo blend.
+  const groundMat = addNode(g, 'core/terrain-material', {
+    position: { x: COL * 3, y: ROW * 1.8 },
+    inputValues: { roughness_a: 0.95, roughness_b: 0.7 },
   });
   const terrainEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 3, y: ROW * 1.5 },
+    position: { x: COL * 4, y: ROW * 1.8 },
   });
 
   // === Oak subgraph (cylinder trunk + sphere foliage) ====================
@@ -209,8 +223,11 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
   addEdge(g, { node: highMask.id, socket: 'mask' }, { node: pineMask.id, socket: 'b' });
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
 
-  // Ground
-  addEdge(g, { node: groundColor.id, socket: 'texture' }, { node: groundMat.id, socket: 'basecolor' });
+  // Ground: layers + slope mask feed straight into the terrain-splat material.
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: slopeMap.id, socket: 'height' });
+  addEdge(g, { node: grassColor.id, socket: 'texture' }, { node: groundMat.id, socket: 'layer_a' });
+  addEdge(g, { node: rockColor.id, socket: 'texture' }, { node: groundMat.id, socket: 'layer_b' });
+  addEdge(g, { node: slopeMap.id, socket: 'texture' }, { node: groundMat.id, socket: 'mask' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
 

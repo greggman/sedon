@@ -1,4 +1,5 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
+import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { cloudAltitudeNode } from './cloud-altitude.js';
 import { cloudMultiplyNode } from './cloud-multiply.js';
@@ -29,8 +30,10 @@ import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
+import { slopeFromHeightNode } from './slope-from-height.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
+import { terrainMaterialNode } from './terrain-material.js';
 import { transformNode } from './transform.js';
 import { warpNode } from './warp.js';
 import { worleyNode } from './worley.js';
@@ -63,10 +66,13 @@ export const CORE_NODES = [
   perlinNode,
   worleyNode,
   blendNode,
+  blendMaskNode,
   warpNode,
   colorizeNode,
   normalFromHeightNode,
+  slopeFromHeightNode,
   materialNode,
+  terrainMaterialNode,
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
@@ -80,6 +86,7 @@ export function createCoreNodeRegistry(): NodeRegistry {
 }
 
 export {
+  blendMaskNode,
   blendNode,
   cloudAltitudeNode,
   cloudMultiplyNode,
@@ -110,8 +117,10 @@ export {
   randomVec3CloudNode,
   sceneEntityNode,
   sceneMergeNode,
+  slopeFromHeightNode,
   solidColorNode,
   sphereNode,
+  terrainMaterialNode,
   transformNode,
   warpNode,
   worleyNode,
