@@ -81,11 +81,11 @@ export function topologicalOrder(graph: Graph, rootNodeId: string): string[] {
   return order;
 }
 
-export function evaluateGraph(
+export async function evaluateGraph(
   graph: Graph,
   registry: NodeRegistry,
   options: EvaluateOptions,
-): EvaluateResult {
+): Promise<EvaluateResult> {
   const order = topologicalOrderAll(graph);
   const ctx: NodeContext = options.context ?? {};
   const outputs = new Map<string, NodeOutputs>();
@@ -131,7 +131,9 @@ export function evaluateGraph(
     if (!canEvaluate) continue;
 
     try {
-      outputs.set(nodeId, def.evaluate(ctx, inputs));
+      // Sync nodes return outputs directly; async nodes return a Promise.
+      // Awaiting both shapes works without runtime branching.
+      outputs.set(nodeId, await def.evaluate(ctx, inputs));
     } catch (e) {
       console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
     }

@@ -4,6 +4,8 @@ import { colorizeNode } from './colorize.js';
 import { cubeNode } from './cube.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridNode } from './grid.js';
+import { heightfieldNode } from './heightfield.js';
+import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceOnPointsNode } from './instance-on-points.js';
 import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
@@ -25,6 +27,8 @@ export const CORE_NODES = [
   transformNode,
   distributeOnFacesNode,
   instanceOnPointsNode,
+  heightfieldNode,
+  heightfieldToMeshNode,
   solidColorNode,
   gridNode,
   perlinNode,
@@ -49,6 +53,8 @@ export {
   cubeNode,
   distributeOnFacesNode,
   gridNode,
+  heightfieldNode,
+  heightfieldToMeshNode,
   instanceOnPointsNode,
   materialNode,
   mixNode,

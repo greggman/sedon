@@ -24,7 +24,10 @@ export const worleyNode: NodeDef = {
     const texture = device.createTexture({
       size: [resolution, resolution],
       format: TEXTURE_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_SRC,
     });
 
     // Params: scale, octaves, lacunarity, gain, seed (5 floats = 20B). Pad to

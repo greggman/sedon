@@ -25,7 +25,10 @@ export const warpNode: NodeDef = {
     const texture = device.createTexture({
       size: [resolution, resolution],
       format: TEXTURE_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_SRC,
     });
 
     const uniformData = new Float32Array(4);

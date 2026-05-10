@@ -52,6 +52,18 @@ export interface PointCloudValue {
   count: number;
 }
 
+// Heightfield: a Texture2D wrapped with the world-space metadata that makes
+// it a terrain primitive. The texture's R channel is unsigned height in
+// [0, 1]; consumers remap to [heightRange.min, heightRange.max]. `worldSize`
+// is the horizontal XZ extent (centered at origin). Modeling heightfields
+// as Texture2D-plus-metadata means every Texture2D-producing node (Perlin,
+// Worley, Blend, Warp, Colorize, etc.) flows naturally into terrain pipelines.
+export interface HeightfieldValue {
+  texture: Texture2DValue;
+  worldSize: [number, number];   // (width X, depth Z)
+  heightRange: [number, number]; // (min Y, max Y)
+}
+
 export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
   if (!ctx.device) {
     throw new Error('this node requires a GPU device in NodeContext');

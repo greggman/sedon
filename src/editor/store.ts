@@ -66,12 +66,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
       ) {
         const merged: Command = { ...last, after: cmd.after };
         const next = applyForward(state, cmd);
+        // Don't clear evalResult: with async eval there's a real window
+        // before the new result lands, and clearing it makes every preview
+        // disappear (and the nodes resize). Stale-result protection lives
+        // in preview.tsx's cancellation logic.
         set({
           graph: next.graph,
           rootNodeId: next.rootNodeId,
           undoStack: [...stack.slice(0, -1), merged],
           redoStack: [],
-          evalResult: null,
           ...(opts.bumpSync ? { syncCounter: get().syncCounter + 1 } : {}),
         });
         return;
@@ -84,7 +87,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
       rootNodeId: next.rootNodeId,
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
-      evalResult: null,
       ...(opts.bumpSync ? { syncCounter: get().syncCounter + 1 } : {}),
     });
   }
@@ -156,7 +158,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
         rootNodeId: next.rootNodeId,
         undoStack: stack.slice(0, -1),
         redoStack: [...get().redoStack, cmd],
-        evalResult: null,
         syncCounter: get().syncCounter + 1,
       });
     },
@@ -172,7 +173,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
         rootNodeId: next.rootNodeId,
         undoStack: [...get().undoStack, cmd],
         redoStack: stack.slice(0, -1),
-        evalResult: null,
         syncCounter: get().syncCounter + 1,
       });
     },

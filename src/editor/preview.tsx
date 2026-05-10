@@ -132,11 +132,24 @@ export function Preview() {
     let cancelled = false;
     let rafId = 0;
 
-    try {
-      const result = evaluateGraph(graph, registry, {
-        rootNodeId,
-        context: { device },
-      });
+    (async () => {
+      let result;
+      try {
+        result = await evaluateGraph(graph, registry, {
+          rootNodeId,
+          context: { device },
+        });
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(e);
+        setError(msg);
+        return;
+      }
+      // Drop the result if a newer eval has been kicked off while we were
+      // awaiting (graph mutated again).
+      if (cancelled) return;
+
       const geometry = result.outputs.geometry as GeometryValue;
       const material = result.outputs.material as MaterialValue;
       setEvalResult({ geometry, material, allOutputs: result.allOutputs });
@@ -182,11 +195,7 @@ export function Preview() {
       };
       rafId = requestAnimationFrame(frame);
       setError(null);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(e);
-      setError(msg);
-    }
+    })();
 
     return () => {
       cancelled = true;

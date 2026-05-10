@@ -25,7 +25,10 @@ export const colorizeNode: NodeDef = {
     const texture = device.createTexture({
       size: [resolution, resolution],
       format: TEXTURE_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_SRC,
     });
 
     // Uniform: vec4 low + vec4 high = 32 bytes.

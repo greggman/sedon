@@ -28,7 +28,11 @@ export interface NodeDef {
   category: string;
   inputs: InputDef[];
   outputs: OutputDef[];
-  evaluate(ctx: NodeContext, inputs: NodeInputs): NodeOutputs;
+  // Nodes may evaluate synchronously (most: pure CPU work + GPU command
+  // submission, both fire-and-forget) or asynchronously (anything that needs
+  // a fence, mapAsync, fetch, etc. — e.g. heightfield-to-mesh reading back a
+  // GPU texture). Returning a Promise is opt-in per node.
+  evaluate(ctx: NodeContext, inputs: NodeInputs): NodeOutputs | Promise<NodeOutputs>;
 }
 
 export interface NodeRegistry {

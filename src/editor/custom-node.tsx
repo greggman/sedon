@@ -2,7 +2,7 @@ import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
-import type { MaterialValue, Texture2DValue } from '../core/resources.js';
+import type { HeightfieldValue, MaterialValue, Texture2DValue } from '../core/resources.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { BoolInput } from './inputs/bool-input.js';
@@ -59,6 +59,16 @@ function isMaterial(v: unknown): v is MaterialValue {
   );
 }
 
+function isHeightfield(v: unknown): v is HeightfieldValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'texture' in v &&
+    'worldSize' in v &&
+    'heightRange' in v
+  );
+}
+
 type PreviewTarget =
   | { kind: 'texture'; value: Texture2DValue }
   | { kind: 'material'; value: MaterialValue };
@@ -67,6 +77,7 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
   if (!outputs) return null;
   for (const v of Object.values(outputs)) {
     if (isMaterial(v)) return { kind: 'material', value: v };
+    if (isHeightfield(v)) return { kind: 'texture', value: v.texture };
     if (isTexture2D(v)) return { kind: 'texture', value: v };
   }
   return null;
