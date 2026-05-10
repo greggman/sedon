@@ -101,7 +101,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let v = normalize(-in.view_pos);
 
-  let l = normalize(vec3f(0.4, 0.8, 0.6));
+  // World-space light, transformed into view space via the modelView's
+  // rotation block. Keeps the "sun direction" pinned to the world rather
+  // than the camera, so orbiting reveals different lit faces of objects
+  // (buildings on a planet feel fixed relative to the planet).
+  let l_world = normalize(vec3f(0.4, 0.8, 0.6));
+  let view_rot = mat3x3f(
+    uniforms.modelView[0].xyz,
+    uniforms.modelView[1].xyz,
+    uniforms.modelView[2].xyz,
+  );
+  let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
   let light_color = vec3f(3.0);
 

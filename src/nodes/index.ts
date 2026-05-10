@@ -10,6 +10,7 @@ import { mixNode } from './mix.js';
 import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
+import { planeNode } from './plane.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { transformNode } from './transform.js';
@@ -20,6 +21,7 @@ export const CORE_NODES = [
   mixNode,
   sphereNode,
   cubeNode,
+  planeNode,
   transformNode,
   distributeOnFacesNode,
   instanceOnPointsNode,
@@ -53,6 +55,7 @@ export {
   normalFromHeightNode,
   outputNode,
   perlinNode,
+  planeNode,
   solidColorNode,
   sphereNode,
   transformNode,

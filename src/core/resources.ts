@@ -44,6 +44,11 @@ export interface MaterialValue {
 export interface PointCloudValue {
   positions: Float32Array; // 3 floats per point
   normals?: Float32Array;  // optional, surface normals at each point
+  // Optional per-point tangents, perpendicular to the normal, in the same
+  // space as positions and normals. When present, alignment-aware consumers
+  // (instance-on-points) use them directly so the basis rotates with the
+  // source mesh rather than anchoring to a world-up reference.
+  tangents?: Float32Array;
   count: number;
 }
 

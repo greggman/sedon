@@ -10,6 +10,7 @@ export const instanceOnPointsNode: NodeDef = {
     { name: 'points', type: 'PointCloud' },
     { name: 'instance', type: 'Geometry' },
     { name: 'scale', type: 'Float', default: 0.1 },
+    { name: 'align', type: 'Bool', default: true, description: 'rotate each instance to align local +Y with the point normal' },
   ],
   outputs: [{ name: 'geometry', type: 'Geometry' }],
   evaluate(ctx, inputs): { geometry: GeometryValue } {
@@ -26,6 +27,7 @@ export const instanceOnPointsNode: NodeDef = {
       instanceGeom.mesh,
       points,
       inputs.scale as number,
+      inputs.align as boolean,
     );
     return { geometry: uploadMeshToGpu(device, realized) };
   },
