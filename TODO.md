@@ -16,13 +16,12 @@
 * let you pull of an input
 * add help icon at top right of each node (or bottom left as there is space)
   should be link to docs. Generate docs for each node. Docs should have live
-  sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64`
+  sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` or `url?src=url` 
 * allow drag and drop of scene
 * name scene .sedon
 * need "new scene"
   * verify before deleting work
   * offer various kinds of starting scenes
-* need to be able to drag select nodes to move as a group
 * need a way to make a point cloud with more constraints
   * example: want random x,y,z but want x == z
 
@@ -34,8 +33,29 @@
     * other
 
     Not sure if we should have one of these are all of them
+
+
+
+* nodes should be nameable - and searchable
+* material previews should use track camera, not orbit
+* preview sphere should be larger 
+* touch support? (iPad) - maybe iphone
+* need to be able to size split
+* support HDR output
+* colorize should be N stop? Instead of 2 stop? 
+* camera
+  * orbit vs track control (option)
+  * frame
+  * ortho
+  * fly?
+
+-- done --
+
+* need a node cleanup (re-layout)
 * use reverse-z
 * CSS classes
+* need undo/redo
+* node title areas should match output color?
 * align values?
 
   currently it's
@@ -52,25 +72,6 @@
   abc   [-value-]
   defgh [-value-]
   ```
-
-
-* node title areas should match output color?
-  * some nodes 
-* nodes should be nameable - and searchable
-* need a node cleanup (re-layout)
-* material previews should use track camera, not orbit
-* preview sphere should be larger 
-* need undo/redo
-* touch support? (iPad) - maybe iphone
-* need to be able to size split
-* support HDR output
-* colorize should be N stop? Instead of 2 stop? 
-* camera
-  * orbit vs track control (option)
-  * frame
-  * ortho
-  * fly?
-
 
 --- old ---
 
