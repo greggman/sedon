@@ -1,17 +1,24 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 
-// Forest demo: perlin → heightfield → terrain mesh, then a tree subgraph
-// (cylinder trunk + sphere foliage with their own materials, merged into a
-// 2-entity Scene) is scattered on the terrain via slope-filtered points.
-// Trunks and foliage each batch into one instanced draw call, so a forest of
-// hundreds of trees + the terrain renders in 3 draws total.
+// Forest demo with two tree species banded by altitude. Same terrain
+// pipeline as before (perlin → heightfield → mesh → distribute), but the
+// per-point active mask combines a slope filter (gentle ground only) with
+// an altitude split:
+//
+//   oak  = (slope < 0.5 rad)  AND  (altitude < 1.0)   — broad-leaf, low ground
+//   pine = (slope < 0.5 rad)  AND  (altitude >= 1.0)  — conifer, higher ground
+//
+// Each species is its own tree subgraph (oak: cylinder + sphere, pine:
+// cylinder + cone) instanced via core/instance-scene-on-points. Both share
+// the per-point tint cloud for brightness variation. Renders as 5 draws
+// total: 1 terrain + 2 oak (trunk, foliage) + 2 pine (trunk, foliage).
 export function createForestDemo(): { graph: Graph; rootNodeId: string } {
   const g = createGraph();
 
   const COL = 280;
   const ROW = 180;
 
-  // Terrain row.
+  // === Terrain ===========================================================
   const perlin = addNode(g, 'core/perlin', {
     position: { x: 0, y: 0 },
     inputValues: { scale: 2.5, octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 256 },
@@ -28,129 +35,215 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
     position: { x: COL * 3, y: 0 },
     inputValues: { density: 4, seed: 0.5 },
   });
-  const slope = addNode(g, 'core/cloud-slope', {
-    position: { x: COL * 4, y: 0 },
-  });
-  // Slope below ~28° (0.5 rad) → tree, otherwise bare rock. invert=true
-  // selects "below threshold."
+
+  // === Masks =============================================================
+  const slope = addNode(g, 'core/cloud-slope', { position: { x: COL * 4, y: 0 } });
+  // Slope below ~28° (0.5 rad) → tree-allowed.
   const slopeMask = addNode(g, 'core/cloud-step', {
     position: { x: COL * 5, y: 0 },
     inputValues: { threshold: 0.5, invert: true },
   });
 
-  // Per-tree brightness variation. Greyscale (R=G=B from the same range) keeps
-  // the trunk-brown and foliage-green intact while making each tree slightly
-  // lighter/darker.
-  const tintCloud = addNode(g, 'core/random-vec3-cloud', {
+  const altitude = addNode(g, 'core/cloud-altitude', {
+    position: { x: COL * 4, y: ROW },
+  });
+  // High band: altitude >= 1.0 → 1.
+  const highMask = addNode(g, 'core/cloud-step', {
     position: { x: COL * 5, y: ROW },
+    inputValues: { threshold: 1.0, invert: false },
+  });
+  // Low band: altitude < 1.0 → 1.
+  const lowMask = addNode(g, 'core/cloud-step', {
+    position: { x: COL * 5, y: ROW * 1.6 },
+    inputValues: { threshold: 1.0, invert: true },
+  });
+  // AND-combine: oak = slope-OK ∧ low-altitude; pine = slope-OK ∧ high-altitude.
+  const oakMask = addNode(g, 'core/cloud-multiply', {
+    position: { x: COL * 6, y: ROW * 0.4 },
+  });
+  const pineMask = addNode(g, 'core/cloud-multiply', {
+    position: { x: COL * 6, y: ROW * 1.4 },
+  });
+
+  // Per-tree brightness variation, shared across both species.
+  const tintCloud = addNode(g, 'core/random-vec3-cloud', {
+    position: { x: COL * 5, y: ROW * 2.2 },
     inputValues: { min: [0.65, 0.65, 0.65], max: [1.1, 1.1, 1.1], seed: 0.7 },
   });
 
-  // Ground material.
+  // === Ground ============================================================
   const groundColor = addNode(g, 'core/solid-color', {
-    position: { x: COL, y: ROW * 1.2 },
+    position: { x: COL, y: ROW * 1.5 },
     inputValues: { color: [0.32, 0.24, 0.16, 1], resolution: 16 },
   });
   const groundMat = addNode(g, 'core/material', {
-    position: { x: COL * 2, y: ROW * 1.2 },
+    position: { x: COL * 2, y: ROW * 1.5 },
     inputValues: { roughness: 0.85, metallic: 0 },
   });
   const terrainEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 3, y: ROW * 1.2 },
+    position: { x: COL * 3, y: ROW * 1.5 },
   });
 
-  // Trunk: cylinder grows from y=0 upward (base-at-origin convention), so it
-  // lands directly on the surface point when scattered.
-  const trunkCyl = addNode(g, 'core/cylinder', {
+  // === Oak subgraph (cylinder trunk + sphere foliage) ====================
+  const oakTrunk = addNode(g, 'core/cylinder', {
     position: { x: 0, y: ROW * 3 },
     inputValues: { radius: 0.08, height: 0.9, segments: 10 },
   });
-  const trunkColor = addNode(g, 'core/solid-color', {
+  const oakTrunkColor = addNode(g, 'core/solid-color', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { color: [0.32, 0.2, 0.1, 1], resolution: 16 },
   });
-  const trunkMat = addNode(g, 'core/material', {
+  const oakTrunkMat = addNode(g, 'core/material', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { roughness: 0.95, metallic: 0 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const oakTrunkEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 3, y: ROW * 3 },
   });
 
-  // Foliage: sphere lifted above the trunk so its bottom overlaps the trunk
-  // top a bit (looks more natural than the foliage just sitting on top).
-  const foliageSphere = addNode(g, 'core/sphere', {
-    position: { x: 0, y: ROW * 5 },
+  const oakLeaf = addNode(g, 'core/sphere', {
+    position: { x: 0, y: ROW * 4 },
     inputValues: { radius: 0.4, segments: 16, rings: 12 },
   });
-  const foliageLift = addNode(g, 'core/transform', {
-    position: { x: COL, y: ROW * 5 },
+  const oakLeafLift = addNode(g, 'core/transform', {
+    position: { x: COL, y: ROW * 4 },
     inputValues: { translate: [0, 1.05, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const foliageColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 2, y: ROW * 6 },
-    inputValues: { color: [0.18, 0.42, 0.14, 1], resolution: 16 },
+  const oakLeafColor = addNode(g, 'core/solid-color', {
+    position: { x: COL * 2, y: ROW * 4.5 },
+    inputValues: { color: [0.22, 0.5, 0.16, 1], resolution: 16 },
   });
-  const foliageMat = addNode(g, 'core/material', {
-    position: { x: COL * 3, y: ROW * 6 },
+  const oakLeafMat = addNode(g, 'core/material', {
+    position: { x: COL * 3, y: ROW * 4.5 },
     inputValues: { roughness: 0.9, metallic: 0 },
   });
-  const foliageEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 4, y: ROW * 5 },
+  const oakLeafEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 4, y: ROW * 4 },
   });
 
-  // Two-entity tree scene.
-  const treeMerge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 5, y: ROW * 4 },
+  const oakTree = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 5, y: ROW * 3.5 },
   });
-
-  // Scatter: per_point_active routes the slope mask. align=false keeps trees
-  // upright (gravity-pointing) on slopes; the mask already filters out
-  // anything too steep to look natural standing straight up.
-  const scatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 6, y: ROW * 2 },
+  const oakScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 6, y: ROW * 3.5 },
     inputValues: { scale: 1, align: false, seed: 1 },
   });
 
-  const sceneMerge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 7, y: ROW * 1.2 },
+  // === Pine subgraph (cylinder trunk + cone foliage) =====================
+  const pineTrunk = addNode(g, 'core/cylinder', {
+    position: { x: 0, y: ROW * 6 },
+    inputValues: { radius: 0.07, height: 0.55, segments: 10 },
   });
-  const output = addNode(g, 'core/output', {
-    position: { x: COL * 8, y: ROW * 1.2 },
+  const pineTrunkColor = addNode(g, 'core/solid-color', {
+    position: { x: COL, y: ROW * 6 },
+    inputValues: { color: [0.28, 0.18, 0.09, 1], resolution: 16 },
+  });
+  const pineTrunkMat = addNode(g, 'core/material', {
+    position: { x: COL * 2, y: ROW * 6 },
+    inputValues: { roughness: 0.95, metallic: 0 },
+  });
+  const pineTrunkEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 3, y: ROW * 6 },
   });
 
-  // Edges.
+  const pineCone = addNode(g, 'core/cone', {
+    position: { x: 0, y: ROW * 7 },
+    inputValues: { radius: 0.5, height: 1.6, segments: 14 },
+  });
+  const pineConeLift = addNode(g, 'core/transform', {
+    position: { x: COL, y: ROW * 7 },
+    inputValues: { translate: [0, 0.3, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  const pineLeafColor = addNode(g, 'core/solid-color', {
+    position: { x: COL * 2, y: ROW * 7.5 },
+    inputValues: { color: [0.1, 0.32, 0.18, 1], resolution: 16 },
+  });
+  const pineLeafMat = addNode(g, 'core/material', {
+    position: { x: COL * 3, y: ROW * 7.5 },
+    inputValues: { roughness: 0.9, metallic: 0 },
+  });
+  const pineLeafEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 4, y: ROW * 7 },
+  });
+
+  const pineTree = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 5, y: ROW * 6.5 },
+  });
+  const pineScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 6, y: ROW * 6.5 },
+    inputValues: { scale: 1, align: false, seed: 2 },
+  });
+
+  // === Final =============================================================
+  const mergeOaks = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 7, y: ROW * 2.5 },
+  });
+  const mergeAll = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 8, y: ROW * 2 },
+  });
+  const output = addNode(g, 'core/output', {
+    position: { x: COL * 9, y: ROW * 2 },
+  });
+
+  // === Edges =============================================================
+  // Terrain
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
   addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: terrainMesh.id, socket: 'heightfield' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: distribute.id, socket: 'geometry' });
+
+  // Masks
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: slope.id, socket: 'points' });
   addEdge(g, { node: slope.id, socket: 'values' }, { node: slopeMask.id, socket: 'values' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: altitude.id, socket: 'points' });
+  addEdge(g, { node: altitude.id, socket: 'values' }, { node: highMask.id, socket: 'values' });
+  addEdge(g, { node: altitude.id, socket: 'values' }, { node: lowMask.id, socket: 'values' });
+  addEdge(g, { node: slopeMask.id, socket: 'mask' }, { node: oakMask.id, socket: 'a' });
+  addEdge(g, { node: lowMask.id, socket: 'mask' }, { node: oakMask.id, socket: 'b' });
+  addEdge(g, { node: slopeMask.id, socket: 'mask' }, { node: pineMask.id, socket: 'a' });
+  addEdge(g, { node: highMask.id, socket: 'mask' }, { node: pineMask.id, socket: 'b' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
 
+  // Ground
   addEdge(g, { node: groundColor.id, socket: 'texture' }, { node: groundMat.id, socket: 'basecolor' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
 
-  addEdge(g, { node: trunkCyl.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
-  addEdge(g, { node: trunkColor.id, socket: 'texture' }, { node: trunkMat.id, socket: 'basecolor' });
-  addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
+  // Oak
+  addEdge(g, { node: oakTrunk.id, socket: 'geometry' }, { node: oakTrunkEntity.id, socket: 'geometry' });
+  addEdge(g, { node: oakTrunkColor.id, socket: 'texture' }, { node: oakTrunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: oakTrunkMat.id, socket: 'material' }, { node: oakTrunkEntity.id, socket: 'material' });
+  addEdge(g, { node: oakLeaf.id, socket: 'geometry' }, { node: oakLeafLift.id, socket: 'geometry' });
+  addEdge(g, { node: oakLeafLift.id, socket: 'geometry' }, { node: oakLeafEntity.id, socket: 'geometry' });
+  addEdge(g, { node: oakLeafColor.id, socket: 'texture' }, { node: oakLeafMat.id, socket: 'basecolor' });
+  addEdge(g, { node: oakLeafMat.id, socket: 'material' }, { node: oakLeafEntity.id, socket: 'material' });
+  addEdge(g, { node: oakTrunkEntity.id, socket: 'scene' }, { node: oakTree.id, socket: 'a' });
+  addEdge(g, { node: oakLeafEntity.id, socket: 'scene' }, { node: oakTree.id, socket: 'b' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: oakScatter.id, socket: 'points' });
+  addEdge(g, { node: oakTree.id, socket: 'scene' }, { node: oakScatter.id, socket: 'instance' });
+  addEdge(g, { node: oakMask.id, socket: 'values' }, { node: oakScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: oakScatter.id, socket: 'per_point_tint' });
 
-  addEdge(g, { node: foliageSphere.id, socket: 'geometry' }, { node: foliageLift.id, socket: 'geometry' });
-  addEdge(g, { node: foliageLift.id, socket: 'geometry' }, { node: foliageEntity.id, socket: 'geometry' });
-  addEdge(g, { node: foliageColor.id, socket: 'texture' }, { node: foliageMat.id, socket: 'basecolor' });
-  addEdge(g, { node: foliageMat.id, socket: 'material' }, { node: foliageEntity.id, socket: 'material' });
+  // Pine
+  addEdge(g, { node: pineTrunk.id, socket: 'geometry' }, { node: pineTrunkEntity.id, socket: 'geometry' });
+  addEdge(g, { node: pineTrunkColor.id, socket: 'texture' }, { node: pineTrunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: pineTrunkMat.id, socket: 'material' }, { node: pineTrunkEntity.id, socket: 'material' });
+  addEdge(g, { node: pineCone.id, socket: 'geometry' }, { node: pineConeLift.id, socket: 'geometry' });
+  addEdge(g, { node: pineConeLift.id, socket: 'geometry' }, { node: pineLeafEntity.id, socket: 'geometry' });
+  addEdge(g, { node: pineLeafColor.id, socket: 'texture' }, { node: pineLeafMat.id, socket: 'basecolor' });
+  addEdge(g, { node: pineLeafMat.id, socket: 'material' }, { node: pineLeafEntity.id, socket: 'material' });
+  addEdge(g, { node: pineTrunkEntity.id, socket: 'scene' }, { node: pineTree.id, socket: 'a' });
+  addEdge(g, { node: pineLeafEntity.id, socket: 'scene' }, { node: pineTree.id, socket: 'b' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: pineScatter.id, socket: 'points' });
+  addEdge(g, { node: pineTree.id, socket: 'scene' }, { node: pineScatter.id, socket: 'instance' });
+  addEdge(g, { node: pineMask.id, socket: 'values' }, { node: pineScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: pineScatter.id, socket: 'per_point_tint' });
 
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'a' });
-  addEdge(g, { node: foliageEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'b' });
-
-  addEdge(g, { node: distribute.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
-  addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
-  addEdge(g, { node: slopeMask.id, socket: 'mask' }, { node: scatter.id, socket: 'per_point_active' });
-  addEdge(g, { node: distribute.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
-  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: scatter.id, socket: 'per_point_tint' });
-
-  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'a' });
-  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'b' });
-  addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
+  // Final
+  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeOaks.id, socket: 'a' });
+  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeOaks.id, socket: 'b' });
+  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'a' });
+  addEdge(g, { node: mergeOaks.id, socket: 'scene' }, { node: mergeAll.id, socket: 'b' });
+  addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   return { graph: g, rootNodeId: output.id };
 }
