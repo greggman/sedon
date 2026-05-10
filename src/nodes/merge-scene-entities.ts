@@ -53,11 +53,15 @@ function applyTransformToMesh(mesh: CpuMesh, m: Float32Array): CpuMesh {
   };
 }
 
-// Group entities by material and merge each group's geometries (with their
-// per-entity transforms baked into the vertices) into one mesh. Output is a
-// Scene with one entity per unique material — useful when you have many
-// scattered things sharing materials and want them as a single mesh per
-// material for downstream operations or fewer draw calls.
+// Group entities by (material, tint) and merge each group's geometries (with
+// their per-entity transforms baked into the vertices) into one mesh. Output
+// is a Scene with one entity per unique (material, tint) — useful when you
+// have many scattered things sharing materials and want them as a single
+// mesh per material for downstream operations or fewer draw calls.
+//
+// Tint participates in the group key because it can't be baked into vertex
+// data (no per-vertex color attribute today). Two entities with same material
+// but different tints stay as separate output entities.
 export const mergeSceneEntitiesNode: NodeDef = {
   id: 'core/merge-scene-entities',
   category: 'Scene',
@@ -67,8 +71,12 @@ export const mergeSceneEntitiesNode: NodeDef = {
     const device = requireDevice(ctx);
     const scene = inputs.scene as SceneValue;
 
-    // Group entity transformed-meshes by material reference.
-    const groups = new Map<MaterialValue, CpuMesh[]>();
+    interface Group {
+      material: MaterialValue;
+      tint: Float32Array;
+      meshes: CpuMesh[];
+    }
+    const groups = new Map<string, Group>();
     for (const entity of scene.entities) {
       if (!entity.geometry.mesh) {
         throw new Error(
@@ -77,31 +85,51 @@ export const mergeSceneEntitiesNode: NodeDef = {
         );
       }
       const baked = applyTransformToMesh(entity.geometry.mesh, entity.transform);
-      let group = groups.get(entity.material);
+      // Compose the key from material identity + tint values. Material is by
+      // reference (not interned), so we lean on a side table to map MaterialValue
+      // identity to a stable token.
+      const key = `${materialKey(entity.material)}|${tintKey(entity.tint)}`;
+      let group = groups.get(key);
       if (!group) {
-        group = [];
-        groups.set(entity.material, group);
+        group = { material: entity.material, tint: entity.tint, meshes: [] };
+        groups.set(key, group);
       }
-      group.push(baked);
+      group.meshes.push(baked);
     }
 
     const out: SceneEntity[] = [];
-    for (const [material, meshes] of groups) {
-      let merged = meshes[0]!;
-      for (let i = 1; i < meshes.length; i++) {
-        merged = mergeMeshes(merged, meshes[i]!);
+    for (const group of groups.values()) {
+      let merged = group.meshes[0]!;
+      for (let i = 1; i < group.meshes.length; i++) {
+        merged = mergeMeshes(merged, group.meshes[i]!);
       }
       const geometry: GeometryValue = uploadMeshToGpu(device, merged);
       out.push({
         geometry,
-        material,
+        material: group.material,
         transform: identity(),
+        tint: group.tint,
       });
     }
 
     return { scene: { entities: out } };
   },
 };
+
+const materialIds = new WeakMap<MaterialValue, number>();
+let nextMaterialId = 0;
+function materialKey(m: MaterialValue): string {
+  let id = materialIds.get(m);
+  if (id === undefined) {
+    id = nextMaterialId++;
+    materialIds.set(m, id);
+  }
+  return `m${id}`;
+}
+
+function tintKey(t: Float32Array): string {
+  return `${t[0]},${t[1]},${t[2]},${t[3]}`;
+}
 
 // Suppress unused import warnings for transformMesh — kept for symmetry with
 // the imports list but currently bake-via-applyTransformToMesh handles the

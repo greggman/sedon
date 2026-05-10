@@ -24,6 +24,8 @@ struct VsIn {
   @location(4) inst_col1: vec4f,
   @location(5) inst_col2: vec4f,
   @location(6) inst_col3: vec4f,
+  // Per-instance color tint (RGBA), multiplied into basecolor in fs_main.
+  @location(7) inst_tint: vec4f,
 };
 
 struct VsOut {
@@ -31,6 +33,7 @@ struct VsOut {
   @location(0) view_pos: vec3f,
   @location(1) view_normal: vec3f,
   @location(2) uv: vec2f,
+  @location(3) tint: vec4f,
 };
 
 @vertex
@@ -53,6 +56,7 @@ fn vs_main(in: VsIn) -> VsOut {
   );
   out.view_normal = normal_mat * world_normal;
   out.uv = in.uv;
+  out.tint = in.inst_tint;
   return out;
 }
 
@@ -105,7 +109,7 @@ fn perturb_normal(n: vec3f, p: vec3f, uv: vec2f) -> vec3f {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo_sample = textureSample(basecolor, basecolor_sampler, in.uv);
-  let albedo = albedo_sample.rgb;
+  let albedo = albedo_sample.rgb * in.tint.rgb;
   let n_geom = normalize(in.view_normal);
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let v = normalize(-in.view_pos);

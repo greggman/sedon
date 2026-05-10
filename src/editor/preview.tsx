@@ -165,7 +165,7 @@ export function Preview() {
           depthTexture?.destroy();
           depthTexture = device.createTexture({
             size: [canvas.width, canvas.height],
-            format: 'depth24plus',
+            format: 'depth32float',
             usage: GPUTextureUsage.RENDER_ATTACHMENT,
           });
           lastWidth = canvas.width;

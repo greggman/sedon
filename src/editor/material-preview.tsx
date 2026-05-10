@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GeometryValue, MaterialValue } from '../core/resources.js';
+import { identityTint } from '../core/resources.js';
 import { generateCube } from '../render/cube.js';
 import { identity, multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
 import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
@@ -65,7 +66,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
     const mesh = shape === 'sphere' ? generateSphere(1, 32, 16) : generateCube(1.4);
     const geometry = uploadMeshToGpu(device, mesh);
     const renderer = createSceneRenderer(device, format, {
-      entities: [{ geometry, material, transform: identity() }],
+      entities: [{ geometry, material, transform: identity(), tint: identityTint() }],
     });
     resourcesRef.current = { renderer, geometry };
 
@@ -81,7 +82,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         depthRef.current?.destroy();
         depthRef.current = device.createTexture({
           size: [w, h],
-          format: 'depth24plus',
+          format: 'depth32float',
           usage: GPUTextureUsage.RENDER_ATTACHMENT,
         });
       }

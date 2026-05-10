@@ -1,10 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { GeometryValue, MaterialValue, SceneValue } from '../core/resources.js';
+import { identityTint } from '../core/resources.js';
 import { identity } from '../render/mat4.js';
 
 // Promote a (geometry, material) pair into a Scene with a single entity at
-// identity transform. Downstream instance-scene-on-points multiplies that
-// identity by per-point transforms when scattering.
+// identity transform and identity tint. Downstream instance-scene-on-points
+// multiplies that identity by per-point transforms and tints when scattering.
 export const sceneEntityNode: NodeDef = {
   id: 'core/scene-entity',
   category: 'Scene',
@@ -21,6 +22,7 @@ export const sceneEntityNode: NodeDef = {
             geometry: inputs.geometry as GeometryValue,
             material: inputs.material as MaterialValue,
             transform: identity(),
+            tint: identityTint(),
           },
         ],
       },

@@ -25,15 +25,17 @@ export function createScenePipeline(
           arrayStride: 8,
           attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }],
         },
-        // per-instance 4x4 transform (4 vec4f columns), advanced once per instance
+        // per-instance: 4x4 transform (4 vec4f columns) + RGBA tint vec4f.
+        // Stride 80 = 64 (matrix) + 16 (tint). Advanced once per instance.
         {
-          arrayStride: 64,
+          arrayStride: 80,
           stepMode: 'instance',
           attributes: [
             { shaderLocation: 3, offset: 0,  format: 'float32x4' },
             { shaderLocation: 4, offset: 16, format: 'float32x4' },
             { shaderLocation: 5, offset: 32, format: 'float32x4' },
             { shaderLocation: 6, offset: 48, format: 'float32x4' },
+            { shaderLocation: 7, offset: 64, format: 'float32x4' },
           ],
         },
       ],
@@ -44,8 +46,10 @@ export function createScenePipeline(
     },
     primitive: { cullMode: 'back' },
     depthStencil: {
-      format: 'depth24plus',
-      depthCompare: 'less',
+      // Reverse-Z: float depth + 'greater' compare. Pair with depthClearValue:0
+      // and a perspective matrix that maps zNear→1, zFar→0.
+      format: 'depth32float',
+      depthCompare: 'greater',
       depthWriteEnabled: true,
     },
   });

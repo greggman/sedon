@@ -1,6 +1,7 @@
 import type {
   GeometryValue,
   MaterialValue,
+  SceneEntity,
   SceneValue,
   Texture2DValue,
 } from '../core/resources.js';
@@ -52,6 +53,9 @@ interface Batch {
   instanceCount: number;
 }
 
+// Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
+const INSTANCE_FLOATS = 20;
+
 export function createSceneRenderer(
   device: GPUDevice,
   format: GPUTextureFormat,
@@ -75,36 +79,40 @@ export function createSceneRenderer(
   let flatNormal: Texture2DValue | null = null;
 
   // Group entities by (geometry, material) reference equality. Entities that
-  // share both end up as one instanced draw call with N transforms.
-  const groupsByGeometry = new Map<GeometryValue, Map<MaterialValue, Float32Array[]>>();
+  // share both end up as one instanced draw call. Per-entity tint goes
+  // alongside the transform in the instance buffer, so different tints don't
+  // fragment the batch.
+  const groupsByGeometry = new Map<GeometryValue, Map<MaterialValue, SceneEntity[]>>();
   for (const entity of scene.entities) {
     let byMaterial = groupsByGeometry.get(entity.geometry);
     if (!byMaterial) {
       byMaterial = new Map();
       groupsByGeometry.set(entity.geometry, byMaterial);
     }
-    let transforms = byMaterial.get(entity.material);
-    if (!transforms) {
-      transforms = [];
-      byMaterial.set(entity.material, transforms);
+    let entities = byMaterial.get(entity.material);
+    if (!entities) {
+      entities = [];
+      byMaterial.set(entity.material, entities);
     }
-    transforms.push(entity.transform);
+    entities.push(entity);
   }
 
   const batches: Batch[] = [];
   for (const [geometry, byMaterial] of groupsByGeometry) {
-    for (const [material, transforms] of byMaterial) {
-      // Pack all transforms into one instance buffer.
-      const instanceCount = transforms.length;
-      const transformData = new Float32Array(instanceCount * 16);
+    for (const [material, entities] of byMaterial) {
+      // Pack [transform (16f), tint (4f)] per instance into one buffer.
+      const instanceCount = entities.length;
+      const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
       for (let i = 0; i < instanceCount; i++) {
-        transformData.set(transforms[i]!, i * 16);
+        const e = entities[i]!;
+        instanceData.set(e.transform, i * INSTANCE_FLOATS);
+        instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
       }
       const instanceBuffer = device.createBuffer({
-        size: transformData.byteLength,
+        size: instanceData.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       });
-      device.queue.writeBuffer(instanceBuffer, 0, transformData as BufferSource);
+      device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
 
       const matBuffer = device.createBuffer({
         size: 16,
@@ -147,7 +155,9 @@ export function createSceneRenderer(
         ],
         depthStencilAttachment: {
           view: depthView,
-          depthClearValue: 1,
+          // Reverse-Z: clear to 0 (the "far" depth value) so 'greater' compare
+          // accepts incoming fragments by default.
+          depthClearValue: 0,
           depthLoadOp: 'clear',
           depthStoreOp: 'store',
         },

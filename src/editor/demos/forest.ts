@@ -38,6 +38,14 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
     inputValues: { threshold: 0.5, invert: true },
   });
 
+  // Per-tree brightness variation. Greyscale (R=G=B from the same range) keeps
+  // the trunk-brown and foliage-green intact while making each tree slightly
+  // lighter/darker.
+  const tintCloud = addNode(g, 'core/random-vec3-cloud', {
+    position: { x: COL * 5, y: ROW },
+    inputValues: { min: [0.65, 0.65, 0.65], max: [1.1, 1.1, 1.1], seed: 0.7 },
+  });
+
   // Ground material.
   const groundColor = addNode(g, 'core/solid-color', {
     position: { x: COL, y: ROW * 1.2 },
@@ -137,6 +145,8 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string } {
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
   addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
   addEdge(g, { node: slopeMask.id, socket: 'mask' }, { node: scatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: scatter.id, socket: 'per_point_tint' });
 
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'a' });
   addEdge(g, { node: scatter.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'b' });

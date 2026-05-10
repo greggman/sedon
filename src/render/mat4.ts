@@ -8,6 +8,16 @@ export function identity(): Mat4 {
   return m;
 }
 
+// Reverse-Z perspective: maps view-space depth zNear → NDC z = 1, zFar → 0.
+// Paired with `depthCompare: 'greater'` and `depthClearValue: 0`. The win is
+// precision: floating-point depth distributes precision logarithmically near
+// 0, and the perspective divide also concentrates samples near the far plane,
+// so reverse-Z aligns the two and gives roughly uniform precision across the
+// frustum (no z-fighting on distant geometry).
+//
+// For zFar = Infinity the matrix becomes the "infinite far reverse-Z" form,
+// where m[10] = 0 and m[14] = zNear — clip.z = zNear, w = -view.z, so
+// ndc.z = zNear/p which never quite reaches 0 but stays well-behaved.
 export function perspective(fovYRadians: number, aspect: number, zNear: number, zFar: number): Mat4 {
   const m = new Float32Array(16);
   const f = Math.tan(Math.PI * 0.5 - 0.5 * fovYRadians);
@@ -17,12 +27,12 @@ export function perspective(fovYRadians: number, aspect: number, zNear: number, 
   m[11] = -1;
 
   if (Number.isFinite(zFar)) {
-    const rangeInv = 1 / (zNear - zFar);
-    m[10] = zFar * rangeInv;
+    const rangeInv = 1 / (zFar - zNear);
+    m[10] = zNear * rangeInv;
     m[14] = zFar * zNear * rangeInv;
   } else {
-    m[10] = -1;
-    m[14] = -zNear;
+    m[10] = 0;
+    m[14] = zNear;
   }
 
   return m;

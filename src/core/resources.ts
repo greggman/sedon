@@ -57,6 +57,15 @@ export interface SceneEntity {
   material: MaterialValue;
   /** Column-major 4x4 world transform. Length 16. */
   transform: Float32Array;
+  /**
+   * Per-entity color tint multiplied into the basecolor in the fragment
+   * shader. Length 4: RGBA, with alpha currently unused (no transparent
+   * pass yet — kept in the slot for forward compatibility). Default is
+   * [1,1,1,1] (identity). Carried through the per-instance vertex buffer
+   * so it doesn't fragment batching: entities sharing (geometry, material)
+   * with different tints still draw in one instanced call.
+   */
+  tint: Float32Array;
 }
 
 export interface SceneValue {
@@ -107,4 +116,9 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
     throw new Error('this node requires a GPU device in NodeContext');
   }
   return ctx.device;
+}
+
+/** Identity tint (RGBA = 1,1,1,1) — multiplied into basecolor → no change. */
+export function identityTint(): Float32Array {
+  return new Float32Array([1, 1, 1, 1]);
 }

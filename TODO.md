@@ -17,6 +17,12 @@
 * add help icon at top right of each node (or bottom left as there is space)
   should be link to docs. Generate docs for each node. Docs should have live
   sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64`
+* allow drag and drop of scene
+* name scene .sedon
+* need "new scene"
+  * verify before deleting work
+  * offer various kinds of starting scenes
+* need to be able to drag select nodes to move as a group
 * need a way to make a point cloud with more constraints
   * example: want random x,y,z but want x == z
 
@@ -28,6 +34,8 @@
     * other
 
     Not sure if we should have one of these are all of them
+* use reverse-z
+* CSS classes
 * align values?
 
   currently it's

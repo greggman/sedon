@@ -135,6 +135,12 @@ export const instanceSceneOnPointsNode: NodeDef = {
       optional: true,
       description: 'optional per-point activation mask; only values >= 0.5 are realized',
     },
+    {
+      name: 'per_point_tint',
+      type: 'Vec3Cloud',
+      optional: true,
+      description: 'optional per-point RGB tint, multiplied into each entity tint',
+    },
     { name: 'seed', type: 'Float', default: 0 },
   ],
   outputs: [{ name: 'scene', type: 'Scene' }],
@@ -146,6 +152,7 @@ export const instanceSceneOnPointsNode: NodeDef = {
     const perPointScale = inputs.per_point_scale as Vec3CloudValue | undefined;
     const perPointYaw = inputs.per_point_yaw as FloatCloudValue | undefined;
     const perPointActive = inputs.per_point_active as FloatCloudValue | undefined;
+    const perPointTint = inputs.per_point_tint as Vec3CloudValue | undefined;
     const seed = inputs.seed as number;
 
     if (perPointScale && perPointScale.count !== points.count) {
@@ -161,6 +168,11 @@ export const instanceSceneOnPointsNode: NodeDef = {
     if (perPointActive && perPointActive.count !== points.count) {
       throw new Error(
         `per_point_active count (${perPointActive.count}) does not match points count (${points.count})`,
+      );
+    }
+    if (perPointTint && perPointTint.count !== points.count) {
+      throw new Error(
+        `per_point_tint count (${perPointTint.count}) does not match points count (${points.count})`,
       );
     }
 
@@ -221,15 +233,29 @@ export const instanceSceneOnPointsNode: NodeDef = {
         sx, sy, sz,
       );
 
+      // Per-point tint multiplies each source entity's tint (RGB only;
+      // alpha passes through unchanged from the source entity).
+      let ptR = 1, ptG = 1, ptB = 1;
+      if (perPointTint) {
+        ptR = perPointTint.values[p * 3]!;
+        ptG = perPointTint.values[p * 3 + 1]!;
+        ptB = perPointTint.values[p * 3 + 2]!;
+      }
+
       for (const sourceEntity of instance.entities) {
         // Output transform = pointMat * sourceEntity.transform, so a tree
         // subgraph that positions trunk vs leaves at different local Y still
         // composes correctly when scattered.
         const finalT = multiply(pointMat, sourceEntity.transform);
+        const st = sourceEntity.tint;
+        const finalTint = perPointTint
+          ? new Float32Array([st[0]! * ptR, st[1]! * ptG, st[2]! * ptB, st[3]!])
+          : st;
         out.push({
           geometry: sourceEntity.geometry,
           material: sourceEntity.material,
           transform: finalT,
+          tint: finalTint,
         });
       }
     }
