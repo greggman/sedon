@@ -160,6 +160,7 @@ export function NodeCanvas() {
       onEdgesChange={onEdgesChange}
       fitView
       fitViewOptions={{ padding: 0.2 }}
+      proOptions={{ hideAttribution: true }}
     >
       <Background />
       <Controls />
