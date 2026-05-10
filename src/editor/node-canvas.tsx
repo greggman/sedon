@@ -2,6 +2,7 @@ import {
   Background,
   Controls,
   ReactFlow,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -161,6 +162,7 @@ export function NodeCanvas() {
       fitView
       fitViewOptions={{ padding: 0.2 }}
       proOptions={{ hideAttribution: true }}
+      selectionMode={SelectionMode.Partial}
     >
       <Background />
       <Controls />
