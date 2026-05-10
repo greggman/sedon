@@ -42,25 +42,25 @@ export function AddNodeMenu({ canvasRef }: AddNodeMenuProps) {
   };
 
   return (
-    <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10 }}>
+    <div className="sedon-add-node-menu">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        style={buttonStyle}
+        className="sedon-toolbar-button"
       >
         + Add Node
       </button>
       {open && (
-        <div style={popupStyle}>
+        <div className="sedon-menu-popup sedon-add-node-popup">
           {grouped.map(([category, defs]) => (
             <div key={category}>
-              <div style={categoryStyle}>{category}</div>
+              <div className="sedon-add-node-category">{category}</div>
               {defs.map((def) => (
                 <button
                   key={def.id}
                   type="button"
                   onClick={() => addNode(def.id)}
-                  style={itemStyle}
+                  className="sedon-menu-item sedon-add-node-item"
                 >
                   {def.id}
                 </button>
@@ -72,50 +72,3 @@ export function AddNodeMenu({ canvasRef }: AddNodeMenuProps) {
     </div>
   );
 }
-
-const buttonStyle: React.CSSProperties = {
-  background: '#3a3a48',
-  border: '1px solid #555',
-  borderRadius: 4,
-  color: '#ddd',
-  fontSize: 12,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontFamily: 'system-ui, sans-serif',
-};
-
-const popupStyle: React.CSSProperties = {
-  marginTop: 4,
-  background: '#22222a',
-  border: '1px solid #555',
-  borderRadius: 4,
-  padding: '4px 0',
-  minWidth: 200,
-  maxHeight: 'calc(100vh - 60px)',
-  overflowY: 'auto',
-  fontSize: 12,
-  fontFamily: 'system-ui, sans-serif',
-  color: '#ddd',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-};
-
-const categoryStyle: React.CSSProperties = {
-  padding: '6px 10px 2px',
-  color: '#888',
-  fontSize: 10,
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
-};
-
-const itemStyle: React.CSSProperties = {
-  display: 'block',
-  width: '100%',
-  background: 'transparent',
-  border: 'none',
-  textAlign: 'left',
-  color: '#ddd',
-  padding: '4px 14px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: 12,
-};

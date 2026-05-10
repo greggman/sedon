@@ -203,36 +203,9 @@ export function Preview() {
   }, [gpu, graph, rootNodeId, setEvalResult]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: 'block',
-          width: '100%',
-          height: '100%',
-          touchAction: 'none',
-          cursor: 'grab',
-        }}
-      />
-      {error !== null && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '1rem',
-            left: '1rem',
-            right: '1rem',
-            padding: '1rem',
-            background: '#5a1a1a',
-            border: '1px solid #a44',
-            borderRadius: 4,
-            whiteSpace: 'pre-wrap',
-            fontFamily: 'monospace',
-            fontSize: 12,
-          }}
-        >
-          {error}
-        </div>
-      )}
+    <div className="sedon-preview-pane">
+      <canvas ref={canvasRef} className="sedon-preview-canvas" />
+      {error !== null && <div className="sedon-preview-error">{error}</div>}
     </div>
   );
 }

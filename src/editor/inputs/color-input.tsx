@@ -30,14 +30,7 @@ export function ColorInput({ value, onChange }: ColorInputProps) {
         const next = hexToRgb(e.target.value);
         if (next) onChange([next[0], next[1], next[2], a]);
       }}
-      style={{
-        width: '100%',
-        height: 22,
-        border: '1px solid #555',
-        background: 'transparent',
-        padding: 0,
-        cursor: 'pointer',
-      }}
+      className="sedon-colorinput"
     />
   );
 }

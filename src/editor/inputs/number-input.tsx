@@ -69,7 +69,7 @@ export function NumberInput({ value, onChange, integer = false }: NumberInputPro
             setEditing(false);
           }
         }}
-        style={inputStyle}
+        className="sedon-numinput-edit"
       />
     );
   }
@@ -78,7 +78,7 @@ export function NumberInput({ value, onChange, integer = false }: NumberInputPro
     <div
       role="slider"
       aria-valuenow={value}
-      style={dragStyle}
+      className="sedon-numinput-drag"
       title={
         integer
           ? 'drag to change · click to type · shift=coarse · ctrl=fine'
@@ -122,34 +122,3 @@ export function NumberInput({ value, onChange, integer = false }: NumberInputPro
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: '#1a1a1f',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: '#666',
-  borderRadius: 3,
-  color: '#ddd',
-  fontSize: 12,
-  padding: '3px 6px',
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-};
-
-const dragStyle: React.CSSProperties = {
-  width: '100%',
-  background: '#1a1a1f',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: '#444',
-  borderRadius: 3,
-  color: '#ddd',
-  fontSize: 12,
-  padding: '3px 6px',
-  fontFamily: 'inherit',
-  cursor: 'ew-resize',
-  userSelect: 'none',
-  textAlign: 'center',
-  boxSizing: 'border-box',
-  lineHeight: '13px',
-};

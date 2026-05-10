@@ -22,23 +22,23 @@ export function DemosMenu() {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="sedon-demos-menu">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        style={buttonStyle}
+        className="sedon-toolbar-button"
         title="Load a demo scene"
       >
         Demos ▾
       </button>
       {open && (
-        <div style={popupStyle}>
+        <div className="sedon-menu-popup sedon-demos-popup">
           {DEMOS.map((d) => (
             <button
               key={d.id}
               type="button"
               onClick={() => loadDemo(d.id)}
-              style={itemStyle}
+              className="sedon-menu-item sedon-demos-item"
             >
               {d.label}
             </button>
@@ -48,45 +48,3 @@ export function DemosMenu() {
     </div>
   );
 }
-
-const buttonStyle: React.CSSProperties = {
-  background: '#3a3a48',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: '#555',
-  borderRadius: 4,
-  color: '#ddd',
-  fontSize: 12,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontFamily: 'system-ui, sans-serif',
-};
-
-const popupStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: '100%',
-  right: 0,
-  marginTop: 4,
-  background: '#22222a',
-  border: '1px solid #555',
-  borderRadius: 4,
-  padding: '4px 0',
-  minWidth: 160,
-  fontSize: 12,
-  fontFamily: 'system-ui, sans-serif',
-  color: '#ddd',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-};
-
-const itemStyle: React.CSSProperties = {
-  display: 'block',
-  width: '100%',
-  background: 'transparent',
-  border: 'none',
-  textAlign: 'left',
-  color: '#ddd',
-  padding: '6px 14px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: 12,
-};

@@ -8,7 +8,7 @@ interface VecInputProps {
 
 export function VecInput({ value, onChange, integer }: VecInputProps) {
   return (
-    <div style={{ display: 'flex', gap: 4 }}>
+    <div className="sedon-vecinput">
       {value.map((component, i) => (
         <NumberInput
           key={i}

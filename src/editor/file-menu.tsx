@@ -78,25 +78,12 @@ export function FileMenu() {
 
   return (
     <>
-      <button type="button" onClick={onSave} style={buttonStyle} title="Download graph as JSON">
+      <button type="button" onClick={onSave} className="sedon-toolbar-button" title="Download graph as JSON">
         Save
       </button>
-      <button type="button" onClick={onLoad} style={buttonStyle} title="Load graph from JSON">
+      <button type="button" onClick={onLoad} className="sedon-toolbar-button" title="Load graph from JSON">
         Load
       </button>
     </>
   );
 }
-
-const buttonStyle: React.CSSProperties = {
-  background: '#3a3a48',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: '#555',
-  borderRadius: 4,
-  color: '#ddd',
-  fontSize: 12,
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontFamily: 'system-ui, sans-serif',
-};

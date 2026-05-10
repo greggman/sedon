@@ -183,27 +183,19 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
   const dpr = window.devicePixelRatio || 1;
 
   return (
-    <div className="nodrag nopan" style={{ position: 'relative' }}>
+    <div className="nodrag nopan sedon-material-preview">
       <canvas
         ref={canvasRef}
+        className="sedon-material-preview-canvas"
         width={Math.round(size * dpr)}
         height={Math.round(size * dpr)}
-        style={{
-          width: size,
-          height: size,
-          display: 'block',
-          margin: '0 auto',
-          borderRadius: 2,
-          background: '#000',
-          touchAction: 'none',
-          cursor: 'grab',
-        }}
+        style={{ width: size, height: size }}
       />
-      <div style={shapeToggleStyle}>
+      <div className="sedon-material-preview-toggle">
         <button
           type="button"
           onClick={() => setShape('sphere')}
-          style={shape === 'sphere' ? activeButtonStyle : buttonStyle}
+          className={`sedon-material-preview-shape${shape === 'sphere' ? ' sedon-material-preview-shape--active' : ''}`}
           title="Show sphere"
         >
           ●
@@ -211,7 +203,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         <button
           type="button"
           onClick={() => setShape('cube')}
-          style={shape === 'cube' ? activeButtonStyle : buttonStyle}
+          className={`sedon-material-preview-shape${shape === 'cube' ? ' sedon-material-preview-shape--active' : ''}`}
           title="Show cube"
         >
           ■
@@ -220,34 +212,3 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
     </div>
   );
 }
-
-const shapeToggleStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 4,
-  right: 4,
-  display: 'flex',
-  gap: 2,
-  fontSize: 10,
-};
-
-const buttonStyle: React.CSSProperties = {
-  width: 18,
-  height: 18,
-  padding: 0,
-  background: 'rgba(20,20,25,0.7)',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: '#555',
-  borderRadius: 2,
-  color: '#999',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  lineHeight: 1,
-};
-
-const activeButtonStyle: React.CSSProperties = {
-  ...buttonStyle,
-  background: '#3a3a48',
-  color: '#ddd',
-  borderColor: '#888',
-};

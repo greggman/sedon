@@ -237,7 +237,7 @@ export function CustomNode({ id, data }: NodeProps) {
   const device = useEditorStore((s) => s.device);
 
   if (!def) {
-    return <div style={{ ...nodeStyle, padding: 8 }}>unknown: {kind ?? '(no kind)'}</div>;
+    return <div className="sedon-node sedon-node--unknown">unknown: {kind ?? '(no kind)'}</div>;
   }
 
   const previewTarget = previewTargetFor(myOutputs);
@@ -251,8 +251,9 @@ export function CustomNode({ id, data }: NodeProps) {
   };
 
   return (
-    <div style={nodeStyle}>
+    <div className="sedon-node">
       <div
+        className="sedon-node-output-bar"
         style={{
           height: OUTPUT_BAR_HEIGHT,
           background: outputBarBackground(def),
@@ -260,10 +261,10 @@ export function CustomNode({ id, data }: NodeProps) {
           borderTopRightRadius: NODE_RADIUS - 1,
         }}
       />
-      <div style={headerStyle}>{def.id}</div>
+      <div className="sedon-node-header" style={{ height: HEADER_HEIGHT }}>{def.id}</div>
 
       {hasSlot && (
-        <div style={previewBlockStyle}>
+        <div className="sedon-node-preview-block" style={{ padding: PREVIEW_PADDING }}>
           {previewTarget && device ? (
             previewTarget.kind === 'material' ? (
               <MaterialPreview
@@ -279,7 +280,12 @@ export function CustomNode({ id, data }: NodeProps) {
               />
             )
           ) : (
-            <div style={placeholderStyle}>—</div>
+            <div
+              className="sedon-node-preview-placeholder"
+              style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
+            >
+              —
+            </div>
           )}
         </div>
       )}
@@ -300,12 +306,15 @@ export function CustomNode({ id, data }: NodeProps) {
           ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
           : null;
         return (
-          <div key={`row-in-${input.name}`} style={inputRowStyle} title={input.type}>
-            <span style={labelStyle}>{input.name}</span>
+          <div
+            key={`row-in-${input.name}`}
+            className="sedon-node-row"
+            style={{ height: ROW_HEIGHT }}
+            title={input.type}
+          >
+            <span className="sedon-node-label">{input.name}</span>
             {editor && (
-              <span className="nodrag nopan" style={editorContainerStyle}>
-                {editor}
-              </span>
+              <span className="nodrag nopan sedon-node-editor">{editor}</span>
             )}
           </div>
         );
@@ -323,7 +332,8 @@ export function CustomNode({ id, data }: NodeProps) {
       {def.outputs.map((output) => (
         <div
           key={`row-out-${output.name}`}
-          style={{ ...inputRowStyle, justifyContent: 'flex-end' }}
+          className="sedon-node-row sedon-node-row--output"
+          style={{ height: ROW_HEIGHT }}
           title={output.type}
         >
           {output.name}
@@ -332,63 +342,3 @@ export function CustomNode({ id, data }: NodeProps) {
     </div>
   );
 }
-
-const nodeStyle: React.CSSProperties = {
-  background: '#2a2a35',
-  border: '1px solid #555',
-  borderRadius: 4,
-  color: '#ddd',
-  fontSize: 12,
-  fontFamily: 'system-ui, sans-serif',
-  minWidth: 240,
-};
-
-const headerStyle: React.CSSProperties = {
-  height: HEADER_HEIGHT,
-  padding: '0 10px',
-  background: '#3a3a48',
-  borderBottom: '1px solid #555',
-  display: 'flex',
-  alignItems: 'center',
-  fontWeight: 600,
-};
-
-const previewBlockStyle: React.CSSProperties = {
-  padding: PREVIEW_PADDING,
-  background: '#22222a',
-  borderBottom: '1px solid #555',
-};
-
-const placeholderStyle: React.CSSProperties = {
-  width: PREVIEW_SIZE,
-  height: PREVIEW_SIZE,
-  margin: '0 auto',
-  background: '#000',
-  borderRadius: 2,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  color: '#444',
-  fontSize: 24,
-  userSelect: 'none',
-};
-
-const inputRowStyle: React.CSSProperties = {
-  height: ROW_HEIGHT,
-  padding: '0 12px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-};
-
-const labelStyle: React.CSSProperties = {
-  flexShrink: 0,
-  color: '#bbb',
-};
-
-const editorContainerStyle: React.CSSProperties = {
-  flex: 1,
-  display: 'flex',
-  alignItems: 'center',
-  minWidth: 0,
-};

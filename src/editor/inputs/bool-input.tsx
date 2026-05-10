@@ -9,7 +9,7 @@ export function BoolInput({ value, onChange }: BoolInputProps) {
       type="checkbox"
       checked={value}
       onChange={(e) => onChange(e.target.checked)}
-      style={{ cursor: 'pointer' }}
+      className="sedon-boolinput"
     />
   );
 }

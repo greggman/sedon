@@ -93,16 +93,10 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
   return (
     <canvas
       ref={canvasRef}
+      className="sedon-texture-preview"
       width={Math.round(size * dpr)}
       height={Math.round(size * dpr)}
-      style={{
-        width: size,
-        height: size,
-        display: 'block',
-        margin: '0 auto',
-        borderRadius: 2,
-        background: '#000',
-      }}
+      style={{ width: size, height: size }}
     />
   );
 }

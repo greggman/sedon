@@ -11,39 +11,19 @@ export function App() {
 
   return (
     <ReactFlowProvider>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          height: '100%',
-          gap: 1,
-          background: '#2a2a2f',
-        }}
-      >
-        <div
-          ref={canvasPaneRef}
-          style={{ background: '#1a1a1f', overflow: 'hidden', position: 'relative' }}
-        >
+      <div className="sedon-app">
+        <div ref={canvasPaneRef} className="sedon-pane sedon-pane--canvas">
           <NodeCanvas />
           <AddNodeMenu canvasRef={canvasPaneRef} />
-          <div style={topRightToolbarStyle}>
+          <div className="sedon-top-toolbar">
             <DemosMenu />
             <FileMenu />
           </div>
         </div>
-        <div style={{ background: '#0d0d10', overflow: 'hidden' }}>
+        <div className="sedon-pane sedon-pane--preview">
           <Preview />
         </div>
       </div>
     </ReactFlowProvider>
   );
 }
-
-const topRightToolbarStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 8,
-  right: 8,
-  zIndex: 10,
-  display: 'flex',
-  gap: 4,
-};
