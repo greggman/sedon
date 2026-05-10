@@ -61,6 +61,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Vec3Cloud', color: '#7986cb', description: 'per-point Vec3 attribute, paired with a PointCloud' },
   { id: 'FloatCloud', color: '#ffb74d', description: 'per-point Float attribute, paired with a PointCloud' },
   { id: 'Heightfield', color: '#827717', description: '2D scalar field with world bounds + height range' },
+  { id: 'Lighting', color: '#fff176', description: 'scene-level sun + ambient lighting params' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

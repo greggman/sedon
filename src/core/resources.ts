@@ -111,6 +111,28 @@ export interface HeightfieldValue {
   heightRange: [number, number]; // (min Y, max Y)
 }
 
+// Scene-level lighting params produced by core/output and consumed by the
+// renderer's per-frame uniforms. World-space sun direction; RGB color
+// pre-scaled by intensity; RGB ambient added to every fragment as a flat
+// fill light.
+export interface LightingValue {
+  /** Direction the sun light travels FROM in world space. Will be normalized in the shader. */
+  direction: [number, number, number];
+  /** RGB sun color premultiplied by intensity. e.g. [3, 3, 3] = white at intensity 3. */
+  color: [number, number, number];
+  /** RGB ambient fill multiplier on albedo. Replaces the previous hardcoded 0.15. */
+  ambient: [number, number, number];
+}
+
+/** Default lighting matches the previous hardcoded values: white sun at intensity 3 from (0.4, 0.8, 0.6) with 0.15 grey ambient. */
+export function defaultLighting(): LightingValue {
+  return {
+    direction: [0.4, 0.8, 0.6],
+    color: [3, 3, 3],
+    ambient: [0.15, 0.15, 0.15],
+  };
+}
+
 export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
   if (!ctx.device) {
     throw new Error('this node requires a GPU device in NodeContext');

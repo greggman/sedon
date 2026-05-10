@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { evaluateGraph } from '../core/evaluate.js';
-import type { SceneValue } from '../core/resources.js';
+import { defaultLighting, type LightingValue, type SceneValue } from '../core/resources.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { initWebGPU, type GpuContext } from '../render/device.js';
 import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
@@ -151,6 +151,9 @@ export function Preview() {
       if (cancelled) return;
 
       const scene = result.outputs.scene as SceneValue;
+      // Lighting is optional — older graphs without an Output node that
+      // declares it fall back to the previous hardcoded values.
+      const lighting = (result.outputs.lighting as LightingValue | undefined) ?? defaultLighting();
       setEvalResult({ scene, allOutputs: result.allOutputs });
 
       const renderer = createSceneRenderer(device, format, scene);
@@ -188,6 +191,7 @@ export function Preview() {
           clearColor: { r: 0.06, g: 0.06, b: 0.08, a: 1 },
           modelView,
           projection,
+          lighting,
         });
         device.queue.submit([encoder.finish()]);
         rafId = requestAnimationFrame(frame);

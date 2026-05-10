@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GeometryValue, MaterialValue } from '../core/resources.js';
-import { identityTint } from '../core/resources.js';
+import { defaultLighting, identityTint } from '../core/resources.js';
 import { generateCube } from '../render/cube.js';
 import { identity, multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
 import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
@@ -103,6 +103,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         clearColor: { r: 0.06, g: 0.06, b: 0.08, a: 1 },
         modelView,
         projection,
+        lighting: defaultLighting(),
       });
       device.queue.submit([encoder.finish()]);
     };

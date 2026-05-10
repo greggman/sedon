@@ -1,6 +1,11 @@
 struct Uniforms {
   modelView: mat4x4f,
   projection: mat4x4f,
+  // Scene-level lighting. Each vec3 is 16-byte aligned in WGSL uniforms
+  // (one float of trailing padding implicit), matching the JS-side packing.
+  lightDirWorld: vec3f,
+  lightColor: vec3f,
+  ambient: vec3f,
 };
 
 struct Material {
@@ -114,7 +119,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let v = normalize(-in.view_pos);
 
-  let l_world = normalize(vec3f(0.4, 0.8, 0.6));
+  let l_world = normalize(uniforms.lightDirWorld);
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
@@ -122,7 +127,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   );
   let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
-  let light_color = vec3f(3.0);
+  let light_color = uniforms.lightColor;
 
   let n_dot_v = max(dot(n, v), 0.0);
   let n_dot_l = max(dot(n, l), 0.0);
@@ -141,7 +146,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let k_d = (vec3f(1.0) - k_s) * (1.0 - material.metallic);
 
   let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l;
-  let ambient = albedo * 0.15;
+  let ambient_term = albedo * uniforms.ambient;
 
-  return vec4f(direct + ambient, albedo_sample.a);
+  return vec4f(direct + ambient_term, albedo_sample.a);
 }

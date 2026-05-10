@@ -1,5 +1,6 @@
 import type {
   GeometryValue,
+  LightingValue,
   MaterialValue,
   SceneEntity,
   SceneValue,
@@ -17,6 +18,7 @@ export interface SceneRenderer {
     clearColor: GPUColorDict;
     modelView: Mat4;
     projection: Mat4;
+    lighting: LightingValue;
   }): void;
 }
 
@@ -71,10 +73,17 @@ export function createSceneRenderer(
     addressModeV: 'repeat',
   });
 
+  // 128 bytes for two mat4x4f (modelView, projection) + 48 bytes for three
+  // vec3f-with-16-byte-stride lighting params (lightDirWorld, lightColor,
+  // ambient) = 176 bytes total. Each vec3f's trailing 4 bytes are padding
+  // to satisfy WGSL's 16-byte alignment for the next member.
   const sceneUniformBuffer = device.createBuffer({
-    size: 128, // two mat4x4f
+    size: 176,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  // Reused per-frame scratch for the lighting block. 12 floats = 3 vec3 ×
+  // (3 floats + 1 padding).
+  const lightingScratch = new Float32Array(12);
 
   let flatNormal: Texture2DValue | null = null;
 
@@ -145,9 +154,22 @@ export function createSceneRenderer(
   }
 
   return {
-    render({ encoder, colorView, depthView, clearColor, modelView, projection }) {
+    render({ encoder, colorView, depthView, clearColor, modelView, projection, lighting }) {
       device.queue.writeBuffer(sceneUniformBuffer, 0, modelView as BufferSource);
       device.queue.writeBuffer(sceneUniformBuffer, 64, projection as BufferSource);
+      lightingScratch[0]  = lighting.direction[0];
+      lightingScratch[1]  = lighting.direction[1];
+      lightingScratch[2]  = lighting.direction[2];
+      // [3] padding
+      lightingScratch[4]  = lighting.color[0];
+      lightingScratch[5]  = lighting.color[1];
+      lightingScratch[6]  = lighting.color[2];
+      // [7] padding
+      lightingScratch[8]  = lighting.ambient[0];
+      lightingScratch[9]  = lighting.ambient[1];
+      lightingScratch[10] = lighting.ambient[2];
+      // [11] padding
+      device.queue.writeBuffer(sceneUniformBuffer, 128, lightingScratch as BufferSource);
 
       const pass = encoder.beginRenderPass({
         colorAttachments: [
