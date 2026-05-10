@@ -33,6 +33,12 @@ export const instanceOnPointsNode: NodeDef = {
       optional: true,
       description: 'optional per-point rotation around local +Y, in radians',
     },
+    {
+      name: 'per_point_active',
+      type: 'FloatCloud',
+      optional: true,
+      description: 'optional per-point activation mask; only values >= 0.5 are realized',
+    },
   ],
   outputs: [{ name: 'geometry', type: 'Geometry' }],
   evaluate(ctx, inputs): { geometry: GeometryValue } {
@@ -47,6 +53,7 @@ export const instanceOnPointsNode: NodeDef = {
     }
     const perPointScale = inputs.per_point_scale as Vec3CloudValue | undefined;
     const perPointYaw = inputs.per_point_yaw as FloatCloudValue | undefined;
+    const perPointActive = inputs.per_point_active as FloatCloudValue | undefined;
     if (perPointScale && perPointScale.count !== points.count) {
       throw new Error(
         `per_point_scale count (${perPointScale.count}) does not match ` +
@@ -59,12 +66,19 @@ export const instanceOnPointsNode: NodeDef = {
           `points count (${points.count})`,
       );
     }
+    if (perPointActive && perPointActive.count !== points.count) {
+      throw new Error(
+        `per_point_active count (${perPointActive.count}) does not match ` +
+          `points count (${points.count})`,
+      );
+    }
 
     const realized = instanceOnPoints(instanceGeom.mesh, points, {
       scale: inputs.scale as number,
       align: inputs.align as boolean,
       ...(perPointScale ? { perPointScale: perPointScale.values } : {}),
       ...(perPointYaw ? { perPointYaw: perPointYaw.values } : {}),
+      ...(perPointActive ? { perPointActive: perPointActive.values } : {}),
     });
     return { geometry: uploadMeshToGpu(device, realized) };
   },

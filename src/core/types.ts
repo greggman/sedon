@@ -56,6 +56,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Texture2D', color: '#4caf50', description: 'GPU 2D image' },
   { id: 'Geometry', color: '#e53935', description: 'mesh: positions, normals, uvs, indices' },
   { id: 'Material', color: '#ec407a', description: 'bundle of textures + scalar params' },
+  { id: 'Scene', color: '#0288d1', description: 'a renderable scene: list of (geometry, material) entities' },
   { id: 'PointCloud', color: '#9e9e9e', description: 'unstructured points with optional surface normals' },
   { id: 'Vec3Cloud', color: '#7986cb', description: 'per-point Vec3 attribute, paired with a PointCloud' },
   { id: 'FloatCloud', color: '#ffb74d', description: 'per-point Float attribute, paired with a PointCloud' },

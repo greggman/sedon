@@ -1,5 +1,8 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendNode } from './blend.js';
+import { cloudAltitudeNode } from './cloud-altitude.js';
+import { cloudSlopeNode } from './cloud-slope.js';
+import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { cubeNode } from './cube.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
@@ -9,6 +12,7 @@ import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceOnPointsNode } from './instance-on-points.js';
 import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
+import { mergeGeometryNode } from './merge-geometry.js';
 import { mixNode } from './mix.js';
 import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
@@ -31,10 +35,14 @@ export const CORE_NODES = [
   cubeNode,
   planeNode,
   transformNode,
+  mergeGeometryNode,
   distributeOnFacesNode,
   instanceOnPointsNode,
   randomVec3CloudNode,
   randomFloatCloudNode,
+  cloudAltitudeNode,
+  cloudSlopeNode,
+  cloudStepNode,
   heightfieldNode,
   heightfieldToMeshNode,
   solidColorNode,
@@ -57,6 +65,9 @@ export function createCoreNodeRegistry(): NodeRegistry {
 
 export {
   blendNode,
+  cloudAltitudeNode,
+  cloudSlopeNode,
+  cloudStepNode,
   colorizeNode,
   cubeNode,
   distributeOnFacesNode,
@@ -66,6 +77,7 @@ export {
   instanceOnPointsNode,
   mapRangeNode,
   materialNode,
+  mergeGeometryNode,
   mixNode,
   multiplyNode,
   normalFromHeightNode,

@@ -53,6 +53,37 @@ export function destroyGeometry(geometry: GeometryValue) {
   geometry.indexBuffer.destroy();
 }
 
+// Concatenate two meshes into one. b's indices are offset by a's vertex count
+// so they remain valid in the merged buffer. UVs/normals are concatenated as
+// is; the merged mesh sits in a single index space with one shared material
+// downstream — region-specific materials need a future multi-material path.
+export function mergeMeshes(a: CpuMesh, b: CpuMesh): CpuMesh {
+  const aVerts = a.positions.length / 3;
+  const bVerts = b.positions.length / 3;
+  const totalVerts = aVerts + bVerts;
+  const totalIndices = a.indices.length + b.indices.length;
+
+  const positions = new Float32Array(totalVerts * 3);
+  positions.set(a.positions, 0);
+  positions.set(b.positions, a.positions.length);
+
+  const normals = new Float32Array(totalVerts * 3);
+  normals.set(a.normals, 0);
+  normals.set(b.normals, a.normals.length);
+
+  const uvs = new Float32Array(totalVerts * 2);
+  uvs.set(a.uvs, 0);
+  uvs.set(b.uvs, a.uvs.length);
+
+  const indices = new Uint32Array(totalIndices);
+  indices.set(a.indices, 0);
+  for (let i = 0; i < b.indices.length; i++) {
+    indices[a.indices.length + i] = b.indices[i]! + aVerts;
+  }
+
+  return { positions, normals, uvs, indices };
+}
+
 // Apply a TRS transform to a CpuMesh: returns a new mesh with positions and
 // normals in world space; uvs and indices are reused (unchanged). Normals are
 // scale-divided then rotated, so non-uniform scale stays correct without
@@ -271,6 +302,13 @@ export interface InstanceOnPointsOptions {
    * no spin around the local Y axis.
    */
   perPointYaw?: Float32Array;
+  /**
+   * Optional per-point activation mask (length = count). When present, only
+   * points with `value >= 0.5` are realized — others are skipped entirely.
+   * Lets upstream filter nodes (cloud-step on slope/altitude) gate scattering
+   * without having to reshape every parallel cloud's count.
+   */
+  perPointActive?: Float32Array;
 }
 
 // Realize a point cloud by copying the instance mesh at every point. Returns
@@ -287,11 +325,22 @@ export function instanceOnPoints(
   points: PointCloudValue,
   opts: InstanceOnPointsOptions,
 ): CpuMesh {
-  const { scale, align, perPointScale, perPointYaw } = opts;
+  const { scale, align, perPointScale, perPointYaw, perPointActive } = opts;
   const vpi = instance.positions.length / 3; // vertices per instance
   const ipi = instance.indices.length;       // indices per instance
-  const totalV = vpi * points.count;
-  const totalI = ipi * points.count;
+
+  // If a per-point active mask is provided, count active points first so we
+  // can size the output mesh exactly. Without a mask, all points are active.
+  let activeCount = points.count;
+  if (perPointActive) {
+    activeCount = 0;
+    for (let i = 0; i < points.count; i++) {
+      if (perPointActive[i]! >= 0.5) activeCount++;
+    }
+  }
+
+  const totalV = vpi * activeCount;
+  const totalI = ipi * activeCount;
 
   const positions = new Float32Array(totalV * 3);
   const normals = new Float32Array(totalV * 3);
@@ -307,7 +356,13 @@ export function instanceOnPoints(
   const pt = points.tangents;
   const useAlign = align && pn !== undefined;
 
+  // `dst` walks the OUTPUT slot index (only advances for active points), while
+  // `p` walks the source point index (so we still read the right per-point
+  // attribute values for the active subset).
+  let dstSlot = 0;
   for (let p = 0; p < points.count; p++) {
+    if (perPointActive && perPointActive[p]! < 0.5) continue;
+
     const px = pp[p * 3]!;
     const py = pp[p * 3 + 1]!;
     const pz = pp[p * 3 + 2]!;
@@ -376,7 +431,7 @@ export function instanceOnPoints(
     const isy = syA !== 0 ? 1 / syA : 0;
     const isz = sz !== 0 ? 1 / sz : 0;
 
-    const baseV = p * vpi;
+    const baseV = dstSlot * vpi;
     for (let v = 0; v < vpi; v++) {
       // Spin in local XZ around Y, then per-axis scale.
       const ix0 = ip[v * 3]!;
@@ -414,10 +469,12 @@ export function instanceOnPoints(
       uvs[dstUv + 1] = iu[srcUv + 1]!;
     }
 
-    const baseI = p * ipi;
+    const baseI = dstSlot * ipi;
     for (let k = 0; k < ipi; k++) {
       indices[baseI + k] = ii[k]! + baseV;
     }
+
+    dstSlot++;
   }
 
   return { positions, normals, uvs, indices };

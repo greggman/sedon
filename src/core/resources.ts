@@ -41,6 +41,20 @@ export interface MaterialValue {
   normal?: Texture2DValue;
 }
 
+// A renderable scene is a list of entities, each pairing a geometry with a
+// material. The renderer loops entities and issues one draw call per — each
+// keeps its own material textures (no merge-into-one-mesh-loses-materials
+// problem). Forest pattern: 1 terrain entity + N tree-species entities + N
+// rock-species entities, all in one Scene, each with its own material.
+export interface SceneEntity {
+  geometry: GeometryValue;
+  material: MaterialValue;
+}
+
+export interface SceneValue {
+  entities: SceneEntity[];
+}
+
 export interface PointCloudValue {
   positions: Float32Array; // 3 floats per point
   normals?: Float32Array;  // optional, surface normals at each point
