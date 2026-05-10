@@ -16,7 +16,18 @@
 * let you pull of an input
 * add help icon at top right of each node (or bottom left as there is space)
   should be link to docs. Generate docs for each node. Docs should have live
-  sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` 
+  sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64`
+* need a way to make a point cloud with more constraints
+  * example: want random x,y,z but want x == z
+
+    solutions?:
+
+    * use 2 float clouds (xz, y) and combine into xyz point-cloud
+    * custom WGSL point cloud node
+    * after the fact modifier - make xyz cloud -> filter node(s) 
+    * other
+
+    Not sure if we should have one of these are all of them
 * align values?
 
   currently it's
