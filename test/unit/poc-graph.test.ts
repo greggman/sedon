@@ -4,7 +4,7 @@ import { addEdge, addNode, createGraph, validateGraph } from '../../src/core/gra
 import { createCoreTypeRegistry } from '../../src/core/types.js';
 import { createCoreNodeRegistry } from '../../src/nodes/index.js';
 
-test('the POC graph (Grid → Material → Output, Sphere → Output) validates', () => {
+test('the POC graph (Grid → Material → SceneEntity ← Sphere → Output) validates', () => {
   const types = createCoreTypeRegistry();
   const nodes = createCoreNodeRegistry();
   const g = createGraph();
@@ -13,11 +13,13 @@ test('the POC graph (Grid → Material → Output, Sphere → Output) validates'
   });
   const material = addNode(g, 'core/material');
   const sphere = addNode(g, 'core/sphere');
+  const sceneEntity = addNode(g, 'core/scene-entity');
   const output = addNode(g, 'core/output');
 
   addEdge(g, { node: grid.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
-  addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: output.id, socket: 'geometry' });
-  addEdge(g, { node: material.id, socket: 'material' }, { node: output.id, socket: 'material' });
+  addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: sceneEntity.id, socket: 'geometry' });
+  addEdge(g, { node: material.id, socket: 'material' }, { node: sceneEntity.id, socket: 'material' });
+  addEdge(g, { node: sceneEntity.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   const result = validateGraph(g, types, nodes);
   assert.ok(result.ok, JSON.stringify(result.issues, null, 2));
@@ -38,7 +40,7 @@ test('Material rejects non-Texture2D into basecolor', () => {
   assert.ok(result.issues.some((i) => /incompatible/.test(i.message)));
 });
 
-test('Output requires geometry and material to be connected', () => {
+test('Output requires scene to be connected', () => {
   const types = createCoreTypeRegistry();
   const nodes = createCoreNodeRegistry();
   const g = createGraph();
@@ -46,7 +48,7 @@ test('Output requires geometry and material to be connected', () => {
 
   const result = validateGraph(g, types, nodes);
   assert.ok(!result.ok);
-  assert.equal(result.issues.filter((i) => /required input/.test(i.message)).length, 2);
+  assert.equal(result.issues.filter((i) => /required input/.test(i.message)).length, 1);
 });
 
 test('all production nodes are registered', () => {
@@ -59,6 +61,8 @@ test('all production nodes are registered', () => {
     'core/perlin',
     'core/blend',
     'core/material',
+    'core/scene-entity',
+    'core/scene-merge',
     'core/output',
   ]) {
     assert.ok(r.has(id), `missing node ${id}`);
@@ -67,7 +71,7 @@ test('all production nodes are registered', () => {
 
 test('new socket types are registered', () => {
   const r = createCoreTypeRegistry();
-  for (const id of ['Texture2D', 'Geometry', 'Material']) {
+  for (const id of ['Texture2D', 'Geometry', 'Material', 'Scene']) {
     assert.ok(r.has(id), `missing type ${id}`);
   }
 });

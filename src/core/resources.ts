@@ -41,14 +41,22 @@ export interface MaterialValue {
   normal?: Texture2DValue;
 }
 
-// A renderable scene is a list of entities, each pairing a geometry with a
-// material. The renderer loops entities and issues one draw call per — each
-// keeps its own material textures (no merge-into-one-mesh-loses-materials
-// problem). Forest pattern: 1 terrain entity + N tree-species entities + N
-// rock-species entities, all in one Scene, each with its own material.
+// A renderable scene is a list of entities. Each entity carries a geometry +
+// material reference and an instance transform (a column-major 4x4 matrix).
+// Entities sharing the same (geometry, material) refs get batched by the
+// renderer into a single instanced draw call — N trees of one species
+// referencing the same trunk-mesh + bark-material become one drawIndexed with
+// instanceCount=N, each instance reading its transform from a per-instance
+// vertex attribute.
+//
+// Forest pattern: 1 terrain entity + 100 tree-trunk entities (sharing trunk
+// mesh + bark material) + 100 leaf entities (sharing leaf mesh + leaf
+// material) → 3 draw calls regardless of N.
 export interface SceneEntity {
   geometry: GeometryValue;
   material: MaterialValue;
+  /** Column-major 4x4 world transform. Length 16. */
+  transform: Float32Array;
 }
 
 export interface SceneValue {

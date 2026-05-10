@@ -1,13 +1,12 @@
 import { create } from 'zustand';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import type { NodeOutputs } from '../core/node-def.js';
-import type { GeometryValue, MaterialValue } from '../core/resources.js';
+import type { SceneValue } from '../core/resources.js';
 import { applyBackward, applyForward, type Command } from './command.js';
 import { createInitialGraph } from './initial-graph.js';
 
 export interface EvalResult {
-  geometry: GeometryValue;
-  material: MaterialValue;
+  scene: SceneValue;
   allOutputs: Map<string, NodeOutputs>;
 }
 

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GeometryValue, MaterialValue } from '../core/resources.js';
 import { generateCube } from '../render/cube.js';
-import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
+import { identity, multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
 import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
 import { generateSphere } from '../render/sphere.js';
+
+// MaterialPreview wraps (mesh + material) into a single-entity Scene with an
+// identity transform, to feed the Scene-based renderer.
 
 type Shape = 'sphere' | 'cube';
 
@@ -61,7 +64,9 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
 
     const mesh = shape === 'sphere' ? generateSphere(1, 32, 16) : generateCube(1.4);
     const geometry = uploadMeshToGpu(device, mesh);
-    const renderer = createSceneRenderer(device, format, geometry, material);
+    const renderer = createSceneRenderer(device, format, {
+      entities: [{ geometry, material, transform: identity() }],
+    });
     resourcesRef.current = { renderer, geometry };
 
     const render = () => {

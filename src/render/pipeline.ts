@@ -25,6 +25,17 @@ export function createScenePipeline(
           arrayStride: 8,
           attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }],
         },
+        // per-instance 4x4 transform (4 vec4f columns), advanced once per instance
+        {
+          arrayStride: 64,
+          stepMode: 'instance',
+          attributes: [
+            { shaderLocation: 3, offset: 0,  format: 'float32x4' },
+            { shaderLocation: 4, offset: 16, format: 'float32x4' },
+            { shaderLocation: 5, offset: 32, format: 'float32x4' },
+            { shaderLocation: 6, offset: 48, format: 'float32x4' },
+          ],
+        },
       ],
     },
     fragment: {

@@ -1,8 +1,8 @@
 import { addEdge, addNode, createGraph, type Graph } from '../core/graph.js';
 
 // Phase-2-style starter graph: Grid texture with inline fg/bg colors → Material →
-// rendered on a Sphere via Output. With inline color editors on every Color
-// input, no separate "color emitter" nodes are needed.
+// SceneEntity ← Sphere → Output. The Output now consumes a Scene; SceneEntity
+// promotes the (geometry, material) pair into a one-entity Scene.
 export function createInitialGraph(): { graph: Graph; rootNodeId: string } {
   const g = createGraph();
 
@@ -22,13 +22,17 @@ export function createInitialGraph(): { graph: Graph; rootNodeId: string } {
     position: { x: 0, y: 280 },
     inputValues: { radius: 1, segments: 64, rings: 32 },
   });
-  const output = addNode(g, 'core/output', {
+  const sceneEntity = addNode(g, 'core/scene-entity', {
     position: { x: 560, y: 140 },
+  });
+  const output = addNode(g, 'core/output', {
+    position: { x: 800, y: 140 },
   });
 
   addEdge(g, { node: grid.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
-  addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: output.id, socket: 'geometry' });
-  addEdge(g, { node: material.id, socket: 'material' }, { node: output.id, socket: 'material' });
+  addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: sceneEntity.id, socket: 'geometry' });
+  addEdge(g, { node: material.id, socket: 'material' }, { node: sceneEntity.id, socket: 'material' });
+  addEdge(g, { node: sceneEntity.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   return { graph: g, rootNodeId: output.id };
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { evaluateGraph } from '../core/evaluate.js';
-import type { GeometryValue, MaterialValue } from '../core/resources.js';
+import type { SceneValue } from '../core/resources.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { initWebGPU, type GpuContext } from '../render/device.js';
 import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
@@ -150,11 +150,10 @@ export function Preview() {
       // awaiting (graph mutated again).
       if (cancelled) return;
 
-      const geometry = result.outputs.geometry as GeometryValue;
-      const material = result.outputs.material as MaterialValue;
-      setEvalResult({ geometry, material, allOutputs: result.allOutputs });
+      const scene = result.outputs.scene as SceneValue;
+      setEvalResult({ scene, allOutputs: result.allOutputs });
 
-      const renderer = createSceneRenderer(device, format, geometry, material);
+      const renderer = createSceneRenderer(device, format, scene);
 
       let depthTexture: GPUTexture | null = null;
       let lastWidth = 0;

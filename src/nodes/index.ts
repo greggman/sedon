@@ -9,10 +9,12 @@ import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridNode } from './grid.js';
 import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
-import { instanceOnPointsNode } from './instance-on-points.js';
+import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
+import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
 import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
 import { mergeGeometryNode } from './merge-geometry.js';
+import { mergeSceneEntitiesNode } from './merge-scene-entities.js';
 import { mixNode } from './mix.js';
 import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
@@ -21,6 +23,8 @@ import { perlinNode } from './perlin.js';
 import { planeNode } from './plane.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
+import { sceneEntityNode } from './scene-entity.js';
+import { sceneMergeNode } from './scene-merge.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { transformNode } from './transform.js';
@@ -37,7 +41,8 @@ export const CORE_NODES = [
   transformNode,
   mergeGeometryNode,
   distributeOnFacesNode,
-  instanceOnPointsNode,
+  instanceGeometryOnPointsNode,
+  instanceSceneOnPointsNode,
   randomVec3CloudNode,
   randomFloatCloudNode,
   cloudAltitudeNode,
@@ -54,6 +59,9 @@ export const CORE_NODES = [
   colorizeNode,
   normalFromHeightNode,
   materialNode,
+  sceneEntityNode,
+  sceneMergeNode,
+  mergeSceneEntitiesNode,
   outputNode,
 ];
 
@@ -74,10 +82,12 @@ export {
   gridNode,
   heightfieldNode,
   heightfieldToMeshNode,
-  instanceOnPointsNode,
+  instanceGeometryOnPointsNode,
+  instanceSceneOnPointsNode,
   mapRangeNode,
   materialNode,
   mergeGeometryNode,
+  mergeSceneEntitiesNode,
   mixNode,
   multiplyNode,
   normalFromHeightNode,
@@ -86,6 +96,8 @@ export {
   planeNode,
   randomFloatCloudNode,
   randomVec3CloudNode,
+  sceneEntityNode,
+  sceneMergeNode,
   solidColorNode,
   sphereNode,
   transformNode,

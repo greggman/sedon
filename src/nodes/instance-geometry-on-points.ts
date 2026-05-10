@@ -8,8 +8,14 @@ import type {
 import { requireDevice } from '../core/resources.js';
 import { instanceOnPoints, uploadMeshToGpu } from '../render/mesh.js';
 
-export const instanceOnPointsNode: NodeDef = {
-  id: 'core/instance-on-points',
+// CPU-merge a single Geometry at every point in a PointCloud, returning one
+// big merged Geometry. Use this when you need a single mesh downstream — for
+// mesh modifiers (bend, smooth, boolean), or when "the result is logically
+// one continuous thing" (a track of ties along a spline). For independent
+// scattered objects (forests, debris) use core/instance-scene-on-points
+// instead — it preserves entity boundaries for instanced rendering.
+export const instanceGeometryOnPointsNode: NodeDef = {
+  id: 'core/instance-geometry-on-points',
   category: 'Geometry/Distribution',
   inputs: [
     { name: 'points', type: 'PointCloud' },
@@ -47,8 +53,8 @@ export const instanceOnPointsNode: NodeDef = {
     const instanceGeom = inputs.instance as GeometryValue;
     if (!instanceGeom.mesh) {
       throw new Error(
-        'core/instance-on-points requires a CPU-side mesh on the instance ' +
-          'geometry; the upstream node produced GPU-only data.',
+        'core/instance-geometry-on-points requires a CPU-side mesh on the ' +
+          'instance geometry; the upstream node produced GPU-only data.',
       );
     }
     const perPointScale = inputs.per_point_scale as Vec3CloudValue | undefined;

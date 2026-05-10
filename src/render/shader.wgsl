@@ -18,6 +18,12 @@ struct VsIn {
   @location(0) position: vec3f,
   @location(1) normal: vec3f,
   @location(2) uv: vec2f,
+  // Per-instance world transform. 4 vec4f columns of a column-major mat4.
+  // Stepped per-instance via the pipeline's vertex buffer layout.
+  @location(3) inst_col0: vec4f,
+  @location(4) inst_col1: vec4f,
+  @location(5) inst_col2: vec4f,
+  @location(6) inst_col3: vec4f,
 };
 
 struct VsOut {
@@ -29,16 +35,23 @@ struct VsOut {
 
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
-  let view_pos4 = uniforms.modelView * vec4f(in.position, 1.0);
+  let inst_mat = mat4x4f(in.inst_col0, in.inst_col1, in.inst_col2, in.inst_col3);
+  let world_pos4 = inst_mat * vec4f(in.position, 1.0);
+  let view_pos4 = uniforms.modelView * world_pos4;
   var out: VsOut;
   out.position = uniforms.projection * view_pos4;
   out.view_pos = view_pos4.xyz;
+
+  // Apply the instance's rotation to the normal, then the camera's. Assumes
+  // uniform scale; non-uniform scale would need an inverse-transpose 3x3.
+  let inst_3x3 = mat3x3f(in.inst_col0.xyz, in.inst_col1.xyz, in.inst_col2.xyz);
+  let world_normal = inst_3x3 * in.normal;
   let normal_mat = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
     uniforms.modelView[2].xyz,
   );
-  out.view_normal = normal_mat * in.normal;
+  out.view_normal = normal_mat * world_normal;
   out.uv = in.uv;
   return out;
 }
@@ -67,10 +80,6 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
-// Build a tangent-space basis at the fragment from screen-space derivatives of
-// position and UV, so we don't need per-vertex tangents on the mesh. Christian
-// Schüler's formulation; quality drops where UVs stretch (poles of a sphere)
-// but works without changing the geometry pipeline.
 fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
   let dp1 = dpdx(p);
   let dp2 = dpdy(p);
@@ -101,10 +110,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let v = normalize(-in.view_pos);
 
-  // World-space light, transformed into view space via the modelView's
-  // rotation block. Keeps the "sun direction" pinned to the world rather
-  // than the camera, so orbiting reveals different lit faces of objects
-  // (buildings on a planet feel fixed relative to the planet).
   let l_world = normalize(vec3f(0.4, 0.8, 0.6));
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
