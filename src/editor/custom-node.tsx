@@ -83,6 +83,20 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
   return null;
 }
 
+// Whether this node *type* has a preview slot — based on its declared output
+// types, not on whether eval has produced data yet. Reserving the slot at
+// type level keeps the node's size stable across eval transitions, so users
+// can place a node and not have it grow under their cursor when the first
+// preview arrives.
+function hasPreviewSlot(def: NodeDef): boolean {
+  for (const out of def.outputs) {
+    if (out.type === 'Texture2D' || out.type === 'Material' || out.type === 'Heightfield') {
+      return true;
+    }
+  }
+  return false;
+}
+
 interface TypedHandleProps {
   socketName: string;
   socketType: string;
@@ -207,8 +221,8 @@ export function CustomNode({ id, data }: NodeProps) {
   }
 
   const previewTarget = previewTargetFor(myOutputs);
-  const showPreview = previewTarget !== null && device !== null;
-  const previewBlockHeight = showPreview ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
+  const hasSlot = hasPreviewSlot(def);
+  const previewBlockHeight = hasSlot ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
   const inputsTop = HEADER_HEIGHT + previewBlockHeight;
 
   const valueOf = (input: InputDef) => {
@@ -220,20 +234,24 @@ export function CustomNode({ id, data }: NodeProps) {
     <div style={nodeStyle}>
       <div style={headerStyle}>{def.id}</div>
 
-      {showPreview && (
+      {hasSlot && (
         <div style={previewBlockStyle}>
-          {previewTarget.kind === 'material' ? (
-            <MaterialPreview
-              device={device}
-              material={previewTarget.value}
-              size={PREVIEW_SIZE}
-            />
+          {previewTarget && device ? (
+            previewTarget.kind === 'material' ? (
+              <MaterialPreview
+                device={device}
+                material={previewTarget.value}
+                size={PREVIEW_SIZE}
+              />
+            ) : (
+              <TexturePreview
+                device={device}
+                value={previewTarget.value}
+                size={PREVIEW_SIZE}
+              />
+            )
           ) : (
-            <TexturePreview
-              device={device}
-              value={previewTarget.value}
-              size={PREVIEW_SIZE}
-            />
+            <div style={placeholderStyle}>—</div>
           )}
         </div>
       )}
@@ -311,6 +329,20 @@ const previewBlockStyle: React.CSSProperties = {
   padding: PREVIEW_PADDING,
   background: '#22222a',
   borderBottom: '1px solid #555',
+};
+
+const placeholderStyle: React.CSSProperties = {
+  width: PREVIEW_SIZE,
+  height: PREVIEW_SIZE,
+  margin: '0 auto',
+  background: '#000',
+  borderRadius: 2,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: '#444',
+  fontSize: 24,
+  userSelect: 'none',
 };
 
 const inputRowStyle: React.CSSProperties = {
