@@ -114,7 +114,9 @@ export interface HeightfieldValue {
 // Scene-level lighting params produced by core/output and consumed by the
 // renderer's per-frame uniforms. World-space sun direction; RGB color
 // pre-scaled by intensity; RGB ambient added to every fragment as a flat
-// fill light.
+// fill light. Plus a vertical sky gradient (top/bottom RGB) drawn behind the
+// scene before any geometry — so empty space reads as "outdoors" rather
+// than the void clear-color it used to.
 export interface LightingValue {
   /** Direction the sun light travels FROM in world space. Will be normalized in the shader. */
   direction: [number, number, number];
@@ -122,14 +124,26 @@ export interface LightingValue {
   color: [number, number, number];
   /** RGB ambient fill multiplier on albedo. Replaces the previous hardcoded 0.15. */
   ambient: [number, number, number];
+  /** RGB color at the top of the screen (sky-zenith). */
+  skyTop: [number, number, number];
+  /** RGB color at the bottom of the screen (sky-horizon / ground glow). */
+  skyBottom: [number, number, number];
 }
 
-/** Default lighting matches the previous hardcoded values: white sun at intensity 3 from (0.4, 0.8, 0.6) with 0.15 grey ambient. */
+/**
+ * Default lighting matches the previous hardcoded values: white sun at
+ * intensity 3 from (0.4, 0.8, 0.6) with 0.15 grey ambient. Sky defaults are
+ * a daytime pale blue → warmer near the horizon — close to the previous
+ * dark-grey clearColor on the value scale, but tinted toward atmospheric
+ * blue.
+ */
 export function defaultLighting(): LightingValue {
   return {
     direction: [0.4, 0.8, 0.6],
     color: [3, 3, 3],
     ambient: [0.15, 0.15, 0.15],
+    skyTop: [0.42, 0.6, 0.85],
+    skyBottom: [0.78, 0.82, 0.78],
   };
 }
 

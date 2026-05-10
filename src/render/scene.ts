@@ -9,13 +9,13 @@ import type {
 import type { Mat4 } from './mat4.js';
 import { createScenePipeline } from './pipeline.js';
 import shaderCode from './shader.wgsl';
+import skyShaderCode from './sky.wgsl';
 
 export interface SceneRenderer {
   render(params: {
     encoder: GPUCommandEncoder;
     colorView: GPUTextureView;
     depthView: GPUTextureView;
-    clearColor: GPUColorDict;
     modelView: Mat4;
     projection: Mat4;
     lighting: LightingValue;
@@ -58,12 +58,34 @@ interface Batch {
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
 const INSTANCE_FLOATS = 20;
 
+function createSkyPipeline(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code: skyShaderCode });
+  return device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module, entryPoint: 'vs_main' },
+    fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    // Depth attachment is shared with the scene pass; we don't write or test
+    // against it. depthCompare 'always' lets the sky pass through unchanged
+    // and depthWriteEnabled false keeps the depth buffer clean for geometry.
+    depthStencil: {
+      format: 'depth32float',
+      depthWriteEnabled: false,
+      depthCompare: 'always',
+    },
+  });
+}
+
 export function createSceneRenderer(
   device: GPUDevice,
   format: GPUTextureFormat,
   scene: SceneValue,
 ): SceneRenderer {
   const pipeline = createScenePipeline(device, format, shaderCode);
+  const skyPipeline = createSkyPipeline(device, format);
 
   const sampler = device.createSampler({
     magFilter: 'linear',
@@ -84,6 +106,18 @@ export function createSceneRenderer(
   // Reused per-frame scratch for the lighting block. 12 floats = 3 vec3 ×
   // (3 floats + 1 padding).
   const lightingScratch = new Float32Array(12);
+
+  // Sky uniform buffer + bind group + scratch. Layout: vec3 top, vec3 bottom,
+  // each padded to 16 bytes (32 bytes total / 8 floats).
+  const skyUniformBuffer = device.createBuffer({
+    size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const skyBindGroup = device.createBindGroup({
+    layout: skyPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: skyUniformBuffer } }],
+  });
+  const skyScratch = new Float32Array(8);
 
   let flatNormal: Texture2DValue | null = null;
 
@@ -154,7 +188,7 @@ export function createSceneRenderer(
   }
 
   return {
-    render({ encoder, colorView, depthView, clearColor, modelView, projection, lighting }) {
+    render({ encoder, colorView, depthView, modelView, projection, lighting }) {
       device.queue.writeBuffer(sceneUniformBuffer, 0, modelView as BufferSource);
       device.queue.writeBuffer(sceneUniformBuffer, 64, projection as BufferSource);
       lightingScratch[0]  = lighting.direction[0];
@@ -171,9 +205,26 @@ export function createSceneRenderer(
       // [11] padding
       device.queue.writeBuffer(sceneUniformBuffer, 128, lightingScratch as BufferSource);
 
+      skyScratch[0] = lighting.skyTop[0];
+      skyScratch[1] = lighting.skyTop[1];
+      skyScratch[2] = lighting.skyTop[2];
+      // [3] padding
+      skyScratch[4] = lighting.skyBottom[0];
+      skyScratch[5] = lighting.skyBottom[1];
+      skyScratch[6] = lighting.skyBottom[2];
+      // [7] padding
+      device.queue.writeBuffer(skyUniformBuffer, 0, skyScratch as BufferSource);
+
       const pass = encoder.beginRenderPass({
         colorAttachments: [
-          { view: colorView, clearValue: clearColor, loadOp: 'clear', storeOp: 'store' },
+          {
+            view: colorView,
+            // Sky pass below overdraws this clear; the value just protects
+            // against the (currently impossible) case where sky doesn't run.
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
         ],
         depthStencilAttachment: {
           view: depthView,
@@ -184,6 +235,14 @@ export function createSceneRenderer(
           depthStoreOp: 'store',
         },
       });
+
+      // Sky first — fullscreen triangle, no depth interactions, fills the
+      // background gradient. Geometry overdraws wherever it's nearer.
+      pass.setPipeline(skyPipeline);
+      pass.setBindGroup(0, skyBindGroup);
+      pass.draw(3);
+
+      // Scene geometry on top.
       pass.setPipeline(pipeline);
       for (const b of batches) {
         pass.setBindGroup(0, b.bindGroup);

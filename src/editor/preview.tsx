@@ -188,7 +188,6 @@ export function Preview() {
           encoder,
           colorView: context.getCurrentTexture().createView(),
           depthView: depthTexture!.createView(),
-          clearColor: { r: 0.06, g: 0.06, b: 0.08, a: 1 },
           modelView,
           projection,
           lighting,

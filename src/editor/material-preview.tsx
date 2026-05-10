@@ -95,15 +95,21 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         rotationY(cam.yaw),
       );
 
+      // In-node previews use a neutral dark background — a sky gradient
+      // would compete with the material for the reader's attention. Lit by
+      // the default sun + ambient.
+      const previewLighting = defaultLighting();
+      previewLighting.skyTop = [0.06, 0.06, 0.08];
+      previewLighting.skyBottom = [0.06, 0.06, 0.08];
+
       const encoder = device.createCommandEncoder();
       r.renderer.render({
         encoder,
         colorView: ctx.getCurrentTexture().createView(),
         depthView: depthRef.current.createView(),
-        clearColor: { r: 0.06, g: 0.06, b: 0.08, a: 1 },
         modelView,
         projection,
-        lighting: defaultLighting(),
+        lighting: previewLighting,
       });
       device.queue.submit([encoder.finish()]);
     };
