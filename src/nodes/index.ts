@@ -7,8 +7,10 @@ import { gridNode } from './grid.js';
 import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceOnPointsNode } from './instance-on-points.js';
+import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
 import { mixNode } from './mix.js';
+import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
@@ -21,6 +23,8 @@ import { worleyNode } from './worley.js';
 
 export const CORE_NODES = [
   mixNode,
+  multiplyNode,
+  mapRangeNode,
   sphereNode,
   cubeNode,
   planeNode,
@@ -56,8 +60,10 @@ export {
   heightfieldNode,
   heightfieldToMeshNode,
   instanceOnPointsNode,
+  mapRangeNode,
   materialNode,
   mixNode,
+  multiplyNode,
   normalFromHeightNode,
   outputNode,
   perlinNode,
