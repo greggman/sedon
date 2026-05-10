@@ -2,7 +2,7 @@
 
 --- new ---
 
-* WGSL snipped node - meta data for types (quat vs vec4f vs color) but parse for defaults
+* WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
 * is core/grid a valid node. maybe should be list of colors with +/- to add to list?
 * is there a list/array entry type
 * solid-color should just be color (special case or give it 2 outputs)
@@ -12,7 +12,31 @@
 * having color nodes is gross - solutions
   (1) color inputs, like numbers, have a color
   (2) color bank (a node with N colors and N outputs, maybe with labels)
+* need preview always - even if bad inputs (example heightfield)
+* let you pull of an input
+* add help icon at top right of each node (or bottom left as there is space)
+  should be link to docs. Generate docs for each node. Docs should have live
+  sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` 
+* align values?
+
+  currently it's
+
+  ```
+  abc [--value--]
+  defgh [-value-]
+  ```
+
+  should maybe be
+
+
+  ```
+  abc   [-value-]
+  defgh [-value-]
+  ```
+
+
 * node title areas should match output color?
+  * some nodes 
 * nodes should be nameable - and searchable
 * need a node cleanup (re-layout)
 * material previews should use track camera, not orbit
