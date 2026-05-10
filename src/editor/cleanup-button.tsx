@@ -5,7 +5,8 @@ import { useEditorStore } from './store.js';
 // Re-flow node positions via rank-based layered layout. Reads measured
 // node dimensions from React Flow (so wide preview-bearing nodes don't
 // collide), runs layoutGraph, and writes new positions back. Doesn't touch
-// the graph topology — just node positions, same as a manual drag would.
+// the graph topology or edges — just node positions, same as a manual drag
+// would.
 export function CleanupButton() {
   const rf = useReactFlow();
 
@@ -35,7 +36,6 @@ export function CleanupButton() {
       }),
     );
 
-    // Frame the new layout.
     requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
   };
 
