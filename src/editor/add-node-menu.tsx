@@ -91,6 +91,8 @@ const popupStyle: React.CSSProperties = {
   borderRadius: 4,
   padding: '4px 0',
   minWidth: 200,
+  maxHeight: 'calc(100vh - 60px)',
+  overflowY: 'auto',
   fontSize: 12,
   fontFamily: 'system-ui, sans-serif',
   color: '#ddd',
