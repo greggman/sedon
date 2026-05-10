@@ -57,6 +57,8 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Geometry', color: '#e53935', description: 'mesh: positions, normals, uvs, indices' },
   { id: 'Material', color: '#ec407a', description: 'bundle of textures + scalar params' },
   { id: 'PointCloud', color: '#9e9e9e', description: 'unstructured points with optional surface normals' },
+  { id: 'Vec3Cloud', color: '#7986cb', description: 'per-point Vec3 attribute, paired with a PointCloud' },
+  { id: 'FloatCloud', color: '#ffb74d', description: 'per-point Float attribute, paired with a PointCloud' },
   { id: 'Heightfield', color: '#827717', description: '2D scalar field with world bounds + height range' },
 ];
 

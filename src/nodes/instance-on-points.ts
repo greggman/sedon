@@ -1,5 +1,10 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { GeometryValue, PointCloudValue } from '../core/resources.js';
+import type {
+  FloatCloudValue,
+  GeometryValue,
+  PointCloudValue,
+  Vec3CloudValue,
+} from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
 import { instanceOnPoints, uploadMeshToGpu } from '../render/mesh.js';
 
@@ -10,7 +15,24 @@ export const instanceOnPointsNode: NodeDef = {
     { name: 'points', type: 'PointCloud' },
     { name: 'instance', type: 'Geometry' },
     { name: 'scale', type: 'Float', default: 0.1 },
-    { name: 'align', type: 'Bool', default: true, description: 'rotate each instance to align local +Y with the point normal' },
+    {
+      name: 'align',
+      type: 'Bool',
+      default: true,
+      description: 'rotate each instance to align local +Y with the point normal',
+    },
+    {
+      name: 'per_point_scale',
+      type: 'Vec3Cloud',
+      optional: true,
+      description: 'optional per-point per-axis scale, multiplies base scale',
+    },
+    {
+      name: 'per_point_yaw',
+      type: 'FloatCloud',
+      optional: true,
+      description: 'optional per-point rotation around local +Y, in radians',
+    },
   ],
   outputs: [{ name: 'geometry', type: 'Geometry' }],
   evaluate(ctx, inputs): { geometry: GeometryValue } {
@@ -23,12 +45,27 @@ export const instanceOnPointsNode: NodeDef = {
           'geometry; the upstream node produced GPU-only data.',
       );
     }
-    const realized = instanceOnPoints(
-      instanceGeom.mesh,
-      points,
-      inputs.scale as number,
-      inputs.align as boolean,
-    );
+    const perPointScale = inputs.per_point_scale as Vec3CloudValue | undefined;
+    const perPointYaw = inputs.per_point_yaw as FloatCloudValue | undefined;
+    if (perPointScale && perPointScale.count !== points.count) {
+      throw new Error(
+        `per_point_scale count (${perPointScale.count}) does not match ` +
+          `points count (${points.count})`,
+      );
+    }
+    if (perPointYaw && perPointYaw.count !== points.count) {
+      throw new Error(
+        `per_point_yaw count (${perPointYaw.count}) does not match ` +
+          `points count (${points.count})`,
+      );
+    }
+
+    const realized = instanceOnPoints(instanceGeom.mesh, points, {
+      scale: inputs.scale as number,
+      align: inputs.align as boolean,
+      ...(perPointScale ? { perPointScale: perPointScale.values } : {}),
+      ...(perPointYaw ? { perPointYaw: perPointYaw.values } : {}),
+    });
     return { geometry: uploadMeshToGpu(device, realized) };
   },
 };

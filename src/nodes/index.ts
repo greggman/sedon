@@ -15,6 +15,8 @@ import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
 import { planeNode } from './plane.js';
+import { randomFloatCloudNode } from './random-float-cloud.js';
+import { randomVec3CloudNode } from './random-vec3-cloud.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { transformNode } from './transform.js';
@@ -31,6 +33,8 @@ export const CORE_NODES = [
   transformNode,
   distributeOnFacesNode,
   instanceOnPointsNode,
+  randomVec3CloudNode,
+  randomFloatCloudNode,
   heightfieldNode,
   heightfieldToMeshNode,
   solidColorNode,
@@ -68,6 +72,8 @@ export {
   outputNode,
   perlinNode,
   planeNode,
+  randomFloatCloudNode,
+  randomVec3CloudNode,
   solidColorNode,
   sphereNode,
   transformNode,

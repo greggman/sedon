@@ -255,6 +255,24 @@ export function distributeOnFaces(
   };
 }
 
+export interface InstanceOnPointsOptions {
+  /** Base scale applied to every instance, multiplied by per-point scale if provided. */
+  scale: number;
+  /** Rotate each instance to align local +Y with the point normal. */
+  align: boolean;
+  /**
+   * Optional per-point per-axis scale (length = count * 3). If absent, every
+   * instance uses just the base scale uniformly. The values multiply the base
+   * scale: `final[axis] = base * perPointScale[i*3 + axis]`.
+   */
+  perPointScale?: Float32Array;
+  /**
+   * Optional per-point yaw rotation in radians (length = count). If absent,
+   * no spin around the local Y axis.
+   */
+  perPointYaw?: Float32Array;
+}
+
 // Realize a point cloud by copying the instance mesh at every point. Returns
 // one big merged mesh; the standard renderer can draw it without any
 // instancing infrastructure. For thousands of points this gets memory-heavy,
@@ -262,12 +280,14 @@ export function distributeOnFaces(
 //
 // When `align` is true and the cloud carries surface normals, each instance is
 // rotated so its local +Y axis points along the surface normal at that point.
+// Per-instance random scale and yaw rotation give variety without breaking
+// determinism — same `seed` produces the same arrangement every eval.
 export function instanceOnPoints(
   instance: CpuMesh,
   points: PointCloudValue,
-  scale: number,
-  align: boolean,
+  opts: InstanceOnPointsOptions,
 ): CpuMesh {
+  const { scale, align, perPointScale, perPointYaw } = opts;
   const vpi = instance.positions.length / 3; // vertices per instance
   const ipi = instance.indices.length;       // indices per instance
   const totalV = vpi * points.count;
@@ -342,22 +362,51 @@ export function instanceOnPoints(
       r02 = bx; r12 = by; r22 = bz;
     }
 
+    // Per-point variation comes from optional cloud attributes; absent → no
+    // variation, just the base scale.
+    const sx = scale * (perPointScale ? perPointScale[p * 3]!     : 1);
+    const syA = scale * (perPointScale ? perPointScale[p * 3 + 1]! : 1);
+    const sz = scale * (perPointScale ? perPointScale[p * 3 + 2]! : 1);
+    const yaw = perPointYaw ? perPointYaw[p]! : 0;
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+
+    // Inverse per-axis scale for normals; guard against zero scale to avoid NaN.
+    const isx = sx !== 0 ? 1 / sx : 0;
+    const isy = syA !== 0 ? 1 / syA : 0;
+    const isz = sz !== 0 ? 1 / sz : 0;
+
     const baseV = p * vpi;
     for (let v = 0; v < vpi; v++) {
-      const ix = ip[v * 3]! * scale;
-      const iy = ip[v * 3 + 1]! * scale;
-      const iz = ip[v * 3 + 2]! * scale;
+      // Spin in local XZ around Y, then per-axis scale.
+      const ix0 = ip[v * 3]!;
+      const iy0 = ip[v * 3 + 1]!;
+      const iz0 = ip[v * 3 + 2]!;
+      const ix = (cy * ix0 + sy * iz0) * sx;
+      const iy = iy0 * syA;
+      const iz = (-sy * ix0 + cy * iz0) * sz;
       const dst = (baseV + v) * 3;
       positions[dst]     = r00 * ix + r01 * iy + r02 * iz + px;
       positions[dst + 1] = r10 * ix + r11 * iy + r12 * iz + py;
       positions[dst + 2] = r20 * ix + r21 * iy + r22 * iz + pz;
 
-      const inx = in_[v * 3]!;
-      const iny = in_[v * 3 + 1]!;
-      const inz = in_[v * 3 + 2]!;
-      normals[dst]     = r00 * inx + r01 * iny + r02 * inz;
-      normals[dst + 1] = r10 * inx + r11 * iny + r12 * inz;
-      normals[dst + 2] = r20 * inx + r21 * iny + r22 * inz;
+      // Yaw normals, then apply inverse-scale and renormalize so non-uniform
+      // scale produces correct surface normals (squashing the Y axis tilts the
+      // sides of a cube outward; the normal must follow).
+      const inx0 = in_[v * 3]!;
+      const iny0 = in_[v * 3 + 1]!;
+      const inz0 = in_[v * 3 + 2]!;
+      const inxYaw = cy * inx0 + sy * inz0;
+      const inyYaw = iny0;
+      const inzYaw = -sy * inx0 + cy * inz0;
+      let nx = inxYaw * isx;
+      let ny = inyYaw * isy;
+      let nz = inzYaw * isz;
+      const nlen = Math.hypot(nx, ny, nz) || 1;
+      nx /= nlen; ny /= nlen; nz /= nlen;
+      normals[dst]     = r00 * nx + r01 * ny + r02 * nz;
+      normals[dst + 1] = r10 * nx + r11 * ny + r12 * nz;
+      normals[dst + 2] = r20 * nx + r21 * ny + r22 * nz;
 
       const dstUv = (baseV + v) * 2;
       const srcUv = v * 2;

@@ -52,6 +52,22 @@ export interface PointCloudValue {
   count: number;
 }
 
+// Per-point attributes paired with a PointCloud. `count` matches the
+// PointCloud's count; `values` is row-major. Composition pattern: distribute
+// produces a PointCloud, attribute generators (random-vec3-cloud,
+// random-float-cloud, …) read its count and emit a parallel cloud of values,
+// consumers (instance-on-points, future scatter density-mask, etc.) take
+// both and pair them by index.
+export interface Vec3CloudValue {
+  count: number;
+  values: Float32Array; // length = count * 3
+}
+
+export interface FloatCloudValue {
+  count: number;
+  values: Float32Array; // length = count
+}
+
 // Heightfield: a Texture2D wrapped with the world-space metadata that makes
 // it a terrain primitive. The texture's R channel is unsigned height in
 // [0, 1]; consumers remap to [heightRange.min, heightRange.max]. `worldSize`
