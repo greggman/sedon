@@ -7,6 +7,7 @@ import { colorizeNode } from './colorize.js';
 import { cubeNode } from './cube.js';
 import { cylinderNode } from './cylinder.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
+import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
 import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
@@ -43,6 +44,7 @@ export const CORE_NODES = [
   transformNode,
   mergeGeometryNode,
   distributeOnFacesNode,
+  gridDistributeNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
   randomVec3CloudNode,
@@ -82,6 +84,7 @@ export {
   cubeNode,
   cylinderNode,
   distributeOnFacesNode,
+  gridDistributeNode,
   gridNode,
   heightfieldNode,
   heightfieldToMeshNode,

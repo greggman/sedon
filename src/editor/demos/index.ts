@@ -1,4 +1,5 @@
 import type { Graph } from '../../core/graph.js';
+import { createCityDemo } from './city.js';
 import { createForestDemo } from './forest.js';
 
 export interface Demo {
@@ -9,4 +10,5 @@ export interface Demo {
 
 export const DEMOS: Demo[] = [
   { id: 'forest', label: 'Forest', build: createForestDemo },
+  { id: 'city', label: 'City', build: createCityDemo },
 ];
