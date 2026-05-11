@@ -69,6 +69,13 @@ export interface TerrainSplatMaterial {
   mask: Texture2DValue;
   roughnessA: number;
   roughnessB: number;
+  /**
+   * UV tile rate for the two basecolor layers only — the mask samples at
+   * un-tiled UVs so the splat pattern still follows terrain shape across
+   * the whole mesh, while grass/rock textures tile densely for close-range
+   * detail. Default [1,1] preserves pre-tile-scale behavior.
+   */
+  tileScale: [number, number];
 }
 
 // A renderable scene is a list of entities. Each entity carries a geometry +

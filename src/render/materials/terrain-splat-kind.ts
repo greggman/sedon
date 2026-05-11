@@ -46,9 +46,13 @@ export function createTerrainSplatKind(
         size: 16,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
+      // Layout: roughnessA, roughnessB at offsets 0/4; tile_scale vec2f at
+      // offset 8 (naturally aligned) — total 16 bytes.
       const paramData = new Float32Array(4);
       paramData[0] = material.roughnessA;
       paramData[1] = material.roughnessB;
+      paramData[2] = material.tileScale[0];
+      paramData[3] = material.tileScale[1];
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
 
       return device.createBindGroup({

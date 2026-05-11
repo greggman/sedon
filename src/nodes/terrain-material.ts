@@ -20,6 +20,12 @@ export const terrainMaterialNode: NodeDef = {
     { name: 'mask', type: 'Texture2D', description: 'R channel selects between layers' },
     { name: 'roughness_a', type: 'Float', default: 0.9 },
     { name: 'roughness_b', type: 'Float', default: 0.7 },
+    {
+      name: 'tile_scale',
+      type: 'Vec2',
+      default: [1, 1],
+      description: 'tile rate for layers (mask is not tiled, so the splat follows terrain shape)',
+    },
   ],
   outputs: [{ name: 'material', type: 'Material' }],
   evaluate(_ctx, inputs): { material: MaterialValue } {
@@ -31,6 +37,7 @@ export const terrainMaterialNode: NodeDef = {
         mask: inputs.mask as Texture2DValue,
         roughnessA: inputs.roughness_a as number,
         roughnessB: inputs.roughness_b as number,
+        tileScale: inputs.tile_scale as [number, number],
       },
     };
   },

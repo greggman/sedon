@@ -23,6 +23,9 @@ struct Uniforms {
 struct TerrainParams {
   roughnessA: f32,
   roughnessB: f32,
+  // UV tile rate for the two basecolor layers. Mask samples at base UVs
+  // so the splat pattern follows terrain shape; only the textures tile.
+  tile_scale: vec2f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -140,8 +143,9 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
-  let aa = textureSample(layerA, samp, in.uv).rgb * in.tint.rgb;
-  let bb = textureSample(layerB, samp, in.uv).rgb * in.tint.rgb;
+  let tiled_uv = in.uv * params.tile_scale;
+  let aa = textureSample(layerA, samp, tiled_uv).rgb * in.tint.rgb;
+  let bb = textureSample(layerB, samp, tiled_uv).rgb * in.tint.rgb;
   let t = clamp(textureSample(mask, samp, in.uv).r, 0.0, 1.0);
 
   let n_geom = normalize(in.view_normal);

@@ -36,6 +36,7 @@ import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { transformNode } from './transform.js';
+import { uvTransformNode } from './uv-transform.js';
 import { warpNode } from './warp.js';
 import { worleyNode } from './worley.js';
 
@@ -49,6 +50,7 @@ export const CORE_NODES = [
   coneNode,
   planeNode,
   transformNode,
+  uvTransformNode,
   mergeGeometryNode,
   distributeOnFacesNode,
   gridDistributeNode,
@@ -125,6 +127,7 @@ export {
   sphereNode,
   terrainMaterialNode,
   transformNode,
+  uvTransformNode,
   warpNode,
   worleyNode,
 };
