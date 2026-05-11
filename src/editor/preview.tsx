@@ -14,7 +14,16 @@ import { useEditorStore, type CameraState } from './store.js';
 //             * translate(-target)
 // Mouse drag rotates yaw/pitch. Cmd/Ctrl+drag pans the target along the
 // camera's local right/up axes. Scroll zooms (changes distance).
+//
+// WASD/QE keyboard nav (when canvas has focus): W/S walk forward/back along
+// camera-forward projected to the XZ plane, A/D strafe along camera-right
+// (already horizontal — yaw-only basis has no Y). Q/E move the target on
+// world up/down. Shift multiplies speed. Speed scales with `distance` so
+// motion feels right at any zoom — fast across the forest, slow up close.
 type OrbitCamera = CameraState;
+
+const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
+const HANDLED_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift']);
 
 const DEFAULT_CAMERA: OrbitCamera = {
   yaw: 0,
@@ -42,6 +51,10 @@ export function Preview() {
   // store on drag-end and context switch so navigating subgraphs preserves
   // each one's framing.
   const cameraRef = useRef<OrbitCamera>(cloneCamera(DEFAULT_CAMERA));
+
+  // Held keys for WASD/QE nav, read each frame by the render loop. Cleared
+  // on canvas blur so a held key doesn't "stick" when focus moves away.
+  const keysRef = useRef<Set<string>>(new Set());
 
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
@@ -96,6 +109,10 @@ export function Preview() {
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
+      // Focus the canvas so subsequent keydowns route here. Click-focus
+      // doesn't show a focus ring in modern browsers (focus-visible), so
+      // this is invisible UX.
+      canvas.focus();
       dragging = true;
       panning = e.metaKey || e.ctrlKey;
       lastX = e.clientX;
@@ -165,11 +182,48 @@ export function Preview() {
       useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
     };
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (!HANDLED_KEYS.has(k)) return;
+      e.preventDefault();
+      keysRef.current.add(k);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (!HANDLED_KEYS.has(k)) return;
+      e.preventDefault();
+      keysRef.current.delete(k);
+      // Save the camera once all movement keys are released. Shift alone
+      // doesn't move the camera, so a stray Shift release shouldn't
+      // trigger a redundant save.
+      let stillMoving = false;
+      keysRef.current.forEach((held) => {
+        if (MOVEMENT_KEYS.has(held)) stillMoving = true;
+      });
+      if (!stillMoving) {
+        const id = useEditorStore.getState().currentEditingId;
+        useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+      }
+    };
+    // If focus leaves the canvas mid-key, the keyup event goes elsewhere
+    // and our key would otherwise "stick" — clear on blur to avoid a
+    // runaway camera the next time the canvas regains focus.
+    const onBlur = () => {
+      if (keysRef.current.size === 0) return;
+      keysRef.current.clear();
+      const id = useEditorStore.getState().currentEditingId;
+      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+    };
+
+    canvas.tabIndex = 0;
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('keydown', onKeyDown);
+    canvas.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('blur', onBlur);
 
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown);
@@ -177,6 +231,9 @@ export function Preview() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('keydown', onKeyDown);
+      canvas.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('blur', onBlur);
     };
   }, []);
 
@@ -254,6 +311,7 @@ export function Preview() {
       let depthTexture: GPUTexture | null = null;
       let lastWidth = 0;
       let lastHeight = 0;
+      let lastFrameTime = performance.now();
 
       const frame = () => {
         if (cancelled) return;
@@ -268,9 +326,49 @@ export function Preview() {
           lastHeight = canvas.height;
         }
 
+        // Frame delta time, clamped so a long suspension (tab switch) doesn't
+        // teleport the camera on resume.
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
+        lastFrameTime = now;
+
+        const cam = cameraRef.current;
+        const keys = keysRef.current;
+        if (keys.size > 0) {
+          // Speed scales with distance: zoomed-out means traversing a large
+          // scene, zoomed-in means inspecting up close. Sprint is 3x.
+          const sprint = keys.has('shift') ? 3 : 1;
+          const speed = cam.distance * 0.5 * sprint * dt;
+          const cy = Math.cos(cam.yaw);
+          const sy = Math.sin(cam.yaw);
+          // Camera-right is already horizontal (yaw-only). Camera-forward
+          // projected to XZ is up × right = (-sy, 0, -cy); we drop the Y
+          // term so W/S walk along the ground regardless of pitch. The
+          // minus-sy is load-bearing: rotationY here rotates +X→+Z (not
+          // the textbook right-handed convention), so a naive +sy is
+          // mirrored as soon as you yaw off zero.
+          const rightX = cy, rightZ = -sy;
+          const fwdX = -sy, fwdZ = -cy;
+          let dx = 0, dy = 0, dz = 0;
+          if (keys.has('w')) { dx += fwdX; dz += fwdZ; }
+          if (keys.has('s')) { dx -= fwdX; dz -= fwdZ; }
+          if (keys.has('d')) { dx += rightX; dz += rightZ; }
+          if (keys.has('a')) { dx -= rightX; dz -= rightZ; }
+          if (keys.has('e')) { dy += 1; }
+          if (keys.has('q')) { dy -= 1; }
+          // Normalize diagonal motion so a W+D press isn't sqrt(2) faster
+          // than W alone.
+          const len = Math.hypot(dx, dy, dz);
+          if (len > 0) {
+            const k = speed / len;
+            cam.target[0] += dx * k;
+            cam.target[1] += dy * k;
+            cam.target[2] += dz * k;
+          }
+        }
+
         const aspect = canvas.width / canvas.height;
         const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
-        const cam = cameraRef.current;
         // modelView = trans(0,0,-distance) * rotX(pitch) * rotY(yaw) * trans(-target)
         // Translating by -target first puts the orbit pivot at the origin so
         // pitch/yaw rotate around it, not around world origin.
