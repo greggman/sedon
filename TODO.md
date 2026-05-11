@@ -1,82 +1,89 @@
 # Sedon
 
+--- steps ---
+
+- [ ] detail textures
+- [ ] ridged-noise
+- [ ] shadow maps
+
+
 --- new ---
 
-* WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
-* is core/grid a valid node. maybe should be list of colors with +/- to add to list?
-* is there a list/array entry type
-* solid-color should just be color (special case or give it 2 outputs)
-* editable texture? a node with a pixel editor?
-* texture nodes need preview
-* texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
-* having color nodes is gross - solutions
+- [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
+- [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to list?
+- [ ] is there a list/array entry type
+- [ ] solid-color should just be color (special case or give it 2 outputs)
+- [ ] editable texture? a node with a pixel editor?
+- [ ] texture nodes need preview
+- [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
+- [ ] having color nodes is gross - solutions
   (1) color inputs, like numbers, have a color
   (2) color bank (a node with N colors and N outputs, maybe with labels)
-* need preview always - even if bad inputs (example heightfield)
-* let you pull of an input
-* add help icon at top right of each node (or bottom left as there is space)
+- [ ] need preview always - even if bad inputs (example heightfield)
+- [ ] let you pull off an input (?)
+  prefs because easy to break when trying to move node
+- [ ] add help icon at top right of each node (or bottom left as there is space)
   should be link to docs. Generate docs for each node. Docs should have live
   sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` or `url?src=url` 
-* allow drag and drop of scene
-* name scene .sedon
-* need "new scene"
-  * verify before deleting work
-  * offer various kinds of starting scenes
-* need a way to make a point cloud with more constraints
-  * example: want random x,y,z but want x == z
+- [ ] allow drag and drop of scene file
+- [ ] name scene .sedon
+- [ ] need "new scene"
+  - [ ] verify before deleting work
+  - [ ] offer various kinds of starting scenes
+- [ ] need a way to make a point cloud with more constraints
+  - [ ] example: want random x,y,z but want x == z
 
     solutions?:
 
-    * use 2 float clouds (xz, y) and combine into xyz point-cloud
-    * custom WGSL point cloud node
-    * after the fact modifier - make xyz cloud -> filter node(s) 
-    * other
+    - [ ] use 2 float clouds (xz, y) and combine into xyz point-cloud
+    - [ ] custom WGSL point cloud node
+    - [ ] after the fact modifier - make xyz cloud -> filter node(s) 
+    - [ ] other
 
     Not sure if we should have one of these are all of them
 
 
-* Need an asset hierarchy (folders)
+- [ ] Need an asset hierarchy (folders)
 
   Like Unity, it should be a tree of folders and subgraphs.
   They can be listed as names or as icons. User can drag subgraphs
   from one folder to another as well as drag them into the current graph.
 
-* Need a window manager?
+- [ ] Need a window manager?
 
   Currently we have a vertically split window. Maybe we just need panes
   like VSCode and you can set each pane to show a graph or a preview or
   assets
 
-* Would like multiple windows
+- [ ] Would like multiple windows
 
   If an webpage creates a window its accessible directly and can share a
   A WebGPU device so it seems this is not a hard thing to do. For real pro
   asset creation it's common to have 2 monitors so being able to create
   multiple windows is probably a must.
 
-* nodes should be nameable - and searchable
-* material previews should use track camera, not orbit
-* preview sphere should be larger 
-* touch support? (iPad) - maybe iphone
-* need to be able to size split
-* support HDR output
-* colorize should be N stop? Instead of 2 stop? 
-* color the connections?
-* camera
-  * camera per scene
-  * orbit vs track control (option)
-  * frame
-  * ortho
-  * fly?
-
--- done --
-
-* need a node cleanup (re-layout)
-* use reverse-z
-* CSS classes
-* need undo/redo
-* node title areas should match output color?
-* align values?
+- [ ] nodes should be nameable - and searchable
+- [ ] material previews should use track camera, not orbit
+- [ ] preview sphere should be larger 
+- [ ] touch support? (iPad) - maybe iphone
+- [ ] need to be able to size split
+- [ ] support HDR output
+- [ ] colorize should be N stop? Instead of 2 stop? 
+- [ ] camera
+  - [ ] orbit vs track control (option)
+  - [ ] frame
+  - [ ] ortho
+- [*] color the connections?
+- [*] per graph canvas position
+- [*] camera
+  - [*] camera per scene
+  - [*] fly?
+- [*] need a node cleanup (re-layout)
+- [*] use reverse-z
+- [*] CSS classes
+- [*] need undo/redo
+- [*] node title areas should match output color?
+- [*] align values?
 
   currently it's
 
@@ -98,29 +105,29 @@
 This is a data definition and library for generating 3d models
 and worlds from mostly procedural data.
 
-* Generate a city (buildings, roads, street lamps, store fronts)
-* Generate a biome (forest, desert, jungle, undersea)
-* Generate plants/trees/rocks including leaves
-* Generate terrain (mountains, valleys, rivers)
+- [ ] Generate a city (buildings, roads, street lamps, store fronts)
+- [ ] Generate a biome (forest, desert, jungle, undersea)
+- [ ] Generate plants/trees/rocks including leaves
+- [ ] Generate terrain (mountains, valleys, rivers)
 
 Inspiration taken from other node based systems
 
-* Generating procedural textures
-* Generating procedural geometry
-  * simple solids (sphere, cube, triangle, cylinder ...)
-  * tree structures (trees, plants)
-  * modifiers (lathes, extrusions)
-  * duplicators (in area, along paths or surfaces, ....)
+- [ ] Generating procedural textures
+- [ ] Generating procedural geometry
+  - [ ] simple solids (sphere, cube, triangle, cylinder ...)
+  - [ ] tree structures (trees, plants)
+  - [ ] modifiers (lathes, extrusions)
+  - [ ] duplicators (in area, along paths or surfaces, ....)
 
 ## Constraints / Goals
 
 This library's point is to make it possible to:
 
-* Transmit instructions for large 3D models, environments with minimal data
-* Generate a real time renderable (60fps) scene from procedural data quickly
-* Generate AAA looking content
-* Work in a web browser via WebGPU
-* Be usable in non-browser environments
+- [ ] Transmit instructions for large 3D models, environments with minimal data
+- [ ] Generate a real time renderable (60fps) scene from procedural data quickly
+- [ ] Generate AAA looking content
+- [ ] Work in a web browser via WebGPU
+- [ ] Be usable in non-browser environments
 
 ## Transmit instructions for large 3D models, environments with minimal data
 
@@ -156,9 +163,9 @@ This library's point is to make it possible to:
 
 # Stretch Goals
 
-* Generate humans
-* Generate animals
-* Generate clothing
+- [ ] Generate humans
+- [ ] Generate animals
+- [ ] Generate clothing
 
 Including body "bone" hierarchies and "bone" weights.
 
@@ -187,11 +194,11 @@ Shirts, pants, belts, jackets, shoes.
 
 2. Identify and categorize types of nodes needed
 
-   * Geometry
-   * Terrain (erosion, road integration, stream/river placement, situation aware rock/plant/tree placement)
-   * Placement nodes (a dresser places N draws, which with handles. A window might have N/M dividers)
-   * Texture generation nodes (patterns, noise, paths, ...)
-   * Modifiers
+   - [ ] Geometry
+   - [ ] Terrain (erosion, road integration, stream/river placement, situation aware rock/plant/tree placement)
+   - [ ] Placement nodes (a dresser places N draws, which with handles. A window might have N/M dividers)
+   - [ ] Texture generation nodes (patterns, noise, paths, ...)
+   - [ ] Modifiers
 
 2. Implement a base PBR type efficient renderer
 3. Implement a UI for editing and connecting nodes.
@@ -203,7 +210,7 @@ Shirts, pants, belts, jackets, shoes.
 
 3. Implement node systems
 
-   * Geometry generation
-   * Terrain generation
-   * Texture generation
+   - [ ] Geometry generation
+   - [ ] Terrain generation
+   - [ ] Texture generation
 
