@@ -62,8 +62,9 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   // Rock geometry → uv-transform → entity.
   addEdge(g, { node: rockGeo.id, socket: 'geometry' }, { node: rockUv.id, socket: 'geometry' });
   addEdge(g, { node: rockUv.id, socket: 'geometry' }, { node: rockEntity.id, socket: 'geometry' });
-  // Texture subgraph → material.basecolor → entity.material.
-  addEdge(g, { node: rockTex.id, socket: 'texture' }, { node: rockMat.id, socket: 'basecolor' });
+  // Texture subgraph → material (basecolor + normal) → entity.material.
+  addEdge(g, { node: rockTex.id, socket: 'basecolor' }, { node: rockMat.id, socket: 'basecolor' });
+  addEdge(g, { node: rockTex.id, socket: 'normal' }, { node: rockMat.id, socket: 'normal' });
   addEdge(g, { node: rockMat.id, socket: 'material' }, { node: rockEntity.id, socket: 'material' });
 
   // Boundary → scatter inputs.

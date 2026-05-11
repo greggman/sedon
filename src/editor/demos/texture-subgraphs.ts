@@ -127,7 +127,9 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
 //
 // Soft isotropic perlin colored through a green gradient. Two layers — a
 // broad variation and a fine sparkle overlay — so the result doesn't look
-// like a single uniform noise.
+// like a single uniform noise. The same height field drives both the
+// colorize-to-grass-color and a normal-from-height pass, so surface
+// shading reads as scattered blades + clumps rather than flat color.
 export function buildGrassTextureSubgraph(): SubgraphDef {
   const id = 'grass-texture';
   const g = createGraph();
@@ -173,19 +175,25 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW * 0.6 },
     inputValues: { resolution: 256 },
   });
+  // Strength is high here because grass-noise is smooth — small per-pixel
+  // gradients become barely-visible normal tilts unless we amplify them.
+  const normal = addNode(g, 'core/normal-from-height', {
+    position: { x: COL * 4, y: ROW * 2 },
+    inputValues: { strength: 12, resolution: 256 },
+  });
 
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: broad.id, socket: 'seed' });
-  // Detail uses a derived seed so the layers don't sync up obviously.
-  // (No "seed offset" node yet — fixed bias is fine for v1.)
   addEdge(g, { node: broad.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
   addEdge(g, { node: detail.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
   addEdge(g, { node: blend.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
+  addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
   addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
   addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
-  addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'texture' });
+  addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
+  addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
 
-  addTexturePreview(g, colorize.id, 'texture', null, null, {
+  addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
     x: COL, y: ROW * 4,
   });
 
@@ -198,7 +206,10 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
       { name: 'color_dark', type: 'Color', default: [0.12, 0.22, 0.07, 1] },
       { name: 'color_light', type: 'Color', default: [0.34, 0.5, 0.18, 1] },
     ],
-    outputs: [{ name: 'texture', type: 'Texture2D' }],
+    outputs: [
+      { name: 'basecolor', type: 'Texture2D' },
+      { name: 'normal', type: 'Texture2D' },
+    ],
     graph: g,
     inputNodeId: inputNode.id,
     outputNodeId: outputNode.id,
@@ -208,9 +219,9 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
 // === Rock ==============================================================
 //
 // Worley cellular noise gives the chunky look of rock fragments; Perlin
-// adds color variation; levels tightens contrast. Output is basecolor —
-// for AAA-quality rocks you'd add ridged noise + a real normal map; that's
-// in the next slice.
+// adds color variation; levels tightens contrast. Same height field feeds
+// both colorize (for basecolor) and normal-from-height (for surface
+// shading), so the cellular fracture pattern reads as actual relief.
 export function buildRockTextureSubgraph(): SubgraphDef {
   const id = 'rock-texture';
   const g = createGraph();
@@ -254,6 +265,12 @@ export function buildRockTextureSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW * 0.6 },
     inputValues: { resolution: 256 },
   });
+  // Worley cells already produce sharp gradients, so strength here is
+  // lower than grass — but still bumped enough to read at distance.
+  const normal = addNode(g, 'core/normal-from-height', {
+    position: { x: COL * 4, y: ROW * 2 },
+    inputValues: { strength: 8, resolution: 256 },
+  });
 
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: cells.id, socket: 'seed' });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: grain.id, socket: 'seed' });
@@ -261,11 +278,13 @@ export function buildRockTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: grain.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
   addEdge(g, { node: blend.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
+  addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
   addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
   addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
-  addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'texture' });
+  addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
+  addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
 
-  addTexturePreview(g, colorize.id, 'texture', null, null, {
+  addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
     x: COL, y: ROW * 4,
   });
 
@@ -278,7 +297,10 @@ export function buildRockTextureSubgraph(): SubgraphDef {
       { name: 'color_dark', type: 'Color', default: [0.22, 0.20, 0.18, 1] },
       { name: 'color_light', type: 'Color', default: [0.55, 0.50, 0.46, 1] },
     ],
-    outputs: [{ name: 'texture', type: 'Texture2D' }],
+    outputs: [
+      { name: 'basecolor', type: 'Texture2D' },
+      { name: 'normal', type: 'Texture2D' },
+    ],
     graph: g,
     inputNodeId: inputNode.id,
     outputNodeId: outputNode.id,

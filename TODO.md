@@ -35,6 +35,24 @@
     Not sure if we should have one of these are all of them
 
 
+* Need an asset hierarchy (folders)
+
+  Like Unity, it should be a tree of folders and subgraphs.
+  They can be listed as names or as icons. User can drag subgraphs
+  from one folder to another as well as drag them into the current graph.
+
+* Need a window manager?
+
+  Currently we have a vertically split window. Maybe we just need panes
+  like VSCode and you can set each pane to show a graph or a preview or
+  assets
+
+* Would like multiple windows
+
+  If an webpage creates a window its accessible directly and can share a
+  A WebGPU device so it seems this is not a hard thing to do. For real pro
+  asset creation it's common to have 2 monitors so being able to create
+  multiple windows is probably a must.
 
 * nodes should be nameable - and searchable
 * material previews should use track camera, not orbit
@@ -43,7 +61,9 @@
 * need to be able to size split
 * support HDR output
 * colorize should be N stop? Instead of 2 stop? 
+* color the connections?
 * camera
+  * camera per scene
   * orbit vs track control (option)
   * frame
   * ortho

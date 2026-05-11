@@ -26,19 +26,34 @@ export const terrainMaterialNode: NodeDef = {
       default: [1, 1],
       description: 'tile rate for layers (mask is not tiled, so the splat follows terrain shape)',
     },
+    {
+      name: 'normal_a',
+      type: 'Texture2D',
+      optional: true,
+      description: 'tangent-space normal map for layer A; falls back to flat if unwired',
+    },
+    {
+      name: 'normal_b',
+      type: 'Texture2D',
+      optional: true,
+      description: 'tangent-space normal map for layer B; falls back to flat if unwired',
+    },
   ],
   outputs: [{ name: 'material', type: 'Material' }],
   evaluate(_ctx, inputs): { material: MaterialValue } {
-    return {
-      material: {
-        kind: 'terrain-splat',
-        layerA: inputs.layer_a as Texture2DValue,
-        layerB: inputs.layer_b as Texture2DValue,
-        mask: inputs.mask as Texture2DValue,
-        roughnessA: inputs.roughness_a as number,
-        roughnessB: inputs.roughness_b as number,
-        tileScale: inputs.tile_scale as [number, number],
-      },
+    const normalA = inputs.normal_a as Texture2DValue | undefined;
+    const normalB = inputs.normal_b as Texture2DValue | undefined;
+    const material: MaterialValue = {
+      kind: 'terrain-splat',
+      layerA: inputs.layer_a as Texture2DValue,
+      layerB: inputs.layer_b as Texture2DValue,
+      mask: inputs.mask as Texture2DValue,
+      roughnessA: inputs.roughness_a as number,
+      roughnessB: inputs.roughness_b as number,
+      tileScale: inputs.tile_scale as [number, number],
     };
+    if (normalA) material.normalA = normalA;
+    if (normalB) material.normalB = normalB;
+    return { material };
   },
 };

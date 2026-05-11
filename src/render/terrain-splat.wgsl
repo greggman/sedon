@@ -35,6 +35,8 @@ struct TerrainParams {
 @group(1) @binding(1) var layerB: texture_2d<f32>;
 @group(1) @binding(2) var mask: texture_2d<f32>;
 @group(1) @binding(3) var<uniform> params: TerrainParams;
+@group(1) @binding(4) var normalA: texture_2d<f32>;
+@group(1) @binding(5) var normalB: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -141,6 +143,25 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   return mix(uniforms.fog.xyz, lit, visibility);
 }
 
+// Same cotangent-frame trick as the PBR shader. Reconstructs the
+// tangent/bitangent on the fly from UV gradients so vertex tangents
+// aren't required — works for procedurally-generated meshes that don't
+// carry them.
+fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
+  let dp1 = dpdx(p);
+  let dp2 = dpdy(p);
+  let duv1 = dpdx(uv);
+  let duv2 = dpdy(uv);
+
+  let dp2perp = cross(dp2, n);
+  let dp1perp = cross(n, dp1);
+  let t = dp2perp * duv1.x + dp1perp * duv2.x;
+  let b = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  let invmax = inverseSqrt(max(dot(t, t), dot(b, b)));
+  return mat3x3f(t * invmax, b * invmax, n);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let tiled_uv = in.uv * params.tile_scale;
@@ -148,11 +169,27 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let bb = textureSample(layerB, samp, tiled_uv).rgb * in.tint.rgb;
   let t = clamp(textureSample(mask, samp, in.uv).r, 0.0, 1.0);
 
+  // Sample per-layer tangent-space normals, mix by mask, perturb the
+  // geometric normal. Missing normal maps are passed in as flat
+  // (0.5, 0.5, 1.0) so this naturally degrades to "no perturbation."
+  //
+  // Critically, cotangent_frame is built in the SAME UV space the normal
+  // maps are sampled in (tiled_uv, not in.uv). The mesh's base UVs span
+  // 0..1 across the entire 100m terrain — dpdx/dpdy of that is tiny per
+  // fragment, so the tangent basis computed from it would be near-zero
+  // and the perturbation would vanish into floating-point noise.
+  let n_a = textureSample(normalA, samp, tiled_uv).rgb * 2.0 - vec3f(1.0);
+  let n_b = textureSample(normalB, samp, tiled_uv).rgb * 2.0 - vec3f(1.0);
+  let n_tangent = normalize(mix(n_a, n_b, t));
   let n_geom = normalize(in.view_normal);
-  // Terrain is non-metallic by design — the metallic concept is per-material
-  // anyway. Could add per-layer metallic later if needed.
-  let lit_a = shade(aa, in.view_pos, n_geom, params.roughnessA, 0.0);
-  let lit_b = shade(bb, in.view_pos, n_geom, params.roughnessB, 0.0);
+  let tbn = cotangent_frame(n_geom, in.view_pos, tiled_uv);
+  let n = normalize(tbn * n_tangent);
+
+  // Per-layer shading at the perturbed normal. Blend lit results (not
+  // albedos) so per-layer roughness produces different specular response.
+  // Terrain is non-metallic by design.
+  let lit_a = shade(aa, in.view_pos, n, params.roughnessA, 0.0);
+  let lit_b = shade(bb, in.view_pos, n, params.roughnessB, 0.0);
   let lit = mix(lit_a, lit_b, t);
   let final_color = apply_fog(lit, in.view_pos.z);
 

@@ -76,6 +76,15 @@ export interface TerrainSplatMaterial {
    * detail. Default [1,1] preserves pre-tile-scale behavior.
    */
   tileScale: [number, number];
+  /**
+   * Optional tangent-space normal maps per layer. When present, they
+   * provide surface detail that geometric terrain alone can't — gravel
+   * scatter, grass-blade shadows, rock striations. Sampled at the same
+   * tiled UV as the basecolors and blended by the splat mask before
+   * perturbing the geometric normal. Missing layers fall back to flat.
+   */
+  normalA?: Texture2DValue;
+  normalB?: Texture2DValue;
 }
 
 // A renderable scene is a list of entities. Each entity carries a geometry +

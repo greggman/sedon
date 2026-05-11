@@ -182,10 +182,14 @@ export function createForestDemo(): {
   addEdge(g, { node: highMask.id, socket: 'mask' }, { node: pineMask.id, socket: 'b' });
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
 
-  // Ground
+  // Ground: textured layers (basecolor + normal each) + slope mask feed
+  // the terrain-splat material. Per-layer normals give the terrain real
+  // surface detail — pebble/grass-blade shadows that lit color alone can't.
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: slopeMap.id, socket: 'height' });
-  addEdge(g, { node: grassTex.id, socket: 'texture' }, { node: groundMat.id, socket: 'layer_a' });
-  addEdge(g, { node: rockTex.id, socket: 'texture' }, { node: groundMat.id, socket: 'layer_b' });
+  addEdge(g, { node: grassTex.id, socket: 'basecolor' }, { node: groundMat.id, socket: 'layer_a' });
+  addEdge(g, { node: rockTex.id, socket: 'basecolor' }, { node: groundMat.id, socket: 'layer_b' });
+  addEdge(g, { node: grassTex.id, socket: 'normal' }, { node: groundMat.id, socket: 'normal_a' });
+  addEdge(g, { node: rockTex.id, socket: 'normal' }, { node: groundMat.id, socket: 'normal_b' });
   addEdge(g, { node: slopeMap.id, socket: 'texture' }, { node: groundMat.id, socket: 'mask' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
