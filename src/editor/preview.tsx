@@ -128,15 +128,14 @@ export function Preview() {
       const cam = cameraRef.current;
 
       if (panning) {
-        // Camera-local right/up in world space — derived from yaw/pitch.
-        // The modelView is translate(-target) → rotY(yaw) → rotX(pitch);
-        // its inverse rotation gives the camera basis in world space.
-        const cy = Math.cos(cam.yaw);
-        const sy = Math.sin(cam.yaw);
-        const cp = Math.cos(cam.pitch);
-        const sp = Math.sin(cam.pitch);
-        const rightX = cy, rightY = 0, rightZ = -sy;
-        const upX = -sy * sp, upY = cp, upZ = cy * sp;
+        // Camera basis = rows of the rotation matrix (R⁻¹ = Rᵀ for an
+        // orthonormal rotation). Same trick as the WASD code in the
+        // render loop — convention-agnostic.
+        //   row 0 = camera-right in world
+        //   row 1 = camera-up in world
+        const r = multiply(rotationX(cam.pitch), rotationY(cam.yaw));
+        const rightX = r[0]!, rightY = r[4]!, rightZ = r[8]!;
+        const upX = r[1]!, upY = r[5]!, upZ = r[9]!;
         // Scale pan by distance so it feels constant in screen-space
         // regardless of zoom.
         const panSens = 0.0025 * cam.distance;
@@ -339,16 +338,20 @@ export function Preview() {
           // scene, zoomed-in means inspecting up close. Sprint is 3x.
           const sprint = keys.has('shift') ? 3 : 1;
           const speed = cam.distance * 0.5 * sprint * dt;
-          const cy = Math.cos(cam.yaw);
-          const sy = Math.sin(cam.yaw);
-          // Camera-right is already horizontal (yaw-only). Camera-forward
-          // projected to XZ is up × right = (-sy, 0, -cy); we drop the Y
-          // term so W/S walk along the ground regardless of pitch. The
-          // minus-sy is load-bearing: rotationY here rotates +X→+Z (not
-          // the textbook right-handed convention), so a naive +sy is
-          // mirrored as soon as you yaw off zero.
-          const rightX = cy, rightZ = -sy;
-          const fwdX = -sy, fwdZ = -cy;
+          // Camera basis = rows of the rotation matrix (since R⁻¹ = Rᵀ
+          // for an orthonormal rotation). Pulling them out directly means
+          // we don't have to re-derive trig that depends on rotation
+          // convention — works regardless of how rotationX/Y are built.
+          //   row 0 = camera-right in world  (already horizontal: Rx*Ry
+          //           keeps row 0 free of any Y component)
+          //   row 2 = camera-back in world;  forward = -row 2
+          const r = multiply(rotationX(cam.pitch), rotationY(cam.yaw));
+          const rightX = r[0]!, rightZ = r[8]!;
+          const fwdRawX = -r[2]!, fwdRawZ = -r[10]!;
+          // Project forward onto the ground and renormalize so W speed
+          // stays constant regardless of pitch.
+          const fwdLen = Math.hypot(fwdRawX, fwdRawZ);
+          const fwdX = fwdRawX / fwdLen, fwdZ = fwdRawZ / fwdLen;
           let dx = 0, dy = 0, dz = 0;
           if (keys.has('w')) { dx += fwdX; dz += fwdZ; }
           if (keys.has('s')) { dx -= fwdX; dz -= fwdZ; }
