@@ -139,9 +139,10 @@ export async function evaluateGraph(
     }
   }
 
-  const rootOutputs = outputs.get(options.rootNodeId);
-  if (!rootOutputs) {
-    throw new Error(`root node ${options.rootNodeId} produced no outputs`);
-  }
+  // If the root produced no outputs (its inputs were missing — common when
+  // viewing a subgraph standalone before the user wires preview defaults),
+  // return empty outputs gracefully instead of throwing. The caller decides
+  // whether an empty scene is an error or just "nothing to render yet."
+  const rootOutputs = outputs.get(options.rootNodeId) ?? {};
   return { outputs: rootOutputs, order, allOutputs: outputs };
 }

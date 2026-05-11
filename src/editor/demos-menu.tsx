@@ -17,8 +17,8 @@ export function DemosMenu() {
       setOpen(false);
       return;
     }
-    const { graph, rootNodeId } = demo.build();
-    setGraph(graph, rootNodeId);
+    const { graph, rootNodeId, subgraphs } = demo.build();
+    setGraph(graph, rootNodeId, subgraphs);
     rf.setNodes(graphToRfNodes(graph));
     rf.setEdges(graphToRfEdges(graph));
     // Frame the new graph after RF has applied the new nodes.

@@ -18,13 +18,12 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect } from 'react';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
-import { createCoreNodeRegistry } from '../nodes/index.js';
 import { CustomNode } from './custom-node.js';
+import { useRegistry } from './registry.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
 const nodeTypes = { sedon: CustomNode };
-const nodes = createCoreNodeRegistry();
 const types = createCoreTypeRegistry();
 
 // Snapshot from the store at mount time. After this, React Flow's local state
@@ -126,6 +125,7 @@ export function NodeCanvas() {
     [connect, setRfEdges],
   );
 
+  const registry = useRegistry();
   const isValidConnection = useCallback<IsValidConnection>(
     (params: Connection | Edge) => {
       const source = 'source' in params ? params.source : null;
@@ -139,15 +139,15 @@ export function NodeCanvas() {
       const fromNode = findNode(graph, source);
       const toNode = findNode(graph, target);
       if (!fromNode || !toNode) return false;
-      const fromDef = nodes.get(fromNode.kind);
-      const toDef = nodes.get(toNode.kind);
+      const fromDef = registry.get(fromNode.kind);
+      const toDef = registry.get(toNode.kind);
       if (!fromDef || !toDef) return false;
       const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
       const toIn = toDef.inputs.find((i) => i.name === targetHandle);
       if (!fromOut || !toIn) return false;
       return types.isCompatible(fromOut.type, toIn.type);
     },
-    [],
+    [registry],
   );
 
   return (

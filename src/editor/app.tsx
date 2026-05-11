@@ -4,6 +4,7 @@ import { AddNodeMenu } from './add-node-menu.js';
 import { CleanupButton } from './cleanup-button.js';
 import { DemosMenu } from './demos-menu.js';
 import { FileMenu } from './file-menu.js';
+import { GraphSwitcher } from './graph-switcher.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
 
@@ -17,6 +18,7 @@ export function App() {
           <NodeCanvas />
           <AddNodeMenu canvasRef={canvasPaneRef} />
           <div className="sedon-top-toolbar">
+            <GraphSwitcher />
             <DemosMenu />
             <CleanupButton />
             <FileMenu />

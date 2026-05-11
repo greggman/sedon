@@ -18,6 +18,18 @@ export interface OutputDef {
 
 export interface NodeContext {
   device?: GPUDevice;
+  /**
+   * When the evaluator is recursing into a subgraph, this carries the
+   * input values from the wrapping subgraph-instance. The subgraph-input
+   * boundary node reads from this to expose them to the inner graph.
+   * Undefined at the top level.
+   */
+  subgraphInputs?: NodeInputs;
+  /**
+   * Recursion depth, incremented on each subgraph entry to bound
+   * accidental cycles (subgraph A → subgraph B → subgraph A → ...).
+   */
+  subgraphDepth?: number;
 }
 
 export type NodeInputs = Record<string, unknown>;

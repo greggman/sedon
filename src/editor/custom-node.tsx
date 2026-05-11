@@ -4,16 +4,15 @@ import { useShallow } from 'zustand/react/shallow';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
 import type { HeightfieldValue, MaterialValue, Texture2DValue } from '../core/resources.js';
 import { createCoreTypeRegistry } from '../core/types.js';
-import { createCoreNodeRegistry } from '../nodes/index.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { MaterialPreview } from './material-preview.js';
+import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
 import { TexturePreview } from './texture-preview.js';
 
-const nodes = createCoreNodeRegistry();
 const types = createCoreTypeRegistry();
 
 const HEADER_HEIGHT = 28;
@@ -47,13 +46,14 @@ function outputBarBackground(def: NodeDef): string {
 }
 
 function getSocketType(
+  registry: import('../core/node-def.js').NodeRegistry,
   nodeId: string,
   socketName: string,
   side: 'source' | 'target',
 ): string | undefined {
   const graphNode = useEditorStore.getState().graph.nodes.find((n) => n.id === nodeId);
   if (!graphNode) return undefined;
-  const def = nodes.get(graphNode.kind);
+  const def = registry.get(graphNode.kind);
   if (!def) return undefined;
   if (side === 'source') return def.outputs.find((o) => o.name === socketName)?.type;
   return def.inputs.find((i) => i.name === socketName)?.type;
@@ -126,6 +126,7 @@ interface TypedHandleProps {
 
 function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
   const connection = useConnection();
+  const registry = useRegistry();
   const color = typeColor(socketType);
 
   let matches = false;
@@ -134,7 +135,7 @@ function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
     const handleNodeId = connection.fromHandle.nodeId;
     if (handleId && handleNodeId) {
       const fromSide: 'source' | 'target' = connection.fromHandle.type;
-      const fromType = getSocketType(handleNodeId, handleId, fromSide);
+      const fromType = getSocketType(registry, handleNodeId, handleId, fromSide);
       if (fromType) {
         if (side === 'input' && fromSide === 'source') {
           matches = types.isCompatible(fromType, socketType);
@@ -222,7 +223,11 @@ function asRgba(v: unknown): [number, number, number, number] {
 
 export function CustomNode({ id, data }: NodeProps) {
   const kind = typeof data['kind'] === 'string' ? data['kind'] : undefined;
-  const def: NodeDef | undefined = useMemo(() => (kind ? nodes.get(kind) : undefined), [kind]);
+  const registry = useRegistry();
+  const def: NodeDef | undefined = useMemo(
+    () => (kind ? registry.get(kind) : undefined),
+    [kind, registry],
+  );
 
   const inputValues = useEditorStore(
     (s) => s.graph.nodes.find((n) => n.id === id)?.inputValues,

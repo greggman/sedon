@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import type { NodeOutputs } from '../core/node-def.js';
 import type { SceneValue } from '../core/resources.js';
+import type { SubgraphDef } from '../core/subgraph.js';
 import { applyBackward, applyForward, type Command } from './command.js';
 import { createInitialGraph } from './initial-graph.js';
 
@@ -11,8 +12,26 @@ export interface EvalResult {
 }
 
 export interface EditorState {
+  /**
+   * The graph currently being edited. Equals mainGraph when
+   * currentEditingId is 'main', or the active subgraph's inner graph
+   * otherwise. Mutations apply to whichever this points to and are routed
+   * back to mainGraph or the matching subgraph entry on commit.
+   */
   graph: Graph;
   rootNodeId: string;
+  /** The main project graph — preserved while the user navigates into subgraphs. */
+  mainGraph: Graph;
+  mainRootNodeId: string;
+  /**
+   * Subgraph definitions available in the project. Their wrappers appear in
+   * the Add Node menu under "Subgraphs"; the editor can navigate into each
+   * to inspect/modify the inner graph. Replaced (not mutated) so React/
+   * zustand subscribers see a new reference.
+   */
+  subgraphs: SubgraphDef[];
+  /** 'main' or the id of a subgraph in `subgraphs`. Drives which graph the editor displays. */
+  currentEditingId: string;
   evalResult: EvalResult | null;
   device: GPUDevice | null;
 
@@ -34,12 +53,29 @@ export interface EditorState {
 
   // Same public API as before — every mutation funnels through dispatch
   // internally, so it's all undoable for free.
-  setGraph: (graph: Graph, rootNodeId: string) => void;
+  setGraph: (graph: Graph, rootNodeId: string, subgraphs?: SubgraphDef[]) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
   setInputValue: (nodeId: string, name: string, value: unknown) => void;
+
+  /**
+   * Switch which graph is being edited. 'main' loads the project's main
+   * graph; any other id loads the matching subgraph's inner graph.
+   * Clears undo/redo (commands don't carry context across boundaries).
+   */
+  setActiveEditing: (id: string) => void;
+
+  /**
+   * Capture node positions from the React Flow canvas back into the active
+   * graph (drag-to-move only lives in RF state otherwise). Called by the
+   * graph-switcher before navigating away and by Save before serializing,
+   * so subgraph layouts persist across context switches and survive save.
+   */
+  commitActivePositions: (
+    positionsById: ReadonlyMap<string, { x: number; y: number }>,
+  ) => void;
 
   /** Mark the current state as the saved baseline (called after Save). */
   markClean: () => void;
@@ -51,6 +87,21 @@ export interface EditorState {
 const initial = createInitialGraph();
 
 export const useEditorStore = create<EditorState>((set, get) => {
+  // Compute the routing-back state — when a mutation produces a new graph,
+  // we also need to update either mainGraph (if editing main) or replace
+  // the active subgraph's def in the subgraphs array (so the registry
+  // memo invalidates and wrappers see the latest inner graph).
+  function routeBack(nextGraph: Graph, nextRootId: string): Partial<EditorState> {
+    const { currentEditingId, subgraphs } = get();
+    if (currentEditingId === 'main') {
+      return { mainGraph: nextGraph, mainRootNodeId: nextRootId };
+    }
+    const newSubgraphs = subgraphs.map((s) =>
+      s.id === currentEditingId ? { ...s, graph: nextGraph } : s,
+    );
+    return { subgraphs: newSubgraphs };
+  }
+
   // Push `cmd` onto the undo stack and apply it forward. Returns nothing —
   // updates state directly.
   function dispatch(cmd: Command, opts: { bumpSync?: boolean } = {}) {
@@ -78,6 +129,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         set({
           graph: next.graph,
           rootNodeId: next.rootNodeId,
+          ...routeBack(next.graph, next.rootNodeId),
           undoStack: [...stack.slice(0, -1), merged],
           redoStack: [],
           dirty: true,
@@ -91,6 +143,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     set({
       graph: next.graph,
       rootNodeId: next.rootNodeId,
+      ...routeBack(next.graph, next.rootNodeId),
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
       dirty: true,
@@ -101,6 +154,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
   return {
     graph: initial.graph,
     rootNodeId: initial.rootNodeId,
+    mainGraph: initial.graph,
+    mainRootNodeId: initial.rootNodeId,
+    subgraphs: [],
+    currentEditingId: 'main',
     evalResult: null,
     device: null,
     undoStack: [],
@@ -112,18 +169,72 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setDevice: (device) => set({ device }),
 
     // Replace the entire graph (load file, load demo). NOT undoable: clears
-    // both undo and redo stacks, since the prior history doesn't apply to
-    // the new graph. Marks state clean — the freshly loaded graph IS the
-    // baseline.
-    setGraph: (graph, rootNodeId) => {
+    // both undo and redo stacks. Always returns to editing the main graph
+    // — switching demos shouldn't drop you inside an old subgraph.
+    setGraph: (graph, rootNodeId, subgraphs) => {
       set({
         graph,
         rootNodeId,
+        mainGraph: graph,
+        mainRootNodeId: rootNodeId,
+        subgraphs: subgraphs ?? [],
+        currentEditingId: 'main',
         undoStack: [],
         redoStack: [],
         dirty: false,
         syncCounter: get().syncCounter + 1,
       });
+    },
+
+    commitActivePositions: (positionsById) => {
+      const state = get();
+      const graph = state.graph;
+      const updated: Graph = {
+        ...graph,
+        nodes: graph.nodes.map((n) => {
+          const p = positionsById.get(n.id);
+          return p ? { ...n, position: p } : n;
+        }),
+      };
+      set({
+        graph: updated,
+        ...routeBack(updated, state.rootNodeId),
+        // Position-only changes don't dirty: dragging is the same as before
+        // this method existed, just newly persisted into the store.
+      });
+    },
+
+    setActiveEditing: (id) => {
+      const state = get();
+      if (state.currentEditingId === id) return;
+      if (id === 'main') {
+        set({
+          currentEditingId: 'main',
+          graph: state.mainGraph,
+          rootNodeId: state.mainRootNodeId,
+          undoStack: [],
+          redoStack: [],
+          syncCounter: state.syncCounter + 1,
+        });
+      } else {
+        const sg = state.subgraphs.find((s) => s.id === id);
+        if (!sg) return;
+        // Prefer a core/output node inside the subgraph as the eval root
+        // when viewing standalone — that's the user's authored preview
+        // (a single tree at origin, etc.). Fall back to the boundary
+        // output, which without parent inputs typically produces nothing
+        // (the evaluator handles that gracefully now).
+        const previewOutput = sg.graph.nodes.find((n) => n.kind === 'core/output');
+        const rootNodeId = previewOutput?.id ?? sg.outputNodeId;
+        set({
+          currentEditingId: id,
+          graph: sg.graph,
+          rootNodeId,
+          undoStack: [],
+          redoStack: [],
+          syncCounter: state.syncCounter + 1,
+        });
+      }
     },
 
     markClean: () => set({ dirty: false }),
@@ -175,6 +286,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({
         graph: next.graph,
         rootNodeId: next.rootNodeId,
+        ...routeBack(next.graph, next.rootNodeId),
         undoStack: stack.slice(0, -1),
         redoStack: [...get().redoStack, cmd],
         syncCounter: get().syncCounter + 1,
@@ -190,6 +302,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({
         graph: next.graph,
         rootNodeId: next.rootNodeId,
+        ...routeBack(next.graph, next.rootNodeId),
         undoStack: [...get().undoStack, cmd],
         redoStack: stack.slice(0, -1),
         syncCounter: get().syncCounter + 1,

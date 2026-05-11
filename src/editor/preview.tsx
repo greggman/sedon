@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue, type SceneValue } from '../core/resources.js';
-import { createCoreNodeRegistry } from '../nodes/index.js';
 import { initWebGPU, type GpuContext } from '../render/device.js';
 import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
 import { createSceneRenderer } from '../render/scene.js';
+import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
-
-const registry = createCoreNodeRegistry();
 
 interface OrbitCamera {
   yaw: number;
@@ -34,6 +32,7 @@ export function Preview() {
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
   const setDevice = useEditorStore((s) => s.setDevice);
+  const registry = useRegistry();
 
   // Init WebGPU once on mount.
   useEffect(() => {
@@ -150,7 +149,10 @@ export function Preview() {
       // awaiting (graph mutated again).
       if (cancelled) return;
 
-      const scene = result.outputs.scene as SceneValue;
+      // Scene defaults to an empty entity list when the eval root produced
+      // nothing (e.g. viewing a subgraph whose preview chain isn't wired
+      // yet). Renderer draws sky + nothing else, no crash.
+      const scene = (result.outputs.scene as SceneValue | undefined) ?? { entities: [] };
       // Lighting is optional — older graphs without an Output node that
       // declares it fall back to the previous hardcoded values.
       const lighting = (result.outputs.lighting as LightingValue | undefined) ?? defaultLighting();
@@ -203,7 +205,7 @@ export function Preview() {
       cancelled = true;
       cancelAnimationFrame(rafId);
     };
-  }, [gpu, graph, rootNodeId, setEvalResult]);
+  }, [gpu, graph, rootNodeId, setEvalResult, registry]);
 
   return (
     <div className="sedon-preview-pane">
