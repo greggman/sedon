@@ -1,36 +1,44 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
-import shader from './perlin.wgsl';
+import shader from './levels.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
-export const perlinNode: NodeDef = {
-  id: 'core/perlin',
-  category: 'Texture/Noise',
+// Brightness / contrast / gamma adjustment of an input texture. Defaults are
+// no-op so dropping the node in unconfigured doesn't change anything; tune
+// values to tighten dynamic range, push mid-tones, etc. Useful for taming
+// flat-looking procedural noise before piping it into colorize.
+export const levelsNode: NodeDef = {
+  id: 'core/levels',
+  category: 'Texture/Filters',
   inputs: [
+    { name: 'input', type: 'Texture2D' },
     {
-      name: 'scale',
-      type: 'Vec2',
-      default: [4, 4],
-      description: 'tiling frequency per axis. Equal X/Y gives isotropic noise; unequal stretches it (e.g. [2, 12] for vertical wood-grain fibers)',
+      name: 'brightness',
+      type: 'Float',
+      default: 0,
+      description: 'additive shift; positive lightens, negative darkens',
     },
-    { name: 'octaves', type: 'Int', default: 4 },
-    { name: 'lacunarity', type: 'Float', default: 2 },
-    { name: 'gain', type: 'Float', default: 0.5 },
-    { name: 'seed', type: 'Float', default: 0 },
+    {
+      name: 'contrast',
+      type: 'Float',
+      default: 1,
+      description: 'multiplier around mid-gray (0.5); >1 expands range, <1 compresses',
+    },
+    {
+      name: 'gamma',
+      type: 'Float',
+      default: 1,
+      description: '<1 pushes midtones brighter, >1 pushes them darker',
+    },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
   evaluate(ctx, inputs): { texture: Texture2DValue } {
     const device = requireDevice(ctx);
+    const src = inputs.input as Texture2DValue;
     const resolution = inputs.resolution as number;
-
-    // Backward compat: graphs saved before the scale type was widened
-    // store scale as a single Float; broadcast to Vec2 so they still work.
-    const rawScale = inputs.scale as number | [number, number];
-    const scale: [number, number] =
-      typeof rawScale === 'number' ? [rawScale, rawScale] : rawScale;
 
     const texture = device.createTexture({
       size: [resolution, resolution],
@@ -41,21 +49,23 @@ export const perlinNode: NodeDef = {
         GPUTextureUsage.COPY_SRC,
     });
 
-    // Params: scale vec2 (8B aligned) + octaves, lacunarity, gain, seed
-    // (4 × 4B = 16B) = 24B. Pad to 32 for the 16-byte uniform minimum.
-    const uniformData = new Float32Array(8);
-    uniformData[0] = scale[0];
-    uniformData[1] = scale[1];
-    uniformData[2] = inputs.octaves as number;
-    uniformData[3] = inputs.lacunarity as number;
-    uniformData[4] = inputs.gain as number;
-    uniformData[5] = inputs.seed as number;
+    const uniformData = new Float32Array(4);
+    uniformData[0] = inputs.brightness as number;
+    uniformData[1] = inputs.contrast as number;
+    uniformData[2] = inputs.gamma as number;
 
     const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
+      size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+
+    const sampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      addressModeU: 'repeat',
+      addressModeV: 'repeat',
+    });
 
     const module = device.createShaderModule({ code: shader });
     const pipeline = device.createRenderPipeline({
@@ -66,7 +76,11 @@ export const perlinNode: NodeDef = {
 
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: src.view },
+        { binding: 2, resource: sampler },
+      ],
     });
 
     const encoder = device.createCommandEncoder();

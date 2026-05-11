@@ -20,7 +20,7 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
   // === Terrain ===========================================================
   const perlin = addNode(g, 'core/perlin', {
     position: { x: 0, y: 0 },
-    inputValues: { scale: 2.5, octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 256 },
+    inputValues: { scale: [2.5, 2.5], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 256 },
   });
   const heightfield = addNode(g, 'core/heightfield', {
     position: { x: COL, y: 0 },

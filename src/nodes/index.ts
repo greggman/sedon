@@ -16,6 +16,7 @@ import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
 import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
+import { levelsNode } from './levels.js';
 import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
 import { mergeGeometryNode } from './merge-geometry.js';
@@ -69,6 +70,7 @@ export const CORE_NODES = [
   blendMaskNode,
   warpNode,
   colorizeNode,
+  levelsNode,
   normalFromHeightNode,
   slopeFromHeightNode,
   materialNode,
@@ -103,6 +105,7 @@ export {
   heightfieldToMeshNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
+  levelsNode,
   mapRangeNode,
   materialNode,
   mergeGeometryNode,

@@ -1,5 +1,5 @@
 struct Params {
-  scale: f32,
+  scale: vec2f,    // per-axis tiling (x = horizontal frequency, y = vertical)
   octaves: f32,    // stored as f32 so the uniform stays float-only on the JS side
   lacunarity: f32,
   gain: f32,
@@ -77,3 +77,4 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let v = n * 0.5 + 0.5;
   return vec4f(v, v, v, 1.0);
 }
+

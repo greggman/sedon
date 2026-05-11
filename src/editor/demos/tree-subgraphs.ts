@@ -15,7 +15,14 @@ function buildTreeSubgraph(opts: {
     radius: number;
     height: number;
     segments: number;
-    color: [number, number, number, number];
+    /** Dark crack/shadow color (low end of bark gradient). */
+    colorDark: [number, number, number, number];
+    /** Light ridge color (high end of bark gradient). */
+    colorLight: [number, number, number, number];
+  };
+  bark: {
+    /** Noise seed — keep distinct between species so they look different. */
+    seed: number;
   };
   foliage: {
     kind: 'sphere' | 'cone';
@@ -40,7 +47,14 @@ function buildTreeSubgraph(opts: {
     position: { x: COL * 6, y: ROW * 1.5 },
   });
 
-  // Trunk chain.
+  // Trunk chain. Bark texture is built procedurally from two layers of
+  // anisotropic Perlin noise:
+  //   - tall vertical fibers (Y-scale > X-scale)  → primary grain
+  //   - finer overlay                              → micro-roughness
+  // Then mapped through colorize from deep-shadow to light-bark color.
+  // Levels tightens the contrast so the grain reads. The result drives
+  // the material's basecolor — the trunk now shows wood texture instead
+  // of a flat color.
   const trunkGeo = addNode(g, 'core/cylinder', {
     position: { x: COL, y: 0 },
     inputValues: {
@@ -49,16 +63,38 @@ function buildTreeSubgraph(opts: {
       segments: opts.trunk.segments,
     },
   });
-  const trunkColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 2, y: 0 },
-    inputValues: { color: opts.trunk.color, resolution: 16 },
+  // Vertical fibers — low X frequency, high Y frequency.
+  const barkFibers = addNode(g, 'core/perlin', {
+    position: { x: COL * 2, y: -ROW * 0.7 },
+    inputValues: {
+      scale: [2, 14],
+      octaves: 4,
+      lacunarity: 2.1,
+      gain: 0.55,
+      seed: opts.bark.seed,
+      resolution: 256,
+    },
+  });
+  // Adjust contrast so the fiber stripes have presence.
+  const barkLevels = addNode(g, 'core/levels', {
+    position: { x: COL * 3, y: -ROW * 0.7 },
+    inputValues: { brightness: 0, contrast: 1.6, gamma: 1.0, resolution: 256 },
+  });
+  // Map grayscale to bark color: deep cracks → lighter ridges.
+  const barkColor = addNode(g, 'core/colorize', {
+    position: { x: COL * 4, y: -ROW * 0.7 },
+    inputValues: {
+      low: opts.trunk.colorDark,
+      high: opts.trunk.colorLight,
+      resolution: 256,
+    },
   });
   const trunkMat = addNode(g, 'core/material', {
-    position: { x: COL * 3, y: 0 },
+    position: { x: COL * 5, y: -ROW * 0.3 },
     inputValues: { roughness: 0.95, metallic: 0 },
   });
   const trunkEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 4, y: 0 },
+    position: { x: COL * 6, y: 0 },
   });
 
   // Foliage chain.
@@ -121,9 +157,11 @@ function buildTreeSubgraph(opts: {
     inputValues: { scale: 1, align: false, seed: 1 },
   });
 
-  // Edges — trunk chain.
+  // Edges — trunk chain (bark texture flows through perlin → levels → colorize).
   addEdge(g, { node: trunkGeo.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
-  addEdge(g, { node: trunkColor.id, socket: 'texture' }, { node: trunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: barkFibers.id, socket: 'texture' }, { node: barkLevels.id, socket: 'input' });
+  addEdge(g, { node: barkLevels.id, socket: 'texture' }, { node: barkColor.id, socket: 'factor' });
+  addEdge(g, { node: barkColor.id, socket: 'texture' }, { node: trunkMat.id, socket: 'basecolor' });
   addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
 
   // Foliage chain.
@@ -173,8 +211,10 @@ export function buildOakSubgraph(): SubgraphDef {
       radius: 0.08,
       height: 0.9,
       segments: 10,
-      color: [0.32, 0.2, 0.1, 1],
+      colorDark: [0.13, 0.07, 0.04, 1],
+      colorLight: [0.42, 0.28, 0.16, 1],
     },
+    bark: { seed: 0.31 },
     foliage: {
       kind: 'sphere',
       radius: 0.4,
@@ -194,8 +234,10 @@ export function buildPineSubgraph(): SubgraphDef {
       radius: 0.07,
       height: 0.55,
       segments: 10,
-      color: [0.28, 0.18, 0.09, 1],
+      colorDark: [0.10, 0.06, 0.03, 1],
+      colorLight: [0.36, 0.22, 0.12, 1],
     },
+    bark: { seed: 0.72 },
     foliage: {
       kind: 'cone',
       radius: 0.5,
