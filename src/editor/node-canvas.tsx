@@ -12,10 +12,12 @@ import {
   type Node,
   type OnConnect,
   type OnEdgesChange,
+  type OnMove,
   type OnNodesChange,
+  type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { CustomNode } from './custom-node.js';
@@ -41,6 +43,8 @@ export function NodeCanvas() {
   const removeEdges = useEditorStore((s) => s.removeEdges);
   const removeNodes = useEditorStore((s) => s.removeNodes);
   const syncCounter = useEditorStore((s) => s.syncCounter);
+  const currentEditingId = useEditorStore((s) => s.currentEditingId);
+  const viewports = useEditorStore((s) => s.viewports);
 
   // External graph changes (load, undo, redo) reach React Flow via this
   // effect. Smart-merge: existing nodes keep their RF position so any drag
@@ -52,6 +56,51 @@ export function NodeCanvas() {
     rf.setNodes((current) => mergeRfNodes(current, graph));
     rf.setEdges(graphToRfEdges(graph));
   }, [syncCounter, rf]);
+
+  // Per-graph viewport: save on context switch, load (or fit) on entry.
+  // Same shape as the per-graph camera effect in preview.tsx. Fires also
+  // when the viewports map identity changes (e.g., demo load pre-seeds a
+  // viewport for 'main'), but skips the redundant setViewport when the
+  // stored value already matches RF's current viewport so we don't fight
+  // the user's own pan/zoom that just produced it.
+  const prevContextRef = useRef<string | null>(null);
+  const prevViewportsRef = useRef<typeof viewports | null>(null);
+  useEffect(() => {
+    const prevId = prevContextRef.current;
+    const prevViewports = prevViewportsRef.current;
+    const idChanged = prevId !== currentEditingId;
+    const viewportsChanged = prevViewports !== viewports;
+    prevContextRef.current = currentEditingId;
+    prevViewportsRef.current = viewports;
+    if (!idChanged && !viewportsChanged) return;
+
+    if (idChanged && prevId !== null) {
+      useEditorStore.getState().saveViewportFor(prevId, rf.getViewport());
+    }
+
+    const stored = viewports[currentEditingId];
+    if (stored) {
+      const current = rf.getViewport();
+      const same =
+        current.x === stored.x &&
+        current.y === stored.y &&
+        current.zoom === stored.zoom;
+      if (!same) rf.setViewport(stored);
+    } else if (idChanged) {
+      // No saved viewport for the new context — fit. Defer one frame so
+      // RF can measure the nodes from the sync-counter effect above (which
+      // ran in this same render cycle).
+      requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
+    }
+  }, [currentEditingId, viewports, rf]);
+
+  const onMoveEnd = useCallback<OnMove>(
+    (_event, viewport: Viewport) => {
+      const id = useEditorStore.getState().currentEditingId;
+      useEditorStore.getState().saveViewportFor(id, viewport);
+    },
+    [],
+  );
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y = redo.
   useEffect(() => {
@@ -159,8 +208,7 @@ export function NodeCanvas() {
       isValidConnection={isValidConnection}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      fitView
-      fitViewOptions={{ padding: 0.2 }}
+      onMoveEnd={onMoveEnd}
       proOptions={{ hideAttribution: true }}
       selectionMode={SelectionMode.Partial}
     >

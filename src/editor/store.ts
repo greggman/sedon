@@ -22,6 +22,17 @@ export interface CameraState {
   target: [number, number, number];
 }
 
+// React Flow viewport (graph canvas pan + zoom). Stored per editing
+// context for the same reason as CameraState: switching from the forest
+// graph to a subgraph and back should land you where you were, not at
+// some unrelated world-space coordinate the previous graph happened to
+// have scrolled to.
+export interface ViewportState {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 export interface EditorState {
   /**
    * The graph currently being edited. Equals mainGraph when
@@ -49,6 +60,11 @@ export interface EditorState {
    * so navigating away and back returns to the same framing.
    */
   cameras: Record<string, CameraState>;
+  /**
+   * Graph canvas viewport keyed by editing id. Same lifecycle as cameras:
+   * NodeCanvas saves on pan/zoom-end and restores on context switch.
+   */
+  viewports: Record<string, ViewportState>;
   evalResult: EvalResult | null;
   device: GPUDevice | null;
 
@@ -75,6 +91,7 @@ export interface EditorState {
     rootNodeId: string,
     subgraphs?: SubgraphDef[],
     cameras?: Record<string, CameraState>,
+    viewports?: Record<string, ViewportState>,
   ) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
@@ -91,6 +108,9 @@ export interface EditorState {
 
   /** Persist camera state for a given editing context. */
   saveCameraFor: (id: string, camera: CameraState) => void;
+
+  /** Persist graph-canvas viewport for a given editing context. */
+  saveViewportFor: (id: string, viewport: ViewportState) => void;
 
   /**
    * Capture node positions from the React Flow canvas back into the active
@@ -184,6 +204,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     subgraphs: [],
     currentEditingId: 'main',
     cameras: {},
+    viewports: {},
     evalResult: null,
     device: null,
     undoStack: [],
@@ -197,7 +218,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // Replace the entire graph (load file, load demo). NOT undoable: clears
     // both undo and redo stacks. Always returns to editing the main graph
     // — switching demos shouldn't drop you inside an old subgraph.
-    setGraph: (graph, rootNodeId, subgraphs, cameras) => {
+    setGraph: (graph, rootNodeId, subgraphs, cameras, viewports) => {
       set({
         graph,
         rootNodeId,
@@ -209,6 +230,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
         // (so the user sees a sensibly-framed scene on load) or an empty
         // map (each context falls back to DEFAULT_CAMERA on first view).
         cameras: cameras ?? {},
+        // Same story for graph viewports: pre-seed if provided, else
+        // start empty and let NodeCanvas's fitView fill in on first
+        // navigation.
+        viewports: viewports ?? {},
         undoStack: [],
         redoStack: [],
         dirty: false,
@@ -218,6 +243,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     saveCameraFor: (id, camera) => {
       set({ cameras: { ...get().cameras, [id]: camera } });
+    },
+
+    saveViewportFor: (id, viewport) => {
+      set({ viewports: { ...get().viewports, [id]: viewport } });
     },
 
     commitActivePositions: (positionsById) => {
