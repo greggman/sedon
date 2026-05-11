@@ -2,6 +2,7 @@ import { useReactFlow } from '@xyflow/react';
 import { fromJSON, type Graph } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
+import { buildRegistry } from './registry.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
@@ -84,8 +85,9 @@ export function FileMenu() {
           : [];
 
         setGraph(loadedGraph, parsed.rootNodeId as string, subgraphs);
+        const registry = buildRegistry(subgraphs);
         rf.setNodes(graphToRfNodes(loadedGraph));
-        rf.setEdges(graphToRfEdges(loadedGraph));
+        rf.setEdges(graphToRfEdges(loadedGraph, registry));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // eslint-disable-next-line no-alert

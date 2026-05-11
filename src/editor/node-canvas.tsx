@@ -21,8 +21,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { CustomNode } from './custom-node.js';
-import { useRegistry } from './registry.js';
-import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
+import { buildRegistry, useRegistry } from './registry.js';
+import { edgeColor, graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
 const nodeTypes = { sedon: CustomNode };
@@ -32,11 +32,16 @@ const types = createCoreTypeRegistry();
 // owns visual representation; user actions sync compute-relevant changes back
 // to the store via the callbacks below. The syncCounter effect below
 // reconciles RF when the graph mutates from outside (load, undo, redo).
-const seed = useEditorStore.getState().graph;
+// The seed registry is built once from the initial subgraphs list so the
+// first-mount edges already render with their type colors instead of
+// flashing default-styled then re-styling on first sync.
+const seedState = useEditorStore.getState();
+const seedRegistry = buildRegistry(seedState.subgraphs);
+const seed = seedState.graph;
 
 export function NodeCanvas() {
   const [rfNodes, , onRfNodesChange] = useNodesState(graphToRfNodes(seed));
-  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed));
+  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed, seedRegistry));
 
   const rf = useReactFlow();
   const connect = useEditorStore((s) => s.connect);
@@ -45,6 +50,7 @@ export function NodeCanvas() {
   const syncCounter = useEditorStore((s) => s.syncCounter);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const viewports = useEditorStore((s) => s.viewports);
+  const registry = useRegistry();
 
   // External graph changes (load, undo, redo) reach React Flow via this
   // effect. Smart-merge: existing nodes keep their RF position so any drag
@@ -54,8 +60,8 @@ export function NodeCanvas() {
     if (syncCounter === 0) return;
     const graph = useEditorStore.getState().graph;
     rf.setNodes((current) => mergeRfNodes(current, graph));
-    rf.setEdges(graphToRfEdges(graph));
-  }, [syncCounter, rf]);
+    rf.setEdges(graphToRfEdges(graph, registry));
+  }, [syncCounter, rf, registry]);
 
   // Per-graph viewport: save on context switch, load (or fit) on entry.
   // Same shape as the per-graph camera effect in preview.tsx. Fires also
@@ -153,6 +159,12 @@ export function NodeCanvas() {
     (params: Connection) => {
       if (!params.sourceHandle || !params.targetHandle) return;
       const id = crypto.randomUUID();
+      const color = edgeColor(
+        useEditorStore.getState().graph,
+        params.source,
+        params.sourceHandle,
+        registry,
+      );
       // Visual: drop any existing edge into the same input, then add the new one
       // with the same id we'll send to the store so the two stay in sync.
       setRfEdges((eds) => [
@@ -163,6 +175,7 @@ export function NodeCanvas() {
           target: params.target,
           sourceHandle: params.sourceHandle,
           targetHandle: params.targetHandle,
+          style: { stroke: color, strokeWidth: 2 },
         },
       ]);
       connect(
@@ -171,10 +184,9 @@ export function NodeCanvas() {
         { node: params.target, socket: params.targetHandle },
       );
     },
-    [connect, setRfEdges],
+    [connect, setRfEdges, registry],
   );
 
-  const registry = useRegistry();
   const isValidConnection = useCallback<IsValidConnection>(
     (params: Connection | Edge) => {
       const source = 'source' in params ? params.source : null;

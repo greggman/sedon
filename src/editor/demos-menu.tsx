@@ -2,6 +2,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useState } from 'react';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
+import { buildRegistry } from './registry.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
 
@@ -19,8 +20,11 @@ export function DemosMenu() {
     }
     const { graph, rootNodeId, subgraphs, cameras } = demo.build();
     setGraph(graph, rootNodeId, subgraphs, cameras);
+    // Build the registry from the demo's subgraphs so edge colors resolve
+    // against the same kinds the new graph references.
+    const registry = buildRegistry(subgraphs ?? []);
     rf.setNodes(graphToRfNodes(graph));
-    rf.setEdges(graphToRfEdges(graph));
+    rf.setEdges(graphToRfEdges(graph, registry));
     // Frame the new graph after RF has applied the new nodes.
     requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
     setOpen(false);
