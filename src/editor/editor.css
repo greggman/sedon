@@ -48,7 +48,7 @@
   font-family: system-ui, sans-serif;
 
   &:hover {
-    background: #4a4a58;
+    background-color: #4a4a58;
   }
 
 }
@@ -456,7 +456,7 @@
 .sedon-preview-tile {
   position: relative;
   flex: 1 1 0;
-  min-width: 220px;
+  min-width: 320px;
   background: #0a0a0a;
   border-radius: 4px;
   overflow: hidden;

@@ -56,7 +56,7 @@ export function createForestDemo(): {
   // altitude masks downstream cut this to a few hundred real placements.
   const distribute = addNode(g, 'core/distribute-on-faces', {
     position: { x: COL * 3, y: 0 },
-    inputValues: { density: 0.06, seed: 0.5 },
+    inputValues: { density: 0.01, seed: 0.5 },
   });
 
   // === Masks =============================================================
