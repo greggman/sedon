@@ -69,6 +69,14 @@
 - [ ] need to be able to size split
 - [ ] support HDR output
 - [ ] colorize should be N stop? Instead of 2 stop? 
+- [ ] import png, jpg, webp
+- [ ] import gltf
+  Need to decide how to import. Seems like rather than the entire scene
+  you should be able to reference individual assets (models, textures, materials).
+  That suggests the output from a subscene should maybe be more complex?
+  Or, it should import the gLTF as the collection of its parts as well as a scene
+  that uses all of them. So they'd show up in the asset tree as like folders
+  
 - [ ] camera
   - [ ] orbit vs track control (option)
   - [ ] frame
@@ -213,4 +221,10 @@ Shirts, pants, belts, jackets, shoes.
    - [ ] Geometry generation
    - [ ] Terrain generation
    - [ ] Texture generation
+
+# Notes
+
+* Perlin and Worley are currently always tiled. Do we need un-tiled?
+
+  Claude says probably not
 
