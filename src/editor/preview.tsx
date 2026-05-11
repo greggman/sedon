@@ -158,7 +158,7 @@ export function Preview() {
       e.preventDefault();
       const cam = cameraRef.current;
       const factor = Math.exp(e.deltaY * 0.001);
-      cam.distance = Math.max(0.5, Math.min(50, cam.distance * factor));
+      cam.distance = Math.max(0.5, Math.min(250, cam.distance * factor));
       // Same per-context save as drag-end. Zoom is also "user adjustment
       // worth remembering."
       const id = useEditorStore.getState().currentEditingId;
@@ -180,22 +180,37 @@ export function Preview() {
     };
   }, []);
 
-  // Save outgoing camera + load incoming camera on context switch. The
-  // ref tracks the previous id so we know where to save TO; whatever's in
-  // the store for the new id is loaded into cameraRef.
-  const prevContextRef = useRef<string>(currentEditingId);
+  // Camera load/save: fires on context switch (load that context's camera)
+  // AND on cameras-map replacement (which happens when a demo or file load
+  // resets the project state — we want the demo's initial framing to
+  // apply even if currentEditingId stayed 'main'). Drag-end saves through
+  // saveCameraFor → cameras changes too, but the loaded value equals what
+  // was just saved so the reload is a no-op.
+  const cameras = useEditorStore((s) => s.cameras);
+  const prevContextRef = useRef<string | null>(null);
+  const prevCamerasRef = useRef<typeof cameras | null>(null);
   useEffect(() => {
     const prevId = prevContextRef.current;
-    if (prevId === currentEditingId) return;
-    // Save outgoing.
-    useEditorStore
-      .getState()
-      .saveCameraFor(prevId, cloneCamera(cameraRef.current));
-    // Load incoming (or default).
-    const stored = useEditorStore.getState().cameras[currentEditingId];
+    const prevCameras = prevCamerasRef.current;
+    const idChanged = prevId !== currentEditingId;
+    const camerasChanged = prevCameras !== cameras;
+    if (!idChanged && !camerasChanged) return;
+
+    // Save the outgoing context's camera if we're actually switching
+    // contexts. Skip on first mount (prevId null) and on cameras-only
+    // changes (the outgoing camera is already in the store).
+    if (idChanged && prevId !== null) {
+      useEditorStore
+        .getState()
+        .saveCameraFor(prevId, cloneCamera(cameraRef.current));
+    }
+
+    const stored = cameras[currentEditingId];
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
+
     prevContextRef.current = currentEditingId;
-  }, [currentEditingId]);
+    prevCamerasRef.current = cameras;
+  }, [currentEditingId, cameras]);
 
   // On graph change (and once GPU is up), re-evaluate and run the render loop.
   useEffect(() => {

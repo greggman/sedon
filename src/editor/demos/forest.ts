@@ -1,6 +1,7 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import { buildRockMeshSubgraph } from './rock-subgraph.js';
+import type { CameraState } from '../store.js';
 import {
   buildBarkTextureSubgraph,
   buildGrassTextureSubgraph,
@@ -15,7 +16,12 @@ import { buildOakSubgraph, buildPineSubgraph } from './tree-subgraphs.js';
 // graph just instantiates `subgraph/oak-tree` and `subgraph/pine-tree`
 // alongside their input clouds. Drilling into either subgraph in the editor
 // reveals the trunk + foliage + materials internals.
-export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraphs: SubgraphDef[] } {
+export function createForestDemo(): {
+  graph: Graph;
+  rootNodeId: string;
+  subgraphs: SubgraphDef[];
+  cameras: Record<string, CameraState>;
+} {
   // Texture subgraphs are project-level: oak/pine reference bark, the main
   // graph references grass + rock for terrain-splat. They register first
   // so the tree wrappers can resolve `subgraph/bark-texture` at eval.
@@ -31,21 +37,26 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
   const ROW = 180;
 
   // === Terrain ===========================================================
+  // World units are meters. 100x100m terrain with up to 25m relief — a
+  // small hilly area. Perlin scale ~3 gives a handful of distinct peaks
+  // and valleys across that span.
   const perlin = addNode(g, 'core/perlin', {
     position: { x: 0, y: 0 },
-    inputValues: { scale: [2.5, 2.5], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 256 },
+    inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 512 },
   });
   const heightfield = addNode(g, 'core/heightfield', {
     position: { x: COL, y: 0 },
-    inputValues: { worldSize: [12, 12], heightRange: [0, 2] },
+    inputValues: { worldSize: [100, 100], heightRange: [0, 25] },
   });
   const terrainMesh = addNode(g, 'core/heightfield-to-mesh', {
     position: { x: COL * 2, y: 0 },
-    inputValues: { divisions: [80, 80] },
+    inputValues: { divisions: [128, 128] },
   });
+  // Density 0.06 per m² over 10000 m² ≈ 600 candidate points. Slope and
+  // altitude masks downstream cut this to a few hundred real placements.
   const distribute = addNode(g, 'core/distribute-on-faces', {
     position: { x: COL * 3, y: 0 },
-    inputValues: { density: 4, seed: 0.5 },
+    inputValues: { density: 0.06, seed: 0.5 },
   });
 
   // === Masks =============================================================
@@ -58,13 +69,15 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
   const altitude = addNode(g, 'core/cloud-altitude', {
     position: { x: COL * 4, y: ROW },
   });
+  // Split oak (low) vs pine (high) at ~12m above sea level — roughly the
+  // halfway mark of the 25m heightRange.
   const highMask = addNode(g, 'core/cloud-step', {
     position: { x: COL * 5, y: ROW },
-    inputValues: { threshold: 1.0, invert: false },
+    inputValues: { threshold: 12, invert: false },
   });
   const lowMask = addNode(g, 'core/cloud-step', {
     position: { x: COL * 5, y: ROW * 1.6 },
-    inputValues: { threshold: 1.0, invert: true },
+    inputValues: { threshold: 12, invert: true },
   });
   const oakMask = addNode(g, 'core/cloud-multiply', {
     position: { x: COL * 6, y: ROW * 0.4 },
@@ -95,11 +108,12 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
     position: { x: COL * 2, y: ROW * 1.8 },
     inputValues: { strength: 6, resolution: 256 },
   });
-  // tile_scale tells the terrain shader to repeat the grass/rock textures
-  // densely across the mesh while keeping the slope mask at world-scale.
+  // tile_scale: 100m terrain × tile_scale 40 → each grass/rock tile spans
+  // 2.5m of world. Fine enough to read as ground detail at typical
+  // viewing distances, coarse enough not to be a noisy hash.
   const groundMat = addNode(g, 'core/terrain-material', {
     position: { x: COL * 3, y: ROW * 1.8 },
-    inputValues: { roughness_a: 0.95, roughness_b: 0.7, tile_scale: [16, 16] },
+    inputValues: { roughness_a: 0.95, roughness_b: 0.7, tile_scale: [40, 40] },
   });
   const terrainEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 4, y: ROW * 1.8 },
@@ -122,10 +136,12 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
     position: { x: COL * 5, y: ROW * 3.6 },
     inputValues: { threshold: 0.5, invert: false },
   });
-  // Slightly bigger and slightly browner rocks via per-point scale + tint.
+  // Rocks range from 0.8m (small loose stones) to 2.5m (proper boulders),
+  // wider than tall — the squashed Y axis gives them a sat-down look
+  // rather than perfect spheres.
   const rockScale = addNode(g, 'core/random-vec3-cloud', {
     position: { x: COL * 5, y: ROW * 4.2 },
-    inputValues: { min: [0.35, 0.35, 0.35], max: [0.7, 0.55, 0.7], seed: 0.4 },
+    inputValues: { min: [0.8, 0.6, 0.8], max: [2.5, 1.5, 2.5], seed: 0.4 },
   });
 
   // === Final =============================================================
@@ -141,7 +157,9 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
   const output = addNode(g, 'core/output', {
     position: { x: COL * 11, y: ROW * 1.8 },
     inputValues: {
-      fog_density: 0.04,
+      // Density scaled down for the 100m world — fog fully fades distant
+      // geometry by the far edge of the terrain.
+      fog_density: 0.012,
       fog_color: [0.78, 0.82, 0.78, 1],
     },
   });
@@ -200,9 +218,24 @@ export function createForestDemo(): { graph: Graph; rootNodeId: string; subgraph
   addEdge(g, { node: mergeVeg.id, socket: 'scene' }, { node: mergeAll.id, socket: 'b' });
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
+  // Per-graph initial framings. With the world scaled to meters, the
+  // default-distance-3 orbit would land you inside a tree trunk on main
+  // and at sub-1m range on the subgraphs. These framings put each context
+  // at a viewing distance appropriate for its content's scale.
+  const cameras: Record<string, CameraState> = {
+    main: { yaw: 0.4, pitch: 0.45, distance: 95, target: [0, 8, 0] },
+    'oak-tree': { yaw: 0.5, pitch: 0.25, distance: 35, target: [0, 10, 0] },
+    'pine-tree': { yaw: 0.5, pitch: 0.25, distance: 50, target: [0, 15, 0] },
+    'rock-mesh': { yaw: 0.5, pitch: 0.35, distance: 4, target: [0, 0, 0] },
+    'bark-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
+    'grass-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
+    'rock-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
+  };
+
   return {
     graph: g,
     rootNodeId: output.id,
     subgraphs: [bark, grass, rock, oak, pine, rockMesh],
+    cameras,
   };
 }

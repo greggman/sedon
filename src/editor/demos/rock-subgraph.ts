@@ -24,10 +24,12 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   });
 
   // Low-poly sphere → uv-transform (so the rock texture tiles a few times
-  // around the rock surface, not stretched once).
+  // around the rock surface, not stretched once). Base radius is 1m;
+  // per-point scale at scatter time stretches/squashes individual rocks
+  // for variety.
   const rockGeo = addNode(g, 'core/sphere', {
     position: { x: COL, y: 0 },
-    inputValues: { radius: 0.5, segments: 8, rings: 6 },
+    inputValues: { radius: 1, segments: 10, rings: 7 },
   });
   const rockUv = addNode(g, 'core/uv-transform', {
     position: { x: COL * 2, y: 0 },

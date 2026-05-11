@@ -70,7 +70,12 @@ export interface EditorState {
 
   // Same public API as before — every mutation funnels through dispatch
   // internally, so it's all undoable for free.
-  setGraph: (graph: Graph, rootNodeId: string, subgraphs?: SubgraphDef[]) => void;
+  setGraph: (
+    graph: Graph,
+    rootNodeId: string,
+    subgraphs?: SubgraphDef[],
+    cameras?: Record<string, CameraState>,
+  ) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
@@ -192,7 +197,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // Replace the entire graph (load file, load demo). NOT undoable: clears
     // both undo and redo stacks. Always returns to editing the main graph
     // — switching demos shouldn't drop you inside an old subgraph.
-    setGraph: (graph, rootNodeId, subgraphs) => {
+    setGraph: (graph, rootNodeId, subgraphs, cameras) => {
       set({
         graph,
         rootNodeId,
@@ -200,9 +205,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
         mainRootNodeId: rootNodeId,
         subgraphs: subgraphs ?? [],
         currentEditingId: 'main',
-        // New project state ⇒ no remembered cameras. Each graph starts
-        // fresh on first view.
-        cameras: {},
+        // New project state ⇒ either the demo-provided initial cameras
+        // (so the user sees a sensibly-framed scene on load) or an empty
+        // map (each context falls back to DEFAULT_CAMERA on first view).
+        cameras: cameras ?? {},
         undoStack: [],
         redoStack: [],
         dirty: false,

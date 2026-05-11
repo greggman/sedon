@@ -1,6 +1,7 @@
 import type { Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import { createInitialGraph } from '../initial-graph.js';
+import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createForestDemo } from './forest.js';
 
@@ -9,11 +10,16 @@ export interface Demo {
   label: string;
   /**
    * Build the project state for this demo. Returns the main graph + its
-   * root output node + an optional list of subgraph defs that the demo
-   * uses. The store loads all of them at once and the registry is rebuilt
-   * to include the subgraph wrappers.
+   * root output node + an optional list of subgraph defs + optional
+   * initial cameras (keyed by editing id: 'main' or a subgraph id). When
+   * cameras aren't provided the default orbit camera is used.
    */
-  build: () => { graph: Graph; rootNodeId: string; subgraphs?: SubgraphDef[] };
+  build: () => {
+    graph: Graph;
+    rootNodeId: string;
+    subgraphs?: SubgraphDef[];
+    cameras?: Record<string, CameraState>;
+  };
 }
 
 export const DEMOS: Demo[] = [

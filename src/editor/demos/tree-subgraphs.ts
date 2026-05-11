@@ -181,24 +181,26 @@ function buildTreeSubgraph(opts: {
   };
 }
 
+// Tree dimensions follow real-world averages: oak ~20m, pine ~30m. World
+// units are meters everywhere now.
 export function buildOakSubgraph(): SubgraphDef {
   return buildTreeSubgraph({
     id: 'oak-tree',
     label: 'Oak Tree',
     trunk: {
-      radius: 0.08,
-      height: 0.9,
-      segments: 10,
+      radius: 0.5,
+      height: 8,
+      segments: 12,
       colorDark: [0.13, 0.07, 0.04, 1],
       colorLight: [0.42, 0.28, 0.16, 1],
     },
     bark: { seed: 0.31 },
     foliage: {
       kind: 'sphere',
-      radius: 0.4,
-      segments: 16,
-      rings: 12,
-      liftY: 1.05,
+      radius: 6,
+      segments: 20,
+      rings: 14,
+      liftY: 14, // sphere center at y=14; bottom at y=8 (trunk top), top at y=20
       color: [0.22, 0.5, 0.16, 1],
     },
   });
@@ -209,19 +211,19 @@ export function buildPineSubgraph(): SubgraphDef {
     id: 'pine-tree',
     label: 'Pine Tree',
     trunk: {
-      radius: 0.07,
-      height: 0.55,
-      segments: 10,
+      radius: 0.4,
+      height: 6,
+      segments: 12,
       colorDark: [0.10, 0.06, 0.03, 1],
       colorLight: [0.36, 0.22, 0.12, 1],
     },
     bark: { seed: 0.72 },
     foliage: {
       kind: 'cone',
-      radius: 0.5,
-      height: 1.6,
-      segments: 14,
-      liftY: 0.3,
+      radius: 5,
+      height: 24,
+      segments: 18,
+      liftY: 6, // cone base at y=6 (trunk top), apex at y=30
       color: [0.1, 0.32, 0.18, 1],
     },
   });
