@@ -1,5 +1,5 @@
 import { evaluateGraph } from './evaluate.js';
-import type { Graph } from './graph.js';
+import { addNode, createGraph, type Graph } from './graph.js';
 import type { InputDef, NodeDef, NodeRegistry, OutputDef } from './node-def.js';
 
 // A reusable, named graph fragment that exposes a typed I/O boundary. Three
@@ -131,4 +131,27 @@ export function isSubgraphInstanceKind(kind: string): boolean {
 export function subgraphIdFromKind(kind: string): string | null {
   if (!isSubgraphInstanceKind(kind)) return null;
   return kind.slice('subgraph/'.length);
+}
+
+// Seed an empty SubgraphDef with the two boundary nodes in place but no
+// declared inputs/outputs. Used by the editor's "New Subgraph" command;
+// the user adds sockets via the boundary-node UI afterward.
+export function createEmptySubgraph(id: string, label: string): SubgraphDef {
+  const graph = createGraph();
+  const inputNode = addNode(graph, `subgraph-input/${id}`, {
+    position: { x: 0, y: 0 },
+  });
+  const outputNode = addNode(graph, `subgraph-output/${id}`, {
+    position: { x: 600, y: 0 },
+  });
+  return {
+    id,
+    label,
+    category: 'Subgraphs',
+    inputs: [],
+    outputs: [],
+    graph,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
 }

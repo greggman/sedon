@@ -2,8 +2,13 @@ import { create } from 'zustand';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import type { NodeOutputs } from '../core/node-def.js';
 import type { SceneValue } from '../core/resources.js';
-import type { SubgraphDef } from '../core/subgraph.js';
-import { applyBackward, applyForward, type Command } from './command.js';
+import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
+import {
+  applyBackward,
+  applyForward,
+  type Command,
+  type ProjectSnapshot,
+} from './command.js';
 import { createInitialGraph } from './initial-graph.js';
 
 export interface EvalResult {
@@ -106,6 +111,38 @@ export interface EditorState {
    */
   setActiveEditing: (id: string) => void;
 
+  /**
+   * Create a brand-new empty subgraph and switch editing context into it.
+   * Caller is responsible for providing a unique id (the store doesn't
+   * dedupe — collisions would silently shadow an existing subgraph).
+   */
+  createSubgraph: (id: string, label: string) => void;
+
+  /**
+   * Add an input or output socket to an existing subgraph. Both the
+   * subgraph's I/O list and the synthesized boundary node-def will
+   * regenerate on the next registry build (memoized on the subgraphs
+   * array reference, which this action replaces).
+   */
+  addSubgraphSocket: (
+    subgraphId: string,
+    side: 'input' | 'output',
+    socket: { name: string; type: string; description?: string },
+  ) => void;
+
+  /**
+   * Remove a socket from a subgraph. Sweeps every graph in the project
+   * to drop edges that referenced it — on the wrapper instances in
+   * parent graphs (where the socket appears as wrapper I/O) and inside
+   * the subgraph itself (where the boundary node has the matching
+   * socket).
+   */
+  removeSubgraphSocket: (
+    subgraphId: string,
+    side: 'input' | 'output',
+    name: string,
+  ) => void;
+
   /** Persist camera state for a given editing context. */
   saveCameraFor: (id: string, camera: CameraState) => void;
 
@@ -145,6 +182,38 @@ export const useEditorStore = create<EditorState>((set, get) => {
       s.id === currentEditingId ? { ...s, graph: nextGraph } : s,
     );
     return { subgraphs: newSubgraphs };
+  }
+
+  // Snapshot the parts of state that project-scoped commands can touch.
+  // Used by `dispatchProject` to capture the "before" half of the
+  // replaceProject command so undo can restore everything in one swap.
+  function projectSnapshot(): ProjectSnapshot {
+    const s = get();
+    return {
+      subgraphs: s.subgraphs,
+      mainGraph: s.mainGraph,
+      mainRootNodeId: s.mainRootNodeId,
+      graph: s.graph,
+      rootNodeId: s.rootNodeId,
+      currentEditingId: s.currentEditingId,
+    };
+  }
+
+  // Project-scoped dispatch: capture the current snapshot as `before`,
+  // apply `after`, push a replaceProject command onto the undo stack.
+  // Everything goes through one set() so React renders once. syncCounter
+  // bumps because the registry depends on `subgraphs` and the node-canvas
+  // may need to re-sync.
+  function dispatchProject(after: ProjectSnapshot) {
+    const before = projectSnapshot();
+    const cmd: Command = { kind: 'replaceProject', before, after };
+    set({
+      ...after,
+      undoStack: [...get().undoStack, cmd],
+      redoStack: [],
+      dirty: true,
+      syncCounter: get().syncCounter + 1,
+    });
   }
 
   // Push `cmd` onto the undo stack and apply it forward. Returns nothing —
@@ -267,16 +336,139 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
     },
 
+    createSubgraph: (id, label) => {
+      const state = get();
+      const sg = createEmptySubgraph(id, label);
+      // Hop straight into the new subgraph so the user can start wiring.
+      // Eval root is the boundary output — with no sockets and no wired
+      // graph yet, that yields an empty outputs object, which evaluateGraph
+      // handles gracefully.
+      dispatchProject({
+        subgraphs: [...state.subgraphs, sg],
+        mainGraph: state.mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: sg.graph,
+        rootNodeId: sg.outputNodeId,
+        currentEditingId: id,
+      });
+    },
+
+    addSubgraphSocket: (subgraphId, side, socket) => {
+      const state = get();
+      // Dedupe by name — silently ignore re-adds; UI prevents this anyway.
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      const list = side === 'input' ? target.inputs : target.outputs;
+      if (list.some((x) => x.name === socket.name)) return;
+      const entry = socket.description !== undefined
+        ? { name: socket.name, type: socket.type, description: socket.description }
+        : { name: socket.name, type: socket.type };
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id !== subgraphId
+          ? s
+          : side === 'input'
+            ? { ...s, inputs: [...s.inputs, entry] }
+            : { ...s, outputs: [...s.outputs, entry] },
+      );
+      dispatchProject({
+        subgraphs,
+        mainGraph: state.mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: state.graph,
+        rootNodeId: state.rootNodeId,
+        currentEditingId: state.currentEditingId,
+      });
+    },
+
+    removeSubgraphSocket: (subgraphId, side, name) => {
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      // Boundary-node id inside the inner graph and the socket field on
+      // edges depend on which side we're removing:
+      //   side='input'  → input boundary; its OUTPUTS expose subgraph
+      //                   inputs, so the inner-graph edges have
+      //                   from.node = inputNodeId, from.socket = name.
+      //                   Parent-graph wrapper instances expose this as
+      //                   an INPUT, edges land on to.node/to.socket.
+      //   side='output' → mirrored on the other side.
+      const boundaryId = side === 'input' ? target.inputNodeId : target.outputNodeId;
+      const wrapperKind = `subgraph/${subgraphId}`;
+
+      const stripInner = (g: Graph): Graph => ({
+        ...g,
+        edges: g.edges.filter((e) => {
+          if (side === 'input') {
+            return !(e.from.node === boundaryId && e.from.socket === name);
+          }
+          return !(e.to.node === boundaryId && e.to.socket === name);
+        }),
+      });
+      const stripParent = (g: Graph): Graph => ({
+        ...g,
+        edges: g.edges.filter((e) => {
+          const fromNode = g.nodes.find((n) => n.id === e.from.node);
+          const toNode = g.nodes.find((n) => n.id === e.to.node);
+          if (side === 'input') {
+            return !(toNode?.kind === wrapperKind && e.to.socket === name);
+          }
+          return !(fromNode?.kind === wrapperKind && e.from.socket === name);
+        }),
+      });
+
+      // Rebuild subgraphs: update I/O list, strip inner-boundary edges in
+      // the target's inner graph, strip wrapper-instance edges in every
+      // other subgraph's inner graph.
+      const subgraphs = state.subgraphs.map((s) => {
+        if (s.id === subgraphId) {
+          const list = side === 'input' ? s.inputs : s.outputs;
+          const nextList = list.filter((x) => x.name !== name);
+          const nextInner = stripInner(s.graph);
+          return side === 'input'
+            ? { ...s, inputs: nextList, graph: nextInner }
+            : { ...s, outputs: nextList, graph: nextInner };
+        }
+        return { ...s, graph: stripParent(s.graph) };
+      });
+
+      // Main graph also might host wrapper instances.
+      const mainGraph = stripParent(state.mainGraph);
+
+      // Re-point the active `graph` at the updated inner graph of
+      // whichever context we're currently editing.
+      const activeGraph =
+        state.currentEditingId === 'main'
+          ? mainGraph
+          : subgraphs.find((s) => s.id === state.currentEditingId)?.graph ?? state.graph;
+
+      dispatchProject({
+        subgraphs,
+        mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: activeGraph,
+        rootNodeId: state.rootNodeId,
+        currentEditingId: state.currentEditingId,
+      });
+    },
+
     setActiveEditing: (id) => {
       const state = get();
       if (state.currentEditingId === id) return;
+      // Strip graph-scoped entries from the undo/redo stacks — they're
+      // tied to the previous context's active graph and would target the
+      // wrong graph if replayed after the switch. Project-scoped entries
+      // (`replaceProject`) carry their full snapshot, so they're safe to
+      // keep, which means socket adds/removes and subgraph creations can
+      // still be undone after navigating between graphs.
+      const keepProjectOnly = (stack: typeof state.undoStack) =>
+        stack.filter((c) => c.kind === 'replaceProject');
       if (id === 'main') {
         set({
           currentEditingId: 'main',
           graph: state.mainGraph,
           rootNodeId: state.mainRootNodeId,
-          undoStack: [],
-          redoStack: [],
+          undoStack: keepProjectOnly(state.undoStack),
+          redoStack: keepProjectOnly(state.redoStack),
           syncCounter: state.syncCounter + 1,
         });
       } else {
@@ -293,8 +485,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
           currentEditingId: id,
           graph: sg.graph,
           rootNodeId,
-          undoStack: [],
-          redoStack: [],
+          undoStack: keepProjectOnly(state.undoStack),
+          redoStack: keepProjectOnly(state.redoStack),
           syncCounter: state.syncCounter + 1,
         });
       }
@@ -344,6 +536,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const stack = get().undoStack;
       if (stack.length === 0) return;
       const cmd = stack[stack.length - 1]!;
+      // Project-scoped commands swap the entire snapshot; graph-scoped
+      // ones route through applyBackward as before.
+      if (cmd.kind === 'replaceProject') {
+        set({
+          ...cmd.before,
+          undoStack: stack.slice(0, -1),
+          redoStack: [...get().redoStack, cmd],
+          syncCounter: get().syncCounter + 1,
+        });
+        return;
+      }
       const state = { graph: get().graph, rootNodeId: get().rootNodeId };
       const next = applyBackward(state, cmd);
       set({
@@ -360,6 +563,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const stack = get().redoStack;
       if (stack.length === 0) return;
       const cmd = stack[stack.length - 1]!;
+      if (cmd.kind === 'replaceProject') {
+        set({
+          ...cmd.after,
+          undoStack: [...get().undoStack, cmd],
+          redoStack: stack.slice(0, -1),
+          syncCounter: get().syncCounter + 1,
+        });
+        return;
+      }
       const state = { graph: get().graph, rootNodeId: get().rootNodeId };
       const next = applyForward(state, cmd);
       set({

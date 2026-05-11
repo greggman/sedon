@@ -1,5 +1,5 @@
 import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
 import type { HeightfieldValue, MaterialValue, Texture2DValue } from '../core/resources.js';
@@ -221,6 +221,81 @@ function asRgba(v: unknown): [number, number, number, number] {
   return [1, 1, 1, 1];
 }
 
+// AddSocketForm: tiny inline form shown when the user clicks "+" on a
+// subgraph boundary. Name must be unique within that boundary's side;
+// type is picked from the project type registry.
+function AddSocketForm({
+  existingNames,
+  onSubmit,
+  onCancel,
+}: {
+  existingNames: string[];
+  onSubmit: (name: string, type: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState('Float');
+  const trimmed = name.trim();
+  const duplicate = existingNames.includes(trimmed);
+  const canSubmit = trimmed.length > 0 && !duplicate;
+
+  return (
+    <div className="nodrag nopan sedon-add-socket-form">
+      <input
+        type="text"
+        className="sedon-add-socket-name"
+        placeholder="socket name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && canSubmit) onSubmit(trimmed, type);
+          else if (e.key === 'Escape') onCancel();
+        }}
+      />
+      <select
+        className="sedon-add-socket-type"
+        value={type}
+        onChange={(e) => setType(e.target.value)}
+      >
+        {types.list().map((t) => (
+          <option key={t.id} value={t.id}>{t.id}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="sedon-add-socket-add"
+        onClick={() => canSubmit && onSubmit(trimmed, type)}
+        disabled={!canSubmit}
+        title={duplicate ? 'a socket with this name already exists' : ''}
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        className="sedon-add-socket-cancel"
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+function subgraphIdFromBoundaryKind(kind: string | undefined): {
+  side: 'input' | 'output';
+  subgraphId: string;
+} | null {
+  if (!kind) return null;
+  if (kind.startsWith('subgraph-input/')) {
+    return { side: 'input', subgraphId: kind.slice('subgraph-input/'.length) };
+  }
+  if (kind.startsWith('subgraph-output/')) {
+    return { side: 'output', subgraphId: kind.slice('subgraph-output/'.length) };
+  }
+  return null;
+}
+
 export function CustomNode({ id, data }: NodeProps) {
   const kind = typeof data['kind'] === 'string' ? data['kind'] : undefined;
   const registry = useRegistry();
@@ -240,6 +315,14 @@ export function CustomNode({ id, data }: NodeProps) {
   const setInputValue = useEditorStore((s) => s.setInputValue);
   const myOutputs = useEditorStore((s) => s.evalResult?.allOutputs.get(id));
   const device = useEditorStore((s) => s.device);
+  const addSubgraphSocket = useEditorStore((s) => s.addSubgraphSocket);
+  const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
+
+  // Subgraph-boundary handling. The "editable side" is the one carrying
+  // the subgraph's I/O list: outputs for the input-boundary, inputs for
+  // the output-boundary. We render +/× affordances on that side only.
+  const boundary = subgraphIdFromBoundaryKind(kind);
+  const [adding, setAdding] = useState(false);
 
   if (!def) {
     return <div className="sedon-node sedon-node--unknown">unknown: {kind ?? '(no kind)'}</div>;
@@ -254,6 +337,10 @@ export function CustomNode({ id, data }: NodeProps) {
     const v = inputValues?.[input.name];
     return v !== undefined ? v : input.default;
   };
+
+  // Which socket array is the "subgraph I/O list" view of this boundary?
+  const editableInputs = boundary?.side === 'output';
+  const editableOutputs = boundary?.side === 'input';
 
   return (
     <div className="sedon-node">
@@ -321,6 +408,16 @@ export function CustomNode({ id, data }: NodeProps) {
             {editor && (
               <span className="nodrag nopan sedon-node-editor">{editor}</span>
             )}
+            {editableInputs && boundary && (
+              <button
+                type="button"
+                className="nodrag nopan sedon-boundary-remove"
+                title="Remove this output"
+                onClick={() => removeSubgraphSocket(boundary.subgraphId, 'output', input.name)}
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}
@@ -341,9 +438,44 @@ export function CustomNode({ id, data }: NodeProps) {
           style={{ height: ROW_HEIGHT }}
           title={output.type}
         >
+          {editableOutputs && boundary && (
+            <button
+              type="button"
+              className="nodrag nopan sedon-boundary-remove sedon-boundary-remove--left"
+              title="Remove this input"
+              onClick={() => removeSubgraphSocket(boundary.subgraphId, 'input', output.name)}
+            >
+              ×
+            </button>
+          )}
           {output.name}
         </div>
       ))}
+
+      {boundary && (
+        adding ? (
+          <AddSocketForm
+            existingNames={
+              boundary.side === 'input'
+                ? def.outputs.map((o) => o.name)
+                : def.inputs.map((i) => i.name)
+            }
+            onSubmit={(name, type) => {
+              addSubgraphSocket(boundary.subgraphId, boundary.side, { name, type });
+              setAdding(false);
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="nodrag nopan sedon-boundary-add"
+            onClick={() => setAdding(true)}
+          >
+            + Add {boundary.side}
+          </button>
+        )
+      )}
     </div>
   );
 }

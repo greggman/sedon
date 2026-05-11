@@ -1,10 +1,18 @@
 import type { Graph, GraphEdge, GraphNode, SocketRef } from '../core/graph.js';
+import type { SubgraphDef } from '../core/subgraph.js';
 
 // Every UI mutation builds one of these and dispatches it to the store. The
 // command captures *enough* state to both apply and reverse the change without
 // re-querying the graph at undo time. Same shape doubles as the building block
 // for a future scripting/API capture log: each command is a portable
 // description of "what just happened."
+//
+// Most commands operate on the currently-active graph (GraphState below).
+// `replaceProject` is the escape hatch for operations whose blast radius
+// spans subgraphs, the active graph, AND the editing context — like
+// adding/removing a subgraph socket (which can drop edges in N parent
+// graphs) or creating a new subgraph (which switches contexts). Cheap
+// because subgraph defs and graphs are already kept immutable.
 export type Command =
   | { kind: 'addNode'; node: GraphNode }
   | { kind: 'removeNodes'; nodes: GraphNode[]; edges: GraphEdge[] }
@@ -17,11 +25,25 @@ export type Command =
       before: unknown; // captured at dispatch time so undo can restore it
       after: unknown;
     }
-  | { kind: 'replaceGraph'; before: GraphState; after: GraphState };
+  | { kind: 'replaceGraph'; before: GraphState; after: GraphState }
+  | { kind: 'replaceProject'; before: ProjectSnapshot; after: ProjectSnapshot };
 
 export interface GraphState {
   graph: Graph;
   rootNodeId: string;
+}
+
+// Full snapshot for project-scoped commands. Covers every field a single
+// project-scoped action can change. Camera/viewport state isn't included
+// — those have their own lifecycle (drag-end persistence) and aren't part
+// of the "what was authored" history.
+export interface ProjectSnapshot {
+  subgraphs: SubgraphDef[];
+  mainGraph: Graph;
+  mainRootNodeId: string;
+  graph: Graph;
+  rootNodeId: string;
+  currentEditingId: string;
 }
 
 export function applyForward(state: GraphState, cmd: Command): GraphState {
@@ -71,6 +93,10 @@ export function applyForward(state: GraphState, cmd: Command): GraphState {
     }
     case 'replaceGraph':
       return cmd.after;
+    case 'replaceProject':
+      // Project-scoped — its blast radius is wider than GraphState. The
+      // store handles it directly in undo/redo by swapping the snapshot.
+      throw new Error('replaceProject must be applied at the store level, not via applyForward');
   }
 }
 
@@ -116,6 +142,8 @@ export function applyBackward(state: GraphState, cmd: Command): GraphState {
     }
     case 'replaceGraph':
       return cmd.before;
+    case 'replaceProject':
+      throw new Error('replaceProject must be applied at the store level, not via applyBackward');
   }
 }
 

@@ -220,6 +220,108 @@
 }
 
 /* ============================================================
+ * Subgraph boundary — add/remove socket affordances
+ * ============================================================ */
+.sedon-boundary-remove {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #999;
+  border: 1px solid #444;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.sedon-boundary-remove:hover {
+  background: #3a2222;
+  color: #ff8a8a;
+  border-color: #884;
+}
+
+/* Output row is right-aligned; flip the × to the left side so the socket
+ * name still sits next to the handle. */
+.sedon-boundary-remove--left {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.sedon-boundary-add {
+  display: block;
+  margin: 6px 12px 8px;
+  padding: 4px 8px;
+  background: #1f2a1f;
+  color: #b6d8b6;
+  border: 1px dashed #4a6a4a;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+}
+
+.sedon-boundary-add:hover {
+  background: #243024;
+  border-color: #6a8a6a;
+}
+
+.sedon-add-socket-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  margin: 6px 12px 8px;
+  padding: 6px;
+  background: #1a1a1f;
+  border: 1px solid #444;
+  border-radius: 3px;
+}
+
+.sedon-add-socket-name,
+.sedon-add-socket-type {
+  background: #111;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #ddd;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.sedon-add-socket-add,
+.sedon-add-socket-cancel {
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid #555;
+}
+
+.sedon-add-socket-add {
+  background: #2a3a2a;
+  color: #b6d8b6;
+  border-color: #4a6a4a;
+  grid-column: 1;
+}
+
+.sedon-add-socket-add:disabled {
+  background: #222;
+  color: #555;
+  cursor: not-allowed;
+  border-color: #333;
+}
+
+.sedon-add-socket-cancel {
+  background: #2a2a2a;
+  color: #aaa;
+  grid-column: 2;
+}
+
+/* ============================================================
  * Inputs
  * ============================================================ */
 .sedon-numinput-edit {

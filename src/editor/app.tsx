@@ -5,6 +5,7 @@ import { CleanupButton } from './cleanup-button.js';
 import { DemosMenu } from './demos-menu.js';
 import { FileMenu } from './file-menu.js';
 import { GraphSwitcher } from './graph-switcher.js';
+import { NewSubgraphButton } from './new-subgraph-button.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
 
@@ -20,6 +21,7 @@ export function App() {
           <div className="sedon-top-toolbar">
             <GraphSwitcher />
             <DemosMenu />
+            <NewSubgraphButton />
             <CleanupButton />
             <FileMenu />
           </div>
