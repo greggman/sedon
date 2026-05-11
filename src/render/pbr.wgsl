@@ -10,8 +10,15 @@
 //
 //   @group(1) — kind-specific bindings:
 //     binding 0: basecolor texture
-//     binding 1: per-material params (roughness, metallic)
+//     binding 1: per-material params (roughness, metallic, detail scale/strength)
 //     binding 2: normal map (flat 1×1 placeholder when material has none)
+//     binding 3: detail basecolor — greyscale 0.5-centered multiplier
+//     binding 4: detail normal — high-freq tangent-space normal
+//
+// Detail textures are sampled at uv * detailScale (typically 4–16× tighter
+// than the base) and overlaid on the base lookups. Both detail slots have
+// flat placeholders so an authored material that doesn't wire them costs
+// only the sample, not a code path.
 //
 // Adding a new kind means declaring its own @group(1) layout — @group(0)
 // stays exactly as below.
@@ -29,6 +36,8 @@ struct Uniforms {
 struct Material {
   roughness: f32,
   metallic: f32,
+  detailScale: f32,
+  detailStrength: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -39,6 +48,8 @@ struct Material {
 @group(1) @binding(0) var basecolor: texture_2d<f32>;
 @group(1) @binding(1) var<uniform> material: Material;
 @group(1) @binding(2) var normal_map: texture_2d<f32>;
+@group(1) @binding(3) var detail_basecolor: texture_2d<f32>;
+@group(1) @binding(4) var detail_normal: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -147,11 +158,29 @@ fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
   return mat3x3f(t * invmax, b * invmax, n);
 }
 
+// Build the tangent-space normal: base normal-map sample, plus detail
+// normal sampled at uv * detailScale and folded in by adding its XY and
+// multiplying its Z. Strength scales the detail's XY contribution so 0
+// reduces to the base; the flat (0,0,1) placeholder makes this a no-op
+// for materials without an authored detail normal.
 fn perturb_normal(n: vec3f, p: vec3f, uv: vec2f) -> vec3f {
-  let smp = textureSample(normal_map, samp, uv).rgb;
-  let map = smp * 2.0 - vec3f(1.0);
+  let base = textureSample(normal_map, samp, uv).rgb * 2.0 - vec3f(1.0);
+  let detail_uv = uv * material.detailScale;
+  let detail = textureSample(detail_normal, samp, detail_uv).rgb * 2.0 - vec3f(1.0);
+  let blended_tangent = normalize(vec3f(
+    base.xy + detail.xy * material.detailStrength,
+    base.z * detail.z,
+  ));
   let tbn = cotangent_frame(n, p, uv);
-  return normalize(tbn * map);
+  return normalize(tbn * blended_tangent);
+}
+
+// Greyscale detail modulates albedo. sample=0.5 is the no-op midpoint;
+// values below darken, above lighten. Strength linearly scales the
+// deviation from 0.5, so strength=0 returns 1.0 (no change).
+fn detail_albedo_factor(uv: vec2f) -> f32 {
+  let sample = textureSample(detail_basecolor, samp, uv * material.detailScale).r;
+  return 1.0 + (sample - 0.5) * 2.0 * material.detailStrength;
 }
 
 fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
@@ -196,7 +225,7 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo_sample = textureSample(basecolor, samp, in.uv);
-  let albedo = albedo_sample.rgb * in.tint.rgb;
+  let albedo = albedo_sample.rgb * in.tint.rgb * detail_albedo_factor(in.uv);
   let n_geom = normalize(in.view_normal);
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let shadow = sample_shadow(in.world_pos);

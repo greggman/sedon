@@ -46,6 +46,14 @@ export type MaterialValue = PbrMaterial | TerrainSplatMaterial;
 /**
  * Standard PBR Cook-Torrance (the only kind until we shipped this refactor).
  * Single basecolor texture + scalar roughness/metallic + optional normal map.
+ *
+ * Optional "detail" channel adds a high-frequency overlay sampled at a
+ * tighter UV scale to break the visible tile pattern of the base textures
+ * at close range. detailBasecolor is treated as a 0.5-centered greyscale
+ * multiplier on albedo; detailNormal is added in tangent space to the
+ * base normal. Both are no-ops when wired to a 1×1 flat placeholder, so
+ * leaving the inputs unwired produces identical output to a no-detail
+ * material.
  */
 export interface PbrMaterial {
   kind: 'pbr';
@@ -53,6 +61,12 @@ export interface PbrMaterial {
   roughness: number;
   metallic: number;
   normal?: Texture2DValue;
+  detailBasecolor?: Texture2DValue;
+  detailNormal?: Texture2DValue;
+  /** UV multiplier for the detail textures. Higher = tighter tiling. Default 4. */
+  detailScale?: number;
+  /** 0 = no detail effect, 1 = full strength. Default 1. */
+  detailStrength?: number;
 }
 
 /**

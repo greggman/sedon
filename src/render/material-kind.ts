@@ -150,6 +150,32 @@ export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
   };
 }
 
+// 1×1 mid-grey (R=0.5). Used as the no-op placeholder for detail-basecolor:
+// the shader does `1 + (sample - 0.5) * 2 * strength`, so sample=0.5 leaves
+// albedo untouched regardless of strength.
+export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
+  const format: GPUTextureFormat = 'rgba8unorm';
+  const texture = device.createTexture({
+    size: [1, 1],
+    format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const pixel = new Uint8Array([128, 128, 128, 255]);
+  device.queue.writeTexture(
+    { texture },
+    pixel as BufferSource,
+    { bytesPerRow: 4 },
+    [1, 1],
+  );
+  return {
+    texture,
+    view: texture.createView(),
+    format,
+    width: 1,
+    height: 1,
+  };
+}
+
 // Common depth-stencil config — reverse-Z float depth, 'greater' compare.
 export const DEPTH_STENCIL: GPUDepthStencilState = {
   format: 'depth32float',

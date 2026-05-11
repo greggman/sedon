@@ -1,5 +1,6 @@
 import type { PbrMaterial, Texture2DValue } from '../../core/resources.js';
 import {
+  createFlatHalfTexture,
   createFlatNormalTexture,
   DEPTH_STENCIL,
   instanceVertexBuffers,
@@ -16,7 +17,7 @@ export function createPbrKind(
     entries: [
       // basecolor
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      // material params (roughness, metallic)
+      // material params (roughness, metallic, detailScale, detailStrength)
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
@@ -24,6 +25,10 @@ export function createPbrKind(
       },
       // normal map
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      // detail basecolor (greyscale modulator)
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      // detail normal map
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
 
@@ -40,24 +45,31 @@ export function createPbrKind(
     depthStencil: DEPTH_STENCIL,
   });
 
-  // Lazy-create the flat-normal placeholder for materials without an
-  // authored normal map. The bind-group layout requires a texture binding
-  // either way.
+  // Lazy-create placeholder textures for materials without authored
+  // normal / detail inputs. Flat-half (0.5 grey) is the albedo-detail
+  // no-op; flat-normal ((0, 0, 1) in tangent space) is the normal no-op.
   let flatNormal: Texture2DValue | null = null;
+  let flatHalf: Texture2DValue | null = null;
 
   return {
     id: 'pbr',
     pipeline,
     buildBindGroup(material) {
       const normalTex = material.normal ?? (flatNormal ??= createFlatNormalTexture(device));
+      const detailBasecolorTex =
+        material.detailBasecolor ?? (flatHalf ??= createFlatHalfTexture(device));
+      const detailNormalTex =
+        material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
 
       const paramBuffer = device.createBuffer({
-        size: 16, // vec4 alignment: roughness, metallic + padding
+        size: 16, // four f32s: roughness, metallic, detailScale, detailStrength
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       const paramData = new Float32Array(4);
       paramData[0] = material.roughness;
       paramData[1] = material.metallic;
+      paramData[2] = material.detailScale ?? 4;
+      paramData[3] = material.detailStrength ?? 1;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
 
       return device.createBindGroup({
@@ -66,6 +78,8 @@ export function createPbrKind(
           { binding: 0, resource: material.basecolor.view },
           { binding: 1, resource: { buffer: paramBuffer } },
           { binding: 2, resource: normalTex.view },
+          { binding: 3, resource: detailBasecolorTex.view },
+          { binding: 4, resource: detailNormalTex.view },
         ],
       });
     },

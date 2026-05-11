@@ -70,7 +70,29 @@ function buildTreeSubgraph(opts: {
   });
   const trunkMat = addNode(g, 'core/material', {
     position: { x: COL * 4, y: -ROW * 0.4 },
-    inputValues: { roughness: 0.95, metallic: 0 },
+    inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.6 },
+  });
+  // Detail noise for the trunk: high-frequency perlin, fed both as
+  // greyscale-multiplier (detail_basecolor) and through normal-from-height
+  // for the detail tangent normal. Seed offset from bark seed so the two
+  // patterns don't lock together. Scale 8 tiles the noise 8× within its
+  // own texture; combined with the material's detail_scale (6 above), each
+  // mesh-UV unit ends up with 48 noise cycles — enough to break the bark
+  // base pattern at close range without becoming visual noise.
+  const trunkDetail = addNode(g, 'core/perlin', {
+    position: { x: COL * 2, y: -ROW * 1.4 },
+    inputValues: {
+      scale: [8, 8],
+      octaves: 3,
+      lacunarity: 2.2,
+      gain: 0.55,
+      seed: opts.bark.seed * 1.7 + 0.13,
+      resolution: 256,
+    },
+  });
+  const trunkDetailNormal = addNode(g, 'core/normal-from-height', {
+    position: { x: COL * 3, y: -ROW * 1.4 },
+    inputValues: { strength: 20, resolution: 256 },
   });
   const trunkEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 5, y: 0 },
@@ -140,6 +162,11 @@ function buildTreeSubgraph(opts: {
   addEdge(g, { node: trunkGeo.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
   addEdge(g, { node: bark.id, socket: 'basecolor' }, { node: trunkMat.id, socket: 'basecolor' });
   addEdge(g, { node: bark.id, socket: 'normal' }, { node: trunkMat.id, socket: 'normal' });
+  // Detail: same perlin feeds both the greyscale multiplier and the
+  // tangent-space detail normal via normal-from-height.
+  addEdge(g, { node: trunkDetail.id, socket: 'texture' }, { node: trunkDetailNormal.id, socket: 'height' });
+  addEdge(g, { node: trunkDetail.id, socket: 'texture' }, { node: trunkMat.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: trunkDetailNormal.id, socket: 'texture' }, { node: trunkMat.id, socket: 'detail_normal' });
   addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
 
   // Foliage chain.
