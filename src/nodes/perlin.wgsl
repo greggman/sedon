@@ -33,17 +33,32 @@ fn hash2(p: vec2f) -> vec2f {
   return -1.0 + 2.0 * fract(sin(h) * 43758.5453123);
 }
 
-// Classic Perlin gradient noise in 2D. Returns approximately in [-1, 1].
-fn perlin(p: vec2f) -> f32 {
+// Modular lattice index — keeps cells repeating with period `tile`, so the
+// noise wraps cleanly when uv crosses 0/1 (tile space). Wraps both i and
+// the seed-offset; the offset would otherwise break tiling because hash
+// at p=0 and p=tile see different absolute lattice indices.
+fn wrap(i: vec2f, tile: vec2f) -> vec2f {
+  return i - tile * floor(i / tile);
+}
+
+// Tileable Perlin gradient noise. Same as classic perlin but the four
+// corner hashes use lattice indices modulo `tile`, so noise(p)=noise(p+tile)
+// exactly and the output tiles seamlessly at multiples of `tile`.
+fn perlin(p: vec2f, tile: vec2f) -> f32 {
   let i = floor(p);
   let f = p - i;
   // Quintic interpolation for C2 continuity.
   let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
-  let g00 = hash2(i + vec2f(0.0, 0.0));
-  let g10 = hash2(i + vec2f(1.0, 0.0));
-  let g01 = hash2(i + vec2f(0.0, 1.0));
-  let g11 = hash2(i + vec2f(1.0, 1.0));
+  let i00 = wrap(i,                     tile);
+  let i10 = wrap(i + vec2f(1.0, 0.0),   tile);
+  let i01 = wrap(i + vec2f(0.0, 1.0),   tile);
+  let i11 = wrap(i + vec2f(1.0, 1.0),   tile);
+
+  let g00 = hash2(i00);
+  let g10 = hash2(i10);
+  let g01 = hash2(i01);
+  let g11 = hash2(i11);
 
   let n00 = dot(g00, f - vec2f(0.0, 0.0));
   let n10 = dot(g10, f - vec2f(1.0, 0.0));
@@ -53,7 +68,7 @@ fn perlin(p: vec2f) -> f32 {
   return mix(mix(n00, n10, u.x), mix(n01, n11, u.x), u.y);
 }
 
-fn fbm(p: vec2f, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
+fn fbm(p: vec2f, tile: vec2f, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
   var sum = 0.0;
   var amp = 1.0;
   var freq = 1.0;
@@ -61,7 +76,10 @@ fn fbm(p: vec2f, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
   // Hard cap so a runaway uniform can't lock the GPU.
   let n = clamp(octaves, 1, 16);
   for (var k = 0; k < n; k++) {
-    sum = sum + amp * perlin(p * freq);
+    // Each octave samples at p*freq with its OWN tile (also scaled by
+    // freq) — that's what keeps every octave's lattice period an integer
+    // sub-multiple of the texture, so the full FBM tiles cleanly.
+    sum = sum + amp * perlin(p * freq, tile * freq);
     max_amp = max_amp + amp;
     amp = amp * gain;
     freq = freq * lacunarity;
@@ -71,8 +89,15 @@ fn fbm(p: vec2f, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
-  let p = in.uv * params.scale + vec2f(params.seed * 17.13, params.seed * 31.97);
-  let n = fbm(p, i32(params.octaves), params.lacunarity, params.gain);
+  // Round scale to an integer tile period — fractional periods break
+  // tileability because the lattice can't wrap exactly. Users typically
+  // supply integers anyway; this just makes any drift harmless.
+  let tile = max(round(params.scale), vec2f(1.0));
+  // Sampling [0, tile) across the texture. Seed offset is fine because
+  // the lattice wrap is modular: noise at uv=0 and uv=1 land on the same
+  // lattice cell regardless of offset.
+  let p = in.uv * tile + vec2f(params.seed * 17.13, params.seed * 31.97);
+  let n = fbm(p, tile, i32(params.octaves), params.lacunarity, params.gain);
   // Remap [-1, 1] -> [0, 1] for an unsigned grayscale output.
   let v = n * 0.5 + 0.5;
   return vec4f(v, v, v, 1.0);
