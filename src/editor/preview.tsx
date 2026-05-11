@@ -5,19 +5,32 @@ import { initWebGPU, type GpuContext } from '../render/device.js';
 import { multiply, perspective, rotationX, rotationY, translation } from '../render/mat4.js';
 import { createSceneRenderer } from '../render/scene.js';
 import { useRegistry } from './registry.js';
-import { useEditorStore } from './store.js';
+import { useEditorStore, type CameraState } from './store.js';
 
-interface OrbitCamera {
-  yaw: number;
-  pitch: number;
-  distance: number;
-}
+// Camera math: orbit around `target` at `distance`, oriented by yaw/pitch.
+//   modelView = translate(0, 0, -distance)
+//             * rotateX(pitch)
+//             * rotateY(yaw)
+//             * translate(-target)
+// Mouse drag rotates yaw/pitch. Cmd/Ctrl+drag pans the target along the
+// camera's local right/up axes. Scroll zooms (changes distance).
+type OrbitCamera = CameraState;
 
 const DEFAULT_CAMERA: OrbitCamera = {
   yaw: 0,
   pitch: 0.4,
   distance: 3,
+  target: [0, 0, 0],
 };
+
+function cloneCamera(c: OrbitCamera): OrbitCamera {
+  return {
+    yaw: c.yaw,
+    pitch: c.pitch,
+    distance: c.distance,
+    target: [c.target[0], c.target[1], c.target[2]],
+  };
+}
 
 export function Preview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,11 +38,14 @@ export function Preview() {
   const [gpu, setGpu] = useState<GpuContext | null>(null);
 
   // Camera lives in a ref so the render loop reads fresh values without
-  // restarting on every drag.
-  const cameraRef = useRef<OrbitCamera>({ ...DEFAULT_CAMERA });
+  // re-rendering on every drag. Per-graph camera state is mirrored in the
+  // store on drag-end and context switch so navigating subgraphs preserves
+  // each one's framing.
+  const cameraRef = useRef<OrbitCamera>(cloneCamera(DEFAULT_CAMERA));
 
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
+  const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
   const setDevice = useEditorStore((s) => s.setDevice);
   const registry = useRegistry();
@@ -74,12 +90,14 @@ export function Preview() {
     if (!canvas) return;
 
     let dragging = false;
+    let panning = false; // Locked at pointerdown by Cmd/Ctrl state
     let lastX = 0;
     let lastY = 0;
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       dragging = true;
+      panning = e.metaKey || e.ctrlKey;
       lastX = e.clientX;
       lastY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
@@ -91,19 +109,60 @@ export function Preview() {
       lastX = e.clientX;
       lastY = e.clientY;
       const cam = cameraRef.current;
-      const sens = 0.005;
-      cam.yaw += dx * sens;
-      cam.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * sens));
+
+      if (panning) {
+        // Camera-local right/up in world space — derived from yaw/pitch.
+        // The modelView is translate(-target) → rotY(yaw) → rotX(pitch);
+        // its inverse rotation gives the camera basis in world space.
+        const cy = Math.cos(cam.yaw);
+        const sy = Math.sin(cam.yaw);
+        const cp = Math.cos(cam.pitch);
+        const sp = Math.sin(cam.pitch);
+        const rightX = cy, rightY = 0, rightZ = -sy;
+        const upX = -sy * sp, upY = cp, upZ = cy * sp;
+        // Scale pan by distance so it feels constant in screen-space
+        // regardless of zoom.
+        const panSens = 0.0025 * cam.distance;
+        const px = -dx * panSens; // drag right → target moves left → scene scrolls right
+        const py =  dy * panSens; // drag down  → target moves up   → scene scrolls down
+        cam.target[0] += rightX * px + upX * py;
+        cam.target[1] += rightY * px + upY * py;
+        cam.target[2] += rightZ * px + upZ * py;
+      } else {
+        const sens = 0.005;
+        cam.yaw += dx * sens;
+        cam.pitch = Math.max(
+          -Math.PI / 2 + 0.01,
+          Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * sens),
+        );
+      }
     };
     const onPointerUp = (e: PointerEvent) => {
+      if (!dragging) return;
       dragging = false;
-      canvas.releasePointerCapture(e.pointerId);
+      panning = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore — already released.
+      }
+      // Persist the current camera into the store under the active editing
+      // id so it survives a graph switch. Read currentEditingId fresh at
+      // commit time (the effect's closure may have a stale value if id
+      // changed mid-drag, which can't actually happen since switching
+      // requires a click on the toolbar, ending this drag first).
+      const id = useEditorStore.getState().currentEditingId;
+      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const cam = cameraRef.current;
       const factor = Math.exp(e.deltaY * 0.001);
       cam.distance = Math.max(0.5, Math.min(50, cam.distance * factor));
+      // Same per-context save as drag-end. Zoom is also "user adjustment
+      // worth remembering."
+      const id = useEditorStore.getState().currentEditingId;
+      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
     };
 
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -120,6 +179,23 @@ export function Preview() {
       canvas.removeEventListener('wheel', onWheel);
     };
   }, []);
+
+  // Save outgoing camera + load incoming camera on context switch. The
+  // ref tracks the previous id so we know where to save TO; whatever's in
+  // the store for the new id is loaded into cameraRef.
+  const prevContextRef = useRef<string>(currentEditingId);
+  useEffect(() => {
+    const prevId = prevContextRef.current;
+    if (prevId === currentEditingId) return;
+    // Save outgoing.
+    useEditorStore
+      .getState()
+      .saveCameraFor(prevId, cloneCamera(cameraRef.current));
+    // Load incoming (or default).
+    const stored = useEditorStore.getState().cameras[currentEditingId];
+    cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
+    prevContextRef.current = currentEditingId;
+  }, [currentEditingId]);
 
   // On graph change (and once GPU is up), re-evaluate and run the render loop.
   useEffect(() => {
@@ -180,9 +256,15 @@ export function Preview() {
         const aspect = canvas.width / canvas.height;
         const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
         const cam = cameraRef.current;
+        // modelView = trans(0,0,-distance) * rotX(pitch) * rotY(yaw) * trans(-target)
+        // Translating by -target first puts the orbit pivot at the origin so
+        // pitch/yaw rotate around it, not around world origin.
         const modelView = multiply(
-          multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
-          rotationY(cam.yaw),
+          multiply(
+            multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+            rotationY(cam.yaw),
+          ),
+          translation(-cam.target[0], -cam.target[1], -cam.target[2]),
         );
 
         const encoder = device.createCommandEncoder();

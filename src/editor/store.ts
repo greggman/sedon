@@ -11,6 +11,17 @@ export interface EvalResult {
   allOutputs: Map<string, NodeOutputs>;
 }
 
+// Orbit camera state. `target` is the world-space point the camera orbits
+// around; yaw/pitch/distance describe its position relative to that point.
+// Stored per editing context (main + each subgraph) so navigating back to a
+// graph restores how you had it framed.
+export interface CameraState {
+  yaw: number;
+  pitch: number;
+  distance: number;
+  target: [number, number, number];
+}
+
 export interface EditorState {
   /**
    * The graph currently being edited. Equals mainGraph when
@@ -32,6 +43,12 @@ export interface EditorState {
   subgraphs: SubgraphDef[];
   /** 'main' or the id of a subgraph in `subgraphs`. Drives which graph the editor displays. */
   currentEditingId: string;
+  /**
+   * Camera state keyed by editing id. Empty initially; the preview
+   * component writes back per-graph state on drag-end and context switch
+   * so navigating away and back returns to the same framing.
+   */
+  cameras: Record<string, CameraState>;
   evalResult: EvalResult | null;
   device: GPUDevice | null;
 
@@ -66,6 +83,9 @@ export interface EditorState {
    * Clears undo/redo (commands don't carry context across boundaries).
    */
   setActiveEditing: (id: string) => void;
+
+  /** Persist camera state for a given editing context. */
+  saveCameraFor: (id: string, camera: CameraState) => void;
 
   /**
    * Capture node positions from the React Flow canvas back into the active
@@ -158,6 +178,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     mainRootNodeId: initial.rootNodeId,
     subgraphs: [],
     currentEditingId: 'main',
+    cameras: {},
     evalResult: null,
     device: null,
     undoStack: [],
@@ -179,11 +200,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
         mainRootNodeId: rootNodeId,
         subgraphs: subgraphs ?? [],
         currentEditingId: 'main',
+        // New project state ⇒ no remembered cameras. Each graph starts
+        // fresh on first view.
+        cameras: {},
         undoStack: [],
         redoStack: [],
         dirty: false,
         syncCounter: get().syncCounter + 1,
       });
+    },
+
+    saveCameraFor: (id, camera) => {
+      set({ cameras: { ...get().cameras, [id]: camera } });
     },
 
     commitActivePositions: (positionsById) => {
