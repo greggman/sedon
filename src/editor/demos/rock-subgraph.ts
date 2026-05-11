@@ -36,29 +36,13 @@ export function buildRockMeshSubgraph(): SubgraphDef {
     inputValues: { scale: [3, 2] },
   });
 
-  // Rock texture subgraph supplies the basecolor.
+  // Rock texture subgraph supplies basecolor + normal AND the detail pair.
   const rockTex = addNode(g, 'subgraph/rock-texture', {
     position: { x: COL * 2, y: ROW * 1.5 },
   });
-  // Detail noise: same recipe as the trunk in tree-subgraphs.ts. Higher
-  // base scale (10) because rocks read at higher mesh-UV density after
-  // the uv-transform [3, 2] above; the combined effective detail rate is
-  // tuned to feel like surface micro-texture rather than separate features.
-  const rockDetail = addNode(g, 'core/perlin', {
-    position: { x: COL * 2, y: ROW * 0 },
-    inputValues: {
-      scale: [10, 10],
-      octaves: 3,
-      lacunarity: 2.2,
-      gain: 0.55,
-      seed: 0.41,
-      resolution: 256,
-    },
-  });
-  const rockDetailNormal = addNode(g, 'core/normal-from-height', {
-    position: { x: COL * 3, y: ROW * 0 },
-    inputValues: { strength: 5, resolution: 256 },
-  });
+  // detail_scale + detail_strength stay on the material — they're a
+  // function of how the rock mesh's UVs (post uv-transform) map to world
+  // units, not a property of the rock texture itself.
   const rockMat = addNode(g, 'core/material', {
     position: { x: COL * 3, y: ROW * 0.7 },
     inputValues: { roughness: 0.85, metallic: 0, detail_scale: 5, detail_strength: 0.55 },
@@ -84,10 +68,10 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   // Texture subgraph → material (basecolor + normal) → entity.material.
   addEdge(g, { node: rockTex.id, socket: 'basecolor' }, { node: rockMat.id, socket: 'basecolor' });
   addEdge(g, { node: rockTex.id, socket: 'normal' }, { node: rockMat.id, socket: 'normal' });
-  // Detail chain — shared perlin feeds both detail slots on the material.
-  addEdge(g, { node: rockDetail.id, socket: 'texture' }, { node: rockDetailNormal.id, socket: 'height' });
-  addEdge(g, { node: rockDetail.id, socket: 'texture' }, { node: rockMat.id, socket: 'detail_basecolor' });
-  addEdge(g, { node: rockDetailNormal.id, socket: 'texture' }, { node: rockMat.id, socket: 'detail_normal' });
+  // Detail outputs from the rock texture subgraph flow straight to the
+  // material's matching inputs.
+  addEdge(g, { node: rockTex.id, socket: 'detail_basecolor' }, { node: rockMat.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: rockTex.id, socket: 'detail_normal' }, { node: rockMat.id, socket: 'detail_normal' });
   addEdge(g, { node: rockMat.id, socket: 'material' }, { node: rockEntity.id, socket: 'material' });
 
   // Boundary → scatter inputs.

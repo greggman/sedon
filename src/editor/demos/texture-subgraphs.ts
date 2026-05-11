@@ -87,6 +87,29 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
     inputValues: { strength: 3, resolution: 256 },
   });
 
+  // Detail layer: a high-freq isotropic perlin that the material samples
+  // at a tighter UV to break the visible repetition of the base fibers at
+  // close range. Same height field drives both detail_basecolor (greyscale
+  // multiplier) and detail_normal (tangent-space bump). Seed is fixed
+  // (not wired from the input seed) so the detail pattern is "generic
+  // bark crackle" rather than species-correlated — species variation
+  // already comes from the base fibers' seed input.
+  const detailNoise = addNode(g, 'core/perlin', {
+    position: { x: COL, y: ROW * 3 },
+    inputValues: {
+      scale: [8, 8],
+      octaves: 3,
+      lacunarity: 2.2,
+      gain: 0.55,
+      seed: 0.79,
+      resolution: 256,
+    },
+  });
+  const detailNormal = addNode(g, 'core/normal-from-height', {
+    position: { x: COL * 2, y: ROW * 3 },
+    inputValues: { strength: 20, resolution: 256 },
+  });
+
   // Wire: boundary inputs → perlin seed + colorize colors.
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: fibers.id, socket: 'seed' });
   addEdge(g, { node: fibers.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
@@ -94,10 +117,14 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
   addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
   addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
+  // Detail chain.
+  addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: detailNormal.id, socket: 'height' });
 
-  // Outputs: basecolor and normal exposed to parent.
+  // Outputs: basecolor, normal, plus the detail pair.
   addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
   addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
+  addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: detailNormal.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_normal' });
 
   // Standalone preview (a plane wearing the bark).
   addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
@@ -116,6 +143,8 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
     outputs: [
       { name: 'basecolor', type: 'Texture2D' },
       { name: 'normal', type: 'Texture2D' },
+      { name: 'detail_basecolor', type: 'Texture2D' },
+      { name: 'detail_normal', type: 'Texture2D' },
     ],
     graph: g,
     inputNodeId: inputNode.id,
@@ -272,6 +301,25 @@ export function buildRockTextureSubgraph(): SubgraphDef {
     inputValues: { strength: 8, resolution: 256 },
   });
 
+  // Detail layer: high-freq isotropic perlin for surface grit at close
+  // range. Same rationale as the bark subgraph's detail — fixed seed so
+  // every rock instance shares the same micro-detail "grit" character.
+  const detailNoise = addNode(g, 'core/perlin', {
+    position: { x: COL, y: ROW * 3 },
+    inputValues: {
+      scale: [10, 10],
+      octaves: 3,
+      lacunarity: 2.2,
+      gain: 0.55,
+      seed: 0.41,
+      resolution: 256,
+    },
+  });
+  const detailNormal = addNode(g, 'core/normal-from-height', {
+    position: { x: COL * 2, y: ROW * 3 },
+    inputValues: { strength: 18, resolution: 256 },
+  });
+
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: cells.id, socket: 'seed' });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: grain.id, socket: 'seed' });
   addEdge(g, { node: cells.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
@@ -281,8 +329,12 @@ export function buildRockTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
   addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
   addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
+  addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: detailNormal.id, socket: 'height' });
+
   addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
   addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
+  addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: detailNormal.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_normal' });
 
   addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
     x: COL, y: ROW * 4,
@@ -300,6 +352,8 @@ export function buildRockTextureSubgraph(): SubgraphDef {
     outputs: [
       { name: 'basecolor', type: 'Texture2D' },
       { name: 'normal', type: 'Texture2D' },
+      { name: 'detail_basecolor', type: 'Texture2D' },
+      { name: 'detail_normal', type: 'Texture2D' },
     ],
     graph: g,
     inputNodeId: inputNode.id,
