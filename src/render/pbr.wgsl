@@ -2,8 +2,11 @@
 // bind-group convention:
 //
 //   @group(0) — scene-level bindings shared across all material kinds:
-//     binding 0: scene uniforms (modelView, projection, lighting, fog)
-//     binding 1: shared sampler
+//     binding 0: scene uniforms (modelView, projection, lightViewProj,
+//                lighting, fog)
+//     binding 1: shared color sampler
+//     binding 2: shadow map (depth) — filled by the shadow pass
+//     binding 3: shadow comparison sampler (linear → 2×2 PCF)
 //
 //   @group(1) — kind-specific bindings:
 //     binding 0: basecolor texture
@@ -16,6 +19,7 @@
 struct Uniforms {
   modelView: mat4x4f,
   projection: mat4x4f,
+  lightViewProj: mat4x4f,
   lightDirWorld: vec3f,
   lightColor: vec3f,
   ambient: vec3f,
@@ -29,6 +33,8 @@ struct Material {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var shadow_map: texture_depth_2d;
+@group(0) @binding(3) var shadow_samp: sampler_comparison;
 
 @group(1) @binding(0) var basecolor: texture_2d<f32>;
 @group(1) @binding(1) var<uniform> material: Material;
@@ -51,6 +57,10 @@ struct VsOut {
   @location(1) view_normal: vec3f,
   @location(2) uv: vec2f,
   @location(3) tint: vec4f,
+  // World-space position carried through so the fragment can transform
+  // into light clip space for shadow sampling without re-multiplying by
+  // the instance matrix per fragment.
+  @location(4) world_pos: vec3f,
 };
 
 @vertex
@@ -61,6 +71,7 @@ fn vs_main(in: VsIn) -> VsOut {
   var out: VsOut;
   out.position = uniforms.projection * view_pos4;
   out.view_pos = view_pos4.xyz;
+  out.world_pos = world_pos4.xyz;
 
   let inst_3x3 = mat3x3f(in.inst_col0.xyz, in.inst_col1.xyz, in.inst_col2.xyz);
   let world_normal = inst_3x3 * in.normal;
@@ -73,6 +84,28 @@ fn vs_main(in: VsIn) -> VsOut {
   out.uv = in.uv;
   out.tint = in.inst_tint;
   return out;
+}
+
+// Sample the shadow map for a world-space fragment position. Returns 1.0
+// when the fragment is fully lit, 0.0 when fully occluded, fractional for
+// PCF-soft edges. Out-of-bounds fragments (outside the shadow region or
+// behind the light) fall back to "lit" — fine for a single-cascade map,
+// since occluders outside the region are visually distant and you'd not
+// expect strong shadows from them anyway.
+//
+// Bias is added to the fragment's light-space depth (reverse-Z, so larger
+// = closer to light) to avoid self-shadow acne. 0.003 was tuned against
+// the forest demo; too small → acne stripes, too large → peter-panning.
+fn sample_shadow(world_pos: vec3f) -> f32 {
+  let light_clip = uniforms.lightViewProj * vec4f(world_pos, 1.0);
+  // Ortho projection: w == 1, no divide needed.
+  let shadow_uv = vec2f(light_clip.x * 0.5 + 0.5, 0.5 - light_clip.y * 0.5);
+  let depth_ref = light_clip.z + 0.003;
+  let in_bounds =
+    all(shadow_uv >= vec2f(0.0)) && all(shadow_uv <= vec2f(1.0))
+    && light_clip.z >= 0.0 && light_clip.z <= 1.0;
+  let raw = textureSampleCompare(shadow_map, shadow_samp, shadow_uv, depth_ref);
+  return select(1.0, raw, in_bounds);
 }
 
 const PI: f32 = 3.14159265359;
@@ -121,7 +154,7 @@ fn perturb_normal(n: vec3f, p: vec3f, uv: vec2f) -> vec3f {
   return normalize(tbn * map);
 }
 
-fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32) -> vec3f {
+fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
   let view_rot = mat3x3f(
@@ -147,7 +180,10 @@ fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, meta
   let k_s = f;
   let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
-  let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l;
+  // Shadow attenuates direct light only. Ambient stays full — physically
+  // wrong but visually right: a fully-shadowed surface still receives sky
+  // bounce light and would otherwise read as pure black.
+  let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l * shadow;
   let ambient_term = albedo * uniforms.ambient;
   return direct + ambient_term;
 }
@@ -163,8 +199,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo = albedo_sample.rgb * in.tint.rgb;
   let n_geom = normalize(in.view_normal);
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
+  let shadow = sample_shadow(in.world_pos);
 
-  let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic);
+  let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic, shadow);
   let final_color = apply_fog(lit, in.view_pos.z);
 
   return vec4f(final_color, albedo_sample.a);

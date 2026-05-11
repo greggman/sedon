@@ -71,6 +71,71 @@ export function rotationZ(rad: number): Mat4 {
   return m;
 }
 
+// Reverse-Z orthographic projection: maps view-space view.z = -near → clip.z = 1
+// (near plane), view.z = -far → clip.z = 0 (far plane). Same depth convention as
+// the perspective projection above so they can share one depth attachment.
+//
+// Use for the shadow pass: the light is treated as a directional camera with
+// an orthographic frustum sized to cover the shadow extent.
+export function orthographic(
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near: number,
+  far: number,
+): Mat4 {
+  const m = new Float32Array(16);
+  m[0]  = 2 / (right - left);
+  m[5]  = 2 / (top - bottom);
+  // Reverse-Z: clip.z = (view.z + far) / (far - near).
+  m[10] = 1 / (far - near);
+  m[12] = -(right + left) / (right - left);
+  m[13] = -(top + bottom) / (top - bottom);
+  m[14] = far / (far - near);
+  m[15] = 1;
+  return m;
+}
+
+// Right-handed lookAt: builds a world→view matrix where view +X = right,
+// view +Y = up, view -Z = direction from eye toward target. Used to build
+// the light's view matrix for the shadow pass.
+export function lookAt(
+  eye: [number, number, number],
+  target: [number, number, number],
+  up: [number, number, number],
+): Mat4 {
+  // forward = direction from eye toward target.
+  let fx = target[0] - eye[0];
+  let fy = target[1] - eye[1];
+  let fz = target[2] - eye[2];
+  const flen = Math.hypot(fx, fy, fz);
+  fx /= flen; fy /= flen; fz /= flen;
+  // right = forward × up (then normalize).
+  let rx = fy * up[2] - fz * up[1];
+  let ry = fz * up[0] - fx * up[2];
+  let rz = fx * up[1] - fy * up[0];
+  const rlen = Math.hypot(rx, ry, rz);
+  rx /= rlen; ry /= rlen; rz /= rlen;
+  // up = right × forward (orthonormalized).
+  const ux = ry * fz - rz * fy;
+  const uy = rz * fx - rx * fz;
+  const uz = rx * fy - ry * fx;
+
+  // Rows of the rotation block are (right, up, -forward), stored in
+  // column-major form. Translation column = -basis · eye (rotates eye to
+  // origin in view space).
+  const m = new Float32Array(16);
+  m[0]  = rx;  m[1]  = ux;  m[2]  = -fx;
+  m[4]  = ry;  m[5]  = uy;  m[6]  = -fy;
+  m[8]  = rz;  m[9]  = uz;  m[10] = -fz;
+  m[12] = -(rx * eye[0] + ry * eye[1] + rz * eye[2]);
+  m[13] = -(ux * eye[0] + uy * eye[1] + uz * eye[2]);
+  m[14] =  (fx * eye[0] + fy * eye[1] + fz * eye[2]);
+  m[15] = 1;
+  return m;
+}
+
 // out = a * b (column-major)
 export function multiply(a: Mat4, b: Mat4): Mat4 {
   const out = new Float32Array(16);

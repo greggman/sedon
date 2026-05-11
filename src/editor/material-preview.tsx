@@ -109,6 +109,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         depthView: depthRef.current.createView(),
         modelView,
         projection,
+        cameraTarget: [0, 0, 0], // node previews orbit a fixed origin
         lighting: previewLighting,
       });
       device.queue.submit([encoder.finish()]);

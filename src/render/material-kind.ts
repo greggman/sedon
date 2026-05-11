@@ -33,6 +33,12 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
 // Explicitly created scene bind-group layout — shared across every kind's
 // pipeline. With this declared, all kind pipelines have the same @group(0)
 // layout, so a single sceneBindGroup can be set once per pass.
+//
+// Bindings:
+//   0: scene uniforms (modelView, projection, lightViewProj, lighting, fog)
+//   1: shared color sampler (linear, repeat)
+//   2: shadow map (depth texture filled by the shadow pass)
+//   3: shadow comparison sampler (linear filter → free 2×2 PCF)
 export function createSceneBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
   return device.createBindGroupLayout({
     entries: [
@@ -46,6 +52,16 @@ export function createSceneBindGroupLayout(device: GPUDevice): GPUBindGroupLayou
         visibility: GPUShaderStage.FRAGMENT,
         sampler: {},
       },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'depth' },
+      },
+      {
+        binding: 3,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: { type: 'comparison' },
+      },
     ],
   });
 }
@@ -57,6 +73,23 @@ export function createSharedSampler(device: GPUDevice): GPUSampler {
     mipmapFilter: 'linear',
     addressModeU: 'repeat',
     addressModeV: 'repeat',
+  });
+}
+
+// Comparison sampler for the shadow map. Linear filtering combined with a
+// compare op gives free 2×2 PCF: textureSampleCompare returns the bilinear
+// mix of the four comparison results, which softens shadow edges without
+// any manual taps. 'greater-equal' is paired with our reverse-Z depth
+// (stored = closest to light = highest value): ref ≥ stored → not
+// occluded → 1. clamp-to-edge so fragments outside the shadow extent
+// don't wrap to garbage.
+export function createShadowSampler(device: GPUDevice): GPUSampler {
+  return device.createSampler({
+    compare: 'greater-equal',
+    magFilter: 'linear',
+    minFilter: 'linear',
+    addressModeU: 'clamp-to-edge',
+    addressModeV: 'clamp-to-edge',
   });
 }
 

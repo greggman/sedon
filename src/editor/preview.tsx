@@ -390,6 +390,7 @@ export function Preview() {
           depthView: depthTexture!.createView(),
           modelView,
           projection,
+          cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
           lighting,
         });
         device.queue.submit([encoder.finish()]);

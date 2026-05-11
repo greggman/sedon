@@ -14,6 +14,7 @@
 struct Uniforms {
   modelView: mat4x4f,
   projection: mat4x4f,
+  lightViewProj: mat4x4f,
   lightDirWorld: vec3f,
   lightColor: vec3f,
   ambient: vec3f,
@@ -30,6 +31,8 @@ struct TerrainParams {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var shadow_map: texture_depth_2d;
+@group(0) @binding(3) var shadow_samp: sampler_comparison;
 
 @group(1) @binding(0) var layerA: texture_2d<f32>;
 @group(1) @binding(1) var layerB: texture_2d<f32>;
@@ -55,6 +58,7 @@ struct VsOut {
   @location(1) view_normal: vec3f,
   @location(2) uv: vec2f,
   @location(3) tint: vec4f,
+  @location(4) world_pos: vec3f,
 };
 
 @vertex
@@ -65,6 +69,7 @@ fn vs_main(in: VsIn) -> VsOut {
   var out: VsOut;
   out.position = uniforms.projection * view_pos4;
   out.view_pos = view_pos4.xyz;
+  out.world_pos = world_pos4.xyz;
 
   let inst_3x3 = mat3x3f(in.inst_col0.xyz, in.inst_col1.xyz, in.inst_col2.xyz);
   let world_normal = inst_3x3 * in.normal;
@@ -77,6 +82,20 @@ fn vs_main(in: VsIn) -> VsOut {
   out.uv = in.uv;
   out.tint = in.inst_tint;
   return out;
+}
+
+// Same shadow lookup as pbr.wgsl. See notes there. Inlined rather than
+// shared because WGSL doesn't have an `#include` and we'd need a build
+// step to share a function across shaders.
+fn sample_shadow(world_pos: vec3f) -> f32 {
+  let light_clip = uniforms.lightViewProj * vec4f(world_pos, 1.0);
+  let shadow_uv = vec2f(light_clip.x * 0.5 + 0.5, 0.5 - light_clip.y * 0.5);
+  let depth_ref = light_clip.z + 0.003;
+  let in_bounds =
+    all(shadow_uv >= vec2f(0.0)) && all(shadow_uv <= vec2f(1.0))
+    && light_clip.z >= 0.0 && light_clip.z <= 1.0;
+  let raw = textureSampleCompare(shadow_map, shadow_samp, shadow_uv, depth_ref);
+  return select(1.0, raw, in_bounds);
 }
 
 const PI: f32 = 3.14159265359;
@@ -108,7 +127,7 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
 // — that's important: blending after lighting (rather than blending albedos
 // then lighting once) makes the per-layer roughness contribute to the
 // specular response rather than averaging out.
-fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32) -> vec3f {
+fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
   let view_rot = mat3x3f(
@@ -133,7 +152,7 @@ fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32
   let k_s = f;
   let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
-  let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l;
+  let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l * shadow;
   let ambient_term = albedo * uniforms.ambient;
   return direct + ambient_term;
 }
@@ -187,9 +206,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
 
   // Per-layer shading at the perturbed normal. Blend lit results (not
   // albedos) so per-layer roughness produces different specular response.
-  // Terrain is non-metallic by design.
-  let lit_a = shade(aa, in.view_pos, n, params.roughnessA, 0.0);
-  let lit_b = shade(bb, in.view_pos, n, params.roughnessB, 0.0);
+  // Terrain is non-metallic by design. Shadow sampled once and shared
+  // between layers — they're at the same world position.
+  let shadow = sample_shadow(in.world_pos);
+  let lit_a = shade(aa, in.view_pos, n, params.roughnessA, 0.0, shadow);
+  let lit_b = shade(bb, in.view_pos, n, params.roughnessB, 0.0, shadow);
   let lit = mix(lit_a, lit_b, t);
   let final_color = apply_fog(lit, in.view_pos.z);
 
