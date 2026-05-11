@@ -53,7 +53,16 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
 
   // Boundary input: its OUTPUTS are the subgraph's declared inputs (carrying
   // values FROM the wrapper INTO the inner graph). It has no graph inputs;
-  // values come via context.
+  // values come via context — EXCEPT when the subgraph is being viewed
+  // standalone (no wrapper above it). In that case ctx.subgraphInputs is
+  // undefined and we'd hand downstream nodes a bag of undefineds, which
+  // crashes anything that does e.g. Float32Array.set on a Color input.
+  // Fall back to the declared defaults so preview chains wired to the
+  // boundary work out of the box.
+  const standaloneDefaults: Record<string, unknown> = {};
+  for (const i of def.inputs) {
+    if (i.default !== undefined) standaloneDefaults[i.name] = i.default;
+  }
   const inputBoundary: NodeDef = {
     id: inputKind,
     category: '__internal__',
@@ -64,7 +73,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       ...(i.description !== undefined ? { description: i.description } : {}),
     })),
     evaluate(ctx) {
-      return ctx.subgraphInputs ?? {};
+      return ctx.subgraphInputs ?? standaloneDefaults;
     },
   };
 

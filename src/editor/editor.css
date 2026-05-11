@@ -433,6 +433,44 @@
   position: relative;
   width: 100%;
   height: 100%;
+  outline: none; /* hide focus ring; pane is focused on click for WASD */
+}
+
+.sedon-preview-grid {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  /* Rows stretch to fill the pane vertically; tiles stretch to fill
+   * each row horizontally. With flex 1 1 0 + min-width below, tiles
+   * share the row evenly but wrap once they'd shrink under the min.
+   * Net result: one tile = whole pane; two tiles in a wide pane = 50/50;
+   * three tiles in a pane only wide enough for two = 2 above + 1
+   * spanning the full width below. */
+  align-content: stretch;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.sedon-preview-tile {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 220px;
+  background: #0a0a0a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sedon-preview-canvas-host {
+  /* Non-replaced absolute box. Fills the tile via inset:0; the canvas
+   * inside sizes against it via width/height 100%. Without this wrapper,
+   * applying absolute positioning directly to the canvas triggers the
+   * "auto width/height on absolute replaced element falls back to
+   * intrinsic" rule — the canvas's backing buffer (intrinsic size) then
+   * feeds back into layout, doubling every resize tick. */
+  position: absolute;
+  inset: 0;
 }
 
 .sedon-preview-canvas {
@@ -441,6 +479,18 @@
   height: 100%;
   touch-action: none;
   cursor: grab;
+}
+
+.sedon-preview-tile-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ddd;
+  font-size: 11px;
+  border-radius: 2px;
+  pointer-events: none;
 }
 
 .sedon-preview-error {
