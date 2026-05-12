@@ -2,23 +2,43 @@
 
 --- steps ---
 
-- [ ] detail textures
-- [ ] ridged-noise
-- [ ] shadow maps
-
+- [ ] grass
+- [*] ridged-noise
+- [*] bloom (too shallow? sun looks harsh like outline)
+- [*] soft shadows
+- [*] save/load
+- [*] tone mapping
+- [*] cleanup
 
 --- new ---
 
+- [ ] move the WebGPU parts to a worker
+- [*] make input and output nodes have a "drop here +" spot
+  to auto add an input or output
+- [*] put back the realtime editing
+  currently there's a delay until the system responds.
+- [*] Need to cache subgraphs - the tree subgraph generates a tree. Unless inputs change it doesn't need to be rebuilt.
+- [*] cleanup resources
+- [*] Make github action to publish on gh-pages
+  Might need an import map?
+- [ ] seems like clicking on a node should select it?
+
+  currently, to delete a node, you must drag select. then
+  delete. seems like click delete should work
+
+- [ ] need a better UI than 3 numbers for setting a direction 
+- [ ] change sky to use a lookup table for speed - need to recompute
+  when the sun changes.
 - [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
 - [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to list?
 - [ ] is there a list/array entry type
 - [ ] solid-color should just be color (special case or give it 2 outputs)
 - [ ] editable texture? a node with a pixel editor?
-- [ ] texture nodes need preview
+- [*] texture nodes need preview - 
 - [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
 - [ ] having color nodes is gross - solutions
-  (1) color inputs, like numbers, have a color
-  (2) color bank (a node with N colors and N outputs, maybe with labels)
+  - [*] color inputs, like numbers, have a color
+  - [ ] color bank (a node with N colors and N outputs, maybe with labels)
 - [ ] need preview always - even if bad inputs (example heightfield)
 - [ ] let you pull off an input (?)
   prefs because easy to break when trying to move node
@@ -42,6 +62,9 @@
 
     Not sure if we should have one of these are all of them
 
+- [ ] Need real menus probably
+
+  Must handle diagonal drag to submenus.
 
 - [ ] Need an asset hierarchy (folders)
 
@@ -62,6 +85,11 @@
   asset creation it's common to have 2 monitors so being able to create
   multiple windows is probably a must.
 
+- [ ] Probably need an "Inspector"
+
+  It would show all the inputs in a node, some with better
+  UIs?
+
 - [ ] nodes should be nameable - and searchable
 - [ ] material previews should use track camera, not orbit
 - [ ] preview sphere should be larger 
@@ -76,7 +104,7 @@
   That suggests the output from a subscene should maybe be more complex?
   Or, it should import the gLTF as the collection of its parts as well as a scene
   that uses all of them. So they'd show up in the asset tree as like folders
-  
+
 - [ ] camera
   - [ ] orbit vs track control (option)
   - [ ] frame
