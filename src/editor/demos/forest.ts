@@ -12,10 +12,13 @@ import { buildOakSubgraph, buildPineSubgraph } from './tree-subgraphs.js';
 // Forest demo: terrain with grass-on-flats and rock-on-steeps (terrain-splat
 // material kind), populated with two tree species banded by altitude.
 //
-// Tree definitions live in subgraphs (see tree-subgraphs.ts) — the main
-// graph just instantiates `subgraph/oak-tree` and `subgraph/pine-tree`
-// alongside their input clouds. Drilling into either subgraph in the editor
-// reveals the trunk + foliage + materials internals.
+// Tree / rock subgraphs each define a SINGLE instance at origin (drill in
+// via the graph switcher to inspect). The main graph composes them with
+// `core/instance-scene-on-points` to scatter each species across the
+// terrain's distribute point cloud, using masks to control where each
+// kind lands. This separates "what is a tree" from "where do trees go"
+// — same pattern as Houdini Copy-to-Points or Blender Geometry Nodes'
+// Instance-on-Points.
 export function createForestDemo(): {
   graph: Graph;
   rootNodeId: string;
@@ -119,15 +122,16 @@ export function createForestDemo(): {
     position: { x: COL * 4, y: ROW * 1.8 },
   });
 
-  // === Tree subgraph instances ===========================================
-  const oakTree = addNode(g, `subgraph/${oak.id}`, {
+  // === Subgraph instances ================================================
+  // Each subgraph produces a single instance at origin; the scatter nodes
+  // below place them onto the terrain's distribute points.
+  const oakInst = addNode(g, `subgraph/${oak.id}`, {
     position: { x: COL * 7, y: ROW * 0.4 },
   });
-  const pineTree = addNode(g, `subgraph/${pine.id}`, {
+  const pineInst = addNode(g, `subgraph/${pine.id}`, {
     position: { x: COL * 7, y: ROW * 2 },
   });
-  // Rocks scatter where trees can't grow (steep, exposed slopes).
-  const rockScatter = addNode(g, `subgraph/${rockMesh.id}`, {
+  const rockInst = addNode(g, `subgraph/${rockMesh.id}`, {
     position: { x: COL * 7, y: ROW * 3.6 },
   });
   // Steep mask: slope >= threshold. Same slope cloud as above, opposite
@@ -144,18 +148,34 @@ export function createForestDemo(): {
     inputValues: { min: [0.8, 0.6, 0.8], max: [2.5, 1.5, 2.5], seed: 0.4 },
   });
 
+  // === Scatter nodes =====================================================
+  // One scatter per species. Each takes (points, instance, masks/clouds)
+  // and produces a Scene of N transformed copies of `instance`.
+  const oakScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 8, y: ROW * 0.4 },
+    inputValues: { scale: 1, align: false, seed: 1 },
+  });
+  const pineScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 8, y: ROW * 2 },
+    inputValues: { scale: 1, align: false, seed: 2 },
+  });
+  const rockScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 8, y: ROW * 3.6 },
+    inputValues: { scale: 1, align: false, seed: 7 },
+  });
+
   // === Final =============================================================
   const mergeTrees = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 8, y: ROW * 0.8 },
+    position: { x: COL * 9, y: ROW * 0.8 },
   });
   const mergeVeg = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 9, y: ROW * 1.6 },
+    position: { x: COL * 10, y: ROW * 1.6 },
   });
   const mergeAll = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 10, y: ROW * 1.8 },
+    position: { x: COL * 11, y: ROW * 1.8 },
   });
   const output = addNode(g, 'core/output', {
-    position: { x: COL * 11, y: ROW * 1.8 },
+    position: { x: COL * 12, y: ROW * 1.8 },
     inputValues: {
       // Density scaled down for the 100m world — fog fully fades distant
       // geometry by the far edge of the terrain.
@@ -194,28 +214,33 @@ export function createForestDemo(): {
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
 
-  // Oak instance: takes points, oak mask, tint
-  addEdge(g, { node: distribute.id, socket: 'points' }, { node: oakTree.id, socket: 'points' });
-  addEdge(g, { node: oakMask.id, socket: 'values' }, { node: oakTree.id, socket: 'active' });
-  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: oakTree.id, socket: 'tint' });
+  // Oak scatter: instance the oak subgraph onto the distribute points,
+  // gated by the oak mask (low altitude + flat slope), tinted per-point.
+  addEdge(g, { node: oakInst.id, socket: 'scene' }, { node: oakScatter.id, socket: 'instance' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: oakScatter.id, socket: 'points' });
+  addEdge(g, { node: oakMask.id, socket: 'values' }, { node: oakScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: oakScatter.id, socket: 'per_point_tint' });
 
-  // Pine instance: same, with pine mask
-  addEdge(g, { node: distribute.id, socket: 'points' }, { node: pineTree.id, socket: 'points' });
-  addEdge(g, { node: pineMask.id, socket: 'values' }, { node: pineTree.id, socket: 'active' });
-  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: pineTree.id, socket: 'tint' });
+  // Pine scatter: same recipe, gated by pine mask (high altitude + flat).
+  addEdge(g, { node: pineInst.id, socket: 'scene' }, { node: pineScatter.id, socket: 'instance' });
+  addEdge(g, { node: distribute.id, socket: 'points' }, { node: pineScatter.id, socket: 'points' });
+  addEdge(g, { node: pineMask.id, socket: 'values' }, { node: pineScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: pineScatter.id, socket: 'per_point_tint' });
 
-  // Steep mask + rock scatter. Same slope cloud, opposite invert from
-  // slopeMask — rocks appear precisely where trees can't.
+  // Rock scatter: steep slopes where trees can't grow, with per-rock
+  // scale variation for the boulder/pebble mix.
   addEdge(g, { node: slope.id, socket: 'values' }, { node: steepMask.id, socket: 'values' });
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: rockScale.id, socket: 'points' });
+  addEdge(g, { node: rockInst.id, socket: 'scene' }, { node: rockScatter.id, socket: 'instance' });
   addEdge(g, { node: distribute.id, socket: 'points' }, { node: rockScatter.id, socket: 'points' });
-  addEdge(g, { node: steepMask.id, socket: 'mask' }, { node: rockScatter.id, socket: 'active' });
-  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: rockScatter.id, socket: 'tint' });
-  addEdge(g, { node: rockScale.id, socket: 'values' }, { node: rockScatter.id, socket: 'scale' });
+  addEdge(g, { node: steepMask.id, socket: 'mask' }, { node: rockScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: rockScatter.id, socket: 'per_point_tint' });
+  addEdge(g, { node: rockScale.id, socket: 'values' }, { node: rockScatter.id, socket: 'per_point_scale' });
 
-  // Merge: oak+pine → trees; trees+rocks → vegetation; terrain+vegetation → all.
-  addEdge(g, { node: oakTree.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'a' });
-  addEdge(g, { node: pineTree.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'b' });
+  // Merge: oak+pine scatters → trees; trees+rock scatter → vegetation;
+  // terrain+vegetation → all.
+  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'a' });
+  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'b' });
   addEdge(g, { node: mergeTrees.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'a' });
   addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'b' });
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'a' });

@@ -1,11 +1,10 @@
 import { addEdge, addNode, createGraph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 
-// Build a tree subgraph: cylinder trunk + (sphere | cone) foliage, each
-// with its own solid-color material, merged into a 2-entity Scene. The
-// boundary nodes are placed at left/right and the inner graph wires the
-// instance-scene-on-points path entirely inside, so a parent graph just
-// needs to pass `points` and (optionally) `tint` to get a populated Scene.
+// A tree subgraph: cylinder trunk + (sphere | cone) foliage at origin,
+// merged into a 2-entity Scene. NO scatter — that's the parent's job
+// (compose with core/instance-scene-on-points and a point cloud).
+// Standalone view shows the single tree directly.
 //
 // `id` and `label` are visible in the editor; everything else is implicit.
 function buildTreeSubgraph(opts: {
@@ -38,8 +37,8 @@ function buildTreeSubgraph(opts: {
   const COL = 280;
   const ROW = 180;
 
-  // Boundary nodes: input on the left, output on the right. Names match the
-  // declared subgraph inputs/outputs below.
+  // Boundary nodes: input on the left (unused — this subgraph takes no
+  // parent inputs), output on the right.
   const inputNode = addNode(g, `subgraph-input/${opts.id}`, {
     position: { x: 0, y: ROW * 1.5 },
   });
@@ -117,27 +116,16 @@ function buildTreeSubgraph(opts: {
     position: { x: COL * 4, y: ROW * 2 },
   });
 
-  // Merge into a 2-entity tree scene.
+  // Merge into a 2-entity tree scene — this is the subgraph's output.
   const treeMerge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 5, y: ROW },
   });
 
-  // Scatter on the input boundary's points (parent-facing path). When
-  // viewing this subgraph standalone, the input boundary's PointCloud
-  // input falls back to a single-point system default → scatter places
-  // one tree at origin → boundary output shows it. No explicit preview
-  // chain needed.
-  const scatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 5, y: ROW * 2.5 },
-    inputValues: { scale: 1, align: false, seed: 1 },
-  });
-
-  // Edges — trunk chain (bark subgraph provides basecolor + normal).
+  // Edges — trunk chain (bark subgraph provides basecolor + normal +
+  // detail textures).
   addEdge(g, { node: trunkGeo.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
   addEdge(g, { node: bark.id, socket: 'basecolor' }, { node: trunkMat.id, socket: 'basecolor' });
   addEdge(g, { node: bark.id, socket: 'normal' }, { node: trunkMat.id, socket: 'normal' });
-  // Detail: bark subgraph supplies both detail textures alongside basecolor
-  // and normal; this graph just wires them into the material.
   addEdge(g, { node: bark.id, socket: 'detail_basecolor' }, { node: trunkMat.id, socket: 'detail_basecolor' });
   addEdge(g, { node: bark.id, socket: 'detail_normal' }, { node: trunkMat.id, socket: 'detail_normal' });
   addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
@@ -148,29 +136,16 @@ function buildTreeSubgraph(opts: {
   addEdge(g, { node: foliageColor.id, socket: 'texture' }, { node: foliageMat.id, socket: 'basecolor' });
   addEdge(g, { node: foliageMat.id, socket: 'material' }, { node: foliageEntity.id, socket: 'material' });
 
-  // Tree merge.
+  // Tree merge → boundary output.
   addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'a' });
   addEdge(g, { node: foliageEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'b' });
-
-  // Boundary input → scatter inputs (points + active mask + tint).
-  addEdge(g, { node: inputNode.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
-  addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
-  addEdge(g, { node: inputNode.id, socket: 'active' }, { node: scatter.id, socket: 'per_point_active' });
-  addEdge(g, { node: inputNode.id, socket: 'tint' }, { node: scatter.id, socket: 'per_point_tint' });
-
-  // Scatter → boundary output (parent-facing).
-  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
-
+  addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
     id: opts.id,
     label: opts.label,
     category: 'Subgraphs',
-    inputs: [
-      { name: 'points', type: 'PointCloud' },
-      { name: 'active', type: 'FloatCloud', optional: true, description: 'per-point active mask; only points with value >= 0.5 are realized' },
-      { name: 'tint', type: 'Vec3Cloud', optional: true, description: 'per-point RGB tint multiplier' },
-    ],
+    inputs: [],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
     inputNodeId: inputNode.id,

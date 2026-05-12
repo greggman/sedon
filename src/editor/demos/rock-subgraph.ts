@@ -2,9 +2,8 @@ import { addEdge, addNode, createGraph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 
 // A "rock" subgraph: a single low-poly sphere wearing the rock texture,
-// scattered on the input boundary's points. Same shape as the tree
-// subgraphs: takes (points, active, tint), produces a Scene the parent
-// merges in.
+// at origin. NO scatter — the parent graph composes this with
+// core/instance-scene-on-points to place rocks.
 //
 // Low-poly is intentional — 8 segments × 6 rings gives a faceted-enough
 // silhouette to read as "rock" when scattered at small scale. Future work
@@ -24,9 +23,8 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   });
 
   // Low-poly sphere → uv-transform (so the rock texture tiles a few times
-  // around the rock surface, not stretched once). Base radius is 1m;
-  // per-point scale at scatter time stretches/squashes individual rocks
-  // for variety.
+  // around the rock surface, not stretched once). Base radius is 1m; the
+  // parent's scatter applies per-instance scale variation.
   const rockGeo = addNode(g, 'core/sphere', {
     position: { x: COL, y: 0 },
     inputValues: { radius: 1, segments: 10, rings: 7 },
@@ -51,48 +49,24 @@ export function buildRockMeshSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: 0 },
   });
 
-  // Scatter on the input boundary's points (parent-facing path). When
-  // viewing standalone, the input boundary falls back to the system's
-  // single-point PointCloud default so scatter places one rock at
-  // origin and the boundary output renders it — no explicit preview
-  // chain required.
-  const scatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 5, y: ROW * 2.5 },
-    inputValues: { scale: 1, align: false, seed: 7 },
-  });
-
   // Rock geometry → uv-transform → entity.
   addEdge(g, { node: rockGeo.id, socket: 'geometry' }, { node: rockUv.id, socket: 'geometry' });
   addEdge(g, { node: rockUv.id, socket: 'geometry' }, { node: rockEntity.id, socket: 'geometry' });
-  // Texture subgraph → material (basecolor + normal) → entity.material.
+  // Texture subgraph → material (basecolor + normal + detail pair) → entity.material.
   addEdge(g, { node: rockTex.id, socket: 'basecolor' }, { node: rockMat.id, socket: 'basecolor' });
   addEdge(g, { node: rockTex.id, socket: 'normal' }, { node: rockMat.id, socket: 'normal' });
-  // Detail outputs from the rock texture subgraph flow straight to the
-  // material's matching inputs.
   addEdge(g, { node: rockTex.id, socket: 'detail_basecolor' }, { node: rockMat.id, socket: 'detail_basecolor' });
   addEdge(g, { node: rockTex.id, socket: 'detail_normal' }, { node: rockMat.id, socket: 'detail_normal' });
   addEdge(g, { node: rockMat.id, socket: 'material' }, { node: rockEntity.id, socket: 'material' });
 
-  // Boundary → scatter inputs.
-  addEdge(g, { node: inputNode.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
-  addEdge(g, { node: rockEntity.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
-  addEdge(g, { node: inputNode.id, socket: 'active' }, { node: scatter.id, socket: 'per_point_active' });
-  addEdge(g, { node: inputNode.id, socket: 'tint' }, { node: scatter.id, socket: 'per_point_tint' });
-  addEdge(g, { node: inputNode.id, socket: 'scale' }, { node: scatter.id, socket: 'per_point_scale' });
-
-  // Scatter → boundary output (parent-facing).
-  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+  // Entity → boundary output.
+  addEdge(g, { node: rockEntity.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
     id,
     label: 'Rock',
     category: 'Subgraphs',
-    inputs: [
-      { name: 'points', type: 'PointCloud' },
-      { name: 'active', type: 'FloatCloud', optional: true, description: 'per-point active mask; only points with value >= 0.5 are realized' },
-      { name: 'tint', type: 'Vec3Cloud', optional: true, description: 'per-point RGB tint multiplier' },
-      { name: 'scale', type: 'Vec3Cloud', optional: true, description: 'per-point XYZ scale multiplier; makes rocks varied sizes' },
-    ],
+    inputs: [],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
     inputNodeId: inputNode.id,
