@@ -27,7 +27,6 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
-  const depthRef = useRef<GPUTexture | null>(null);
   const resourcesRef = useRef<RenderResources | null>(null);
   const cameraRef = useRef({ yaw: 0, pitch: 0.4, distance: 3 });
 
@@ -76,19 +75,8 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       const canvas = canvasRef.current;
       if (!ctx || !r || !canvas) return;
 
-      const w = canvas.width;
-      const h = canvas.height;
-      if (!depthRef.current || depthRef.current.width !== w || depthRef.current.height !== h) {
-        depthRef.current?.destroy();
-        depthRef.current = device.createTexture({
-          size: [w, h],
-          format: 'depth32float',
-          usage: GPUTextureUsage.RENDER_ATTACHMENT,
-        });
-      }
-
       const cam = cameraRef.current;
-      const aspect = w / h;
+      const aspect = canvas.width / canvas.height;
       const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
       const modelView = multiply(
         multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
@@ -106,7 +94,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       r.renderer.render({
         encoder,
         colorView: ctx.getCurrentTexture().createView(),
-        depthView: depthRef.current.createView(),
+        size: [canvas.width, canvas.height],
         modelView,
         projection,
         cameraTarget: [0, 0, 0], // node previews orbit a fixed origin

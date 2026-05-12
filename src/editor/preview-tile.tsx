@@ -30,7 +30,6 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
-  const depthRef = useRef<GPUTexture | null>(null);
 
   // Configure context once per (canvas, device) pair, plus a DPR-aware
   // resize observer so the backing buffer tracks CSS size.
@@ -49,8 +48,6 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
     return () => {
       obs.disconnect();
       ctxRef.current = null;
-      depthRef.current?.destroy();
-      depthRef.current = null;
     };
   }, [gpu]);
 
@@ -68,11 +65,13 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
   // mutates it from WASD input, and pointer drags on the wrapper update
   // it directly. We always redraw (no dirty flag): drag motion and the
   // continuous WASD path both want fresh frames.
+  //
+  // The SceneRenderer owns depth + HDR + bloom intermediates internally
+  // and (re)allocates them when we hand it a new size — we just pass
+  // canvas.width/height each frame.
   useEffect(() => {
     let raf = 0;
     let cancelled = false;
-    let lastW = 0;
-    let lastH = 0;
     const frame = () => {
       if (cancelled) return;
       raf = requestAnimationFrame(frame);
@@ -81,16 +80,6 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
       const renderer = rendererRef.current;
       if (!canvas || !ctx || !renderer || canvas.width === 0 || canvas.height === 0) {
         return;
-      }
-      if (canvas.width !== lastW || canvas.height !== lastH) {
-        depthRef.current?.destroy();
-        depthRef.current = gpu.device.createTexture({
-          size: [canvas.width, canvas.height],
-          format: 'depth32float',
-          usage: GPUTextureUsage.RENDER_ATTACHMENT,
-        });
-        lastW = canvas.width;
-        lastH = canvas.height;
       }
       const cam = cameraRef.current;
       const aspect = canvas.width / canvas.height;
@@ -107,7 +96,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
       renderer.render({
         encoder,
         colorView: ctx.getCurrentTexture().createView(),
-        depthView: depthRef.current!.createView(),
+        size: [canvas.width, canvas.height],
         modelView,
         projection,
         cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],

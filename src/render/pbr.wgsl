@@ -227,53 +227,17 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   return mix(srgb_to_linear(uniforms.fog.xyz), lit, visibility);
 }
 
-// sRGB ↔ linear via a gamma-2.2 approximation. Cheaper than the true
-// piecewise sRGB curve and visually indistinguishable.
-//
-// Authored colors (basecolor textures, tints, light/ambient/fog/sky
-// uniforms) are sRGB by convention — the user picks values that look
-// right on a display. We linearize on entry, do lighting math in linear
-// space, then tonemap + re-encode on exit. The round trip is identity
-// for unlit surfaces in [0, 1] (so authored colors are preserved) and
-// applies ACES only to HDR values (lit surfaces past sun intensity 1).
+// sRGB → linear via a gamma-2.2 approximation. Authored colors
+// (basecolor textures, tints, light/ambient/fog/sky uniforms) are sRGB
+// by convention — the user picks values that look right on a display.
+// We linearize on entry and write linear HDR; tone-mapping + sRGB
+// encode happens later in the composite pass, so bright sun-lit pixels
+// can exceed 1.0 here and feed bloom.
 //
 // "Data" textures — normal maps, masks, detail factors, roughness —
-// stay linear: no conversion either way.
+// stay linear: no conversion needed.
 fn srgb_to_linear(color: vec3f) -> vec3f {
   return pow(color, vec3f(2.2));
-}
-
-fn linear_to_srgb(color: vec3f) -> vec3f {
-  return pow(color, vec3f(1.0 / 2.2));
-}
-
-// Khronos PBR Neutral tonemapping. Same shape as the curve used by
-// three.js / the official glTF reference viewer for PBR rendering:
-// identity below ~0.76, smooth highlight roll-off above, with a small
-// desaturation as values approach pure white. Geared toward "authored
-// colors should look like authored colors" — better fit for a
-// content-authoring tool than ACES, which lifts midtones for a cinema
-// look.
-//
-// Reference: https://modelviewer.dev/examples/tone-mapping
-fn khronos_neutral_tonemap(color_in: vec3f) -> vec3f {
-  let startCompression = 0.8 - 0.04;
-  let desaturation = 0.15;
-  var color = color_in;
-  // Pre-shift the input so very dark colors lose a small black-floor
-  // offset — sidesteps a subtle hue cast at low intensities.
-  let x = min(color.r, min(color.g, color.b));
-  let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-  color = color - vec3f(offset);
-  let peak = max(color.r, max(color.g, color.b));
-  if (peak < startCompression) {
-    return color;
-  }
-  let d = 1.0 - startCompression;
-  let newPeak = 1.0 - d * d / (peak + d - startCompression);
-  color = color * (newPeak / peak);
-  let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-  return mix(color, vec3f(newPeak), g);
 }
 
 @fragment
@@ -290,7 +254,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
 
   let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic, shadow);
   let final_color = apply_fog(lit, in.view_pos.z);
-  let display = linear_to_srgb(khronos_neutral_tonemap(final_color));
-
-  return vec4f(display, albedo_sample.a);
+  // Linear HDR output. Composite pass handles tone-map + sRGB.
+  return vec4f(final_color, albedo_sample.a);
 }

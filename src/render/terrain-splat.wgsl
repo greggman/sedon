@@ -166,33 +166,10 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   return mix(srgb_to_linear(uniforms.fog.xyz), lit, visibility);
 }
 
-// Same sRGB ↔ linear + ACES trio as pbr.wgsl. Inlined rather than shared
-// because WGSL has no import mechanism — keep the copies in sync when
-// either is touched. See pbr.wgsl for the full reasoning.
+// sRGB → linear; matches pbr.wgsl. Output is linear HDR — tone-map and
+// sRGB encode happen in the composite pass downstream.
 fn srgb_to_linear(color: vec3f) -> vec3f {
   return pow(color, vec3f(2.2));
-}
-
-fn linear_to_srgb(color: vec3f) -> vec3f {
-  return pow(color, vec3f(1.0 / 2.2));
-}
-
-fn khronos_neutral_tonemap(color_in: vec3f) -> vec3f {
-  let startCompression = 0.8 - 0.04;
-  let desaturation = 0.15;
-  var color = color_in;
-  let x = min(color.r, min(color.g, color.b));
-  let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-  color = color - vec3f(offset);
-  let peak = max(color.r, max(color.g, color.b));
-  if (peak < startCompression) {
-    return color;
-  }
-  let d = 1.0 - startCompression;
-  let newPeak = 1.0 - d * d / (peak + d - startCompression);
-  color = color * (newPeak / peak);
-  let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-  return mix(color, vec3f(newPeak), g);
 }
 
 // Same cotangent-frame trick as the PBR shader. Reconstructs the
@@ -248,7 +225,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let lit_b = shade(bb, in.view_pos, n, params.roughnessB, 0.0, shadow);
   let lit = mix(lit_a, lit_b, t);
   let final_color = apply_fog(lit, in.view_pos.z);
-  let display = linear_to_srgb(khronos_neutral_tonemap(final_color));
-
-  return vec4f(display, 1.0);
+  // Linear HDR output. Composite pass handles tone-map + sRGB.
+  return vec4f(final_color, 1.0);
 }
