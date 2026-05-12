@@ -97,27 +97,10 @@ fn vs_main(in: VsIn) -> VsOut {
   return out;
 }
 
-// Sample the shadow map for a world-space fragment position. Returns 1.0
-// when the fragment is fully lit, 0.0 when fully occluded, fractional for
-// PCF-soft edges. Out-of-bounds fragments (outside the shadow region or
-// behind the light) fall back to "lit" — fine for a single-cascade map,
-// since occluders outside the region are visually distant and you'd not
-// expect strong shadows from them anyway.
-//
-// Bias is added to the fragment's light-space depth (reverse-Z, so larger
-// = closer to light) to avoid self-shadow acne. 0.003 was tuned against
-// the forest demo; too small → acne stripes, too large → peter-panning.
-fn sample_shadow(world_pos: vec3f) -> f32 {
-  let light_clip = uniforms.lightViewProj * vec4f(world_pos, 1.0);
-  // Ortho projection: w == 1, no divide needed.
-  let shadow_uv = vec2f(light_clip.x * 0.5 + 0.5, 0.5 - light_clip.y * 0.5);
-  let depth_ref = light_clip.z + 0.003;
-  let in_bounds =
-    all(shadow_uv >= vec2f(0.0)) && all(shadow_uv <= vec2f(1.0))
-    && light_clip.z >= 0.0 && light_clip.z <= 1.0;
-  let raw = textureSampleCompare(shadow_map, shadow_samp, shadow_uv, depth_ref);
-  return select(1.0, raw, in_bounds);
-}
+// sample_shadow + POISSON_DISK_16 are concatenated in from
+// shadow-pcf.wgsl at module-creation time (see pbr-kind.ts). They
+// reference `uniforms`, `shadow_map`, `shadow_samp` declared above —
+// WGSL allows forward references to module-scope items.
 
 const PI: f32 = 3.14159265359;
 

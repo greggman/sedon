@@ -6,6 +6,7 @@ import {
   type MaterialKindImpl,
 } from '../material-kind.js';
 import shaderCode from '../terrain-splat.wgsl';
+import shadowPcfCode from '../shadow-pcf.wgsl';
 
 export function createTerrainSplatKind(
   device: GPUDevice,
@@ -32,7 +33,11 @@ export function createTerrainSplatKind(
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
-  const module = device.createShaderModule({ code: shaderCode });
+  // Concatenate shared shadow PCF + the kind-specific shader. WGSL has
+  // no #include but a string concat at module-creation time is enough
+  // — `sample_shadow` forward-references `uniforms` / `shadow_map` /
+  // `shadow_samp` from the host shader.
+  const module = device.createShaderModule({ code: `${shadowPcfCode}\n${shaderCode}` });
   const pipeline = device.createRenderPipeline({
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },

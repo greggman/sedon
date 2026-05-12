@@ -84,19 +84,10 @@ fn vs_main(in: VsIn) -> VsOut {
   return out;
 }
 
-// Same shadow lookup as pbr.wgsl. See notes there. Inlined rather than
-// shared because WGSL doesn't have an `#include` and we'd need a build
-// step to share a function across shaders.
-fn sample_shadow(world_pos: vec3f) -> f32 {
-  let light_clip = uniforms.lightViewProj * vec4f(world_pos, 1.0);
-  let shadow_uv = vec2f(light_clip.x * 0.5 + 0.5, 0.5 - light_clip.y * 0.5);
-  let depth_ref = light_clip.z + 0.003;
-  let in_bounds =
-    all(shadow_uv >= vec2f(0.0)) && all(shadow_uv <= vec2f(1.0))
-    && light_clip.z >= 0.0 && light_clip.z <= 1.0;
-  let raw = textureSampleCompare(shadow_map, shadow_samp, shadow_uv, depth_ref);
-  return select(1.0, raw, in_bounds);
-}
+// sample_shadow + POISSON_DISK_16 are concatenated in from
+// shadow-pcf.wgsl at module-creation time (see terrain-splat-kind.ts).
+// They reference `uniforms`, `shadow_map`, `shadow_samp` declared
+// above — WGSL allows forward references to module-scope items.
 
 const PI: f32 = 3.14159265359;
 
