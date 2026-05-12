@@ -252,6 +252,61 @@ export function identityTint(): Float32Array {
   return new Float32Array([1, 1, 1, 1]);
 }
 
+/**
+ * Acquire a Texture2DValue suitable for re-rendering into. Texture-
+ * producing nodes (worley, perlin, ridged-noise, etc.) call this with
+ * their `ctx.previousOutput` and the dimensions they need; if the prior
+ * texture matches dims+format, the same GPUTexture is returned and the
+ * caller just renders new contents into it. Otherwise a fresh texture
+ * is allocated. Either way the returned value has a freshly-created
+ * view (cheap, always valid), so callers can use it directly in a
+ * render pass.
+ *
+ * Safe to use because the eval cache fingerprints include the nodeId,
+ * so the previous output is guaranteed to belong to THIS same node —
+ * no other node references its texture, so mutating it can't corrupt
+ * another node's cached output.
+ */
+export function reusableTexture(
+  device: GPUDevice,
+  previous: unknown,
+  desired: {
+    width: number;
+    height: number;
+    format: GPUTextureFormat;
+    usage: GPUTextureUsageFlags;
+  },
+): Texture2DValue {
+  const prev = previous as Partial<Texture2DValue> | undefined;
+  if (
+    prev !== undefined &&
+    prev.texture &&
+    prev.width === desired.width &&
+    prev.height === desired.height &&
+    prev.format === desired.format
+  ) {
+    return {
+      texture: prev.texture,
+      view: prev.texture.createView(),
+      format: desired.format,
+      width: desired.width,
+      height: desired.height,
+    };
+  }
+  const texture = device.createTexture({
+    size: [desired.width, desired.height],
+    format: desired.format,
+    usage: desired.usage,
+  });
+  return {
+    texture,
+    view: texture.createView(),
+    format: desired.format,
+    width: desired.width,
+    height: desired.height,
+  };
+}
+
 // Anything ownable by the eval cache that has a .destroy() method. WebGPU
 // resources (texture, buffer) match this shape; we narrow to .destroy()
 // rather than the WebGPU-specific types so test environments don't need

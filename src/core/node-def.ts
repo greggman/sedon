@@ -73,6 +73,17 @@ export interface NodeContext {
    * eval. The boundary-input node's fingerprint mixes this in.
    */
   subgraphInputFingerprints?: Record<string, string>;
+  /**
+   * The output this node produced on its most recent prior evaluation,
+   * if any. Nodes that own GPU resources can inspect this and re-use
+   * compatible textures/buffers instead of allocating fresh ones — for
+   * example, a noise node that only had its `scale` parameter nudged
+   * keeps the same output dimensions and should re-render into the
+   * existing texture rather than allocating a new one every frame. Use
+   * is fully opt-in: if a node ignores this field, behavior is
+   * identical to the old "always allocate fresh" path.
+   */
+  previousOutput?: NodeOutputs;
 }
 
 export type NodeInputs = Record<string, unknown>;

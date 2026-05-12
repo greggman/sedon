@@ -1,6 +1,6 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice } from '../core/resources.js';
+import { requireDevice, reusableTexture } from '../core/resources.js';
 import shader from './worley.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -21,8 +21,14 @@ export const worleyNode: NodeDef = {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
-    const texture = device.createTexture({
-      size: [resolution, resolution],
+    // Re-use our previous texture when only non-dimension parameters
+    // changed (scale, octaves, seed, …). Avoids a GPUTexture
+    // allocate+destroy cycle per drag-pixel when the user is nudging a
+    // value — the same texture stays put, we just re-render new
+    // contents into it.
+    const outputTexture = reusableTexture(device, ctx.previousOutput?.texture, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -61,7 +67,7 @@ export const worleyNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: texture.createView(),
+          view: outputTexture.view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -74,14 +80,6 @@ export const worleyNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return {
-      texture: {
-        texture,
-        view: texture.createView(),
-        format: TEXTURE_FORMAT,
-        width: resolution,
-        height: resolution,
-      },
-    };
+    return { texture: outputTexture };
   },
 };

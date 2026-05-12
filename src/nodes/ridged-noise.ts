@@ -1,6 +1,6 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice } from '../core/resources.js';
+import { requireDevice, reusableTexture } from '../core/resources.js';
 import shader from './ridged-noise.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -35,8 +35,11 @@ export const ridgedNoiseNode: NodeDef = {
     const scale: [number, number] =
       typeof rawScale === 'number' ? [rawScale, rawScale] : rawScale;
 
-    const texture = device.createTexture({
-      size: [resolution, resolution],
+    // Reuse the previously-allocated texture when dims+format are
+    // unchanged — same texture object, new contents rendered in.
+    const outputTexture = reusableTexture(device, ctx.previousOutput?.texture, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -77,7 +80,7 @@ export const ridgedNoiseNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: texture.createView(),
+          view: outputTexture.view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -90,14 +93,6 @@ export const ridgedNoiseNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return {
-      texture: {
-        texture,
-        view: texture.createView(),
-        format: TEXTURE_FORMAT,
-        width: resolution,
-        height: resolution,
-      },
-    };
+    return { texture: outputTexture };
   },
 };

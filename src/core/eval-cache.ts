@@ -19,10 +19,23 @@ import { walkGpuResources } from './resources.js';
 export interface EvalCache {
   /** fingerprint → outputs produced by the node that hashed to it. */
   entries: Map<string, unknown>;
+  /**
+   * nodeId → fingerprint produced by that node's most recent
+   * evaluation. Lets the evaluator look up the previous output even
+   * when the current fingerprint misses the cache — used to pass
+   * `ctx.previousOutput` so nodes can reuse compatible GPU resources
+   * (most importantly: a noise node whose `scale` was nudged keeps the
+   * same texture dimensions and shouldn't allocate a fresh GPUTexture).
+   *
+   * Kept in sync with `entries` by `sweepCache`: any entry whose
+   * fingerprint is no longer in `entries` gets pruned so we don't hold
+   * dangling references to evicted outputs.
+   */
+  lastFingerprintByNodeId: Map<string, string>;
 }
 
 export function createEvalCache(): EvalCache {
-  return { entries: new Map() };
+  return { entries: new Map(), lastFingerprintByNodeId: new Map() };
 }
 
 /**
@@ -48,6 +61,20 @@ export function createEvalCache(): EvalCache {
  *   the boundary's fingerprint vary with what's piped in.
  */
 export function nodeFingerprint(params: {
+  /**
+   * The graph node's id. Mixed into the fingerprint so two same-config
+   * nodes never collide on a single cache entry. That isolation is
+   * what makes "reuse my own previous texture" safe — if entries were
+   * shared across nodes, mutating the texture for one node would
+   * silently corrupt the other node's cached output.
+   *
+   * Trade-off: we lose cross-node dedup. Two worley nodes with
+   * identical parameters now hold two textures instead of sharing
+   * one. In practice this is rare (authored graphs differ at least
+   * by upstream chain) and the texture-reuse win across re-evals of
+   * a single node is the much bigger lever.
+   */
+  nodeId: string;
   kind: string;
   version?: string | number;
   inputValues: Record<string, unknown> | undefined;
@@ -55,6 +82,7 @@ export function nodeFingerprint(params: {
   extra?: string;
 }): string {
   const parts = [
+    params.nodeId,
     params.kind,
     params.version != null ? String(params.version) : '',
     canonicalJson(params.inputValues ?? {}),
@@ -141,6 +169,14 @@ export function sweepCache(cache: EvalCache, touched: Set<string>): void {
       }
     });
     cache.entries.delete(fp);
+  }
+  // Prune the per-nodeId index of any pointers to fingerprints that no
+  // longer have an entry. Without this, a removed node would leave a
+  // permanent dangling pointer that occupies memory and could
+  // (worst case) collide if a brand-new node happened to draw the same
+  // id from the pool.
+  for (const [nodeId, fp] of cache.lastFingerprintByNodeId) {
+    if (!cache.entries.has(fp)) cache.lastFingerprintByNodeId.delete(nodeId);
   }
 }
 

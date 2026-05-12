@@ -197,6 +197,7 @@ export async function evaluateGraph(
       : undefined;
     const filteredInputValues = filterInputValues(node.inputValues, def.inputs);
     const fpParams: Parameters<typeof nodeFingerprint>[0] = {
+      nodeId,
       kind: def.id,
       inputValues: filteredInputValues,
       upstreamFingerprints,
@@ -207,21 +208,53 @@ export async function evaluateGraph(
     fingerprints.set(nodeId, fp);
     if (touched) touched.add(fp);
 
+    // Per-context tracker key. The same inner-graph nodeId can evaluate
+    // multiple times per round when the same subgraph is instantiated
+    // by several wrappers (each pass with different parent inputs);
+    // scoping the tracker by `subgraphInputFingerprints` keeps those
+    // evaluations from clobbering each other's "previous output."
+    // Top-level nodes get an empty context key, which is fine.
+    const trackerKey = sharedCtx.subgraphInputFingerprints
+      ? `${nodeId}|${JSON.stringify(sharedCtx.subgraphInputFingerprints)}`
+      : nodeId;
+
     if (cache && cache.entries.has(fp)) {
       outputs.set(nodeId, cache.entries.get(fp) as NodeOutputs);
+      // Even on a cache hit we record this fingerprint as the node's
+      // most recent — that way a subsequent miss can still reach the
+      // output we just hit, and the node can opt to reuse its
+      // resources.
+      cache.lastFingerprintByNodeId.set(trackerKey, fp);
       continue;
     }
 
     // Inject this node's upstream fingerprints into the context for the
     // duration of its evaluate() call. The subgraph wrapper reads this and
     // forwards it as `subgraphInputFingerprints` into the inner eval.
+    //
+    // Also expose `previousOutput` — the output this same node emitted
+    // on its most recent prior eval, if we still have it in the cache.
+    // Texture-producing nodes (worley, perlin, ridged-noise, …) use
+    // this to re-render into the existing GPUTexture instead of
+    // allocating a fresh one every time a non-dimension parameter
+    // changes.
     const callCtx: NodeContext = { ...sharedCtx, inputFingerprints: upstreamFingerprints };
+    if (cache) {
+      const prevFp = cache.lastFingerprintByNodeId.get(trackerKey);
+      if (prevFp !== undefined) {
+        const prev = cache.entries.get(prevFp);
+        if (prev !== undefined) callCtx.previousOutput = prev as NodeOutputs;
+      }
+    }
     try {
       // Sync nodes return outputs directly; async nodes return a Promise.
       // Awaiting both shapes works without runtime branching.
       const result = await def.evaluate(callCtx, inputs);
       outputs.set(nodeId, result);
-      if (cache) cache.entries.set(fp, result);
+      if (cache) {
+        cache.entries.set(fp, result);
+        cache.lastFingerprintByNodeId.set(trackerKey, fp);
+      }
     } catch (e) {
       console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
     }

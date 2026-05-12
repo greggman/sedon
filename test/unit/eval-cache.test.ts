@@ -44,6 +44,7 @@ function buildRegistry(evalCounts: Map<string, number>): NodeRegistry {
 
 test('nodeFingerprint is stable across object identity and key order', () => {
   const a = nodeFingerprint({
+    nodeId: 'n1',
     kind: 'test/x',
     inputValues: { a: 1, b: 2 },
     upstreamFingerprints: {},
@@ -53,6 +54,7 @@ test('nodeFingerprint is stable across object identity and key order', () => {
   obj.b = 2;
   obj.a = 1;
   const b = nodeFingerprint({
+    nodeId: 'n1',
     kind: 'test/x',
     inputValues: obj,
     upstreamFingerprints: {},
@@ -62,6 +64,7 @@ test('nodeFingerprint is stable across object identity and key order', () => {
 
 test('nodeFingerprint differs when any ingredient differs', () => {
   const base = nodeFingerprint({
+    nodeId: 'n1',
     kind: 'test/x',
     inputValues: { a: 1 },
     upstreamFingerprints: { in: 'abc' },
@@ -69,6 +72,7 @@ test('nodeFingerprint differs when any ingredient differs', () => {
   assert.notEqual(
     base,
     nodeFingerprint({
+      nodeId: 'n1',
       kind: 'test/y',
       inputValues: { a: 1 },
       upstreamFingerprints: { in: 'abc' },
@@ -78,6 +82,7 @@ test('nodeFingerprint differs when any ingredient differs', () => {
   assert.notEqual(
     base,
     nodeFingerprint({
+      nodeId: 'n1',
       kind: 'test/x',
       inputValues: { a: 2 },
       upstreamFingerprints: { in: 'abc' },
@@ -87,6 +92,7 @@ test('nodeFingerprint differs when any ingredient differs', () => {
   assert.notEqual(
     base,
     nodeFingerprint({
+      nodeId: 'n1',
       kind: 'test/x',
       inputValues: { a: 1 },
       upstreamFingerprints: { in: 'different' },
@@ -96,12 +102,23 @@ test('nodeFingerprint differs when any ingredient differs', () => {
   assert.notEqual(
     base,
     nodeFingerprint({
+      nodeId: 'n1',
       kind: 'test/x',
       version: 7,
       inputValues: { a: 1 },
       upstreamFingerprints: { in: 'abc' },
     }),
     'version changes the fingerprint',
+  );
+  assert.notEqual(
+    base,
+    nodeFingerprint({
+      nodeId: 'n2',
+      kind: 'test/x',
+      inputValues: { a: 1 },
+      upstreamFingerprints: { in: 'abc' },
+    }),
+    'nodeId changes the fingerprint — required so two same-config nodes do not share a cache entry',
   );
 });
 
@@ -340,6 +357,62 @@ test('sweepCache evicts untouched entries and destroys orphan resources', () => 
   assert.ok(cache.entries.has('fpA'));
   assert.equal(aliveA, true, 'live entry resource preserved');
   assert.equal(aliveB, false, 'evicted entry resource destroyed');
+});
+
+test('ctx.previousOutput carries the prior eval\'s output on a cache miss', async () => {
+  // This is the plumbing texture-producing nodes (worley, perlin) rely
+  // on to reuse their GPUTexture instead of allocating a fresh one
+  // whenever a non-dimension parameter is nudged.
+  const seenPrev: Array<unknown> = [];
+  const counts = new Map<string, number>();
+  const r = buildRegistry(counts);
+  // A node that records what `previousOutput` it sees on each call,
+  // and produces an output containing a marker so we can verify the
+  // value flowing into the next call.
+  let nextMarker = 0;
+  r.register({
+    id: 'test/recorder',
+    category: 'Test',
+    inputs: [{ name: 'tag', type: 'Float', default: 0 }],
+    outputs: [{ name: 'out', type: 'Float' }],
+    evaluate(ctx) {
+      seenPrev.push(ctx.previousOutput);
+      nextMarker += 1;
+      return { out: nextMarker };
+    },
+  });
+
+  const cache = createEvalCache();
+  const g = createGraph();
+  const node = addNode(g, 'test/recorder', { inputValues: { tag: 1 } });
+  await evaluateGraph(g, r, { rootNodeId: node.id, cache, touched: new Set() });
+
+  // Force a fingerprint miss by changing inputValue (the cache works
+  // off content; identical re-eval would hit and skip evaluate()).
+  const g2 = createGraph();
+  g2.nodes.push({ ...node, inputValues: { tag: 2 } });
+  await evaluateGraph(g2, r, { rootNodeId: node.id, cache, touched: new Set() });
+
+  assert.equal(seenPrev.length, 2);
+  assert.equal(seenPrev[0], undefined, 'first eval has no previous output');
+  assert.deepEqual(seenPrev[1], { out: 1 }, 'second eval receives first eval\'s output');
+});
+
+test('sweepCache prunes lastFingerprintByNodeId entries whose fp was evicted', () => {
+  const cache = createEvalCache();
+  cache.entries.set('fpAlive', { out: 1 });
+  cache.entries.set('fpDead', { out: 2 });
+  cache.lastFingerprintByNodeId.set('nodeAlive', 'fpAlive');
+  cache.lastFingerprintByNodeId.set('nodeDead', 'fpDead');
+
+  sweepCache(cache, new Set(['fpAlive']));
+
+  assert.equal(cache.lastFingerprintByNodeId.get('nodeAlive'), 'fpAlive');
+  assert.equal(
+    cache.lastFingerprintByNodeId.has('nodeDead'),
+    false,
+    'stale tracker entry pointing at an evicted fp is pruned',
+  );
 });
 
 test('sweepCache does NOT destroy a resource still referenced by a live entry', () => {
