@@ -321,6 +321,33 @@
   grid-column: 2;
 }
 
+/* Click-to-rename socket name on subgraph boundaries. The hover hint
+ * uses a dotted underline so the affordance is visible without
+ * shouting "this is a link." */
+.sedon-editable-name {
+  cursor: text;
+  border-radius: 2px;
+  padding: 1px 3px;
+  margin-left: -3px;
+}
+
+.sedon-editable-name:hover {
+  background: #2a2a2f;
+  text-decoration: underline dotted #888;
+}
+
+.sedon-editable-name-input {
+  background: #111;
+  border: 1px solid #6a8a6a;
+  border-radius: 3px;
+  color: #ddd;
+  padding: 1px 3px;
+  font-size: 12px;
+  font-family: inherit;
+  width: 100px;
+  outline: none;
+}
+
 /* ============================================================
  * Inputs
  * ============================================================ */

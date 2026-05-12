@@ -134,6 +134,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       name: i.name,
       type: i.type,
       ...(i.description !== undefined ? { description: i.description } : {}),
+      ...(i.label !== undefined ? { label: i.label } : {}),
     })),
     evaluate(ctx) {
       return ctx.subgraphInputs ?? standaloneDefaults;
@@ -150,11 +151,13 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       name: o.name,
       type: o.type,
       ...(o.description !== undefined ? { description: o.description } : {}),
+      ...(o.label !== undefined ? { label: o.label } : {}),
     })),
     outputs: def.outputs.map<OutputDef>((o) => ({
       name: o.name,
       type: o.type,
       ...(o.description !== undefined ? { description: o.description } : {}),
+      ...(o.label !== undefined ? { label: o.label } : {}),
     })),
     evaluate(_ctx, inputs) {
       return inputs;

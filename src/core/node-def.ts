@@ -1,8 +1,21 @@
 export interface InputDef {
+  /**
+   * Stable identifier used as the inputValues key, the React Flow handle
+   * id, and the edge socket reference. For core nodes this is the
+   * human-readable name; for subgraph boundaries it's a UUID generated
+   * when the socket is created so the user can rename the display
+   * `label` without invalidating handle measurements or breaking edges.
+   */
   name: string;
   type: string;
   default?: unknown;
   description?: string;
+  /**
+   * Display label shown next to the socket in the UI. When absent, the
+   * UI falls back to `name`. Only subgraph boundaries set this — they
+   * use UUIDs for `name` so renames touch only `label`.
+   */
+  label?: string;
   // Marks an input as optional: when unconnected and no default and no
   // inputValue, the evaluator passes `undefined` rather than skipping the
   // node, and the validator does not flag it as missing. The node's evaluate()
@@ -11,9 +24,12 @@ export interface InputDef {
 }
 
 export interface OutputDef {
+  /** See {@link InputDef.name} — same rule for outputs. */
   name: string;
   type: string;
   description?: string;
+  /** See {@link InputDef.label} — same rule for outputs. */
+  label?: string;
 }
 
 export interface NodeContext {

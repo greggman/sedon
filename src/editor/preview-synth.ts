@@ -130,7 +130,10 @@ export function synthesizeTiles(
     if (scene) {
       const isScene = out.type === 'Scene';
       tiles.push({
-        name: out.name,
+        // User-visible tile caption. For subgraph outputs this is the
+        // display label the user typed; for core nodes it's the
+        // human-readable name (label is unset, so the fallback wins).
+        name: out.label ?? out.name,
         type: out.type,
         scene,
         lighting: isScene ? baseLighting : dimLighting,

@@ -6,6 +6,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useStoreApi,
   type Connection,
   type Edge,
   type IsValidConnection,
@@ -20,7 +21,12 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useRef } from 'react';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
-import { CustomNode } from './custom-node.js';
+import {
+  ADD_INPUT_HANDLE_ID,
+  ADD_OUTPUT_HANDLE_ID,
+  CustomNode,
+  subgraphIdFromBoundaryKind,
+} from './custom-node.js';
 import { buildRegistry, useRegistry } from './registry.js';
 import { edgeColor, graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useEditorStore } from './store.js';
@@ -40,28 +46,67 @@ const seedRegistry = buildRegistry(seedState.subgraphs);
 const seed = seedState.graph;
 
 export function NodeCanvas() {
-  const [rfNodes, , onRfNodesChange] = useNodesState(graphToRfNodes(seed));
+  const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(graphToRfNodes(seed));
   const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed, seedRegistry));
 
   const rf = useReactFlow();
+  // We use RF's internal store directly (not useUpdateNodeInternals) because
+  // the public hook defers measurement to a requestAnimationFrame — by the
+  // time it actually runs, our setRfEdges has already triggered a render
+  // and EdgeWrapper has already logged the "couldn't find handle" warning.
+  // We need the measurement to happen SYNCHRONOUSLY between setRfNodes and
+  // setRfEdges, so the bounds are populated before EdgeWrapper looks them
+  // up on its first render of the new edges.
+  const rfStore = useStoreApi();
   const connect = useEditorStore((s) => s.connect);
   const removeEdges = useEditorStore((s) => s.removeEdges);
   const removeNodes = useEditorStore((s) => s.removeNodes);
-  const syncCounter = useEditorStore((s) => s.syncCounter);
+  const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const viewports = useEditorStore((s) => s.viewports);
   const registry = useRegistry();
 
-  // External graph changes (load, undo, redo) reach React Flow via this
-  // effect. Smart-merge: existing nodes keep their RF position so any drag
-  // that happened since the last command isn't lost; new nodes use their
-  // saved position; removed nodes drop out.
+  // External graph changes (load, undo, redo, drag-create) reach React
+  // Flow via this useEffect. It runs AFTER React commits the store-
+  // driven render — so by the time we get here, the boundary's
+  // CustomNode has already re-rendered (its def comes from
+  // useRegistry, which depends on subgraphs) and any new handle is in
+  // the DOM. But RF's per-node ResizeObserver, which is what populates
+  // handle bounds in RF's internal store, fires async in a separate
+  // browser task and may not have run yet — so if we hand RF the new
+  // edge here, EdgeWrapper looks up the new handle's bounds, finds
+  // nothing, and logs error 008.
+  //
+  // The fix is to measure the new handle's bounds synchronously right
+  // here, between setRfNodes and setRfEdges. The public hook
+  // useUpdateNodeInternals defers its measurement to a rAF (which
+  // would run AFTER setRfEdges and the resulting EdgeWrapper render
+  // — too late), so we reach into RF's internal store directly and
+  // call its `updateNodeInternals` action ourselves. By the time
+  // setRfEdges propagates, every handle the new edges reference is
+  // already in RF's nodeLookup with measured bounds.
+  const syncCounter = useEditorStore((s) => s.syncCounter);
   useEffect(() => {
     if (syncCounter === 0) return;
     const graph = useEditorStore.getState().graph;
-    rf.setNodes((current) => mergeRfNodes(current, graph));
-    rf.setEdges(graphToRfEdges(graph, registry));
-  }, [syncCounter, rf, registry]);
+    setRfNodes((current) => mergeRfNodes(current, graph));
+
+    const { domNode, updateNodeInternals } = rfStore.getState();
+    const updates = new Map<string, { id: string; nodeElement: HTMLDivElement; force: boolean }>();
+    for (const node of graph.nodes) {
+      const nodeElement = domNode?.querySelector(
+        `.react-flow__node[data-id="${node.id}"]`,
+      ) as HTMLDivElement | null;
+      if (nodeElement) {
+        updates.set(node.id, { id: node.id, nodeElement, force: true });
+      }
+    }
+    if (updates.size > 0) {
+      updateNodeInternals(updates, { triggerFitView: false });
+    }
+
+    setRfEdges(graphToRfEdges(graph, registry));
+  }, [syncCounter, registry, setRfNodes, setRfEdges, rfStore]);
 
   // Per-graph viewport: save on context switch, load (or fit) on entry.
   // Same shape as the per-graph camera effect in preview.tsx. Fires also
@@ -158,13 +203,42 @@ export function NodeCanvas() {
   const onConnect = useCallback<OnConnect>(
     (params: Connection) => {
       if (!params.sourceHandle || !params.targetHandle) return;
+      const graph = useEditorStore.getState().graph;
+
+      // Phantom drops on the "+ Add" row of a subgraph boundary. Don't
+      // touch rfEdges here — the syncCounter effect re-derives them from
+      // the updated graph after the store dispatch lands.
+      if (params.targetHandle === ADD_OUTPUT_HANDLE_ID) {
+        const boundaryNode = findNode(graph, params.target);
+        const boundary = subgraphIdFromBoundaryKind(boundaryNode?.kind);
+        if (!boundary || boundary.side !== 'output') return;
+        const fromNode = findNode(graph, params.source);
+        const fromDef = fromNode ? registry.get(fromNode.kind) : undefined;
+        const fromOut = fromDef?.outputs.find((o) => o.name === params.sourceHandle);
+        if (!fromOut) return;
+        addSubgraphSocketWithEdge(boundary.subgraphId, 'output', fromOut.type, {
+          node: params.source,
+          socket: params.sourceHandle,
+        });
+        return;
+      }
+      if (params.sourceHandle === ADD_INPUT_HANDLE_ID) {
+        const boundaryNode = findNode(graph, params.source);
+        const boundary = subgraphIdFromBoundaryKind(boundaryNode?.kind);
+        if (!boundary || boundary.side !== 'input') return;
+        const toNode = findNode(graph, params.target);
+        const toDef = toNode ? registry.get(toNode.kind) : undefined;
+        const toIn = toDef?.inputs.find((i) => i.name === params.targetHandle);
+        if (!toIn) return;
+        addSubgraphSocketWithEdge(boundary.subgraphId, 'input', toIn.type, {
+          node: params.target,
+          socket: params.targetHandle,
+        });
+        return;
+      }
+
       const id = crypto.randomUUID();
-      const color = edgeColor(
-        useEditorStore.getState().graph,
-        params.source,
-        params.sourceHandle,
-        registry,
-      );
+      const color = edgeColor(graph, params.source, params.sourceHandle, registry);
       // Visual: drop any existing edge into the same input, then add the new one
       // with the same id we'll send to the store so the two stay in sync.
       setRfEdges((eds) => [
@@ -184,7 +258,7 @@ export function NodeCanvas() {
         { node: params.target, socket: params.targetHandle },
       );
     },
-    [connect, setRfEdges, registry],
+    [connect, setRfEdges, registry, addSubgraphSocketWithEdge],
   );
 
   const isValidConnection = useCallback<IsValidConnection>(
@@ -203,6 +277,22 @@ export function NodeCanvas() {
       const fromDef = registry.get(fromNode.kind);
       const toDef = registry.get(toNode.kind);
       if (!fromDef || !toDef) return false;
+
+      // Phantom "+ Add" drops on a subgraph boundary: the boundary
+      // adopts the other end's type at create time, so we only need to
+      // verify the OTHER end resolves to a real socket and that the
+      // boundary kind matches its handle direction.
+      if (targetHandle === ADD_OUTPUT_HANDLE_ID) {
+        const boundary = subgraphIdFromBoundaryKind(toNode.kind);
+        if (!boundary || boundary.side !== 'output') return false;
+        return !!fromDef.outputs.find((o) => o.name === sourceHandle);
+      }
+      if (sourceHandle === ADD_INPUT_HANDLE_ID) {
+        const boundary = subgraphIdFromBoundaryKind(fromNode.kind);
+        if (!boundary || boundary.side !== 'input') return false;
+        return !!toDef.inputs.find((i) => i.name === targetHandle);
+      }
+
       const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
       const toIn = toDef.inputs.find((i) => i.name === targetHandle);
       if (!fromOut || !toIn) return false;

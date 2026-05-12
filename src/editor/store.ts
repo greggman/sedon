@@ -127,7 +127,7 @@ export interface EditorState {
   addSubgraphSocket: (
     subgraphId: string,
     side: 'input' | 'output',
-    socket: { name: string; type: string; description?: string },
+    socket: { label: string; type: string; description?: string },
   ) => void;
 
   /**
@@ -141,6 +141,41 @@ export interface EditorState {
     subgraphId: string,
     side: 'input' | 'output',
     name: string,
+  ) => void;
+
+  /**
+   * Add a new subgraph socket with an auto-generated unique "untitled"
+   * name and a type derived from the other end of a drag, and wire
+   * the edge in the same project-scoped command — so dragging from an
+   * inner-node socket onto an "Add Input/Output" target is one undo
+   * step that both creates the boundary socket and connects it.
+   *
+   * For side='output' (new subgraph OUTPUT): edgeEnd is the source
+   * (an inner-node output); the edge runs edgeEnd → outputBoundary.
+   * For side='input' (new subgraph INPUT): edgeEnd is the target
+   * (an inner-node input); the edge runs inputBoundary → edgeEnd.
+   */
+  addSubgraphSocketWithEdge: (
+    subgraphId: string,
+    side: 'input' | 'output',
+    type: string,
+    edgeEnd: { node: string; socket: string },
+  ) => void;
+
+  /**
+   * Change a subgraph socket's display label. The stable `name` field
+   * (used as the React Flow handle id and the edge socket reference)
+   * is untouched, so no edges anywhere need rewiring — this is what
+   * lets the rename happen without RF's `EdgeWrapper` momentarily
+   * looking up a handle id whose DOM measurement isn't yet
+   * registered. No-op if no socket with `socketName` exists or if
+   * `newLabel` collides with another socket on the same side.
+   */
+  renameSubgraphSocket: (
+    subgraphId: string,
+    side: 'input' | 'output',
+    socketName: string,
+    newLabel: string,
   ) => void;
 
   /** Persist camera state for a given editing context. */
@@ -355,14 +390,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     addSubgraphSocket: (subgraphId, side, socket) => {
       const state = get();
-      // Dedupe by name — silently ignore re-adds; UI prevents this anyway.
       const target = state.subgraphs.find((s) => s.id === subgraphId);
       if (!target) return;
       const list = side === 'input' ? target.inputs : target.outputs;
-      if (list.some((x) => x.name === socket.name)) return;
-      const entry = socket.description !== undefined
-        ? { name: socket.name, type: socket.type, description: socket.description }
-        : { name: socket.name, type: socket.type };
+      // Dedupe by label (what the user sees). The internal `name` is a
+      // freshly-generated UUID, so it can never collide with anything.
+      // The UI prevents collisions but we double-check defensively.
+      if (list.some((x) => (x.label ?? x.name) === socket.label)) return;
+      const entry: {
+        name: string;
+        type: string;
+        label: string;
+        description?: string;
+      } = {
+        name: crypto.randomUUID(),
+        type: socket.type,
+        label: socket.label,
+      };
+      if (socket.description !== undefined) entry.description = socket.description;
       const subgraphs = state.subgraphs.map((s) =>
         s.id !== subgraphId
           ? s
@@ -446,6 +491,104 @@ export const useEditorStore = create<EditorState>((set, get) => {
         mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: activeGraph,
+        rootNodeId: state.rootNodeId,
+        currentEditingId: state.currentEditingId,
+      });
+    },
+
+    addSubgraphSocketWithEdge: (subgraphId, side, type, edgeEnd) => {
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      const list = side === 'input' ? target.inputs : target.outputs;
+      // Stable handle id (UUID) — never user-visible, never changes.
+      // The user-visible label dedupes as "untitled" / "untitled-2" / ...
+      // so drag-creating several sockets in a row produces a sensible
+      // column of labels rather than a wall of "untitled"s.
+      const name = crypto.randomUUID();
+      let label = 'untitled';
+      if (list.some((x) => (x.label ?? x.name) === label)) {
+        for (let i = 2; ; i++) {
+          const candidate = `untitled-${i}`;
+          if (!list.some((x) => (x.label ?? x.name) === candidate)) {
+            label = candidate;
+            break;
+          }
+        }
+      }
+      const newEntry = { name, type, label };
+      // For 'output' side, the new socket is an INPUT on the output
+      // boundary, and the edge runs inner-node-output → boundary.
+      // For 'input' side, the new socket is an OUTPUT on the input
+      // boundary, and the edge runs boundary → inner-node-input.
+      const boundaryId = side === 'input' ? target.inputNodeId : target.outputNodeId;
+      const newEdge =
+        side === 'output'
+          ? { id: crypto.randomUUID(), from: edgeEnd, to: { node: boundaryId, socket: name } }
+          : { id: crypto.randomUUID(), from: { node: boundaryId, socket: name }, to: edgeEnd };
+
+      const updatedInner = { ...target.graph, edges: [...target.graph.edges, newEdge] };
+      const updatedTarget =
+        side === 'input'
+          ? { ...target, inputs: [...target.inputs, newEntry], graph: updatedInner }
+          : { ...target, outputs: [...target.outputs, newEntry], graph: updatedInner };
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id === subgraphId ? updatedTarget : s,
+      );
+
+      // If we're editing the affected subgraph, sync the active graph
+      // pointer to the updated inner graph so the new edge appears.
+      const activeGraph =
+        state.currentEditingId === subgraphId ? updatedInner : state.graph;
+
+      dispatchProject({
+        subgraphs,
+        mainGraph: state.mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: activeGraph,
+        rootNodeId: state.rootNodeId,
+        currentEditingId: state.currentEditingId,
+      });
+    },
+
+    renameSubgraphSocket: (subgraphId, side, socketName, newLabel) => {
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      const list = side === 'input' ? target.inputs : target.outputs;
+      const entry = list.find((x) => x.name === socketName);
+      if (!entry) return;
+      const currentLabel = entry.label ?? entry.name;
+      if (currentLabel === newLabel) return;
+      // Collision on the user-facing display name. The UI validates
+      // first; this is defensive.
+      if (
+        list.some((x) => x.name !== socketName && (x.label ?? x.name) === newLabel)
+      ) {
+        return;
+      }
+      // Only the user-visible `label` changes. The stable `name` (UUID
+      // for new sockets, original name for legacy data) is what edges
+      // and React Flow handle ids reference, so no inner-graph edges
+      // and no wrapper-instance edges need rewiring — they keep
+      // pointing at the same handle id, which keeps the same DOM
+      // measurement, which keeps RF's edge router happy across the
+      // rename.
+      const updatedList = list.map((x) =>
+        x.name === socketName ? { ...x, label: newLabel } : x,
+      );
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id === subgraphId
+          ? side === 'input'
+            ? { ...s, inputs: updatedList }
+            : { ...s, outputs: updatedList }
+          : s,
+      );
+      dispatchProject({
+        subgraphs,
+        mainGraph: state.mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: state.graph,
         rootNodeId: state.rootNodeId,
         currentEditingId: state.currentEditingId,
       });

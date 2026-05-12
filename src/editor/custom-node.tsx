@@ -222,21 +222,24 @@ function asRgba(v: unknown): [number, number, number, number] {
 }
 
 // AddSocketForm: tiny inline form shown when the user clicks "+" on a
-// subgraph boundary. Name must be unique within that boundary's side;
-// type is picked from the project type registry.
+// subgraph boundary. The text the user types becomes the socket's
+// display LABEL; the store generates a stable UUID for the underlying
+// `name` (which is what handles and edges reference). Labels must be
+// unique within the side so the UI's collision warning prevents the
+// user from making two indistinguishable sockets.
 function AddSocketForm({
-  existingNames,
+  existingLabels,
   onSubmit,
   onCancel,
 }: {
-  existingNames: string[];
-  onSubmit: (name: string, type: string) => void;
+  existingLabels: string[];
+  onSubmit: (label: string, type: string) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState('');
+  const [label, setLabel] = useState('');
   const [type, setType] = useState('Float');
-  const trimmed = name.trim();
-  const duplicate = existingNames.includes(trimmed);
+  const trimmed = label.trim();
+  const duplicate = existingLabels.includes(trimmed);
   const canSubmit = trimmed.length > 0 && !duplicate;
 
   return (
@@ -245,8 +248,8 @@ function AddSocketForm({
         type="text"
         className="sedon-add-socket-name"
         placeholder="socket name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
         autoFocus
         onKeyDown={(e) => {
           if (e.key === 'Enter' && canSubmit) onSubmit(trimmed, type);
@@ -282,7 +285,7 @@ function AddSocketForm({
   );
 }
 
-function subgraphIdFromBoundaryKind(kind: string | undefined): {
+export function subgraphIdFromBoundaryKind(kind: string | undefined): {
   side: 'input' | 'output';
   subgraphId: string;
 } | null {
@@ -294,6 +297,75 @@ function subgraphIdFromBoundaryKind(kind: string | undefined): {
     return { side: 'output', subgraphId: kind.slice('subgraph-output/'.length) };
   }
   return null;
+}
+
+// Phantom handle ids that live on the "+ Add input/output" row of a
+// subgraph boundary node. node-canvas.tsx routes connections involving
+// these ids to addSubgraphSocketWithEdge instead of the normal connect
+// path, so dropping an inner node's handle on the "+" creates a new
+// boundary socket and wires it in one undoable step.
+export const ADD_OUTPUT_HANDLE_ID = '__add_output__';
+export const ADD_INPUT_HANDLE_ID = '__add_input__';
+
+// Inline-rename editor for a subgraph boundary socket label. Click
+// swaps the static label for a text input that commits on Enter/blur
+// (and reverts on Escape). The caller passes a list of *other* socket
+// labels on the same side so we can show a collision warning without
+// blocking the user when they click-and-confirm unchanged.
+function EditableSocketLabel({
+  label,
+  otherLabels,
+  onCommit,
+}: {
+  label: string;
+  otherLabels: string[];
+  onCommit: (newLabel: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+
+  if (!editing) {
+    return (
+      <span
+        className="sedon-node-label sedon-editable-name"
+        title="Click to rename"
+        onClick={(e) => {
+          e.stopPropagation();
+          setDraft(label);
+          setEditing(true);
+        }}
+      >
+        {label}
+      </span>
+    );
+  }
+
+  const trimmed = draft.trim();
+  const collides = trimmed !== label && otherLabels.includes(trimmed);
+  const canCommit = trimmed.length > 0 && !collides;
+  const commit = () => {
+    if (canCommit && trimmed !== label) onCommit(trimmed);
+    setEditing(false);
+  };
+  const cancel = () => {
+    setDraft(label);
+    setEditing(false);
+  };
+  return (
+    <input
+      type="text"
+      className="nodrag nopan sedon-editable-name-input"
+      autoFocus
+      value={draft}
+      title={collides ? 'a socket with this name already exists' : ''}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') cancel();
+      }}
+    />
+  );
 }
 
 export function CustomNode({ id, data }: NodeProps) {
@@ -317,6 +389,7 @@ export function CustomNode({ id, data }: NodeProps) {
   const device = useEditorStore((s) => s.device);
   const addSubgraphSocket = useEditorStore((s) => s.addSubgraphSocket);
   const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
+  const renameSubgraphSocket = useEditorStore((s) => s.renameSubgraphSocket);
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
@@ -397,6 +470,7 @@ export function CustomNode({ id, data }: NodeProps) {
         const editor = !connected
           ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
           : null;
+        const displayLabel = input.label ?? input.name;
         return (
           <div
             key={`row-in-${input.name}`}
@@ -404,7 +478,19 @@ export function CustomNode({ id, data }: NodeProps) {
             style={{ height: ROW_HEIGHT }}
             title={input.type}
           >
-            <span className="sedon-node-label">{input.name}</span>
+            {editableInputs && boundary ? (
+              <EditableSocketLabel
+                label={displayLabel}
+                otherLabels={def.inputs
+                  .filter((x) => x.name !== input.name)
+                  .map((x) => x.label ?? x.name)}
+                onCommit={(newLabel) =>
+                  renameSubgraphSocket(boundary.subgraphId, 'output', input.name, newLabel)
+                }
+              />
+            ) : (
+              <span className="sedon-node-label">{displayLabel}</span>
+            )}
             {editor && (
               <span className="nodrag nopan sedon-node-editor">{editor}</span>
             )}
@@ -431,51 +517,107 @@ export function CustomNode({ id, data }: NodeProps) {
           top={inputsTop + (def.inputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
         />
       ))}
-      {def.outputs.map((output) => (
-        <div
-          key={`row-out-${output.name}`}
-          className="sedon-node-row sedon-node-row--output"
-          style={{ height: ROW_HEIGHT }}
-          title={output.type}
-        >
-          {editableOutputs && boundary && (
-            <button
-              type="button"
-              className="nodrag nopan sedon-boundary-remove sedon-boundary-remove--left"
-              title="Remove this input"
-              onClick={() => removeSubgraphSocket(boundary.subgraphId, 'input', output.name)}
-            >
-              ×
-            </button>
-          )}
-          {output.name}
-        </div>
-      ))}
+      {def.outputs.map((output) => {
+        const displayLabel = output.label ?? output.name;
+        return (
+          <div
+            key={`row-out-${output.name}`}
+            className="sedon-node-row sedon-node-row--output"
+            style={{ height: ROW_HEIGHT }}
+            title={output.type}
+          >
+            {editableOutputs && boundary && (
+              <button
+                type="button"
+                className="nodrag nopan sedon-boundary-remove sedon-boundary-remove--left"
+                title="Remove this input"
+                onClick={() => removeSubgraphSocket(boundary.subgraphId, 'input', output.name)}
+              >
+                ×
+              </button>
+            )}
+            {editableOutputs && boundary ? (
+              <EditableSocketLabel
+                label={displayLabel}
+                otherLabels={def.outputs
+                  .filter((x) => x.name !== output.name)
+                  .map((x) => x.label ?? x.name)}
+                onCommit={(newLabel) =>
+                  renameSubgraphSocket(boundary.subgraphId, 'input', output.name, newLabel)
+                }
+              />
+            ) : (
+              displayLabel
+            )}
+          </div>
+        );
+      })}
 
       {boundary && (
         adding ? (
           <AddSocketForm
-            existingNames={
+            existingLabels={
               boundary.side === 'input'
-                ? def.outputs.map((o) => o.name)
-                : def.inputs.map((i) => i.name)
+                ? def.outputs.map((o) => o.label ?? o.name)
+                : def.inputs.map((i) => i.label ?? i.name)
             }
-            onSubmit={(name, type) => {
-              addSubgraphSocket(boundary.subgraphId, boundary.side, { name, type });
+            onSubmit={(label, type) => {
+              addSubgraphSocket(boundary.subgraphId, boundary.side, { label, type });
               setAdding(false);
             }}
             onCancel={() => setAdding(false)}
           />
         ) : (
-          <button
-            type="button"
-            className="nodrag nopan sedon-boundary-add"
-            onClick={() => setAdding(true)}
-          >
-            + Add {boundary.side}
-          </button>
+          <>
+            <AddBoundaryHandle
+              side={boundary.side}
+              top={inputsTop + (def.inputs.length + def.outputs.length) * ROW_HEIGHT + ROW_HEIGHT / 2}
+            />
+            <button
+              type="button"
+              className="nodrag nopan sedon-boundary-add"
+              onClick={() => setAdding(true)}
+            >
+              + Add {boundary.side}
+            </button>
+          </>
         )
       )}
     </div>
+  );
+}
+
+// Drop target on the "+ Add" row of a subgraph boundary. Adopts whatever
+// type the user is dragging — node-canvas.tsx detects the phantom id and
+// routes to addSubgraphSocketWithEdge. Highlights whenever a drag is in
+// progress on the side this phantom can receive, so it reads as a valid
+// drop target without us needing to know the dragged-from type up here.
+function AddBoundaryHandle({ side, top }: { side: 'input' | 'output'; top: number }) {
+  const connection = useConnection();
+  // Output boundary side: phantom is a TARGET (subgraph output adds an
+  // input on the boundary), so it accepts drags that started from a
+  // source. Input boundary: phantom is a SOURCE, accepts drags from a
+  // target.
+  const isOutput = side === 'output';
+  let active = false;
+  if (connection.inProgress && connection.fromHandle) {
+    const fromSide = connection.fromHandle.type;
+    active = isOutput ? fromSide === 'source' : fromSide === 'target';
+  }
+  const style: React.CSSProperties = {
+    top,
+    width: HANDLE_SIZE,
+    height: HANDLE_SIZE,
+    background: '#bbb',
+    border: '1px dashed #fff',
+    boxShadow: active ? '0 0 0 3px #ffffff44, 0 0 8px #ffffffaa' : 'none',
+  };
+  return (
+    <Handle
+      type={isOutput ? 'target' : 'source'}
+      position={isOutput ? Position.Left : Position.Right}
+      id={isOutput ? ADD_OUTPUT_HANDLE_ID : ADD_INPUT_HANDLE_ID}
+      style={style}
+    />
   );
 }
