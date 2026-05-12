@@ -15,8 +15,9 @@ import {
 } from './material-kind.js';
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
+import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
+import bloomUpsampleShaderCode from './bloom-upsample.wgsl';
 import brightPassShaderCode from './bright-pass.wgsl';
-import blurShaderCode from './blur.wgsl';
 import compositeShaderCode from './composite.wgsl';
 import shadowShaderCode from './shadow.wgsl';
 import skyShaderCode from './sky.wgsl';
@@ -38,23 +39,21 @@ const SHADOW_FAR = 350;
 // pass at the end tone-maps + sRGB-encodes into the swapchain.
 const HDR_FORMAT: GPUTextureFormat = 'rgba16float';
 
-// Bloom runs at half the screen resolution: cheaper, and the down-sample
-// is the first "blur" pass — pairs naturally with the Gaussian to give a
-// soft glow without needing a multi-mip pyramid (room to grow into that
-// later for wider bloom).
-const BLOOM_DIVISOR = 2;
+// Multi-mip pyramid bloom (the AAA approach used by UE, Unity, COD AW).
+//
+// We build BLOOM_MIP_COUNT progressively-smaller HDR mips of the
+// bright-pass output (mip 0 = half res, each subsequent mip halves
+// again). Downsample chain populates the pyramid; upsample chain walks
+// back up additively, so by the time we reach mip 0 it contains a sum
+// of blurred contributions at every scale. The smallest mips contribute
+// the widest, softest halo; the larger ones preserve the tight core.
+//
+// 6 mips covers a half-screen-wide blur — enough for cinematic glow.
+const BLOOM_MIP_COUNT = 6;
 
-// Pixels above this linear-HDR luminance contribute to bloom (with a
-// soft knee). With sun intensity 3 and a typical sRGB-→-linear ~0.5
-// albedo, lit pixels reach ~1.5; this lets sun-facing surfaces glow
-// without bloom on ordinary midtones.
-const BLOOM_THRESHOLD = 1.0;
-const BLOOM_SOFT_KNEE = 0.5;
-
-// How much of the blurred bloom mixes back into the final image. 0 = no
-// bloom, 1 = full add. Subtle is usually right — the eye reads even a
-// small glow as "bright light."
-const BLOOM_INTENSITY = 0.45;
+// Bloom shape (threshold / soft knee) and intensity are now authored
+// per-scene on core/output and travel through LightingValue. Defaults
+// live in defaultLighting() (resources.ts).
 
 export interface SceneRenderer {
   render(params: {
@@ -127,30 +126,22 @@ function createSkyPipeline(
   });
 }
 
-// Single bind-group layout shared by all three post-process pipelines.
-// Slot 0 is always the primary input texture; slot 1 the (optional)
-// second input; slot 2 the sampler; slot 3 a small uniform buffer with
-// per-pass params. Each pipeline binds whichever slots its shader uses.
-function createPostProcessLayouts(device: GPUDevice): {
-  brightPassLayout: GPUBindGroupLayout;
-  blurLayout: GPUBindGroupLayout;
-  compositeLayout: GPUBindGroupLayout;
-} {
-  const brightPassLayout = device.createBindGroupLayout({
+// Shared "texture + sampler + uniform" bind-group layout used by the
+// bright-pass, downsample, and upsample pipelines. The composite
+// pipeline needs an extra texture binding (scene + bloom), so it has
+// its own layout below.
+function createSingleInputLayout(device: GPUDevice): GPUBindGroupLayout {
+  return device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     ],
   });
-  const blurLayout = device.createBindGroupLayout({
-    entries: [
-      { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-    ],
-  });
-  const compositeLayout = device.createBindGroupLayout({
+}
+
+function createCompositeLayout(device: GPUDevice): GPUBindGroupLayout {
+  return device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -158,7 +149,6 @@ function createPostProcessLayouts(device: GPUDevice): {
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     ],
   });
-  return { brightPassLayout, blurLayout, compositeLayout };
 }
 
 function createPostProcessPipeline(
@@ -166,12 +156,25 @@ function createPostProcessPipeline(
   layout: GPUBindGroupLayout,
   code: string,
   outputFormat: GPUTextureFormat,
+  options: { additive?: boolean } = {},
 ): GPURenderPipeline {
   const module = device.createShaderModule({ code });
+  // Upsample chain blends additively so each pyramid level's
+  // contribution sums into the larger mip rather than overwriting.
+  // The bright-pass and downsample pipelines do plain replace.
+  const target: GPUColorTargetState = options.additive
+    ? {
+        format: outputFormat,
+        blend: {
+          color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+        },
+      }
+    : { format: outputFormat };
   return device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
     vertex: { module, entryPoint: 'vs_main' },
-    fragment: { module, entryPoint: 'fs_main', targets: [{ format: outputFormat }] },
+    fragment: { module, entryPoint: 'fs_main', targets: [target] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
   });
 }
@@ -283,21 +286,28 @@ export function createSceneRenderer(
   // keeping the sun disc bright enough to bloom strongly.
   const SUN_INTENSITY = 22;
 
-  // Post-process: bright-pass + two-pass Gaussian + composite.
-  const { brightPassLayout, blurLayout, compositeLayout } =
-    createPostProcessLayouts(device);
+  // Post-process: bright-pass + bloom pyramid + composite. Bright-pass,
+  // downsample, and upsample share the same "single input texture +
+  // sampler + uniform" bind-group layout. Composite has its own
+  // (two-input) layout. Only the upsample pipeline uses additive blend.
+  const singleInputLayout = createSingleInputLayout(device);
+  const compositeLayout = createCompositeLayout(device);
   const brightPassPipeline = createPostProcessPipeline(
-    device, brightPassLayout, brightPassShaderCode, HDR_FORMAT,
+    device, singleInputLayout, brightPassShaderCode, HDR_FORMAT,
   );
-  const blurPipeline = createPostProcessPipeline(
-    device, blurLayout, blurShaderCode, HDR_FORMAT,
+  const downsamplePipeline = createPostProcessPipeline(
+    device, singleInputLayout, bloomDownsampleShaderCode, HDR_FORMAT,
+  );
+  const upsamplePipeline = createPostProcessPipeline(
+    device, singleInputLayout, bloomUpsampleShaderCode, HDR_FORMAT,
+    { additive: true },
   );
   const compositePipeline = createPostProcessPipeline(
     device, compositeLayout, compositeShaderCode, format,
   );
 
-  // Post-process textures sample with clamp-to-edge so the blur doesn't
-  // smear in pixels from the opposite edge.
+  // Bloom samples with clamp-to-edge so the kernel doesn't smear in
+  // pixels from the opposite edge of the texture.
   const postSampler = device.createSampler({
     magFilter: 'linear',
     minFilter: 'linear',
@@ -305,52 +315,38 @@ export function createSceneRenderer(
     addressModeV: 'clamp-to-edge',
   });
 
-  // Per-pass uniform buffers. Bright-pass: (threshold, soft_knee). Blur:
-  // (dirX, dirY). Composite: (bloom_intensity). All padded up to 16 bytes
-  // (minimum uniform buffer offset alignment).
+  // Bloom uniforms are written per-frame from lighting now (threshold +
+  // soft knee for bright-pass, intensity for composite). 16-byte
+  // padding because that's the minimum UBO size in WebGPU.
   const brightPassUniform = device.createBuffer({
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
-  device.queue.writeBuffer(
-    brightPassUniform, 0,
-    new Float32Array([BLOOM_THRESHOLD, BLOOM_SOFT_KNEE, 0, 0]) as BufferSource,
-  );
-
-  const blurUniformH = device.createBuffer({
-    size: 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  const blurUniformV = device.createBuffer({
-    size: 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
   const compositeUniform = device.createBuffer({
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
-  device.queue.writeBuffer(
-    compositeUniform, 0,
-    new Float32Array([BLOOM_INTENSITY, 0, 0, 0]) as BufferSource,
-  );
+  const bloomScratch = new Float32Array(4);
 
-  // Per-frame intermediates (lazy-allocated, resized on canvas size
-  // change). depthTexture is the depth attachment for the main pass;
-  // hdrColor receives the linear-HDR scene; bloomA/B ping-pong for the
-  // blur passes at half resolution.
+  // Per-frame intermediates, (re)allocated when size changes:
+  //   depthTexture  — main pass depth attachment
+  //   hdrColor      — scene HDR target (sampled by bright-pass + composite)
+  //   bloomMips[i]  — bloom pyramid level i (0 = half res, 5 = 1/64)
+  //   bloomMipParamBuffers[i] — uniform with src_texel for that level
   let depthTexture: GPUTexture | null = null;
   let hdrColor: GPUTexture | null = null;
   let hdrColorView: GPUTextureView | null = null;
-  let bloomA: GPUTexture | null = null;
-  let bloomAView: GPUTextureView | null = null;
-  let bloomB: GPUTexture | null = null;
-  let bloomBView: GPUTextureView | null = null;
-  // Bind groups depend on the texture views, so they're rebuilt whenever
-  // the textures are.
+  let bloomMips: GPUTexture[] = [];
+  let bloomMipViews: GPUTextureView[] = [];
+  // Each mip i needs a (1/w, 1/h) uniform used by both downsample (when
+  // it's the SOURCE) and upsample (when it's the SOURCE again). One
+  // buffer per mip is enough.
+  let bloomMipParamBuffers: GPUBuffer[] = [];
+  // Bright-pass reads hdrColor → mip[0]. Downsample reads mip[i] → mip[i+1].
+  // Upsample reads mip[i+1] → mip[i] additively. One bind group per
+  // (source mip + uniform) pair.
   let brightPassBindGroup: GPUBindGroup | null = null;
-  let blurBindGroupAB: GPUBindGroup | null = null; // reads A, writes B
-  let blurBindGroupBA: GPUBindGroup | null = null; // reads B, writes A
+  let pyramidBindGroups: GPUBindGroup[] = []; // index i: source = mip[i]
   let compositeBindGroup: GPUBindGroup | null = null;
   let lastWidth = 0;
   let lastHeight = 0;
@@ -358,8 +354,11 @@ export function createSceneRenderer(
   function rebuildIntermediates(width: number, height: number) {
     depthTexture?.destroy();
     hdrColor?.destroy();
-    bloomA?.destroy();
-    bloomB?.destroy();
+    for (const t of bloomMips) t.destroy();
+    bloomMips = [];
+    bloomMipViews = [];
+    bloomMipParamBuffers = [];
+    pyramidBindGroups = [];
 
     depthTexture = device.createTexture({
       size: [width, height],
@@ -373,68 +372,66 @@ export function createSceneRenderer(
     });
     hdrColorView = hdrColor.createView();
 
-    const bw = Math.max(1, Math.floor(width / BLOOM_DIVISOR));
-    const bh = Math.max(1, Math.floor(height / BLOOM_DIVISOR));
-    bloomA = device.createTexture({
-      size: [bw, bh],
-      format: HDR_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    bloomAView = bloomA.createView();
-    bloomB = device.createTexture({
-      size: [bw, bh],
-      format: HDR_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    bloomBView = bloomB.createView();
+    // Build the mip chain. mip i is at 1/(2^(i+1)) of canvas resolution,
+    // so mip 0 is half, mip (count-1) is the smallest.
+    for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
+      const scale = 1 << (i + 1);
+      const w = Math.max(1, Math.floor(width / scale));
+      const h = Math.max(1, Math.floor(height / scale));
+      const tex = device.createTexture({
+        size: [w, h],
+        format: HDR_FORMAT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      bloomMips.push(tex);
+      bloomMipViews.push(tex.createView());
+      const buf = device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(
+        buf, 0,
+        new Float32Array([1 / w, 1 / h, 0, 0]) as BufferSource,
+      );
+      bloomMipParamBuffers.push(buf);
+    }
 
-    // Bright pass reads scene HDR, writes A. Blur ping-pongs A↔B.
-    // Composite reads scene HDR + final bloom (= A after both blurs).
+    // Bind groups: one per source-mip, used both by downsample (when
+    // sampling mip i to write mip i+1) and upsample (when sampling mip
+    // i to write mip i-1 additively).
+    for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
+      pyramidBindGroups.push(device.createBindGroup({
+        layout: singleInputLayout,
+        entries: [
+          { binding: 0, resource: bloomMipViews[i]! },
+          { binding: 1, resource: postSampler },
+          { binding: 2, resource: { buffer: bloomMipParamBuffers[i]! } },
+        ],
+      }));
+    }
+
+    // Bright pass: reads hdrColor, writes mip 0. The uniform here is
+    // the bright-pass threshold (NOT a texel-step), so reuse the static
+    // brightPassUniform buffer.
     brightPassBindGroup = device.createBindGroup({
-      layout: brightPassLayout,
+      layout: singleInputLayout,
       entries: [
         { binding: 0, resource: hdrColorView },
         { binding: 1, resource: postSampler },
         { binding: 2, resource: { buffer: brightPassUniform } },
       ],
     });
-    blurBindGroupAB = device.createBindGroup({
-      layout: blurLayout,
-      entries: [
-        { binding: 0, resource: bloomAView },
-        { binding: 1, resource: postSampler },
-        { binding: 2, resource: { buffer: blurUniformH } },
-      ],
-    });
-    blurBindGroupBA = device.createBindGroup({
-      layout: blurLayout,
-      entries: [
-        { binding: 0, resource: bloomBView },
-        { binding: 1, resource: postSampler },
-        { binding: 2, resource: { buffer: blurUniformV } },
-      ],
-    });
+
+    // Composite: reads hdrColor + mip 0 (the accumulated bloom).
     compositeBindGroup = device.createBindGroup({
       layout: compositeLayout,
       entries: [
         { binding: 0, resource: hdrColorView },
-        { binding: 1, resource: bloomAView },
+        { binding: 1, resource: bloomMipViews[0]! },
         { binding: 2, resource: postSampler },
         { binding: 3, resource: { buffer: compositeUniform } },
       ],
     });
-
-    // Blur step distance in UV space = 1 / texture dimension (per-axis).
-    // Done at the bloom resolution, so the 9-tap kernel walks one bloom
-    // texel per step → ~9 bloom texels = ~18 screen texels at half-res.
-    device.queue.writeBuffer(
-      blurUniformH, 0,
-      new Float32Array([1 / bw, 0, 0, 0]) as BufferSource,
-    );
-    device.queue.writeBuffer(
-      blurUniformV, 0,
-      new Float32Array([0, 1 / bh, 0, 0]) as BufferSource,
-    );
 
     lastWidth = width;
     lastHeight = height;
@@ -565,6 +562,15 @@ export function createSceneRenderer(
 
       device.queue.writeBuffer(shadowUniformBuffer, 0, lightViewProj as BufferSource);
 
+      // Bloom uniforms. Written every frame so the user can drag the
+      // sliders on core/output and see the change live.
+      bloomScratch[0] = lighting.bloomThreshold;
+      bloomScratch[1] = lighting.bloomSoftKnee;
+      device.queue.writeBuffer(brightPassUniform, 0, bloomScratch as BufferSource);
+      bloomScratch[0] = lighting.bloomIntensity;
+      bloomScratch[1] = 0;
+      device.queue.writeBuffer(compositeUniform, 0, bloomScratch as BufferSource);
+
       // Camera basis (world space) = rows of modelView's rotation block.
       // modelView = T(0,0,-d) * R * T(-target); the upper-left 3×3 is R,
       // and rows of R are the world directions of the camera's right /
@@ -662,10 +668,10 @@ export function createSceneRenderer(
       }
       pass.end();
 
-      // Bright-pass: scene HDR → bloomA (half-res).
+      // Bright-pass: scene HDR → mip 0 (half-res, replace).
       const bright = encoder.beginRenderPass({
         colorAttachments: [
-          { view: bloomAView!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+          { view: bloomMipViews[0]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
         ],
       });
       bright.setPipeline(brightPassPipeline);
@@ -673,29 +679,39 @@ export function createSceneRenderer(
       bright.draw(3);
       bright.end();
 
-      // Blur horizontal: bloomA → bloomB.
-      const blurH = encoder.beginRenderPass({
-        colorAttachments: [
-          { view: bloomBView!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-        ],
-      });
-      blurH.setPipeline(blurPipeline);
-      blurH.setBindGroup(0, blurBindGroupAB!);
-      blurH.draw(3);
-      blurH.end();
+      // Downsample chain: mip 0 → 1 → 2 → ... → (count-1). Each pass
+      // reads the larger mip and writes a fresh smaller one.
+      for (let i = 0; i < BLOOM_MIP_COUNT - 1; i++) {
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [
+            { view: bloomMipViews[i + 1]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+          ],
+        });
+        pass.setPipeline(downsamplePipeline);
+        pass.setBindGroup(0, pyramidBindGroups[i]!);
+        pass.draw(3);
+        pass.end();
+      }
 
-      // Blur vertical: bloomB → bloomA.
-      const blurV = encoder.beginRenderPass({
-        colorAttachments: [
-          { view: bloomAView!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-        ],
-      });
-      blurV.setPipeline(blurPipeline);
-      blurV.setBindGroup(0, blurBindGroupBA!);
-      blurV.draw(3);
-      blurV.end();
+      // Upsample chain: mip (count-1) → (count-2) → ... → 0, additively.
+      // `loadOp: 'load'` preserves the downsample contribution at each
+      // level so the additive blend sums the two. Each upsample step's
+      // smaller-mip source is now the SUM of all smaller scales below
+      // it, so by the time we land on mip 0 it holds the full pyramid.
+      for (let i = BLOOM_MIP_COUNT - 1; i > 0; i--) {
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [
+            { view: bloomMipViews[i - 1]!, loadOp: 'load', storeOp: 'store' },
+          ],
+        });
+        pass.setPipeline(upsamplePipeline);
+        pass.setBindGroup(0, pyramidBindGroups[i]!);
+        pass.draw(3);
+        pass.end();
+      }
 
-      // Composite: scene HDR + bloomA → swapchain (tone-map + sRGB encode).
+      // Composite: scene HDR + mip 0 (accumulated bloom) → swapchain
+      // (tone-map + sRGB encode).
       const composite = encoder.beginRenderPass({
         colorAttachments: [
           { view: colorView, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' },

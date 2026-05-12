@@ -195,6 +195,24 @@ export interface LightingValue {
    * scenes with ~10-50 unit extents; larger scenes want smaller values.
    */
   fogDensity: number;
+  /**
+   * Bloom intensity — how much of the multi-mip pyramid blur mixes back
+   * into the scene. 0 disables bloom entirely; 0.1-0.2 reads as subtle
+   * "real lights are bright"; 0.4+ is dramatic / stylized.
+   */
+  bloomIntensity: number;
+  /**
+   * Bloom threshold — minimum linear-HDR luminance that contributes to
+   * bloom. 1.0 means "only true HDR pixels glow"; lower it (e.g. 0.5)
+   * to make mid-bright surfaces bloom too.
+   */
+  bloomThreshold: number;
+  /**
+   * Bloom soft-knee width — fades contribution in/out smoothly around
+   * the threshold. 0 = hard cutoff (banding-prone); higher values
+   * widen the transition.
+   */
+  bloomSoftKnee: number;
 }
 
 /**
@@ -209,6 +227,9 @@ export function defaultLighting(): LightingValue {
     ambient: [0.15, 0.15, 0.15],
     fogColor: [0.78, 0.82, 0.78],
     fogDensity: 0,
+    bloomIntensity: 0.15,
+    bloomThreshold: 1.0,
+    bloomSoftKnee: 0.5,
   };
 }
 

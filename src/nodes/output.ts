@@ -50,6 +50,24 @@ export const outputNode: NodeDef = {
       default: 0,
       description: 'fog per world unit; 0 = no fog. ~0.02-0.2 reads as atmospheric',
     },
+    {
+      name: 'bloom_intensity',
+      type: 'Float',
+      default: 0.15,
+      description: '0 disables bloom; 0.1-0.2 reads as "real lights are bright"; 0.4+ is stylized',
+    },
+    {
+      name: 'bloom_threshold',
+      type: 'Float',
+      default: 1.0,
+      description: 'minimum linear-HDR luminance that contributes to bloom. Lower = more midtones glow',
+    },
+    {
+      name: 'bloom_soft_knee',
+      type: 'Float',
+      default: 0.5,
+      description: 'softens the bloom threshold transition; 0 = hard cutoff',
+    },
   ],
   outputs: [
     { name: 'scene', type: 'Scene' },
@@ -62,12 +80,18 @@ export const outputNode: NodeDef = {
     const amb = inputs.ambient as [number, number, number, number];
     const fogC = inputs.fog_color as [number, number, number, number];
     const fogD = inputs.fog_density as number;
+    const bloomI = inputs.bloom_intensity as number;
+    const bloomT = inputs.bloom_threshold as number;
+    const bloomK = inputs.bloom_soft_knee as number;
     const lighting: LightingValue = {
       direction: dir,
       color: [col[0] * intensity, col[1] * intensity, col[2] * intensity],
       ambient: [amb[0], amb[1], amb[2]],
       fogColor: [fogC[0], fogC[1], fogC[2]],
       fogDensity: fogD,
+      bloomIntensity: bloomI,
+      bloomThreshold: bloomT,
+      bloomSoftKnee: bloomK,
     };
     return { scene: inputs.scene, lighting };
   },
