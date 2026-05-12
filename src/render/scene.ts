@@ -19,6 +19,7 @@ import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
 import bloomUpsampleShaderCode from './bloom-upsample.wgsl';
 import brightPassShaderCode from './bright-pass.wgsl';
 import compositeShaderCode from './composite.wgsl';
+import flatBackgroundShaderCode from './flat-background.wgsl';
 import shadowShaderCode from './shadow.wgsl';
 import skyShaderCode from './sky.wgsl';
 
@@ -71,6 +72,18 @@ export interface SceneRenderer {
     /** Orbit target in world space — center of the shadow region. */
     cameraTarget: [number, number, number];
     lighting: LightingValue;
+    /**
+     * Flat-preview mode for "inspect the asset" tiles (texture /
+     * heightfield previews). When true:
+     *   - the background pass draws a gray checkerboard instead of
+     *     the atmospheric sky (so transparency reads obviously and
+     *     the sky doesn't compete with the asset)
+     *   - composite skips Khronos Neutral tonemap so authored values
+     *     round-trip identity through srgb_to_linear ↔ linear_to_srgb
+     *
+     * Defaults to false; normal scenes get sky + tonemap as before.
+     */
+    flatPreview?: boolean;
   }): void;
 }
 
@@ -113,6 +126,29 @@ function createSkyPipeline(
   format: GPUTextureFormat,
 ): GPURenderPipeline {
   const module = device.createShaderModule({ code: skyShaderCode });
+  return device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module, entryPoint: 'vs_main' },
+    fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
+    depthStencil: {
+      format: 'depth32float',
+      depthWriteEnabled: false,
+      depthCompare: 'always',
+    },
+  });
+}
+
+// Background pipeline for flat-preview tiles. Same depth/format setup
+// as the sky pipeline (so the renderer can swap one for the other in
+// the main pass without other changes), but draws a screen-space
+// checkerboard with no uniforms — auto layout gives it an empty bind
+// group that we never bind.
+function createFlatBackgroundPipeline(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+): GPURenderPipeline {
+  const module = device.createShaderModule({ code: flatBackgroundShaderCode });
   return device.createRenderPipeline({
     layout: 'auto',
     vertex: { module, entryPoint: 'vs_main' },
@@ -270,6 +306,7 @@ export function createSceneRenderer(
   // the horizon — matches the PBR shader's fog so scene + sky meet at
   // a consistent color at distance.
   const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
+  const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
   const skyUniformBuffer = device.createBuffer({
     size: 80,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -500,7 +537,7 @@ export function createSceneRenderer(
   }
 
   return {
-    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting }) {
+    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false }) {
       const [width, height] = size;
       if (width !== lastWidth || height !== lastHeight) {
         rebuildIntermediates(width, height);
@@ -563,12 +600,14 @@ export function createSceneRenderer(
       device.queue.writeBuffer(shadowUniformBuffer, 0, lightViewProj as BufferSource);
 
       // Bloom uniforms. Written every frame so the user can drag the
-      // sliders on core/output and see the change live.
+      // sliders on core/output and see the change live. flatPreview
+      // disables tonemap so the asset's authored values round-trip
+      // identity to the display.
       bloomScratch[0] = lighting.bloomThreshold;
       bloomScratch[1] = lighting.bloomSoftKnee;
       device.queue.writeBuffer(brightPassUniform, 0, bloomScratch as BufferSource);
       bloomScratch[0] = lighting.bloomIntensity;
-      bloomScratch[1] = 0;
+      bloomScratch[1] = flatPreview ? 0 : 1; // tonemap_enabled
       device.queue.writeBuffer(compositeUniform, 0, bloomScratch as BufferSource);
 
       // Camera basis (world space) = rows of modelView's rotation block.
@@ -642,10 +681,17 @@ export function createSceneRenderer(
         },
       });
 
-      // Sky first — fills the background gradient.
-      pass.setPipeline(skyPipeline);
-      pass.setBindGroup(0, skyBindGroup);
-      pass.draw(3);
+      // Background fill first. Atmosphere sky for normal scenes; flat
+      // checkerboard for asset-inspection tiles. flatBackgroundPipeline
+      // has no uniforms so we don't bind a group for it.
+      if (flatPreview) {
+        pass.setPipeline(flatBackgroundPipeline);
+        pass.draw(3);
+      } else {
+        pass.setPipeline(skyPipeline);
+        pass.setBindGroup(0, skyBindGroup);
+        pass.draw(3);
+      }
 
       // Scene geometry, dispatched per kind. Scene bind group is set once;
       // pipeline switches when kindId changes, material bind group switches

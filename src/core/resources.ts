@@ -67,6 +67,13 @@ export interface PbrMaterial {
   detailScale?: number;
   /** 0 = no detail effect, 1 = full strength. Default 1. */
   detailStrength?: number;
+  /**
+   * When true, the shader outputs the basecolor (× tint × detail) directly,
+   * skipping all lighting math (sun, ambient, fog, shadows). Used by the
+   * preview pane's flat synthesized tiles so a user authoring a texture
+   * sees the texture as-is, not the lit version. Defaults to false.
+   */
+  unlit?: boolean;
 }
 
 /**

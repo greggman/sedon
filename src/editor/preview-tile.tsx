@@ -19,6 +19,8 @@ interface PreviewTileProps {
   cameraRef: React.MutableRefObject<CameraState>;
   /** Small label rendered over the corner of the canvas (the output socket name). */
   label: string;
+  /** Asset-inspection mode: checkerboard backdrop, no tonemap. */
+  flatPreview: boolean;
 }
 
 // One renderable preview. Owns its own canvas, GPU context, depth texture
@@ -26,7 +28,7 @@ interface PreviewTileProps {
 // any tile (or moving via WASD) updates every tile uniformly. All input
 // handling lives in the parent Preview's wrapper div — tile canvases are
 // pure render targets.
-export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewTileProps) {
+export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPreview }: PreviewTileProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
@@ -101,6 +103,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
         projection,
         cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
         lighting,
+        flatPreview,
       });
       gpu.device.queue.submit([encoder.finish()]);
     };
@@ -109,7 +112,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label }: PreviewT
       cancelled = true;
       cancelAnimationFrame(raf);
     };
-  }, [gpu, cameraRef, lighting]);
+  }, [gpu, cameraRef, lighting, flatPreview]);
 
   return (
     <div className="sedon-preview-tile">

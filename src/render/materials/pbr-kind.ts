@@ -67,14 +67,17 @@ export function createPbrKind(
         material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
 
       const paramBuffer = device.createBuffer({
-        size: 16, // four f32s: roughness, metallic, detailScale, detailStrength
+        // 4 + 1 floats, padded to 32 (next 16-byte boundary for WGSL UBO).
+        // Layout: roughness, metallic, detailScale, detailStrength, unlit.
+        size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
-      const paramData = new Float32Array(4);
+      const paramData = new Float32Array(8);
       paramData[0] = material.roughness;
       paramData[1] = material.metallic;
       paramData[2] = material.detailScale ?? 4;
       paramData[3] = material.detailStrength ?? 1;
+      paramData[4] = material.unlit ? 1 : 0;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
 
       return device.createBindGroup({

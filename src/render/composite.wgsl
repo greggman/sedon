@@ -10,6 +10,12 @@
 
 struct Params {
   bloom_intensity: f32,
+  // > 0.5 → apply Khronos Neutral tonemap before sRGB encode (default
+  // for actual scenes). ≤ 0.5 → skip tonemap, write linear→sRGB only.
+  // The "skip" path is used by flat texture-preview tiles so authored
+  // values display exactly as authored (round-trip identity for
+  // in-[0,1] colors).
+  tonemap_enabled: f32,
 };
 
 @group(0) @binding(0) var scene_tex: texture_2d<f32>;
@@ -62,6 +68,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let scene = textureSample(scene_tex, samp, in.uv).rgb;
   let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
   let combined = scene + bloom * params.bloom_intensity;
-  let display = linear_to_srgb(khronos_neutral_tonemap(combined));
-  return vec4f(display, 1.0);
+  let tonemapped = select(combined, khronos_neutral_tonemap(combined), params.tonemap_enabled > 0.5);
+  return vec4f(linear_to_srgb(tonemapped), 1.0);
 }

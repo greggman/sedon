@@ -38,6 +38,11 @@ struct Material {
   metallic: f32,
   detailScale: f32,
   detailStrength: f32,
+  // When unlit > 0.5, fs_main skips lighting and returns the
+  // (linearized) basecolor × tint × detail factor directly. Used by
+  // the preview pane's flat synthesized tiles so authoring a texture
+  // shows the texture itself.
+  unlit: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -231,6 +236,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // Apply the multiplier in linear space so its "0.5 = no-op" semantics
   // act on linear-light values.
   let albedo = srgb_to_linear(albedo_sample.rgb * in.tint.rgb) * detail_albedo_factor(in.uv);
+
+  // Unlit shortcut: return the basecolor (in linear HDR — composite
+  // still re-encodes sRGB so the round-trip is identity for in-[0,1]
+  // values). Branching on a uniform value keeps control flow uniform,
+  // so the subsequent texture/comparison samples below are safe to
+  // skip. Used by synthesized texture/material/heightfield previews so
+  // authored values display as authored.
+  if (material.unlit > 0.5) {
+    return vec4f(albedo, albedo_sample.a);
+  }
+
   let n_geom = normalize(in.view_normal);
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let shadow = sample_shadow(in.world_pos);

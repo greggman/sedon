@@ -58,7 +58,6 @@ export function Preview() {
   const registry = useRegistry();
 
   const [tiles, setTiles] = useState<PreviewTileSpec[]>([]);
-  const [lighting, setLighting] = useState<LightingValue>(defaultLighting());
 
   // Acquire the GPU device once. Canvases are configured per-tile against
   // this shared device.
@@ -294,16 +293,15 @@ export function Preview() {
         return;
       }
       if (cancelled) return;
-      const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs);
       const nextLighting =
         (result.outputs.lighting as LightingValue | undefined) ?? defaultLighting();
+      const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs, nextLighting);
       // For backward compat with the in-node previews and anything else
       // reading evalResult.scene, surface the first tile's scene (or an
       // empty scene if none).
       const firstScene = nextTiles[0]?.scene ?? { entities: [] };
       setEvalResult({ scene: firstScene, allOutputs: result.allOutputs });
       setTiles(nextTiles);
-      setLighting(nextLighting);
       setError(null);
     })();
     return () => {
@@ -324,9 +322,10 @@ export function Preview() {
               key={t.name}
               gpu={gpu}
               scene={t.scene}
-              lighting={lighting}
+              lighting={t.lighting}
               cameraRef={cameraRef}
               label={t.name}
+              flatPreview={t.flatPreview}
             />
           ))}
       </div>

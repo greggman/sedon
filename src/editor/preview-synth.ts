@@ -2,6 +2,7 @@ import type { NodeDef, NodeOutputs } from '../core/node-def.js';
 import type {
   GeometryValue,
   HeightfieldValue,
+  LightingValue,
   MaterialValue,
   PbrMaterial,
   SceneValue,
@@ -53,6 +54,9 @@ function getResources(device: GPUDevice): PreviewResources {
     height: 1,
   };
 
+  // Default material for Geometry previews — surfaces show the shape
+  // (which DOES want lighting so silhouettes read), so unlit stays
+  // false here.
   const defaultMaterial: PbrMaterial = {
     kind: 'pbr',
     basecolor: white,
@@ -72,6 +76,22 @@ export interface PreviewTileSpec {
   type: string;
   /** Scene the renderer should draw for this tile. */
   scene: SceneValue;
+  /**
+   * Lighting for this tile. For `Scene` outputs we pass the host
+   * lighting through unchanged so the preview matches the rendered
+   * scene; for synthesized previews (Texture2D / Material / Geometry /
+   * Heightfield) we force bloom off so authoring a bright texture
+   * doesn't get blown out by glow.
+   */
+  lighting: LightingValue;
+  /**
+   * Flat-preview mode for asset-inspection tiles (Texture2D /
+   * Heightfield). When true the renderer draws a gray checkerboard
+   * backdrop and skips tonemap so authored colors display unchanged.
+   * Material / Geometry / Scene tiles keep this false — they want the
+   * normal lit sky.
+   */
+  flatPreview: boolean;
 }
 
 // Turn the root node's outputs into a list of tiles, one per renderable
@@ -90,15 +110,33 @@ export function synthesizeTiles(
   device: GPUDevice,
   rootDef: NodeDef | undefined,
   rootOutputs: NodeOutputs,
+  baseLighting: LightingValue,
 ): PreviewTileSpec[] {
   if (!rootDef) return [];
   const res = getResources(device);
+  // Synthesized non-Scene previews disable bloom so HDR-bright authored
+  // textures don't get smeared into a glow halo that hides their color.
+  const dimLighting: LightingValue = { ...baseLighting, bloomIntensity: 0 };
+  // Texture2D / Heightfield previews additionally use flat-preview mode:
+  // checkerboard background + tonemap off, so authored values are
+  // shown WYSIWYG. Material / Geometry previews want lighting (to read
+  // roughness and shape) so they stay non-flat.
+  const FLAT_TYPES = new Set(['Texture2D', 'Heightfield']);
   const tiles: PreviewTileSpec[] = [];
   for (const out of rootDef.outputs) {
     const value = rootOutputs[out.name];
     if (value === undefined) continue;
     const scene = synthesize(value, out.type, res);
-    if (scene) tiles.push({ name: out.name, type: out.type, scene });
+    if (scene) {
+      const isScene = out.type === 'Scene';
+      tiles.push({
+        name: out.name,
+        type: out.type,
+        scene,
+        lighting: isScene ? baseLighting : dimLighting,
+        flatPreview: FLAT_TYPES.has(out.type),
+      });
+    }
   }
   return tiles;
 }
@@ -116,6 +154,10 @@ function synthesize(
     case 'Heightfield':
       return planeWithBasecolor((value as HeightfieldValue).texture, res);
     case 'Material':
+      // PBR materials are authored to be lit, so a "preview the
+      // material" tile keeps lighting on — that's what shows roughness
+      // / metallic differences. (For a totally flat material preview
+      // we'd need a separate convention.)
       return {
         entities: [
           {
@@ -142,6 +184,10 @@ function synthesize(
   }
 }
 
+// Texture2D / Heightfield previews want WYSIWYG — the user is
+// authoring a noise / colorize chain and needs to see the actual
+// pixel values, not the lit version. Flag the material `unlit` so
+// the PBR shader skips lighting and writes the basecolor directly.
 function planeWithBasecolor(
   basecolor: Texture2DValue,
   res: PreviewResources,
@@ -151,6 +197,7 @@ function planeWithBasecolor(
     basecolor,
     roughness: 0.9,
     metallic: 0,
+    unlit: true,
   };
   return {
     entities: [
