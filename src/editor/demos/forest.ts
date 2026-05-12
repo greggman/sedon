@@ -159,7 +159,7 @@ export function createForestDemo(): {
     inputValues: {
       // Density scaled down for the 100m world — fog fully fades distant
       // geometry by the far edge of the terrain.
-      fog_density: 0.012,
+      fog_density: 0.005,
       fog_color: [0.78, 0.82, 0.78, 1],
     },
   });

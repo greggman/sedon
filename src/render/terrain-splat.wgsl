@@ -127,6 +127,8 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
 // — that's important: blending after lighting (rather than blending albedos
 // then lighting once) makes the per-layer roughness contribute to the
 // specular response rather than averaging out.
+// Takes already-linearized albedo. light_color / ambient are sRGB on
+// the uniform side, linearized here so lighting math is in linear-light.
 fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
@@ -137,6 +139,8 @@ fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32
   );
   let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
+  let light_color = srgb_to_linear(uniforms.lightColor);
+  let ambient = srgb_to_linear(uniforms.ambient);
 
   let n_dot_v = max(dot(n, v), 0.0);
   let n_dot_l = max(dot(n, l), 0.0);
@@ -152,14 +156,43 @@ fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32
   let k_s = f;
   let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
-  let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l * shadow;
-  let ambient_term = albedo * uniforms.ambient;
+  let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l * shadow;
+  let ambient_term = albedo * ambient;
   return direct + ambient_term;
 }
 
 fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   let visibility = exp(-uniforms.fog.w * abs(view_pos_z));
-  return mix(uniforms.fog.xyz, lit, visibility);
+  return mix(srgb_to_linear(uniforms.fog.xyz), lit, visibility);
+}
+
+// Same sRGB ↔ linear + ACES trio as pbr.wgsl. Inlined rather than shared
+// because WGSL has no import mechanism — keep the copies in sync when
+// either is touched. See pbr.wgsl for the full reasoning.
+fn srgb_to_linear(color: vec3f) -> vec3f {
+  return pow(color, vec3f(2.2));
+}
+
+fn linear_to_srgb(color: vec3f) -> vec3f {
+  return pow(color, vec3f(1.0 / 2.2));
+}
+
+fn khronos_neutral_tonemap(color_in: vec3f) -> vec3f {
+  let startCompression = 0.8 - 0.04;
+  let desaturation = 0.15;
+  var color = color_in;
+  let x = min(color.r, min(color.g, color.b));
+  let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+  color = color - vec3f(offset);
+  let peak = max(color.r, max(color.g, color.b));
+  if (peak < startCompression) {
+    return color;
+  }
+  let d = 1.0 - startCompression;
+  let newPeak = 1.0 - d * d / (peak + d - startCompression);
+  color = color * (newPeak / peak);
+  let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+  return mix(color, vec3f(newPeak), g);
 }
 
 // Same cotangent-frame trick as the PBR shader. Reconstructs the
@@ -184,8 +217,10 @@ fn cotangent_frame(n: vec3f, p: vec3f, uv: vec2f) -> mat3x3f {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let tiled_uv = in.uv * params.tile_scale;
-  let aa = textureSample(layerA, samp, tiled_uv).rgb * in.tint.rgb;
-  let bb = textureSample(layerB, samp, tiled_uv).rgb * in.tint.rgb;
+  // Layer basecolors + tint are sRGB-authored colors; mask is data (0..1)
+  // and stays linear.
+  let aa = srgb_to_linear(textureSample(layerA, samp, tiled_uv).rgb * in.tint.rgb);
+  let bb = srgb_to_linear(textureSample(layerB, samp, tiled_uv).rgb * in.tint.rgb);
   let t = clamp(textureSample(mask, samp, in.uv).r, 0.0, 1.0);
 
   // Sample per-layer tangent-space normals, mix by mask, perturb the
@@ -213,6 +248,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let lit_b = shade(bb, in.view_pos, n, params.roughnessB, 0.0, shadow);
   let lit = mix(lit_a, lit_b, t);
   let final_color = apply_fog(lit, in.view_pos.z);
+  let display = linear_to_srgb(khronos_neutral_tonemap(final_color));
 
-  return vec4f(final_color, 1.0);
+  return vec4f(display, 1.0);
 }

@@ -183,6 +183,8 @@ fn detail_albedo_factor(uv: vec2f) -> f32 {
   return 1.0 + (sample - 0.5) * 2.0 * material.detailStrength;
 }
 
+// Takes already-linearized albedo. light_color and ambient are sRGB on
+// the uniform side, linearized here.
 fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
@@ -193,7 +195,8 @@ fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, meta
   );
   let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
-  let light_color = uniforms.lightColor;
+  let light_color = srgb_to_linear(uniforms.lightColor);
+  let ambient = srgb_to_linear(uniforms.ambient);
 
   let n_dot_v = max(dot(n, v), 0.0);
   let n_dot_l = max(dot(n, l), 0.0);
@@ -213,25 +216,81 @@ fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, meta
   // wrong but visually right: a fully-shadowed surface still receives sky
   // bounce light and would otherwise read as pure black.
   let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l * shadow;
-  let ambient_term = albedo * uniforms.ambient;
+  let ambient_term = albedo * ambient;
   return direct + ambient_term;
 }
 
+// Fog color is sRGB on the uniform side; linearize before mixing in
+// linear-light space.
 fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   let visibility = exp(-uniforms.fog.w * abs(view_pos_z));
-  return mix(uniforms.fog.xyz, lit, visibility);
+  return mix(srgb_to_linear(uniforms.fog.xyz), lit, visibility);
+}
+
+// sRGB ↔ linear via a gamma-2.2 approximation. Cheaper than the true
+// piecewise sRGB curve and visually indistinguishable.
+//
+// Authored colors (basecolor textures, tints, light/ambient/fog/sky
+// uniforms) are sRGB by convention — the user picks values that look
+// right on a display. We linearize on entry, do lighting math in linear
+// space, then tonemap + re-encode on exit. The round trip is identity
+// for unlit surfaces in [0, 1] (so authored colors are preserved) and
+// applies ACES only to HDR values (lit surfaces past sun intensity 1).
+//
+// "Data" textures — normal maps, masks, detail factors, roughness —
+// stay linear: no conversion either way.
+fn srgb_to_linear(color: vec3f) -> vec3f {
+  return pow(color, vec3f(2.2));
+}
+
+fn linear_to_srgb(color: vec3f) -> vec3f {
+  return pow(color, vec3f(1.0 / 2.2));
+}
+
+// Khronos PBR Neutral tonemapping. Same shape as the curve used by
+// three.js / the official glTF reference viewer for PBR rendering:
+// identity below ~0.76, smooth highlight roll-off above, with a small
+// desaturation as values approach pure white. Geared toward "authored
+// colors should look like authored colors" — better fit for a
+// content-authoring tool than ACES, which lifts midtones for a cinema
+// look.
+//
+// Reference: https://modelviewer.dev/examples/tone-mapping
+fn khronos_neutral_tonemap(color_in: vec3f) -> vec3f {
+  let startCompression = 0.8 - 0.04;
+  let desaturation = 0.15;
+  var color = color_in;
+  // Pre-shift the input so very dark colors lose a small black-floor
+  // offset — sidesteps a subtle hue cast at low intensities.
+  let x = min(color.r, min(color.g, color.b));
+  let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+  color = color - vec3f(offset);
+  let peak = max(color.r, max(color.g, color.b));
+  if (peak < startCompression) {
+    return color;
+  }
+  let d = 1.0 - startCompression;
+  let newPeak = 1.0 - d * d / (peak + d - startCompression);
+  color = color * (newPeak / peak);
+  let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+  return mix(color, vec3f(newPeak), g);
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo_sample = textureSample(basecolor, samp, in.uv);
-  let albedo = albedo_sample.rgb * in.tint.rgb * detail_albedo_factor(in.uv);
+  // basecolor + tint are sRGB-authored colors; the detail factor is a
+  // greyscale multiplier (data, not color) and stays in unit space.
+  // Apply the multiplier in linear space so its "0.5 = no-op" semantics
+  // act on linear-light values.
+  let albedo = srgb_to_linear(albedo_sample.rgb * in.tint.rgb) * detail_albedo_factor(in.uv);
   let n_geom = normalize(in.view_normal);
   let n = perturb_normal(n_geom, in.view_pos, in.uv);
   let shadow = sample_shadow(in.world_pos);
 
   let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic, shadow);
   let final_color = apply_fog(lit, in.view_pos.z);
+  let display = linear_to_srgb(khronos_neutral_tonemap(final_color));
 
-  return vec4f(final_color, albedo_sample.a);
+  return vec4f(display, albedo_sample.a);
 }

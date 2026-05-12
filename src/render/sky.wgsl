@@ -35,10 +35,43 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
   return out;
 }
 
+// Same sRGB ↔ linear + ACES trio as pbr.wgsl. The sky goes through the
+// same pipeline so it sits in the same display space as lit geometry —
+// otherwise the gradient would look mismatched against a tonemapped
+// scene.
+fn srgb_to_linear(color: vec3f) -> vec3f {
+  return pow(color, vec3f(2.2));
+}
+
+fn linear_to_srgb(color: vec3f) -> vec3f {
+  return pow(color, vec3f(1.0 / 2.2));
+}
+
+fn khronos_neutral_tonemap(color_in: vec3f) -> vec3f {
+  let startCompression = 0.8 - 0.04;
+  let desaturation = 0.15;
+  var color = color_in;
+  let x = min(color.r, min(color.g, color.b));
+  let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+  color = color - vec3f(offset);
+  let peak = max(color.r, max(color.g, color.b));
+  if (peak < startCompression) {
+    return color;
+  }
+  let d = 1.0 - startCompression;
+  let newPeak = 1.0 - d * d / (peak + d - startCompression);
+  color = color * (newPeak / peak);
+  let g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+  return mix(color, vec3f(newPeak), g);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
-  // t: 0 at the top of the screen, 1 at the bottom.
+  // t: 0 at the top of the screen, 1 at the bottom. sky.top/bottom are
+  // sRGB-authored; linearize, mix in linear-light, tonemap, then re-
+  // encode for the display.
   let t = 0.5 - in.screen_uv.y * 0.5;
-  let color = mix(sky.top, sky.bottom, t);
-  return vec4f(color, 1.0);
+  let color = mix(srgb_to_linear(sky.top), srgb_to_linear(sky.bottom), t);
+  let display = linear_to_srgb(khronos_neutral_tonemap(color));
+  return vec4f(display, 1.0);
 }
