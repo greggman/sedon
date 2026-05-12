@@ -221,16 +221,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let below = smoothstep(0.0, -0.08, view_dir.y);
   color = mix(color, fog_linear, below);
 
-  // Sun disc on top. The real sun is ~0.27° angular radius; we draw it
-  // at ~0.55° so it reads visibly. Soft edge between an inner "core"
-  // angle and an outer "fade" angle so the disc isn't a hard pixel
-  // step. The disc HDR value (20× sun_intensity) is well above bloom's
-  // threshold, so the bloom pass picks it up and adds the surrounding
-  // glow that makes it read as "the sun" rather than "a white dot."
+  // Twilight → night transition based on sun elevation. The atmosphere
+  // model returns ~0 once the sun is below the horizon (every sample's
+  // light ray hits the planet) — without this fade we'd be left with
+  // the fog color or worse, so "sun below the floor" reads as foggy
+  // void rather than night. The scene-side lighting + ambient are
+  // also dimmed in scene.ts, so the whole environment darkens together.
+  let night_factor = smoothstep(0.0, -0.2, sun_dir.y);
+  let night_sky = vec3f(0.003, 0.006, 0.015); // dim navy
+  color = mix(color, night_sky, night_factor);
+
+  // Sun disc — only when the sun is above the horizon. Faded as it
+  // crosses so the disc doesn't pop out as it sets. The HDR value
+  // (20× sun_intensity) is well above bloom's threshold, so the bloom
+  // pass adds the surrounding glow that reads as "the sun" rather
+  // than "a white dot."
+  let sun_visible = smoothstep(-0.02, 0.02, sun_dir.y);
   let mu = dot(view_dir, sun_dir);
   let sun_inner = cos(0.005);  // ~0.29°
   let sun_outer = cos(0.012);  // ~0.69°
-  let alpha = smoothstep(sun_outer, sun_inner, mu);
+  let alpha = smoothstep(sun_outer, sun_inner, mu) * sun_visible;
   if (alpha > 0.0) {
     color = color + alpha * vec3f(sun_intensity * 20.0);
   }

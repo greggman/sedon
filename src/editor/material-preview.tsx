@@ -83,12 +83,13 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
         rotationY(cam.yaw),
       );
 
-      // In-node previews use a neutral dark background — a sky gradient
-      // would compete with the material for the reader's attention. Lit by
-      // the default sun + ambient.
+      // In-node previews use the default lighting / atmospheric sky.
+      // The atmosphere is sun-driven now, so we can't tint to a neutral
+      // dark background by overriding sky colors — the material sphere
+      // sits against the same physical sky as the main preview. Future
+      // option: add a "background override" path that bypasses the
+      // atmosphere shader for in-node previews.
       const previewLighting = defaultLighting();
-      previewLighting.skyTop = [0.06, 0.06, 0.08];
-      previewLighting.skyBottom = [0.06, 0.06, 0.08];
 
       const encoder = device.createCommandEncoder();
       r.renderer.render({

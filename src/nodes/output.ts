@@ -39,22 +39,10 @@ export const outputNode: NodeDef = {
       description: 'flat ambient term added to every fragment, multiplied by albedo',
     },
     {
-      name: 'sky_top',
-      type: 'Color',
-      default: [0.42, 0.6, 0.85, 1],
-      description: 'sky color at the top of the screen (zenith); alpha ignored',
-    },
-    {
-      name: 'sky_bottom',
-      type: 'Color',
-      default: [0.78, 0.82, 0.78, 1],
-      description: 'sky color at the bottom of the screen (horizon); alpha ignored',
-    },
-    {
       name: 'fog_color',
       type: 'Color',
       default: [0.78, 0.82, 0.78, 1],
-      description: 'distant fog tint; usually matched to the horizon sky color',
+      description: 'distant fog tint; the atmospheric sky also blends toward this near the horizon so distant geometry and sky meet at the same color',
     },
     {
       name: 'fog_density',
@@ -72,16 +60,12 @@ export const outputNode: NodeDef = {
     const col = inputs.light_color as [number, number, number, number];
     const intensity = inputs.light_intensity as number;
     const amb = inputs.ambient as [number, number, number, number];
-    const skyT = inputs.sky_top as [number, number, number, number];
-    const skyB = inputs.sky_bottom as [number, number, number, number];
     const fogC = inputs.fog_color as [number, number, number, number];
     const fogD = inputs.fog_density as number;
     const lighting: LightingValue = {
       direction: dir,
       color: [col[0] * intensity, col[1] * intensity, col[2] * intensity],
       ambient: [amb[0], amb[1], amb[2]],
-      skyTop: [skyT[0], skyT[1], skyT[2]],
-      skyBottom: [skyB[0], skyB[1], skyB[2]],
       fogColor: [fogC[0], fogC[1], fogC[2]],
       fogDensity: fogD,
     };

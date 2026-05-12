@@ -513,12 +513,29 @@ export function createSceneRenderer(
       // camera target so the shadow box tracks the user. lookAt with up=+Y
       // works for any light angle that isn't straight overhead; demos use
       // slanted sun so no fallback needed yet.
-      const ld = lighting.direction;
-      const ldLen = Math.hypot(ld[0], ld[1], ld[2]);
+      // Sun direction in world space, normalized. Single source used by
+      // shadow eye, scene-uniform lighting block, and sky uniform.
+      const sd = lighting.direction;
+      const sdLen = Math.hypot(sd[0], sd[1], sd[2]);
+      const sdx = sd[0] / sdLen;
+      const sdy = sd[1] / sdLen;
+      const sdz = sd[2] / sdLen;
+      // Day/night factor based on sun elevation. 0 below the horizon,
+      // smoothly rises to 1 over the first ~6° of elevation. Direct
+      // sun light and fog color scale by it (both go to 0 at night so
+      // the scene goes dark and distant geometry stops fading toward
+      // a bright fog tone). Ambient gets a softer curve with a 10%
+      // floor — backlit surfaces would otherwise be pure black at
+      // night. Without these auto-fades, putting the sun below the
+      // floor leaves the scene daylit while the sky goes dark.
+      const dayT = Math.max(0, Math.min(1, (sdy + 0.05) / 0.15));
+      const dayFactor = dayT * dayT * (3 - 2 * dayT);
+      const ambFactor = 0.1 + 0.9 * dayFactor;
+
       const eye: [number, number, number] = [
-        cameraTarget[0] + (ld[0] / ldLen) * SHADOW_EYE_DISTANCE,
-        cameraTarget[1] + (ld[1] / ldLen) * SHADOW_EYE_DISTANCE,
-        cameraTarget[2] + (ld[2] / ldLen) * SHADOW_EYE_DISTANCE,
+        cameraTarget[0] + sdx * SHADOW_EYE_DISTANCE,
+        cameraTarget[1] + sdy * SHADOW_EYE_DISTANCE,
+        cameraTarget[2] + sdz * SHADOW_EYE_DISTANCE,
       ];
       const lightView = lookAt(eye, cameraTarget, [0, 1, 0]);
       const lightProj = orthographic(
@@ -531,18 +548,18 @@ export function createSceneRenderer(
       device.queue.writeBuffer(sceneUniformBuffer, 0, modelView as BufferSource);
       device.queue.writeBuffer(sceneUniformBuffer, 64, projection as BufferSource);
       device.queue.writeBuffer(sceneUniformBuffer, 128, lightViewProj as BufferSource);
-      lightingScratch[0]  = lighting.direction[0];
-      lightingScratch[1]  = lighting.direction[1];
-      lightingScratch[2]  = lighting.direction[2];
-      lightingScratch[4]  = lighting.color[0];
-      lightingScratch[5]  = lighting.color[1];
-      lightingScratch[6]  = lighting.color[2];
-      lightingScratch[8]  = lighting.ambient[0];
-      lightingScratch[9]  = lighting.ambient[1];
-      lightingScratch[10] = lighting.ambient[2];
-      lightingScratch[12] = lighting.fogColor[0];
-      lightingScratch[13] = lighting.fogColor[1];
-      lightingScratch[14] = lighting.fogColor[2];
+      lightingScratch[0]  = sdx;
+      lightingScratch[1]  = sdy;
+      lightingScratch[2]  = sdz;
+      lightingScratch[4]  = lighting.color[0] * dayFactor;
+      lightingScratch[5]  = lighting.color[1] * dayFactor;
+      lightingScratch[6]  = lighting.color[2] * dayFactor;
+      lightingScratch[8]  = lighting.ambient[0] * ambFactor;
+      lightingScratch[9]  = lighting.ambient[1] * ambFactor;
+      lightingScratch[10] = lighting.ambient[2] * ambFactor;
+      lightingScratch[12] = lighting.fogColor[0] * dayFactor;
+      lightingScratch[13] = lighting.fogColor[1] * dayFactor;
+      lightingScratch[14] = lighting.fogColor[2] * dayFactor;
       lightingScratch[15] = lighting.fogDensity;
       device.queue.writeBuffer(sceneUniformBuffer, 192, lightingScratch as BufferSource);
 
@@ -562,18 +579,17 @@ export function createSceneRenderer(
       const f = projection[5]!;
       const tanHalfFov = 1 / f;
       const aspect = f / projection[0]!;
-      // Normalize sun direction since the shader expects a unit vector.
-      const sd = lighting.direction;
-      const sdLen = Math.hypot(sd[0], sd[1], sd[2]);
-      const sdx = sd[0] / sdLen, sdy = sd[1] / sdLen, sdz = sd[2] / sdLen;
 
       skyScratch[0]  = rightX;  skyScratch[1]  = rightY;  skyScratch[2]  = rightZ;  skyScratch[3]  = tanHalfFov;
       skyScratch[4]  = upX;     skyScratch[5]  = upY;     skyScratch[6]  = upZ;     skyScratch[7]  = aspect;
       skyScratch[8]  = fwdX;    skyScratch[9]  = fwdY;    skyScratch[10] = fwdZ;    skyScratch[11] = SUN_INTENSITY;
       skyScratch[12] = sdx;     skyScratch[13] = sdy;     skyScratch[14] = sdz;     skyScratch[15] = 0;
-      skyScratch[16] = lighting.fogColor[0];
-      skyScratch[17] = lighting.fogColor[1];
-      skyScratch[18] = lighting.fogColor[2];
+      // Fog color matches what we just wrote into scene uniforms, so
+      // sky's horizon blend uses the same (day/night-faded) color the
+      // scene fog fades distant geometry into.
+      skyScratch[16] = lighting.fogColor[0] * dayFactor;
+      skyScratch[17] = lighting.fogColor[1] * dayFactor;
+      skyScratch[18] = lighting.fogColor[2] * dayFactor;
       skyScratch[19] = 0;
       device.queue.writeBuffer(skyUniformBuffer, 0, skyScratch as BufferSource);
 
