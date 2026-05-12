@@ -1,4 +1,4 @@
-import type { CpuMeshRef, GeometryValue, PointCloudValue } from '../core/resources.js';
+import { reusableBuffer, type CpuMeshRef, type GeometryValue, type PointCloudValue } from '../core/resources.js';
 import {
   multiply,
   rotationX,
@@ -10,30 +10,54 @@ import {
 
 export type CpuMesh = CpuMeshRef;
 
-export function uploadMeshToGpu(device: GPUDevice, mesh: CpuMesh): GeometryValue {
-  const positionBuffer = device.createBuffer({
-    size: mesh.positions.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(positionBuffer, 0, mesh.positions as BufferSource);
-
-  const normalBuffer = device.createBuffer({
-    size: mesh.normals.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(normalBuffer, 0, mesh.normals as BufferSource);
-
-  const uvBuffer = device.createBuffer({
-    size: mesh.uvs.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(uvBuffer, 0, mesh.uvs as BufferSource);
-
-  const indexBuffer = device.createBuffer({
-    size: mesh.indices.byteLength,
-    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(indexBuffer, 0, mesh.indices as BufferSource);
+/**
+ * Upload a CPU mesh as a renderable GeometryValue. If `previous` is
+ * supplied (typically the node's `ctx.previousOutput?.geometry`), each
+ * vertex/index buffer is reused when its byte size matches — we just
+ * writeBuffer new contents in place. This makes nodes whose
+ * "topology" stays put (sphere with the same segments + rings;
+ * heightfield-to-mesh with the same divisions) cheap to re-evaluate
+ * across drag-edits of any non-shape parameter.
+ *
+ * Per-buffer matching: if e.g. only the index buffer would change size
+ * (rare — usually all four scale together), the matching buffers are
+ * reused and the others reallocated. So callers don't need to gate the
+ * whole call on a shape check.
+ */
+export function uploadMeshToGpu(
+  device: GPUDevice,
+  mesh: CpuMesh,
+  previous?: GeometryValue,
+): GeometryValue {
+  // GPUBufferUsage isn't a runtime-resolvable name in the Node test
+  // environment (no WebGPU at import time), so we look up the flags
+  // inside the function rather than at module scope.
+  const vertexUsage = GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST;
+  const indexUsage = GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST;
+  const positionBuffer = reusableBuffer(
+    device,
+    previous?.positionBuffer,
+    mesh.positions as BufferSource,
+    vertexUsage,
+  );
+  const normalBuffer = reusableBuffer(
+    device,
+    previous?.normalBuffer,
+    mesh.normals as BufferSource,
+    vertexUsage,
+  );
+  const uvBuffer = reusableBuffer(
+    device,
+    previous?.uvBuffer,
+    mesh.uvs as BufferSource,
+    vertexUsage,
+  );
+  const indexBuffer = reusableBuffer(
+    device,
+    previous?.indexBuffer,
+    mesh.indices as BufferSource,
+    indexUsage,
+  );
 
   return {
     positionBuffer,

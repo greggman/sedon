@@ -31,6 +31,8 @@ export const heightfieldToMeshNode: NodeDef = {
       divX: Math.max(1, Math.round(divisions[0])),
       divZ: Math.max(1, Math.round(divisions[1])),
     });
-    return { geometry: uploadMeshToGpu(device, mesh) };
+    return {
+      geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

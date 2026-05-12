@@ -20,6 +20,8 @@ export const sphereNode: NodeDef = {
       inputs.segments as number,
       inputs.rings as number,
     );
-    return { geometry: uploadMeshToGpu(device, mesh) };
+    return {
+      geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

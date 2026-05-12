@@ -54,6 +54,8 @@ export const uvTransformNode: NodeDef = {
       uvs,
       indices: input.mesh.indices,
     };
-    return { geometry: uploadMeshToGpu(device, out) };
+    return {
+      geometry: uploadMeshToGpu(device, out, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

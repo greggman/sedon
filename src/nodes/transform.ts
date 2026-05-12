@@ -28,6 +28,8 @@ export const transformNode: NodeDef = {
       inputs.rotate as [number, number, number],
       inputs.scale as [number, number, number],
     );
-    return { geometry: uploadMeshToGpu(device, transformed) };
+    return {
+      geometry: uploadMeshToGpu(device, transformed, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

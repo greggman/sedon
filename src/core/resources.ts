@@ -253,6 +253,34 @@ export function identityTint(): Float32Array {
 }
 
 /**
+ * Acquire a GPUBuffer that's safe to fill with `data`, reusing the
+ * previous buffer when the byte size already matches. Mirrors
+ * `reusableTexture` for GeometryValue's vertex/index buffers: when only
+ * non-shape parameters change (e.g. heightfield-to-mesh recomputing
+ * displacements at the same divisions, sphere recomputing positions at
+ * the same segment count), the same GPUBuffer object stays put and we
+ * just queue a writeBuffer instead of allocating + destroying.
+ *
+ * Safe to mutate because eval-cache fingerprints include nodeId, so the
+ * passed-in `previous` is the same node's prior buffer — never shared
+ * across nodes whose cached output could be corrupted by the write.
+ */
+export function reusableBuffer(
+  device: GPUDevice,
+  previous: GPUBuffer | undefined,
+  data: BufferSource,
+  usage: GPUBufferUsageFlags,
+): GPUBuffer {
+  if (previous !== undefined && previous.size === data.byteLength) {
+    device.queue.writeBuffer(previous, 0, data);
+    return previous;
+  }
+  const buffer = device.createBuffer({ size: data.byteLength, usage });
+  device.queue.writeBuffer(buffer, 0, data);
+  return buffer;
+}
+
+/**
  * Acquire a Texture2DValue suitable for re-rendering into. Texture-
  * producing nodes (worley, perlin, ridged-noise, etc.) call this with
  * their `ctx.previousOutput` and the dimensions they need; if the prior

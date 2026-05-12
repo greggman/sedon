@@ -86,6 +86,8 @@ export const instanceGeometryOnPointsNode: NodeDef = {
       ...(perPointYaw ? { perPointYaw: perPointYaw.values } : {}),
       ...(perPointActive ? { perPointActive: perPointActive.values } : {}),
     });
-    return { geometry: uploadMeshToGpu(device, realized) };
+    return {
+      geometry: uploadMeshToGpu(device, realized, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

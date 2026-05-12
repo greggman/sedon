@@ -22,6 +22,8 @@ export const mergeGeometryNode: NodeDef = {
       );
     }
     const merged = mergeMeshes(a.mesh, b.mesh);
-    return { geometry: uploadMeshToGpu(device, merged) };
+    return {
+      geometry: uploadMeshToGpu(device, merged, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

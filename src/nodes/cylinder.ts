@@ -20,6 +20,8 @@ export const cylinderNode: NodeDef = {
       inputs.height as number,
       inputs.segments as number,
     );
-    return { geometry: uploadMeshToGpu(device, mesh) };
+    return {
+      geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };

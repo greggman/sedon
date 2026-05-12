@@ -14,6 +14,8 @@ export const cubeNode: NodeDef = {
   evaluate(ctx, inputs): { geometry: GeometryValue } {
     const device = requireDevice(ctx);
     const mesh = generateCube(inputs.size as number);
-    return { geometry: uploadMeshToGpu(device, mesh) };
+    return {
+      geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
+    };
   },
 };
