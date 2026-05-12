@@ -474,18 +474,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       } else {
         const sg = state.subgraphs.find((s) => s.id === id);
         if (!sg) return;
-        // Eval root is always the boundary output. The preview pane reads
-        // its outputs (one per declared subgraph output) and synthesizes
-        // a tile per renderable value — so a bark-texture subgraph that
-        // outputs basecolor + normal + detail_* renders four side-by-side
-        // tiles instead of one scene. core/output nodes inside a subgraph
-        // still run (the evaluator visits every node) but their outputs
-        // aren't surfaced — they exist as authoring scratch space until
-        // we add an explicit "override preview" mechanism.
+        // Prefer a core/output inside the subgraph as the eval root when
+        // viewing standalone — that's the user's "this is how I want
+        // this previewed" override. Falls back to the boundary output
+        // otherwise; the preview pane then synthesizes one tile per
+        // declared subgraph output (Texture2D → plane, Material →
+        // sphere, etc.).
+        //
+        // Subgraphs whose boundary output depends on a parent-supplied
+        // input (e.g. tree-subgraphs whose scatter needs `points`) need
+        // a core/output to render anything standalone, since the
+        // boundary output would otherwise see undefined and return
+        // nothing.
+        const previewOutput = sg.graph.nodes.find((n) => n.kind === 'core/output');
+        const rootNodeId = previewOutput?.id ?? sg.outputNodeId;
         set({
           currentEditingId: id,
           graph: sg.graph,
-          rootNodeId: sg.outputNodeId,
+          rootNodeId,
           undoStack: keepProjectOnly(state.undoStack),
           redoStack: keepProjectOnly(state.redoStack),
           syncCounter: state.syncCounter + 1,

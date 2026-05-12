@@ -1,51 +1,17 @@
 import { addEdge, addNode, createGraph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 
-// Procedural texture subgraphs. Each builds a Texture2D (or pair: basecolor +
-// normal) from primitive noise + filter nodes, exposes the result via the
-// subgraph boundary, AND has a standalone preview chain (plane + material +
-// scene-entity + core/output) so dragging into the subgraph in the editor
-// shows the texture applied to a flat plane.
+// Procedural texture subgraphs. Each builds a Texture2D (or pair: basecolor
+// + normal) from primitive noise + filter nodes and exposes the result via
+// the subgraph boundary. Standalone preview falls out of the per-output
+// tile grid in preview.tsx — basecolor and normal each get their own
+// auto-synthesized plane tile, no explicit preview chain needed.
 //
 // Convention: every texture subgraph has a `seed: Float` input so an outer
 // graph can vary the noise pattern between instances.
 
 const COL = 280;
 const ROW = 180;
-
-// Shared helper: append a standalone-preview chain (plane + material →
-// core/output) to an in-progress texture subgraph. Caller passes the node
-// ids holding the basecolor texture and (optionally) the normal map.
-function addTexturePreview(
-  g: ReturnType<typeof createGraph>,
-  basecolorNodeId: string,
-  basecolorSocket: string,
-  normalNodeId: string | null,
-  normalSocket: string | null,
-  position: { x: number; y: number },
-): void {
-  const plane = addNode(g, 'core/plane', {
-    position: { x: position.x, y: position.y },
-    inputValues: { size: [2, 2], divisions: [4, 4] },
-  });
-  const mat = addNode(g, 'core/material', {
-    position: { x: position.x + COL * 2, y: position.y },
-    inputValues: { roughness: 0.9, metallic: 0 },
-  });
-  const entity = addNode(g, 'core/scene-entity', {
-    position: { x: position.x + COL * 3, y: position.y },
-  });
-  const output = addNode(g, 'core/output', {
-    position: { x: position.x + COL * 4, y: position.y },
-  });
-  addEdge(g, { node: plane.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
-  addEdge(g, { node: basecolorNodeId, socket: basecolorSocket }, { node: mat.id, socket: 'basecolor' });
-  if (normalNodeId && normalSocket) {
-    addEdge(g, { node: normalNodeId, socket: normalSocket }, { node: mat.id, socket: 'normal' });
-  }
-  addEdge(g, { node: mat.id, socket: 'material' }, { node: entity.id, socket: 'material' });
-  addEdge(g, { node: entity.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
-}
 
 // === Bark ==============================================================
 //
@@ -126,10 +92,6 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_basecolor' });
   addEdge(g, { node: detailNormal.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_normal' });
 
-  // Standalone preview (a plane wearing the bark).
-  addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
-    x: COL, y: ROW * 4,
-  });
 
   return {
     id,
@@ -221,10 +183,6 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
   addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
   addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
-
-  addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
-    x: COL, y: ROW * 4,
-  });
 
   return {
     id,
@@ -335,10 +293,6 @@ export function buildRockTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
   addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_basecolor' });
   addEdge(g, { node: detailNormal.id, socket: 'texture' }, { node: outputNode.id, socket: 'detail_normal' });
-
-  addTexturePreview(g, colorize.id, 'texture', normal.id, 'texture', {
-    x: COL, y: ROW * 4,
-  });
 
   return {
     id,
