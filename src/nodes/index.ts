@@ -29,6 +29,7 @@ import { perlinNode } from './perlin.js';
 import { planeNode } from './plane.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
+import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
 import { slopeFromHeightNode } from './slope-from-height.js';
@@ -68,6 +69,7 @@ export const CORE_NODES = [
   gridNode,
   perlinNode,
   worleyNode,
+  ridgedNoiseNode,
   blendNode,
   blendMaskNode,
   warpNode,
@@ -120,6 +122,7 @@ export {
   planeNode,
   randomFloatCloudNode,
   randomVec3CloudNode,
+  ridgedNoiseNode,
   sceneEntityNode,
   sceneMergeNode,
   slopeFromHeightNode,
