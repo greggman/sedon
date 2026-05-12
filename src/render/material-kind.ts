@@ -24,11 +24,43 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
   /** The pipeline state object for this kind. Created once per scene-renderer. */
   readonly pipeline: GPURenderPipeline;
   /**
+   * Optional alpha-blended variant of the same pipeline. Used by the
+   * flat-preview path so a texture with an alpha channel composites
+   * over the checkerboard backdrop rather than punching through it as
+   * opaque. Same shader, same bind groups — only the target's blend
+   * state differs.
+   *
+   * When undefined, the renderer falls back to the opaque pipeline
+   * even in flat-preview (kinds that don't need alpha don't need to
+   * pay for a second pipeline).
+   */
+  readonly pipelineBlended?: GPURenderPipeline;
+  /**
    * Build a @group(1) bind group for one material instance. Called once per
    * unique material at scene-renderer construction time, not per frame.
    */
   buildBindGroup(material: M): GPUBindGroup;
 }
+
+/**
+ * Standard pre-multiplied-alpha blend state — `srcAlpha` × src + (1 −
+ * srcAlpha) × dst for color, and `1 × src + (1 − srcAlpha) × dst` for
+ * alpha so a fully-opaque drawing leaves the dst alpha at 1 and a
+ * fully-transparent drawing preserves the dst alpha untouched. Used by
+ * kinds that want an alpha-blended variant of their opaque pipeline.
+ */
+export const ALPHA_BLEND_STATE: GPUBlendState = {
+  color: {
+    srcFactor: 'src-alpha',
+    dstFactor: 'one-minus-src-alpha',
+    operation: 'add',
+  },
+  alpha: {
+    srcFactor: 'one',
+    dstFactor: 'one-minus-src-alpha',
+    operation: 'add',
+  },
+};
 
 // Explicitly created scene bind-group layout — shared across every kind's
 // pipeline. With this declared, all kind pipelines have the same @group(0)

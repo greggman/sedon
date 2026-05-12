@@ -697,11 +697,20 @@ export function createSceneRenderer(
       // pipeline switches when kindId changes, material bind group switches
       // per batch. Batches were sorted by kindId so all draws of one kind
       // run consecutively.
+      //
+      // In flat-preview mode we pick each kind's alpha-blended variant
+      // when it provides one — that's how a texture with a transparent
+      // alpha channel (a leaf shape, an SDF mask, anything authored
+      // with cutout) composites over the checkerboard instead of
+      // punching through it as fully opaque.
       pass.setBindGroup(0, sceneBindGroup);
       let activeKind: MaterialValue['kind'] | null = null;
       for (const b of batches) {
         if (b.kindId !== activeKind) {
-          pass.setPipeline(kinds.get(b.kindId)!.pipeline);
+          const kind = kinds.get(b.kindId)!;
+          const pipelineForPass =
+            flatPreview && kind.pipelineBlended ? kind.pipelineBlended : kind.pipeline;
+          pass.setPipeline(pipelineForPass);
           activeKind = b.kindId;
         }
         pass.setBindGroup(1, b.materialBindGroup);

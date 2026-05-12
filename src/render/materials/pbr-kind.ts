@@ -1,5 +1,6 @@
 import type { PbrMaterial, Texture2DValue } from '../../core/resources.js';
 import {
+  ALPHA_BLEND_STATE,
   createFlatHalfTexture,
   createFlatNormalTexture,
   DEPTH_STENCIL,
@@ -50,6 +51,26 @@ export function createPbrKind(
     depthStencil: DEPTH_STENCIL,
   });
 
+  // Alpha-blended variant of the same pipeline for the flat-preview
+  // path. The fragment shader already writes basecolor.a as its output
+  // alpha (both the unlit and lit branches), so all the blended
+  // pipeline needs is the blend state on the color target. Same
+  // layout / shader / depth — only the blend state and (for safety)
+  // back-face culling differ: leaf-textured cards are intentionally
+  // two-sided since the user wants to see the silhouette from either
+  // side during authoring.
+  const pipelineBlended = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
+    fragment: {
+      module,
+      entryPoint: 'fs_main',
+      targets: [{ format, blend: ALPHA_BLEND_STATE }],
+    },
+    primitive: { cullMode: 'none' },
+    depthStencil: DEPTH_STENCIL,
+  });
+
   // Lazy-create placeholder textures for materials without authored
   // normal / detail inputs. Flat-half (0.5 grey) is the albedo-detail
   // no-op; flat-normal ((0, 0, 1) in tangent space) is the normal no-op.
@@ -59,6 +80,7 @@ export function createPbrKind(
   return {
     id: 'pbr',
     pipeline,
+    pipelineBlended,
     buildBindGroup(material) {
       const normalTex = material.normal ?? (flatNormal ??= createFlatNormalTexture(device));
       const detailBasecolorTex =
