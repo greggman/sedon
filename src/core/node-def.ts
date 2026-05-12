@@ -46,6 +46,33 @@ export interface NodeContext {
    * accidental cycles (subgraph A → subgraph B → subgraph A → ...).
    */
   subgraphDepth?: number;
+  /**
+   * The current eval round's cache. Subgraph wrappers forward this to
+   * `evaluateGraph` when recursing so the inner nodes hit the same shared
+   * cache as the top-level graph. Undefined when caching is disabled.
+   */
+  evalCache?: import('./eval-cache.js').EvalCache;
+  /**
+   * Per-eval-round set of fingerprints that were referenced (either
+   * computed fresh or hit in the cache). After all consumers finish a
+   * round, the caller passes this set to `sweepCache` to evict anything
+   * not in it.
+   */
+  evalTouched?: Set<string>;
+  /**
+   * This node's own upstream input fingerprints — set per-node by the
+   * evaluator right before calling `def.evaluate`. The subgraph wrapper
+   * reads this and forwards it as `subgraphInputFingerprints` into the
+   * inner eval, so the inner boundary node can fingerprint itself based
+   * on what the parent piped in (its outputs depend on `subgraphInputs`,
+   * which aren't on the inner graph).
+   */
+  inputFingerprints?: Record<string, string>;
+  /**
+   * Fingerprints of the wrapper's inputs, propagated into the inner
+   * eval. The boundary-input node's fingerprint mixes this in.
+   */
+  subgraphInputFingerprints?: Record<string, string>;
 }
 
 export type NodeInputs = Record<string, unknown>;
@@ -56,6 +83,15 @@ export interface NodeDef {
   category: string;
   inputs: InputDef[];
   outputs: OutputDef[];
+  /**
+   * Optional version stamp mixed into the eval cache's per-node fingerprint.
+   * Undefined for core nodes — their behavior is fixed by the kind id, so
+   * the kind is the version. Subgraph wrappers set this to the inner
+   * graph's version counter so that an edit inside the subgraph (which
+   * doesn't change the wrapper's kind) still invalidates the wrapper's
+   * cached output.
+   */
+  version?: string | number;
   // Nodes may evaluate synchronously (most: pure CPU work + GPU command
   // submission, both fire-and-forget) or asynchronously (anything that needs
   // a fence, mapAsync, fetch, etc. — e.g. heightfield-to-mesh reading back a

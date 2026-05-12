@@ -35,6 +35,15 @@ export interface SubgraphDef {
   inputNodeId: string;
   /** ID of the output-boundary node placed in the inner graph. Used as evaluator root. */
   outputNodeId: string;
+  /**
+   * Monotonic counter bumped by the editor store on every mutation to
+   * this subgraph (inner graph, I/O list, anything that affects the
+   * wrapper's behavior). The wrapper's `NodeDef.version` is set to this
+   * so the eval cache invalidates cleanly: same wrapper kind + same
+   * inputs + same version ⇒ same outputs. Optional in saved files;
+   * missing means "treat as version 0" — first edit will bump to 1.
+   */
+  version?: number;
 }
 
 const MAX_SUBGRAPH_DEPTH = 16;
@@ -164,12 +173,16 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
     },
   };
 
-  // Wrapper: appears in parent graphs as a regular node.
+  // Wrapper: appears in parent graphs as a regular node. Its NodeDef.version
+  // is the subgraph's version counter — the eval cache mixes this into the
+  // wrapper's fingerprint, so any edit to the inner graph invalidates cached
+  // outputs of this wrapper across all of its instances.
   const wrapper: NodeDef = {
     id: wrapperKind,
     category: def.category,
     inputs: def.inputs,
     outputs: def.outputs,
+    version: def.version ?? 0,
     async evaluate(ctx, inputs) {
       const depth = (ctx.subgraphDepth ?? 0) + 1;
       if (depth > MAX_SUBGRAPH_DEPTH) {
@@ -177,15 +190,28 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
           `subgraph recursion depth exceeded (${MAX_SUBGRAPH_DEPTH}) at ${wrapperKind} — likely a cycle`,
         );
       }
+      // Forward the cache, touched set, and this instance's input
+      // fingerprints. `subgraphInputFingerprints` is what lets the inner
+      // boundary-input node fingerprint itself based on what's piped in —
+      // without it, two wrapper instances with different inputs would
+      // collide on boundary cache entries and produce wrong inner state.
       const innerCtx = {
         ...ctx,
         subgraphInputs: inputs,
+        subgraphInputFingerprints: ctx.inputFingerprints ?? {},
         subgraphDepth: depth,
       };
-      const result = await evaluateGraph(def.graph, registry, {
+      // exactOptionalPropertyTypes: only forward cache/touched when set.
+      const innerOptions: Parameters<typeof evaluateGraph>[2] = {
         rootNodeId: def.outputNodeId,
         context: innerCtx,
-      });
+        // Inside the wrapper we only need the boundary output's ancestors;
+        // disconnected inner nodes don't affect what we return to the parent.
+        scope: 'rootAncestors',
+      };
+      if (ctx.evalCache !== undefined) innerOptions.cache = ctx.evalCache;
+      if (ctx.evalTouched !== undefined) innerOptions.touched = ctx.evalTouched;
+      const result = await evaluateGraph(def.graph, registry, innerOptions);
       return result.outputs;
     },
   };

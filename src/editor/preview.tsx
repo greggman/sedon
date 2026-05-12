@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { sweepCache } from '../core/eval-cache.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
@@ -55,6 +56,7 @@ export function Preview() {
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
   const setDevice = useEditorStore((s) => s.setDevice);
+  const evalCache = useEditorStore((s) => s.evalCache);
   const registry = useRegistry();
 
   const [tiles, setTiles] = useState<PreviewTileSpec[]>([]);
@@ -275,15 +277,26 @@ export function Preview() {
   }, [graph, rootNodeId, registry]);
 
   // Evaluate the graph and synthesize one tile per renderable output.
+  //
+  // The eval round: every node referenced this pass records its
+  // fingerprint into `touched`. After eval, we sweep the shared cache,
+  // evicting anything not in `touched` and destroying orphaned GPU
+  // resources. When multi-pane editing arrives, each pane becomes a
+  // consumer in the same round — we'd accumulate touched fingerprints
+  // across all consumers before sweeping, but the structure here is
+  // already correct for one consumer.
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
     (async () => {
+      const touched = new Set<string>();
       let result;
       try {
         result = await evaluateGraph(graph, registry, {
           rootNodeId,
           context: { device: gpu.device },
+          cache: evalCache,
+          touched,
         });
       } catch (e) {
         if (cancelled) return;
@@ -293,6 +306,10 @@ export function Preview() {
         return;
       }
       if (cancelled) return;
+      // Sweep AFTER consuming `result.outputs` — destroying a texture
+      // before synthesizeTiles reads it would be a use-after-destroy.
+      // We've already used the outputs by the time we get here.
+      sweepCache(evalCache, touched);
       const nextLighting =
         (result.outputs.lighting as LightingValue | undefined) ?? defaultLighting();
       const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs, nextLighting);
@@ -307,7 +324,7 @@ export function Preview() {
     return () => {
       cancelled = true;
     };
-  }, [gpu, graph, rootNodeId, rootDef, registry, setEvalResult]);
+  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, setEvalResult]);
 
   return (
     <div

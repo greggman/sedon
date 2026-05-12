@@ -251,3 +251,96 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
 export function identityTint(): Float32Array {
   return new Float32Array([1, 1, 1, 1]);
 }
+
+// Anything ownable by the eval cache that has a .destroy() method. WebGPU
+// resources (texture, buffer) match this shape; we narrow to .destroy()
+// rather than the WebGPU-specific types so test environments don't need
+// the real WebGPU runtime to satisfy the type.
+interface Destroyable {
+  destroy(): void;
+}
+
+/**
+ * Walk a value emitted by a node's evaluate() and call `visit` for every
+ * GPU resource we hold a destroy() handle on (textures, buffers). The
+ * eval cache uses this to figure out which resources to destroy when an
+ * entry is evicted — and which to KEEP because a still-live entry holds
+ * the same reference.
+ *
+ * Recurses into discriminated unions (MaterialValue), arrays of
+ * entities (SceneValue), and Heightfield's nested Texture2D. Stops at
+ * scalars / plain arrays / typed arrays — those don't own GPU resources.
+ */
+export function walkGpuResources(
+  value: unknown,
+  visit: (r: Destroyable) => void,
+): void {
+  if (!value || typeof value !== 'object') return;
+  const v = value as Record<string, unknown>;
+
+  // Texture2DValue: { texture, view, format, width, height }
+  if ('texture' in v && 'view' in v && 'format' in v && 'width' in v && 'height' in v) {
+    const tex = v.texture as Destroyable | undefined;
+    if (tex && typeof tex.destroy === 'function') visit(tex);
+    return;
+  }
+
+  // GeometryValue: { positionBuffer, normalBuffer, uvBuffer, indexBuffer, ... }
+  if (
+    'positionBuffer' in v &&
+    'normalBuffer' in v &&
+    'uvBuffer' in v &&
+    'indexBuffer' in v
+  ) {
+    for (const key of ['positionBuffer', 'normalBuffer', 'uvBuffer', 'indexBuffer']) {
+      const buf = v[key] as Destroyable | undefined;
+      if (buf && typeof buf.destroy === 'function') visit(buf);
+    }
+    return;
+  }
+
+  // SceneValue: { entities: [{ geometry, material, transform, tint }, ...] }
+  if (Array.isArray(v.entities)) {
+    for (const ent of v.entities as Array<Record<string, unknown>>) {
+      walkGpuResources(ent.geometry, visit);
+      walkGpuResources(ent.material, visit);
+    }
+    return;
+  }
+
+  // MaterialValue (discriminated union): every kind has texture-shaped
+  // fields nested inside. Recurse on those.
+  if (typeof v.kind === 'string') {
+    if (v.kind === 'pbr') {
+      walkGpuResources(v.basecolor, visit);
+      walkGpuResources(v.normal, visit);
+      walkGpuResources(v.detailBasecolor, visit);
+      walkGpuResources(v.detailNormal, visit);
+      return;
+    }
+    if (v.kind === 'terrain-splat') {
+      walkGpuResources(v.layerA, visit);
+      walkGpuResources(v.layerB, visit);
+      walkGpuResources(v.mask, visit);
+      walkGpuResources(v.normalA, visit);
+      walkGpuResources(v.normalB, visit);
+      return;
+    }
+  }
+
+  // HeightfieldValue: { texture: Texture2DValue, worldSize, heightRange }
+  if ('texture' in v && 'worldSize' in v && 'heightRange' in v) {
+    walkGpuResources(v.texture, visit);
+    return;
+  }
+
+  // NodeOutputs is a plain Record<string, unknown> — when called with a
+  // node's outputs map we recurse over each socket value. The shape
+  // checks above stop the recursion as soon as we hit a known
+  // value type, so we can't bottom out into wrapping logic.
+  // Top-level recursion: try each property.
+  for (const key of Object.keys(v)) {
+    const child = v[key];
+    if (child && typeof child === 'object') walkGpuResources(child, visit);
+  }
+}

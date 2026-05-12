@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import type { NodeOutputs } from '../core/node-def.js';
 import type { SceneValue } from '../core/resources.js';
@@ -72,6 +73,15 @@ export interface EditorState {
   viewports: Record<string, ViewportState>;
   evalResult: EvalResult | null;
   device: GPUDevice | null;
+  /**
+   * Shared evaluation cache: maps per-node fingerprints to outputs so a
+   * re-eval skips any node whose inputs are unchanged. Survives across
+   * eval rounds; the preview pipeline calls `sweepCache` after each
+   * round to evict entries no consumer touched and destroy their
+   * orphaned GPU resources. Reference is stable for the lifetime of the
+   * store — mutations happen on the inner Map.
+   */
+  evalCache: EvalCache;
 
   // Undo/redo stacks. Each entry is a Command that captures enough state to
   // both apply and reverse it.
@@ -208,13 +218,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
   // we also need to update either mainGraph (if editing main) or replace
   // the active subgraph's def in the subgraphs array (so the registry
   // memo invalidates and wrappers see the latest inner graph).
+  //
+  // For subgraph edits we bump `version` so the wrapper's NodeDef.version
+  // changes, which flows into the eval cache fingerprint and invalidates
+  // cached wrapper outputs across the project. Without this, editing
+  // inside a tree subgraph wouldn't trigger a re-eval of forest scenes
+  // that contain a tree wrapper.
   function routeBack(nextGraph: Graph, nextRootId: string): Partial<EditorState> {
     const { currentEditingId, subgraphs } = get();
     if (currentEditingId === 'main') {
       return { mainGraph: nextGraph, mainRootNodeId: nextRootId };
     }
     const newSubgraphs = subgraphs.map((s) =>
-      s.id === currentEditingId ? { ...s, graph: nextGraph } : s,
+      s.id === currentEditingId
+        ? { ...s, graph: nextGraph, version: (s.version ?? 0) + 1 }
+        : s,
     );
     return { subgraphs: newSubgraphs };
   }
@@ -239,11 +257,26 @@ export const useEditorStore = create<EditorState>((set, get) => {
   // Everything goes through one set() so React renders once. syncCounter
   // bumps because the registry depends on `subgraphs` and the node-canvas
   // may need to re-sync.
+  //
+  // We also bump `version` on every subgraph whose object reference
+  // changed since `before`. Each dispatchProject caller (addSocket,
+  // renameSocket, etc.) constructs new subgraph objects only for the
+  // ones it actually mutated, so reference inequality is an accurate
+  // "this changed" signal. Centralising the bump here means no caller
+  // has to remember to do it; the eval cache stays consistent
+  // automatically.
   function dispatchProject(after: ProjectSnapshot) {
     const before = projectSnapshot();
-    const cmd: Command = { kind: 'replaceProject', before, after };
+    const beforeById = new Map(before.subgraphs.map((s) => [s.id, s]));
+    const bumpedSubgraphs = after.subgraphs.map((s) => {
+      const prev = beforeById.get(s.id);
+      if (!prev || prev === s) return s;
+      return { ...s, version: (prev.version ?? 0) + 1 };
+    });
+    const bumped: ProjectSnapshot = { ...after, subgraphs: bumpedSubgraphs };
+    const cmd: Command = { kind: 'replaceProject', before, after: bumped };
     set({
-      ...after,
+      ...bumped,
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
       dirty: true,
@@ -309,6 +342,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     currentEditingId: 'main',
     cameras: {},
     viewports: {},
+    evalCache: createEvalCache(),
     evalResult: null,
     device: null,
     undoStack: [],
