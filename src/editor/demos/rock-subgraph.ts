@@ -51,12 +51,11 @@ export function buildRockMeshSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: 0 },
   });
 
-  // Standalone preview: one rock at origin.
-  const previewOutput = addNode(g, 'core/output', {
-    position: { x: COL * 6, y: 0 },
-  });
-
-  // Scatter on the input boundary's points (parent-facing path).
+  // Scatter on the input boundary's points (parent-facing path). When
+  // viewing standalone, the input boundary falls back to the system's
+  // single-point PointCloud default so scatter places one rock at
+  // origin and the boundary output renders it — no explicit preview
+  // chain required.
   const scatter = addNode(g, 'core/instance-scene-on-points', {
     position: { x: COL * 5, y: ROW * 2.5 },
     inputValues: { scale: 1, align: false, seed: 7 },
@@ -83,9 +82,6 @@ export function buildRockMeshSubgraph(): SubgraphDef {
 
   // Scatter → boundary output (parent-facing).
   addEdge(g, { node: scatter.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
-
-  // Standalone preview: single rock entity → core/output.
-  addEdge(g, { node: rockEntity.id, socket: 'scene' }, { node: previewOutput.id, socket: 'scene' });
 
   return {
     id,

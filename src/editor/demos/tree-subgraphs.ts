@@ -122,18 +122,11 @@ function buildTreeSubgraph(opts: {
     position: { x: COL * 5, y: ROW },
   });
 
-  // Standalone preview chain: tree-merge → core/output, bypassing the scatter.
-  // When the subgraph is viewed by itself in the editor, this is the eval
-  // root and the preview pane shows one tree at origin (the unscattered
-  // trunk + foliage). When a parent uses this subgraph, the parent's
-  // evaluator only follows the boundary-output path, so this core/output
-  // is dead code from the parent's perspective — it evaluates but its
-  // outputs are ignored.
-  const previewOutput = addNode(g, 'core/output', {
-    position: { x: COL * 6, y: ROW * 0.3 },
-  });
-
-  // Scatter on the input boundary's points (parent-facing path).
+  // Scatter on the input boundary's points (parent-facing path). When
+  // viewing this subgraph standalone, the input boundary's PointCloud
+  // input falls back to a single-point system default → scatter places
+  // one tree at origin → boundary output shows it. No explicit preview
+  // chain needed.
   const scatter = addNode(g, 'core/instance-scene-on-points', {
     position: { x: COL * 5, y: ROW * 2.5 },
     inputValues: { scale: 1, align: false, seed: 1 },
@@ -168,9 +161,6 @@ function buildTreeSubgraph(opts: {
   // Scatter → boundary output (parent-facing).
   addEdge(g, { node: scatter.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
-  // Standalone preview: tree-merge → core/output, parallel to the scatter
-  // chain above.
-  addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: previewOutput.id, socket: 'scene' });
 
   return {
     id: opts.id,

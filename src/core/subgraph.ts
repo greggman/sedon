@@ -39,6 +39,53 @@ export interface SubgraphDef {
 
 const MAX_SUBGRAPH_DEPTH = 16;
 
+// Picked so the most common parent-supplied input shapes preview as
+// "one thing at origin" when no parent is present: a scatter subgraph
+// gets a single point, paired attribute clouds get one identity-ish
+// value to match. Types omitted from this map (Texture2D, Material,
+// Geometry, Heightfield, Lighting) require GPU resources to construct
+// and have no static default.
+function systemDefaultForType(type: string): unknown {
+  switch (type) {
+    case 'Float':
+      return 0;
+    case 'Int':
+      return 0;
+    case 'Bool':
+      return false;
+    case 'Vec2':
+    case 'Vec2i':
+      return [0, 0];
+    case 'Vec3':
+      return [0, 0, 0];
+    case 'Vec4':
+      return [0, 0, 0, 0];
+    case 'Quaternion':
+      return [0, 0, 0, 1];
+    case 'Color':
+      return [1, 1, 1, 1];
+    case 'Scene':
+      return { entities: [] };
+    case 'PointCloud':
+      return {
+        positions: new Float32Array([0, 0, 0]),
+        count: 1,
+      };
+    case 'Vec3Cloud':
+      return {
+        values: new Float32Array([1, 1, 1]),
+        count: 1,
+      };
+    case 'FloatCloud':
+      return {
+        values: new Float32Array([1]),
+        count: 1,
+      };
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Compile a SubgraphDef into three NodeDefs (wrapper + two boundary types)
  * and return them as a registerable bundle. The wrapper's evaluate captures
@@ -57,11 +104,27 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   // standalone (no wrapper above it). In that case ctx.subgraphInputs is
   // undefined and we'd hand downstream nodes a bag of undefineds, which
   // crashes anything that does e.g. Float32Array.set on a Color input.
-  // Fall back to the declared defaults so preview chains wired to the
-  // boundary work out of the box.
+  //
+  // Fallback order per input:
+  //   1. ctx.subgraphInputs[name] (the wrapper's actual value)
+  //   2. InputDef.default (author-provided value)
+  //   3. System default for the input's type (single point at origin for
+  //      PointCloud, white for Color, etc.) — picked so a "scatter trees
+  //      on points" subgraph previews as "one tree at origin" without
+  //      needing any custom preview chain.
+  //
+  // Types with no system default (Texture2D, Material, Geometry,
+  // Heightfield, Lighting — anything that requires GPU resources) leave
+  // the input undefined; downstream nodes that depend on them stop
+  // evaluating gracefully.
   const standaloneDefaults: Record<string, unknown> = {};
   for (const i of def.inputs) {
-    if (i.default !== undefined) standaloneDefaults[i.name] = i.default;
+    if (i.default !== undefined) {
+      standaloneDefaults[i.name] = i.default;
+    } else {
+      const sys = systemDefaultForType(i.type);
+      if (sys !== undefined) standaloneDefaults[i.name] = sys;
+    }
   }
   const inputBoundary: NodeDef = {
     id: inputKind,
