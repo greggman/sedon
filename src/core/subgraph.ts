@@ -156,9 +156,16 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   const outputBoundary: NodeDef = {
     id: outputKind,
     category: '__internal__',
+    // Every boundary input is `optional`: the user authoring a subgraph
+    // can connect outputs incrementally — wiring just `albedo` while
+    // `normal` stays unwired shouldn't make the whole boundary skip
+    // evaluation. Missing inputs come through as undefined, and the
+    // wrapper / preview-synth treat undefined outputs as "render a
+    // blank placeholder for this slot."
     inputs: def.outputs.map<InputDef>((o) => ({
       name: o.name,
       type: o.type,
+      optional: true,
       ...(o.description !== undefined ? { description: o.description } : {}),
       ...(o.label !== undefined ? { label: o.label } : {}),
     })),

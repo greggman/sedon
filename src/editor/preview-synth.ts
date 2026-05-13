@@ -125,21 +125,34 @@ export function synthesizeTiles(
   const tiles: PreviewTileSpec[] = [];
   for (const out of rootDef.outputs) {
     const value = rootOutputs[out.name];
-    if (value === undefined) continue;
-    const scene = synthesize(value, out.type, res);
-    if (scene) {
-      const isScene = out.type === 'Scene';
-      tiles.push({
-        // User-visible tile caption. For subgraph outputs this is the
-        // display label the user typed; for core nodes it's the
-        // human-readable name (label is unset, so the fallback wins).
-        name: out.label ?? out.name,
-        type: out.type,
-        scene,
-        lighting: isScene ? baseLighting : dimLighting,
-        flatPreview: FLAT_TYPES.has(out.type),
-      });
+    const isScene = out.type === 'Scene';
+    const name = out.label ?? out.name;
+    const flatPreview = FLAT_TYPES.has(out.type);
+    // If the output has no value (input wasn't wired, or upstream
+    // failed to evaluate), still emit a tile — but with an empty
+    // scene. The preview just shows the flat-checkerboard background,
+    // which is the visual cue that "this output isn't producing
+    // anything." The alternative — silently dropping the tile —
+    // makes it hard to tell whether the output exists at all when
+    // authoring a partially-wired subgraph.
+    const scene =
+      value === undefined ? { entities: [] } : synthesize(value, out.type, res);
+    if (scene === null) {
+      // The value exists but its type isn't one we know how to
+      // preview (Float, Vec3, Lighting, etc.). Skip the tile rather
+      // than emit a confusing blank.
+      continue;
     }
+    tiles.push({
+      // User-visible tile caption. For subgraph outputs this is the
+      // display label the user typed; for core nodes it's the
+      // human-readable name (label is unset, so the fallback wins).
+      name,
+      type: out.type,
+      scene,
+      lighting: isScene ? baseLighting : dimLighting,
+      flatPreview,
+    });
   }
   return tiles;
 }
