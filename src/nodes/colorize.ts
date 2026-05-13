@@ -12,6 +12,13 @@ export const colorizeNode: NodeDef = {
     { name: 'factor', type: 'Texture2D' },
     { name: 'low', type: 'Color', default: [0, 0, 0, 1] },
     { name: 'high', type: 'Color', default: [1, 1, 1, 1] },
+    {
+      name: 'midpoint',
+      type: 'Float',
+      default: 0.5,
+      description:
+        'where the 50/50 mix sits along the input range. 0.5 = linear (default); <0.5 biases toward high; >0.5 biases toward low.',
+    },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
@@ -20,6 +27,7 @@ export const colorizeNode: NodeDef = {
     const factor = inputs.factor as Texture2DValue;
     const low = inputs.low as [number, number, number, number];
     const high = inputs.high as [number, number, number, number];
+    const midpoint = inputs.midpoint as number;
     const resolution = inputs.resolution as number;
 
     const texture = device.createTexture({
@@ -31,10 +39,12 @@ export const colorizeNode: NodeDef = {
         GPUTextureUsage.COPY_SRC,
     });
 
-    // Uniform: vec4 low + vec4 high = 32 bytes.
-    const uniformData = new Float32Array(8);
+    // Uniform: vec4 low + vec4 high + f32 midpoint, padded to 48 (next
+    // 16-byte multiple above 36).
+    const uniformData = new Float32Array(12);
     uniformData.set(low, 0);
     uniformData.set(high, 4);
+    uniformData[8] = midpoint;
 
     const uniformBuffer = device.createBuffer({
       size: uniformData.byteLength,

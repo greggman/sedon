@@ -4,6 +4,7 @@ import { createInitialGraph } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createForestDemo } from './forest.js';
+import { createLeafDemo } from './leaf.js';
 
 export interface Demo {
   id: string;
@@ -26,4 +27,5 @@ export const DEMOS: Demo[] = [
   { id: 'basic', label: 'Basic', build: createInitialGraph },
   { id: 'forest', label: 'Forest', build: createForestDemo },
   { id: 'city', label: 'City', build: createCityDemo },
+  { id: 'leaf', label: 'Leaf', build: createLeafDemo },
 ];

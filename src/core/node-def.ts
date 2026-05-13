@@ -21,6 +21,21 @@ export interface InputDef {
   // node, and the validator does not flag it as missing. The node's evaluate()
   // is responsible for handling the undefined case.
   optional?: boolean;
+  /**
+   * For `Int` inputs that represent an enum, the closed set of valid
+   * (value, label) pairs. When set, the UI renders a `<select>`
+   * dropdown instead of a number scrubber, and the runtime still
+   * stores the value as a plain integer (the enum is purely a UI
+   * affordance).
+   *
+   * Subgraph passthrough is NOT supported yet — if you wire an
+   * enum-typed input through a subgraph boundary, the wrapper's
+   * mirrored input loses the dropdown and reads as a plain Int.
+   * Adding propagation would require the boundary to introspect what
+   * its outputs connect to and inherit metadata; tracked as future
+   * work.
+   */
+  enumOptions?: ReadonlyArray<{ value: number; label: string }>;
 }
 
 export interface OutputDef {

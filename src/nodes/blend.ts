@@ -12,6 +12,18 @@ export const blendNode: NodeDef = {
     { name: 'a', type: 'Texture2D' },
     { name: 'b', type: 'Texture2D' },
     { name: 'factor', type: 'Float', default: 0.5 },
+    {
+      name: 'mode',
+      type: 'Int',
+      default: 0,
+      description: 'compositing operator applied between a and b',
+      enumOptions: [
+        { value: 0, label: 'mix' },
+        { value: 1, label: 'add' },
+        { value: 2, label: 'multiply' },
+        { value: 3, label: 'screen' },
+      ],
+    },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
@@ -31,9 +43,11 @@ export const blendNode: NodeDef = {
         GPUTextureUsage.COPY_SRC,
     });
 
-    // 16-byte aligned: f32 factor + vec3f pad.
+    // 16-byte aligned: f32 factor + f32 mode + vec2 pad.
+    const mode = inputs.mode as number;
     const uniformData = new Float32Array(4);
     uniformData[0] = factor;
+    uniformData[1] = mode;
 
     const uniformBuffer = device.createBuffer({
       size: 16,

@@ -1,6 +1,7 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
+import { blurNode } from './blur.js';
 import { cloudAltitudeNode } from './cloud-altitude.js';
 import { cloudMultiplyNode } from './cloud-multiply.js';
 import { cloudSlopeNode } from './cloud-slope.js';
@@ -9,6 +10,7 @@ import { colorizeNode } from './colorize.js';
 import { coneNode } from './cone.js';
 import { cubeNode } from './cube.js';
 import { cylinderNode } from './cylinder.js';
+import { distanceTransformNode } from './distance-transform.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
@@ -16,6 +18,7 @@ import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
 import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
+import { leafSkeletonNode } from './leaf-skeleton.js';
 import { levelsNode } from './levels.js';
 import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
@@ -72,9 +75,12 @@ export const CORE_NODES = [
   ridgedNoiseNode,
   blendNode,
   blendMaskNode,
+  blurNode,
+  distanceTransformNode,
   warpNode,
   colorizeNode,
   levelsNode,
+  leafSkeletonNode,
   normalFromHeightNode,
   slopeFromHeightNode,
   materialNode,
@@ -94,6 +100,8 @@ export function createCoreNodeRegistry(): NodeRegistry {
 export {
   blendMaskNode,
   blendNode,
+  blurNode,
+  distanceTransformNode,
   cloudAltitudeNode,
   cloudMultiplyNode,
   cloudSlopeNode,
@@ -109,6 +117,7 @@ export {
   heightfieldToMeshNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
+  leafSkeletonNode,
   levelsNode,
   mapRangeNode,
   materialNode,

@@ -363,6 +363,19 @@
   box-sizing: border-box;
 }
 
+.sedon-enum-edit {
+  width: 100%;
+  background: #1a1a1f;
+  border: 1px solid #666;
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 12px;
+  padding: 2px 6px;
+  font-family: inherit;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
 .sedon-numinput-drag {
   width: 100%;
   background: #1a1a1f;

@@ -6,6 +6,7 @@ import type { HeightfieldValue, MaterialValue, Texture2DValue } from '../core/re
 import { createCoreTypeRegistry } from '../core/types.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
+import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { MaterialPreview } from './material-preview.js';
@@ -174,6 +175,16 @@ function inlineEditor(
     case 'Float':
       return <NumberInput value={asNumber(value, 0)} onChange={onChange} />;
     case 'Int':
+      // Enum-typed Int gets a dropdown instead of a number scrubber.
+      if (input.enumOptions && input.enumOptions.length > 0) {
+        return (
+          <EnumInput
+            value={asNumber(value, input.enumOptions[0]!.value)}
+            options={input.enumOptions}
+            onChange={onChange as (n: number) => void}
+          />
+        );
+      }
       return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} />;
     case 'Bool':
       return <BoolInput value={asBool(value)} onChange={onChange} />;
