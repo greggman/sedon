@@ -57,6 +57,13 @@ export const branchSamplePointsNode: NodeDef = {
       default: 30,
       description: 'points per unit arc length (ignored when onlyTips is true)',
     },
+    {
+      name: 'tipCount',
+      type: 'Int',
+      default: 1,
+      description:
+        'points emitted per tip when onlyTips is true. 1 = oriented along tangent (flowers); N>1 = fanned radially around the tangent (palm fronds, needle clusters)',
+    },
     { name: 'seed', type: 'Float', default: 0.5 },
   ],
   outputs: [{ name: 'points', type: 'PointCloud' }],
@@ -70,6 +77,7 @@ export const branchSamplePointsNode: NodeDef = {
         radiusMax: inputs.radiusMax as number,
         onlyTips: inputs.onlyTips as boolean,
         density: inputs.density as number,
+        tipCount: inputs.tipCount as number,
         seed: inputs.seed as number,
       }),
     };

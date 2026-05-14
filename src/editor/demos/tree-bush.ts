@@ -4,20 +4,24 @@ import type { CameraState } from '../store.js';
 import { buildBarkTextureSubgraph } from './texture-subgraphs.js';
 import {
   buildBranchBushSubgraph,
+  buildBranchPalmSubgraph,
+  buildBranchPineSubgraph,
   buildBranchTreeSubgraph,
 } from './tree-bush-subgraphs.js';
 
-// Demo for the BranchGraph pipeline (branch/recursive → branch/tropism →
-// branch/tube + branch/sample-points → instance-on-points).
+// Demo for the BranchGraph pipeline. Four plant-family subgraphs lined up
+// in world X, each placed via `core/single-point` →
+// `core/instance-scene-on-points`. Drill into any of the four via the
+// graph switcher to tune parameters.
 //
-// The main view renders a single procedural oak-style tree with leaves
-// AND flowers — both placed on the SAME BranchGraph by two separate
-// `branch/sample-points` invocations with different filters, exercising
-// the plan's "two point lists from one structure" claim.
+//   • Branch Tree   — `branch/recursive`        (oak-style deciduous, with flowers)
+//   • Branch Bush   — `branch/recursive`        (shallow + dense parameters)
+//   • Branch Pine   — `branch/whorled-pine`     (monopodial + whorls)
+//   • Branch Palm   — `branch/palm`             (single trunk + frond ring)
 //
-// A bush variant is included as a separate subgraph (drillable via the
-// graph switcher; not wired into the main scene because we don't yet have
-// a Scene-level transform to place them side by side).
+// All four share the same Realize-stage nodes: `branch/tube`,
+// `branch/sample-points`, `branch/tropism`, plus the standard
+// instance-on-points / scene-merge plumbing.
 export function createTreeBushDemo(): {
   graph: Graph;
   rootNodeId: string;
@@ -27,30 +31,80 @@ export function createTreeBushDemo(): {
   const bark = buildBarkTextureSubgraph();
   const tree = buildBranchTreeSubgraph();
   const bush = buildBranchBushSubgraph();
+  const pine = buildBranchPineSubgraph();
+  const palm = buildBranchPalmSubgraph();
 
   const g = createGraph();
   const COL = 280;
+  const ROW = 180;
 
-  const treeInst = addNode(g, `subgraph/${tree.id}`, {
-    position: { x: 0, y: 0 },
-  });
+  interface SpeciesEntry {
+    id: string;
+    x: number;
+    rowIdx: number;
+  }
+
+  // World positions chosen by trial-and-error so the species don't visually
+  // collide despite their different canopy widths.
+  const species: SpeciesEntry[] = [
+    { id: bush.id, x: -10, rowIdx: 0 },
+    { id: tree.id, x: -4, rowIdx: 1 },
+    { id: pine.id, x: 4, rowIdx: 2 },
+    { id: palm.id, x: 12, rowIdx: 3 },
+  ];
+
+  const merges: { id: string; position: { x: number; y: number } }[] = [];
+  const speciesOutputs: { id: string; socket: string }[] = [];
+
+  for (const s of species) {
+    const point = addNode(g, 'core/single-point', {
+      position: { x: 0, y: s.rowIdx * ROW },
+      inputValues: { position: [s.x, 0, 0], normal: [0, 1, 0] },
+    });
+    const subInst = addNode(g, `subgraph/${s.id}`, {
+      position: { x: COL, y: s.rowIdx * ROW },
+    });
+    const scatter = addNode(g, 'core/instance-scene-on-points', {
+      position: { x: COL * 2, y: s.rowIdx * ROW },
+      inputValues: { scale: 1, align: false, seed: 0 },
+    });
+    addEdge(g, { node: point.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
+    addEdge(g, { node: subInst.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
+    speciesOutputs.push({ id: scatter.id, socket: 'scene' });
+  }
+
+  // Chain N scene-merges to combine all four species into one Scene.
+  let current = speciesOutputs[0]!;
+  for (let i = 1; i < speciesOutputs.length; i++) {
+    const next = speciesOutputs[i]!;
+    const m = addNode(g, 'core/scene-merge', {
+      position: { x: COL * 3, y: (i - 0.5) * ROW },
+    });
+    addEdge(g, { node: current.id, socket: current.socket }, { node: m.id, socket: 'a' });
+    addEdge(g, { node: next.id, socket: next.socket }, { node: m.id, socket: 'b' });
+    merges.push({ id: m.id, position: { x: COL * 3, y: (i - 0.5) * ROW } });
+    current = { id: m.id, socket: 'scene' };
+  }
+
   const output = addNode(g, 'core/output', {
-    position: { x: COL * 2, y: 0 },
+    position: { x: COL * 4, y: ROW * 1.5 },
     inputValues: { fog_density: 0, ambient: [0.25, 0.25, 0.28, 1] },
   });
-  addEdge(g, { node: treeInst.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
+  addEdge(g, { node: current.id, socket: current.socket }, { node: output.id, socket: 'scene' });
 
   const cameras: Record<string, CameraState> = {
-    main: { yaw: 0.4, pitch: 0.2, distance: 14, target: [0, 3, 0] },
+    main: { yaw: 0.45, pitch: 0.18, distance: 32, target: [0, 4, 0] },
     'branch-tree': { yaw: 0.4, pitch: 0.2, distance: 14, target: [0, 3, 0] },
     'branch-bush': { yaw: 0.4, pitch: 0.25, distance: 3, target: [0, 0.5, 0] },
+    'branch-pine': { yaw: 0.4, pitch: 0.18, distance: 22, target: [0, 5.5, 0] },
+    'branch-palm': { yaw: 0.4, pitch: 0.2, distance: 18, target: [0, 4, 0] },
     'bark-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
   };
 
   return {
     graph: g,
     rootNodeId: output.id,
-    subgraphs: [bark, tree, bush],
+    subgraphs: [bark, tree, bush, pine, palm],
     cameras,
   };
 }

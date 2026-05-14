@@ -331,3 +331,267 @@ export function buildBranchBushSubgraph(): SubgraphDef {
     outputNodeId: outputNode.id,
   };
 }
+
+// Palm: single unbranched trunk + a fan of frond instances at the tip.
+// Fronds come from `branch/sample-points` with onlyTips=true and
+// tipCount>1, then instanced via cone meshes (placeholder for proper
+// frond meshes from the leaf pipeline).
+export function buildBranchPalmSubgraph(): SubgraphDef {
+  const id = 'branch-palm';
+  const g = createGraph();
+
+  const inputNode = addNode(g, `subgraph-input/${id}`, {
+    position: { x: 0, y: ROW * 2 },
+  });
+  const outputNode = addNode(g, `subgraph-output/${id}`, {
+    position: { x: COL * 8, y: ROW * 2 },
+  });
+
+  const palm = addNode(g, 'branch/palm', {
+    position: { x: COL, y: 0 },
+    inputValues: {
+      height: 8,
+      trunkRadiusBase: 0.16,
+      trunkRadiusTip: 0.1,
+      trunkSegments: 14,
+      leanAngle: 6,
+      leanCurvature: 0.6,
+      leanAzimuth: 0,
+      seed: 0.41,
+    },
+  });
+
+  const tube = addNode(g, 'branch/tube', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: { sides: 10, uvTilingV: 0.5 },
+  });
+  // Palm trunks are fibrous/vertical-ringed — the bark-texture vertical
+  // fibers actually read fine here; just shift colors toward a paler
+  // tan/grey than oak bark.
+  const bark = addNode(g, 'subgraph/bark-texture', {
+    position: { x: COL * 3, y: -ROW * 1.4 },
+    inputValues: {
+      seed: 0.41,
+      color_dark: [0.22, 0.17, 0.11, 1],
+      color_light: [0.55, 0.45, 0.32, 1],
+    },
+  });
+  const trunkMat = addNode(g, 'core/material', {
+    position: { x: COL * 4, y: -ROW * 0.7 },
+    inputValues: { roughness: 0.92, metallic: 0, detail_scale: 5, detail_strength: 0.5 },
+  });
+  const trunkEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 5, y: 0 },
+  });
+
+  // Fronds: tipCount=14 emits 14 points at the trunk tip, normals fanned
+  // radially around the tip tangent. Instance a long cone at each — the
+  // cone's local +Y axis aligns to the radial direction, so its tip
+  // points outward.
+  const frondPoints = addNode(g, 'branch/sample-points', {
+    position: { x: COL * 3, y: ROW * 2.3 },
+    inputValues: {
+      depthMin: 0,
+      depthMax: 0,
+      radiusMin: 0,
+      radiusMax: 99,
+      onlyTips: true,
+      density: 0,
+      tipCount: 14,
+      seed: 0.41,
+    },
+  });
+  const frondGeo = addNode(g, 'core/cone', {
+    position: { x: COL, y: ROW * 3.4 },
+    inputValues: { radius: 0.12, height: 2.4, segments: 6 },
+  });
+  const frondScatter = addNode(g, 'core/instance-geometry-on-points', {
+    position: { x: COL * 4, y: ROW * 2.7 },
+    inputValues: { scale: 1, align: true },
+  });
+  const frondColor = addNode(g, 'core/solid-color', {
+    position: { x: COL * 3, y: ROW * 4.2 },
+    inputValues: { color: [0.18, 0.45, 0.18, 1], resolution: 16 },
+  });
+  const frondMat = addNode(g, 'core/material', {
+    position: { x: COL * 4, y: ROW * 4.2 },
+    inputValues: { roughness: 0.85, metallic: 0 },
+  });
+  const frondEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 5, y: ROW * 3 },
+  });
+
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 7, y: ROW * 1.5 },
+  });
+
+  addEdge(g, { node: palm.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+  addEdge(g, { node: palm.id, socket: 'branches' }, { node: frondPoints.id, socket: 'branches' });
+
+  addEdge(g, { node: tube.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
+  addEdge(g, { node: bark.id, socket: 'basecolor' }, { node: trunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: bark.id, socket: 'normal' }, { node: trunkMat.id, socket: 'normal' });
+  addEdge(g, { node: bark.id, socket: 'detail_basecolor' }, { node: trunkMat.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: bark.id, socket: 'detail_normal' }, { node: trunkMat.id, socket: 'detail_normal' });
+  addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
+
+  addEdge(g, { node: frondPoints.id, socket: 'points' }, { node: frondScatter.id, socket: 'points' });
+  addEdge(g, { node: frondGeo.id, socket: 'geometry' }, { node: frondScatter.id, socket: 'instance' });
+  addEdge(g, { node: frondScatter.id, socket: 'geometry' }, { node: frondEntity.id, socket: 'geometry' });
+  addEdge(g, { node: frondColor.id, socket: 'texture' }, { node: frondMat.id, socket: 'basecolor' });
+  addEdge(g, { node: frondMat.id, socket: 'material' }, { node: frondEntity.id, socket: 'material' });
+
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
+  addEdge(g, { node: frondEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'Branch Palm',
+    category: 'Trees',
+    inputs: [],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
+}
+
+// Whorled pine: monopodial trunk with conical whorls of branches. Tropism
+// after the generator gives the branches their characteristic droop.
+export function buildBranchPineSubgraph(): SubgraphDef {
+  const id = 'branch-pine';
+  const g = createGraph();
+
+  const inputNode = addNode(g, `subgraph-input/${id}`, {
+    position: { x: 0, y: ROW * 2 },
+  });
+  const outputNode = addNode(g, `subgraph-output/${id}`, {
+    position: { x: COL * 9, y: ROW * 2 },
+  });
+
+  const pine = addNode(g, 'branch/whorled-pine', {
+    position: { x: COL, y: 0 },
+    inputValues: {
+      trunkHeight: 11,
+      trunkRadiusBase: 0.32,
+      trunkRadiusTip: 0.04,
+      trunkSegments: 16,
+      trunkLean: 0,
+      whorlCount: 8,
+      whorlStart: 0.22,
+      whorlEnd: 0.95,
+      branchesPerWhorl: 6,
+      whorlPhaseOffset: 35,
+      branchLengthAtBase: 2.6,
+      branchLengthAtTop: 0.5,
+      branchAngle: 80,
+      branchSegments: 6,
+      branchRadiusFraction: 0.25,
+      branchTipRadiusFraction: 0.15,
+      subBranchCount: 0,
+      subBranchLengthRatio: 0.4,
+      subBranchAngle: 55,
+      seed: 0.58,
+    },
+  });
+  const tropism = addNode(g, 'branch/tropism', {
+    position: { x: COL * 2, y: 0 },
+    inputValues: {
+      gravity: 0.18,
+      phototropism: [0, 0, 0],
+      wobble: 0.01,
+      wobbleSeed: 0.5,
+    },
+  });
+  const tube = addNode(g, 'branch/tube', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: { sides: 8, uvTilingV: 0.6 },
+  });
+  const bark = addNode(g, 'subgraph/bark-texture', {
+    position: { x: COL * 3, y: -ROW * 1.4 },
+    inputValues: {
+      seed: 0.72,
+      color_dark: [0.1, 0.06, 0.03, 1],
+      color_light: [0.36, 0.22, 0.12, 1],
+    },
+  });
+  const trunkMat = addNode(g, 'core/material', {
+    position: { x: COL * 4, y: -ROW * 0.7 },
+    inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.5 },
+  });
+  const trunkEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 5, y: 0 },
+  });
+
+  // Pine needles: dense scatter on the whorl branches (depth >= 1).
+  // Use small dark-green spheres as needle-cluster placeholders.
+  const needlePoints = addNode(g, 'branch/sample-points', {
+    position: { x: COL * 4, y: ROW * 2.3 },
+    inputValues: {
+      depthMin: 1,
+      depthMax: 99,
+      radiusMin: 0,
+      radiusMax: 0.1,
+      onlyTips: false,
+      density: 80,
+      tipCount: 1,
+      seed: 0.55,
+    },
+  });
+  const needleGeo = addNode(g, 'core/sphere', {
+    position: { x: COL, y: ROW * 3.4 },
+    inputValues: { radius: 1, segments: 6, rings: 4 },
+  });
+  const needleScatter = addNode(g, 'core/instance-geometry-on-points', {
+    position: { x: COL * 5, y: ROW * 2.7 },
+    inputValues: { scale: 0.09, align: true },
+  });
+  const needleColor = addNode(g, 'core/solid-color', {
+    position: { x: COL * 4, y: ROW * 4.2 },
+    inputValues: { color: [0.08, 0.28, 0.16, 1], resolution: 16 },
+  });
+  const needleMat = addNode(g, 'core/material', {
+    position: { x: COL * 5, y: ROW * 4.2 },
+    inputValues: { roughness: 0.9, metallic: 0 },
+  });
+  const needleEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 6, y: ROW * 3 },
+  });
+
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 8, y: ROW * 1.5 },
+  });
+
+  addEdge(g, { node: pine.id, socket: 'branches' }, { node: tropism.id, socket: 'branches' });
+  addEdge(g, { node: tropism.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+  addEdge(g, { node: tropism.id, socket: 'branches' }, { node: needlePoints.id, socket: 'branches' });
+
+  addEdge(g, { node: tube.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
+  addEdge(g, { node: bark.id, socket: 'basecolor' }, { node: trunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: bark.id, socket: 'normal' }, { node: trunkMat.id, socket: 'normal' });
+  addEdge(g, { node: bark.id, socket: 'detail_basecolor' }, { node: trunkMat.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: bark.id, socket: 'detail_normal' }, { node: trunkMat.id, socket: 'detail_normal' });
+  addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
+
+  addEdge(g, { node: needlePoints.id, socket: 'points' }, { node: needleScatter.id, socket: 'points' });
+  addEdge(g, { node: needleGeo.id, socket: 'geometry' }, { node: needleScatter.id, socket: 'instance' });
+  addEdge(g, { node: needleScatter.id, socket: 'geometry' }, { node: needleEntity.id, socket: 'geometry' });
+  addEdge(g, { node: needleColor.id, socket: 'texture' }, { node: needleMat.id, socket: 'basecolor' });
+  addEdge(g, { node: needleMat.id, socket: 'material' }, { node: needleEntity.id, socket: 'material' });
+
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
+  addEdge(g, { node: needleEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'Branch Pine',
+    category: 'Trees',
+    inputs: [],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
+}

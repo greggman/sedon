@@ -2,10 +2,14 @@ import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
+import { branchMergeNode } from './branch-merge.js';
+import { branchPalmNode } from './branch-palm.js';
 import { branchRecursiveNode } from './branch-recursive.js';
 import { branchSamplePointsNode } from './branch-sample-points.js';
 import { branchTropismNode } from './branch-tropism.js';
 import { branchTubeNode } from './branch-tube.js';
+import { branchWhorledPineNode } from './branch-whorled-pine.js';
+import { singlePointNode } from './single-point.js';
 import { cloudAltitudeNode } from './cloud-altitude.js';
 import { cloudMultiplyNode } from './cloud-multiply.js';
 import { cloudSlopeNode } from './cloud-slope.js';
@@ -80,10 +84,14 @@ export const CORE_NODES = [
   blendNode,
   blendMaskNode,
   blurNode,
+  branchMergeNode,
+  branchPalmNode,
   branchRecursiveNode,
   branchTropismNode,
   branchTubeNode,
   branchSamplePointsNode,
+  branchWhorledPineNode,
+  singlePointNode,
   distanceTransformNode,
   warpNode,
   colorizeNode,
@@ -109,10 +117,13 @@ export {
   blendMaskNode,
   blendNode,
   blurNode,
+  branchMergeNode,
+  branchPalmNode,
   branchRecursiveNode,
   branchSamplePointsNode,
   branchTropismNode,
   branchTubeNode,
+  branchWhorledPineNode,
   distanceTransformNode,
   cloudAltitudeNode,
   cloudMultiplyNode,

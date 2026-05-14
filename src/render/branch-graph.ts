@@ -107,6 +107,38 @@ function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
+// Polyline position at fractional length t in [0..1].
+function polylineLookup(
+  polyline: ReadonlyArray<readonly [number, number, number]>,
+  t: number,
+): [number, number, number] {
+  if (polyline.length === 0) return [0, 0, 0];
+  if (polyline.length === 1) {
+    const p = polyline[0]!;
+    return [p[0], p[1], p[2]];
+  }
+  const exact = Math.max(0, Math.min(polyline.length - 1, t * (polyline.length - 1)));
+  const i0 = Math.floor(exact);
+  const i1 = Math.min(polyline.length - 1, i0 + 1);
+  const f = exact - i0;
+  const a = polyline[i0]!;
+  const b = polyline[i1]!;
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+
+// Polyline unit-tangent at fractional length t in [0..1].
+function polylineTangent(
+  polyline: ReadonlyArray<readonly [number, number, number]>,
+  t: number,
+): [number, number, number] {
+  if (polyline.length < 2) return [0, 1, 0];
+  const segs = polyline.length - 1;
+  const exact = Math.max(0, Math.min(segs - 1, Math.floor(t * segs)));
+  const a = polyline[exact]!;
+  const b = polyline[exact + 1]!;
+  return normalize([b[0] - a[0], b[1] - a[1], b[2] - a[2]]);
+}
+
 // ===== Recursive parametric branching =====================================
 
 export interface RecursiveBranchOpts {
@@ -509,6 +541,14 @@ export interface SamplePointsOpts {
   onlyTips: boolean;
   /** Points per unit arc length. Ignored when onlyTips is true. */
   density: number;
+  /**
+   * Points emitted per qualifying tip when onlyTips is true. >=1.
+   * 1 = one point at the tip oriented along the branch tangent (default).
+   * N>1 = N points at the tip with normals fanned around the tangent in
+   * the (n1, n2) plane — drives palm-frond / cluster-of-needles placement.
+   * Ignored when onlyTips is false.
+   */
+  tipCount: number;
   seed: number;
 }
 
@@ -529,8 +569,6 @@ export function sampleBranchGraphPoints(
     if (vc < 2) continue;
 
     if (opts.onlyTips) {
-      // One point at the branch tip, oriented along the branch tangent —
-      // good for "this is a flower / fruit on a twig" placement.
       const tipIdx = vs + vc - 1;
       const r = graph.radii[tipIdx]!;
       if (r < opts.radiusMin || r > opts.radiusMax) continue;
@@ -543,8 +581,31 @@ export function sampleBranchGraphPoints(
       let tz = tipZ - graph.positions[prevIdx * 3 + 2]!;
       const tlen = Math.hypot(tx, ty, tz) || 1;
       tx /= tlen; ty /= tlen; tz /= tlen;
-      outPos.push(tipX, tipY, tipZ);
-      outNorm.push(tx, ty, tz);
+
+      const tipCount = Math.max(1, Math.floor(opts.tipCount));
+      if (tipCount === 1) {
+        // One point at the tip oriented along the branch tangent — good for
+        // single flowers / fruit on a twig.
+        outPos.push(tipX, tipY, tipZ);
+        outNorm.push(tx, ty, tz);
+      } else {
+        // N points at the tip, normals fanned radially around the tangent.
+        // Palm fronds, pine-needle clusters, anything that radiates from a
+        // single attachment ring.
+        const frames = computePolylineFrames(graph.positions, vs, vc);
+        const tipFrame = frames[vc - 1]!;
+        const baseAngle = rand() * 2 * Math.PI;
+        for (let k = 0; k < tipCount; k++) {
+          const phi = baseAngle + (k / tipCount) * 2 * Math.PI;
+          const c = Math.cos(phi);
+          const sn = Math.sin(phi);
+          const dx = c * tipFrame.n1x + sn * tipFrame.n2x;
+          const dy = c * tipFrame.n1y + sn * tipFrame.n2y;
+          const dz = c * tipFrame.n1z + sn * tipFrame.n2z;
+          outPos.push(tipX, tipY, tipZ);
+          outNorm.push(dx, dy, dz);
+        }
+      }
       continue;
     }
 
@@ -689,4 +750,274 @@ export function applyTropismToBranchGraph(
   }
 
   return { ...graph, positions: newPositions };
+}
+
+// ===== Palm =============================================================
+// Single unbranched trunk. No children. Fronds are placed downstream by
+// `branch/sample-points` with onlyTips=true and tipCount=N, then instanced
+// via `instance-geometry-on-points`. Variants (banana, tree fern, agave)
+// fall out from parameter tuning.
+
+export interface PalmOpts {
+  height: number;
+  trunkRadiusBase: number;
+  trunkRadiusTip: number;
+  trunkSegments: number;
+  /** Initial tilt from vertical at the trunk base, in degrees. */
+  leanAngleDeg: number;
+  /** Additional degrees of bend per trunk segment (positive = continues
+   * tilting in lean direction; negative = bends back). */
+  leanCurvatureDeg: number;
+  /** Direction in the XZ plane (degrees, 0 = +X) the trunk leans toward. */
+  leanAzimuthDeg: number;
+  seed: number;
+}
+
+export function generatePalmBranchGraph(opts: PalmOpts): BranchGraphValue {
+  // The lean tilt axis is the horizontal direction perpendicular to the
+  // azimuth — rotating (0,1,0) around this axis tilts the top toward the
+  // azimuth direction.
+  const azimuth = degToRad(opts.leanAzimuthDeg);
+  const tiltAxis: [number, number, number] = [-Math.sin(azimuth), 0, Math.cos(azimuth)];
+  const initialDir = normalize(rotateAxisAngle([0, 1, 0], tiltAxis, degToRad(opts.leanAngleDeg)));
+
+  const trunk = growBranch({
+    base: [0, 0, 0],
+    direction: initialDir,
+    length: opts.height,
+    rootRadius: opts.trunkRadiusBase,
+    tipRadius: opts.trunkRadiusTip,
+    segments: opts.trunkSegments,
+    curvatureRad: degToRad(opts.leanCurvatureDeg),
+    curvatureAxis: tiltAxis,
+    parentIndex: -1,
+    parentT: 0,
+    depth: 0,
+  });
+  // seed is unused for now — kept in the signature so future trunk-wobble
+  // variation has somewhere to plug in.
+  void opts.seed;
+  return finalizeBranches([trunk]);
+}
+
+// ===== Whorled pine =====================================================
+// Monopodial: a single dominant trunk with lateral branches in WHORLS
+// (rings) at regular intervals. Branches don't bend in the generator —
+// pipe `branch/tropism` downstream to get the characteristic pine droop.
+
+export interface WhorledPineOpts {
+  trunkHeight: number;
+  trunkRadiusBase: number;
+  trunkRadiusTip: number;
+  trunkSegments: number;
+  trunkLeanDeg: number;
+  whorlCount: number;
+  /** Fraction of trunk height (0..1) where the lowest whorl sits. */
+  whorlStart: number;
+  /** Fraction of trunk height (0..1) where the topmost whorl sits. */
+  whorlEnd: number;
+  branchesPerWhorl: number;
+  /** Rotation (degrees) of each whorl's azimuth relative to the previous. */
+  whorlPhaseOffsetDeg: number;
+  /** Whorl-branch length at the lowest whorl. */
+  branchLengthAtBase: number;
+  /** Whorl-branch length at the topmost whorl (shorter than base → cone). */
+  branchLengthAtTop: number;
+  /** Tilt of whorl branches from the trunk tangent, degrees. 90 = horizontal. */
+  branchAngleDeg: number;
+  branchSegments: number;
+  /** Whorl-branch root radius = trunk radius at attach × branchRadiusFraction. */
+  branchRadiusFraction: number;
+  /** Whorl-branch tip radius = root radius × this. */
+  branchTipRadiusFraction: number;
+  /** Sub-branches per whorl branch (0 = none — most species). */
+  subBranchCount: number;
+  /** Sub-branch length as a fraction of the parent whorl branch length. */
+  subBranchLengthRatio: number;
+  subBranchAngleDeg: number;
+  seed: number;
+}
+
+export function generateWhorledPineBranchGraph(opts: WhorledPineOpts): BranchGraphValue {
+  const rand = mulberry32(Math.floor(opts.seed * 1_000_000) || 1);
+  const branches: RawBranch[] = [];
+
+  // Trunk: optional lean in a random azimuth.
+  const trunkAzimuth = rand() * 2 * Math.PI;
+  const trunkTiltAxis: [number, number, number] = [
+    -Math.sin(trunkAzimuth),
+    0,
+    Math.cos(trunkAzimuth),
+  ];
+  const trunkDir = normalize(rotateAxisAngle([0, 1, 0], trunkTiltAxis, degToRad(opts.trunkLeanDeg)));
+
+  const trunk = growBranch({
+    base: [0, 0, 0],
+    direction: trunkDir,
+    length: opts.trunkHeight,
+    rootRadius: opts.trunkRadiusBase,
+    tipRadius: opts.trunkRadiusTip,
+    segments: opts.trunkSegments,
+    curvatureRad: 0,
+    curvatureAxis: trunkTiltAxis,
+    parentIndex: -1,
+    parentT: 0,
+    depth: 0,
+  });
+  branches.push(trunk);
+
+  const whorlCount = Math.max(1, Math.floor(opts.whorlCount));
+  let phase = rand() * 2 * Math.PI;
+
+  for (let w = 0; w < whorlCount; w++) {
+    const whorlFrac =
+      whorlCount === 1
+        ? (opts.whorlStart + opts.whorlEnd) * 0.5
+        : opts.whorlStart + (opts.whorlEnd - opts.whorlStart) * (w / (whorlCount - 1));
+
+    const whorlPos = polylineLookup(trunk.polyline, whorlFrac);
+    const trunkTangentHere = polylineTangent(trunk.polyline, whorlFrac);
+
+    // Trunk radius at this height (linear taper assumed).
+    const trunkR = opts.trunkRadiusBase + (opts.trunkRadiusTip - opts.trunkRadiusBase) * whorlFrac;
+    const whorlBranchRoot = trunkR * opts.branchRadiusFraction;
+
+    // Length tapers from base whorl to top whorl.
+    const lengthFrac = whorlCount === 1 ? 0 : w / (whorlCount - 1);
+    const branchLen =
+      opts.branchLengthAtBase + (opts.branchLengthAtTop - opts.branchLengthAtBase) * lengthFrac;
+
+    // A reference perpendicular to the trunk tangent, used as the
+    // "outward" anchor for each branch's azimuth around the trunk.
+    const trunkPerp = pickPerpendicular(trunkTangentHere);
+
+    for (let k = 0; k < opts.branchesPerWhorl; k++) {
+      const angleAround = phase + (k / opts.branchesPerWhorl) * 2 * Math.PI;
+      const outward = normalize(rotateAxisAngle(trunkPerp, trunkTangentHere, angleAround));
+      // Branch direction: rotate trunk tangent toward `outward` by branchAngleDeg.
+      const tiltAxis = normalize(cross(trunkTangentHere, outward));
+      const branchDir = normalize(
+        rotateAxisAngle(trunkTangentHere, tiltAxis, degToRad(opts.branchAngleDeg)),
+      );
+
+      const whorlBranch = growBranch({
+        base: whorlPos,
+        direction: branchDir,
+        length: branchLen,
+        rootRadius: whorlBranchRoot,
+        tipRadius: whorlBranchRoot * opts.branchTipRadiusFraction,
+        segments: Math.max(2, Math.floor(opts.branchSegments)),
+        curvatureRad: 0,
+        curvatureAxis: tiltAxis,
+        parentIndex: 0,
+        parentT: whorlFrac,
+        depth: 1,
+      });
+      const whorlIdx = branches.length;
+      branches.push(whorlBranch);
+
+      // Sub-branches: evenly along the parent's upper portion. Alternate
+      // sides so they don't all stack vertically.
+      if (opts.subBranchCount > 0) {
+        const subN = Math.floor(opts.subBranchCount);
+        for (let s = 0; s < subN; s++) {
+          const tSub = 0.35 + (0.55 * (s + 0.5)) / subN;
+          const subBase = polylineLookup(whorlBranch.polyline, tSub);
+          const subTangent = polylineTangent(whorlBranch.polyline, tSub);
+          const subPerp = pickPerpendicular(subTangent);
+          const subAngleAround = (s % 2 === 0 ? 1 : -1) * (Math.PI * 0.5) + rand() * 0.4;
+          const subOutward = normalize(rotateAxisAngle(subPerp, subTangent, subAngleAround));
+          const subTiltAxis = normalize(cross(subTangent, subOutward));
+          const subDir = normalize(
+            rotateAxisAngle(subTangent, subTiltAxis, degToRad(opts.subBranchAngleDeg)),
+          );
+
+          const subRootRadius = whorlBranchRoot * 0.55;
+          branches.push(
+            growBranch({
+              base: subBase,
+              direction: subDir,
+              length: branchLen * opts.subBranchLengthRatio,
+              rootRadius: subRootRadius,
+              tipRadius: subRootRadius * opts.branchTipRadiusFraction,
+              segments: Math.max(2, Math.floor(opts.branchSegments * 0.6)),
+              curvatureRad: 0,
+              curvatureAxis: subTiltAxis,
+              parentIndex: whorlIdx,
+              parentT: tSub,
+              depth: 2,
+            }),
+          );
+        }
+      }
+    }
+
+    phase += degToRad(opts.whorlPhaseOffsetDeg);
+  }
+
+  return finalizeBranches(branches);
+}
+
+// ===== Merge ============================================================
+// Concatenate two BranchGraphs into one. `b`'s branches are appended after
+// `a`'s — parentIndex values are shifted by a.branchCount, vertexStart
+// offsets are shifted by a.vertexCount, and root branches in `b` stay
+// rootful (parentIndex = -1). The resulting graph can have multiple roots;
+// every downstream consumer iterates branches and handles that fine.
+
+export function mergeBranchGraphs(
+  a: BranchGraphValue,
+  b: BranchGraphValue,
+): BranchGraphValue {
+  if (a.branchCount === 0) return b;
+  if (b.branchCount === 0) return a;
+
+  const branchCount = a.branchCount + b.branchCount;
+  const vertexCount = a.vertexCount + b.vertexCount;
+
+  const parentIndex = new Int32Array(branchCount);
+  const parentT = new Float32Array(branchCount);
+  const branchDepth = new Int32Array(branchCount);
+  const vertexStart = new Uint32Array(branchCount);
+  const vertexLength = new Uint32Array(branchCount);
+
+  parentIndex.set(a.parentIndex, 0);
+  parentT.set(a.parentT, 0);
+  branchDepth.set(a.branchDepth, 0);
+  vertexStart.set(a.vertexStart, 0);
+  vertexLength.set(a.vertexLength, 0);
+
+  for (let i = 0; i < b.branchCount; i++) {
+    const p = b.parentIndex[i]!;
+    parentIndex[a.branchCount + i] = p === -1 ? -1 : p + a.branchCount;
+    parentT[a.branchCount + i] = b.parentT[i]!;
+    branchDepth[a.branchCount + i] = b.branchDepth[i]!;
+    vertexStart[a.branchCount + i] = b.vertexStart[i]! + a.vertexCount;
+    vertexLength[a.branchCount + i] = b.vertexLength[i]!;
+  }
+
+  const positions = new Float32Array(vertexCount * 3);
+  positions.set(a.positions, 0);
+  positions.set(b.positions, a.vertexCount * 3);
+
+  const radii = new Float32Array(vertexCount);
+  radii.set(a.radii, 0);
+  radii.set(b.radii, a.vertexCount);
+
+  const arcLengthArr = new Float32Array(vertexCount);
+  arcLengthArr.set(a.arcLength, 0);
+  arcLengthArr.set(b.arcLength, a.vertexCount);
+
+  return {
+    branchCount,
+    vertexCount,
+    parentIndex,
+    parentT,
+    branchDepth,
+    vertexStart,
+    vertexLength,
+    positions,
+    radii,
+    arcLength: arcLengthArr,
+  };
 }
