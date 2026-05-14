@@ -74,6 +74,17 @@ export interface PbrMaterial {
    * sees the texture as-is, not the lit version. Defaults to false.
    */
   unlit?: boolean;
+  /**
+   * Alpha threshold for hard cutout rendering. When > 0, the renderer
+   * switches to a non-culled pipeline (so leaf cards / fronds / decals
+   * show from both sides) and the shader discards any fragment whose
+   * basecolor alpha is below this value. 0.5 is the standard foliage
+   * setting (binary mask in the alpha channel). 0 disables cutout —
+   * material renders opaque, back-face-culled. Sub-pixel anti-aliased
+   * edges with cutout will look stair-stepped without MSAA; that's the
+   * trade for not needing back-to-front sorting.
+   */
+  alphaCutoff?: number;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
+import { buildOakLeafSubgraph } from './leaf-subgraphs.js';
 import { buildBarkTextureSubgraph } from './texture-subgraphs.js';
 import {
   buildBranchBushSubgraph,
@@ -31,6 +32,7 @@ export function createTreeBushDemo(): {
   cameras: Record<string, CameraState>;
 } {
   const bark = buildBarkTextureSubgraph();
+  const oakLeaf = buildOakLeafSubgraph();
   const tree = buildBranchTreeSubgraph();
   const bush = buildBranchBushSubgraph();
   const pine = buildBranchPineSubgraph();
@@ -104,12 +106,13 @@ export function createTreeBushDemo(): {
     'branch-palm': { yaw: 0.4, pitch: 0.2, distance: 18, target: [0, 4, 0] },
     'branch-canopy': { yaw: 0.4, pitch: 0.2, distance: 22, target: [0, 6, 0] },
     'bark-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
+    'oak-leaf': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
   };
 
   return {
     graph: g,
     rootNodeId: output.id,
-    subgraphs: [bark, tree, bush, pine, palm, canopy],
+    subgraphs: [bark, oakLeaf, tree, bush, pine, palm, canopy],
     cameras,
   };
 }

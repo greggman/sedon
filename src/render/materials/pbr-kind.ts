@@ -71,6 +71,18 @@ export function createPbrKind(
     depthStencil: DEPTH_STENCIL,
   });
 
+  // Alpha-cutout variant: cull-none so cards are two-sided, NO blend
+  // state — the shader's `discard` handles transparency, and binary
+  // cutout doesn't need back-to-front sorting. Selected per-batch when
+  // a material's `alphaCutoff > 0` (leaf cards, fronds, decals).
+  const pipelineCutout = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
+    fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
+    primitive: { cullMode: 'none' },
+    depthStencil: DEPTH_STENCIL,
+  });
+
   // Lazy-create placeholder textures for materials without authored
   // normal / detail inputs. Flat-half (0.5 grey) is the albedo-detail
   // no-op; flat-normal ((0, 0, 1) in tangent space) is the normal no-op.
@@ -81,6 +93,14 @@ export function createPbrKind(
     id: 'pbr',
     pipeline,
     pipelineBlended,
+    pipelineCutout,
+    pickPipeline(material) {
+      // Cutout materials get the two-sided no-blend pipeline; the shader
+      // handles transparency via `discard`. Everything else uses the
+      // standard opaque pipeline.
+      if ((material.alphaCutoff ?? 0) > 0) return pipelineCutout;
+      return pipeline;
+    },
     buildBindGroup(material) {
       const normalTex = material.normal ?? (flatNormal ??= createFlatNormalTexture(device));
       const detailBasecolorTex =
@@ -89,8 +109,9 @@ export function createPbrKind(
         material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
 
       const paramBuffer = device.createBuffer({
-        // 4 + 1 floats, padded to 32 (next 16-byte boundary for WGSL UBO).
-        // Layout: roughness, metallic, detailScale, detailStrength, unlit.
+        // 6 floats used, padded to 32 bytes (next 16-byte boundary for
+        // WGSL UBO). Layout: roughness, metallic, detailScale,
+        // detailStrength, unlit, alphaCutoff.
         size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
@@ -100,6 +121,7 @@ export function createPbrKind(
       paramData[2] = material.detailScale ?? 4;
       paramData[3] = material.detailStrength ?? 1;
       paramData[4] = material.unlit ? 1 : 0;
+      paramData[5] = material.alphaCutoff ?? 0;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
 
       return device.createBindGroup({

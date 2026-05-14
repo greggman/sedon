@@ -672,7 +672,11 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
     position: { x: COL * 7, y: 0 },
   });
 
-  // === Leaves: thin twigs at the canopy ================================
+  // === Leaves: real leaf-textured cards on thin twigs ==================
+  // Leaf shape and normal come from `subgraph/oak-leaf` (leaf-plan output).
+  // Cards lay flat against the branch surface (instance-on-points aligns
+  // the plane's local +Y to each point's radial normal); the cutout
+  // pipeline shows the leaf silhouette via alpha discard.
   const leafPoints = addNode(g, 'branch/sample-points', {
     position: { x: COL * 5, y: ROW * 2.3 },
     inputValues: {
@@ -681,26 +685,25 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
       radiusMin: 0,
       radiusMax: 0.06,
       onlyTips: false,
-      density: 80,
+      density: 50,
       tipCount: 1,
       seed: 0.35,
     },
   });
-  const leafGeo = addNode(g, 'core/sphere', {
+  const leafGeo = addNode(g, 'core/plane', {
     position: { x: COL, y: ROW * 3.4 },
-    inputValues: { radius: 1, segments: 6, rings: 4 },
+    inputValues: { size: [1, 1], divisions: [1, 1] },
   });
   const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
     position: { x: COL * 6, y: ROW * 2.7 },
-    inputValues: { scale: 0.13, align: true },
+    inputValues: { scale: 0.25, align: true },
   });
-  const leafColor = addNode(g, 'core/solid-color', {
+  const leafCard = addNode(g, 'subgraph/oak-leaf', {
     position: { x: COL * 5, y: ROW * 4.2 },
-    inputValues: { color: [0.2, 0.46, 0.16, 1], resolution: 16 },
   });
   const leafMat = addNode(g, 'core/material', {
     position: { x: COL * 6, y: ROW * 4.2 },
-    inputValues: { roughness: 0.9, metallic: 0 },
+    inputValues: { roughness: 0.85, metallic: 0, alpha_cutoff: 0.5 },
   });
   const leafEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 7, y: ROW * 3 },
@@ -728,7 +731,8 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   addEdge(g, { node: leafPoints.id, socket: 'points' }, { node: leafScatter.id, socket: 'points' });
   addEdge(g, { node: leafGeo.id, socket: 'geometry' }, { node: leafScatter.id, socket: 'instance' });
   addEdge(g, { node: leafScatter.id, socket: 'geometry' }, { node: leafEntity.id, socket: 'geometry' });
-  addEdge(g, { node: leafColor.id, socket: 'texture' }, { node: leafMat.id, socket: 'basecolor' });
+  addEdge(g, { node: leafCard.id, socket: 'albedo' }, { node: leafMat.id, socket: 'basecolor' });
+  addEdge(g, { node: leafCard.id, socket: 'normal' }, { node: leafMat.id, socket: 'normal' });
   addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
 
   addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });

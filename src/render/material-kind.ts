@@ -36,6 +36,23 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
    */
   readonly pipelineBlended?: GPURenderPipeline;
   /**
+   * Optional alpha-cutout pipeline (cull-none, no blend). When defined
+   * and `pickPipeline` chooses to return it, fragments with alpha below
+   * the material's threshold are discarded. Used in the main scene path
+   * for foliage / decals — distinct from `pipelineBlended` (which is a
+   * preview affordance). Same shader, same bind groups.
+   */
+  readonly pipelineCutout?: GPURenderPipeline;
+  /**
+   * Optional per-material pipeline selector for the main scene path.
+   * Default behavior is to use `pipeline`. Kinds that have material-
+   * level rendering modes (e.g. PBR's `alphaCutoff > 0` → cutout) can
+   * implement this to return their cutout/blended/etc. pipeline. The
+   * batch builder calls it once per unique material and stores the
+   * chosen pipeline on the batch.
+   */
+  pickPipeline?(material: M): GPURenderPipeline;
+  /**
    * Build a @group(1) bind group for one material instance. Called once per
    * unique material at scene-renderer construction time, not per frame.
    */

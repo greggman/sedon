@@ -43,6 +43,11 @@ struct Material {
   // the preview pane's flat synthesized tiles so authoring a texture
   // shows the texture itself.
   unlit: f32,
+  // Alpha threshold for hard-cutout rendering (leaves, fronds, decals).
+  // 0 = no cutout (opaque pipeline). >0 = fragments with basecolor.a
+  // below this value are discarded. The renderer pairs this with a
+  // cull-none pipeline so cutout cards show from both sides.
+  alphaCutoff: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -231,6 +236,12 @@ fn srgb_to_linear(color: vec3f) -> vec3f {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let albedo_sample = textureSample(basecolor, samp, in.uv);
+  // Hard alpha cutout for foliage / decals. Default alphaCutoff=0 makes
+  // this a no-op for opaque materials; the renderer also routes cutout
+  // materials onto a separate cull-none pipeline so cards are two-sided.
+  if (albedo_sample.a < material.alphaCutoff) {
+    discard;
+  }
   // basecolor + tint are sRGB-authored colors; the detail factor is a
   // greyscale multiplier (data, not color) and stays in unit space.
   // Apply the multiplier in linear space so its "0.5 = no-op" semantics

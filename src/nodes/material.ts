@@ -33,12 +33,20 @@ export const materialNode: NodeDef = {
       default: 1,
       description: '0 = detail off, 1 = full strength',
     },
+    {
+      name: 'alpha_cutoff',
+      type: 'Float',
+      default: 0,
+      description:
+        '>0 enables hard cutout — discards fragments with basecolor alpha below this threshold and renders two-sided. 0.5 is standard foliage. 0 = opaque, back-face-culled.',
+    },
   ],
   outputs: [{ name: 'material', type: 'Material' }],
   evaluate(_ctx, inputs): { material: MaterialValue } {
     const normal = inputs.normal as Texture2DValue | undefined;
     const detailBasecolor = inputs.detail_basecolor as Texture2DValue | undefined;
     const detailNormal = inputs.detail_normal as Texture2DValue | undefined;
+    const alphaCutoff = inputs.alpha_cutoff as number;
     const material: MaterialValue = {
       kind: 'pbr',
       basecolor: inputs.basecolor as Texture2DValue,
@@ -50,6 +58,7 @@ export const materialNode: NodeDef = {
     if (normal) material.normal = normal;
     if (detailBasecolor) material.detailBasecolor = detailBasecolor;
     if (detailNormal) material.detailNormal = detailNormal;
+    if (alphaCutoff > 0) material.alphaCutoff = alphaCutoff;
     return { material };
   },
 };
