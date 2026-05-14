@@ -5,6 +5,7 @@ import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createForestDemo } from './forest.js';
 import { createLeafDemo } from './leaf.js';
+import { createTreeBushDemo } from './tree-bush.js';
 
 export interface Demo {
   id: string;
@@ -28,4 +29,5 @@ export const DEMOS: Demo[] = [
   { id: 'forest', label: 'Forest', build: createForestDemo },
   { id: 'city', label: 'City', build: createCityDemo },
   { id: 'leaf', label: 'Leaf', build: createLeafDemo },
+  { id: 'tree-bush', label: 'Tree & Bush', build: createTreeBushDemo },
 ];

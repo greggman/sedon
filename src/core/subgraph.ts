@@ -90,6 +90,19 @@ function systemDefaultForType(type: string): unknown {
         values: new Float32Array([1]),
         count: 1,
       };
+    case 'BranchGraph':
+      return {
+        branchCount: 0,
+        vertexCount: 0,
+        parentIndex: new Int32Array(0),
+        parentT: new Float32Array(0),
+        branchDepth: new Int32Array(0),
+        vertexStart: new Uint32Array(0),
+        vertexLength: new Uint32Array(0),
+        positions: new Float32Array(0),
+        radii: new Float32Array(0),
+        arcLength: new Float32Array(0),
+      };
     default:
       return undefined;
   }

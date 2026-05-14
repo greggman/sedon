@@ -2,6 +2,10 @@ import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
 import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
+import { branchRecursiveNode } from './branch-recursive.js';
+import { branchSamplePointsNode } from './branch-sample-points.js';
+import { branchTropismNode } from './branch-tropism.js';
+import { branchTubeNode } from './branch-tube.js';
 import { cloudAltitudeNode } from './cloud-altitude.js';
 import { cloudMultiplyNode } from './cloud-multiply.js';
 import { cloudSlopeNode } from './cloud-slope.js';
@@ -76,6 +80,10 @@ export const CORE_NODES = [
   blendNode,
   blendMaskNode,
   blurNode,
+  branchRecursiveNode,
+  branchTropismNode,
+  branchTubeNode,
+  branchSamplePointsNode,
   distanceTransformNode,
   warpNode,
   colorizeNode,
@@ -101,6 +109,10 @@ export {
   blendMaskNode,
   blendNode,
   blurNode,
+  branchRecursiveNode,
+  branchSamplePointsNode,
+  branchTropismNode,
+  branchTubeNode,
   distanceTransformNode,
   cloudAltitudeNode,
   cloudMultiplyNode,
