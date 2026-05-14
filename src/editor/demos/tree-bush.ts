@@ -4,22 +4,24 @@ import type { CameraState } from '../store.js';
 import { buildBarkTextureSubgraph } from './texture-subgraphs.js';
 import {
   buildBranchBushSubgraph,
+  buildBranchCanopyTreeSubgraph,
   buildBranchPalmSubgraph,
   buildBranchPineSubgraph,
   buildBranchTreeSubgraph,
 } from './tree-bush-subgraphs.js';
 
-// Demo for the BranchGraph pipeline. Four plant-family subgraphs lined up
+// Demo for the BranchGraph pipeline. Five plant-family subgraphs lined up
 // in world X, each placed via `core/single-point` →
-// `core/instance-scene-on-points`. Drill into any of the four via the
+// `core/instance-scene-on-points`. Drill into any of the five via the
 // graph switcher to tune parameters.
 //
-//   • Branch Tree   — `branch/recursive`        (oak-style deciduous, with flowers)
-//   • Branch Bush   — `branch/recursive`        (shallow + dense parameters)
-//   • Branch Pine   — `branch/whorled-pine`     (monopodial + whorls)
-//   • Branch Palm   — `branch/palm`             (single trunk + frond ring)
+//   • Branch Tree    — `branch/recursive`           (oak-style deciduous, with flowers)
+//   • Branch Bush    — `branch/recursive`           (shallow + dense parameters)
+//   • Branch Pine    — `branch/whorled-pine`        (monopodial + whorls)
+//   • Branch Palm    — `branch/palm`                (single trunk + frond ring)
+//   • Branch Canopy  — `branch/space-colonization`  (attractor-grown big canopy)
 //
-// All four share the same Realize-stage nodes: `branch/tube`,
+// All five share the same Realize-stage nodes: `branch/tube`,
 // `branch/sample-points`, `branch/tropism`, plus the standard
 // instance-on-points / scene-merge plumbing.
 export function createTreeBushDemo(): {
@@ -33,6 +35,7 @@ export function createTreeBushDemo(): {
   const bush = buildBranchBushSubgraph();
   const pine = buildBranchPineSubgraph();
   const palm = buildBranchPalmSubgraph();
+  const canopy = buildBranchCanopyTreeSubgraph();
 
   const g = createGraph();
   const COL = 280;
@@ -47,10 +50,11 @@ export function createTreeBushDemo(): {
   // World positions chosen by trial-and-error so the species don't visually
   // collide despite their different canopy widths.
   const species: SpeciesEntry[] = [
-    { id: bush.id, x: -10, rowIdx: 0 },
-    { id: tree.id, x: -4, rowIdx: 1 },
-    { id: pine.id, x: 4, rowIdx: 2 },
-    { id: palm.id, x: 12, rowIdx: 3 },
+    { id: bush.id, x: -16, rowIdx: 0 },
+    { id: tree.id, x: -9, rowIdx: 1 },
+    { id: canopy.id, x: 0, rowIdx: 2 },
+    { id: pine.id, x: 10, rowIdx: 3 },
+    { id: palm.id, x: 18, rowIdx: 4 },
   ];
 
   const merges: { id: string; position: { x: number; y: number } }[] = [];
@@ -93,18 +97,19 @@ export function createTreeBushDemo(): {
   addEdge(g, { node: current.id, socket: current.socket }, { node: output.id, socket: 'scene' });
 
   const cameras: Record<string, CameraState> = {
-    main: { yaw: 0.45, pitch: 0.18, distance: 32, target: [0, 4, 0] },
+    main: { yaw: 0.45, pitch: 0.18, distance: 44, target: [0, 5, 0] },
     'branch-tree': { yaw: 0.4, pitch: 0.2, distance: 14, target: [0, 3, 0] },
     'branch-bush': { yaw: 0.4, pitch: 0.25, distance: 3, target: [0, 0.5, 0] },
     'branch-pine': { yaw: 0.4, pitch: 0.18, distance: 22, target: [0, 5.5, 0] },
     'branch-palm': { yaw: 0.4, pitch: 0.2, distance: 18, target: [0, 4, 0] },
+    'branch-canopy': { yaw: 0.4, pitch: 0.2, distance: 22, target: [0, 6, 0] },
     'bark-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
   };
 
   return {
     graph: g,
     rootNodeId: output.id,
-    subgraphs: [bark, tree, bush, pine, palm],
+    subgraphs: [bark, tree, bush, pine, palm, canopy],
     cameras,
   };
 }

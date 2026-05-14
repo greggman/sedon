@@ -1021,3 +1021,297 @@ export function mergeBranchGraphs(
     arcLength: arcLengthArr,
   };
 }
+
+// ===== Space colonization (Runions et al.) ==============================
+// Attractor-driven canopy growth. Given a cloud of attractor points
+// (typically scattered inside the desired crown volume), grow a tree
+// from a single root toward the attractors. Each iteration:
+//
+//   1. Each attractor pulls its nearest tree node toward it (if within
+//      `attractorRadius`).
+//   2. Each pulled node grows a new child node one `segmentLength` step
+//      in the average direction of its attractors (optionally biased
+//      upward to discourage horizontal sprawl).
+//   3. Attractors within `killRadius` of any tree node are consumed.
+//
+// Branch radii are assigned via Murray's law (R^p = sum c_i^p) bottom-up
+// from leaves, then rescaled so the root matches `rootRadius`. Produces
+// natural deciduous topology — irregular forking, varied lengths, canopy-
+// conforming shape.
+
+export interface SpaceColonizationOpts {
+  /** Attractor positions (Float32Array, length = count*3). */
+  attractors: Float32Array;
+  attractorCount: number;
+  trunkStart: readonly [number, number, number];
+  /** Direction used to grow the very first segment when no attractor is
+   * yet within `attractorRadius` of the root. Lets the trunk reach a
+   * canopy lifted above its start position. */
+  trunkInitialDirection: readonly [number, number, number];
+  /** Influence radius — only attractors within this distance of their
+   * nearest node count. A few × `segmentLength` works well. */
+  attractorRadius: number;
+  /** Attractor consumption radius. Should be ~ `segmentLength`. */
+  killRadius: number;
+  /** Step size per growth iteration. */
+  segmentLength: number;
+  /** Hard cap on iterations (also bounds branch count). */
+  maxIterations: number;
+  /** Y-axis pull added to each growth direction. Small positive values
+   * (~0.1) prevent attractor balance from producing horizontal sprawl. */
+  upBias: number;
+  rootRadius: number;
+  /** Leaf-node radius before Murray aggregation. */
+  tipRadius: number;
+  /** Murray's-law exponent. 2.0 = area conservation, 2.5–3.0 typical. */
+  radiusExponent: number;
+}
+
+interface ScNode {
+  pos: [number, number, number];
+  parent: number; // -1 for root
+  radius: number;
+  children: number[];
+}
+
+export function generateSpaceColonizationBranchGraph(
+  opts: SpaceColonizationOpts,
+): BranchGraphValue {
+  // Copy attractors into a plain array so we can splice as they're killed.
+  const attractors: Array<[number, number, number]> = [];
+  for (let i = 0; i < opts.attractorCount; i++) {
+    attractors.push([
+      opts.attractors[i * 3]!,
+      opts.attractors[i * 3 + 1]!,
+      opts.attractors[i * 3 + 2]!,
+    ]);
+  }
+
+  const nodes: ScNode[] = [
+    {
+      pos: [opts.trunkStart[0], opts.trunkStart[1], opts.trunkStart[2]],
+      parent: -1,
+      radius: 0,
+      children: [],
+    },
+  ];
+
+  const dInfSq = opts.attractorRadius * opts.attractorRadius;
+  const dKillSq = opts.killRadius * opts.killRadius;
+  const initialDir = normalize([
+    opts.trunkInitialDirection[0],
+    opts.trunkInitialDirection[1],
+    opts.trunkInitialDirection[2],
+  ]);
+
+  for (let iter = 0; iter < opts.maxIterations; iter++) {
+    // O(A * N) nearest-node lookup. Fine for A,N in the few hundreds;
+    // spatial index is a known optimization when profiling demands it.
+    const influence: Map<number, [number, number, number][]> = new Map();
+    for (const a of attractors) {
+      let bestI = -1;
+      let bestDSq = Infinity;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i]!;
+        const dx = n.pos[0] - a[0];
+        const dy = n.pos[1] - a[1];
+        const dz = n.pos[2] - a[2];
+        const dsq = dx * dx + dy * dy + dz * dz;
+        if (dsq < bestDSq) {
+          bestDSq = dsq;
+          bestI = i;
+        }
+      }
+      if (bestI >= 0 && bestDSq <= dInfSq) {
+        let list = influence.get(bestI);
+        if (!list) {
+          list = [];
+          influence.set(bestI, list);
+        }
+        list.push(a);
+      }
+    }
+
+    if (influence.size === 0) {
+      // No attractor reaches any node yet. Extend the most-recent tip one
+      // segment in its current direction (or the seed direction for the
+      // root) so a lifted canopy is reachable. Bounded by maxIterations.
+      const latestIdx = nodes.length - 1;
+      const latest = nodes[latestIdx]!;
+      let dirX = initialDir[0];
+      let dirY = initialDir[1];
+      let dirZ = initialDir[2];
+      if (latest.parent >= 0) {
+        const par = nodes[latest.parent]!;
+        const dx = latest.pos[0] - par.pos[0];
+        const dy = latest.pos[1] - par.pos[1];
+        const dz = latest.pos[2] - par.pos[2];
+        const len = Math.hypot(dx, dy, dz) || 1;
+        dirX = dx / len;
+        dirY = dy / len;
+        dirZ = dz / len;
+      }
+      const newPos: [number, number, number] = [
+        latest.pos[0] + dirX * opts.segmentLength,
+        latest.pos[1] + dirY * opts.segmentLength,
+        latest.pos[2] + dirZ * opts.segmentLength,
+      ];
+      const newIdx = nodes.length;
+      nodes.push({ pos: newPos, parent: latestIdx, radius: 0, children: [] });
+      latest.children.push(newIdx);
+      continue;
+    }
+
+    const newStart = nodes.length;
+    for (const [nodeIdx, attrs] of influence) {
+      const node = nodes[nodeIdx]!;
+      let dx = 0, dy = 0, dz = 0;
+      for (const a of attrs) {
+        const vx = a[0] - node.pos[0];
+        const vy = a[1] - node.pos[1];
+        const vz = a[2] - node.pos[2];
+        const len = Math.hypot(vx, vy, vz) || 1;
+        dx += vx / len;
+        dy += vy / len;
+        dz += vz / len;
+      }
+      dy += opts.upBias;
+      const dlen = Math.hypot(dx, dy, dz) || 1;
+      dx /= dlen; dy /= dlen; dz /= dlen;
+
+      const newPos: [number, number, number] = [
+        node.pos[0] + dx * opts.segmentLength,
+        node.pos[1] + dy * opts.segmentLength,
+        node.pos[2] + dz * opts.segmentLength,
+      ];
+      const newIdx = nodes.length;
+      nodes.push({ pos: newPos, parent: nodeIdx, radius: 0, children: [] });
+      node.children.push(newIdx);
+    }
+
+    // Kill attractors within killRadius of any node. Most kills come from
+    // the just-added nodes, so check those first.
+    let w = 0;
+    for (let r = 0; r < attractors.length; r++) {
+      const a = attractors[r]!;
+      let alive = true;
+      for (let i = newStart; i < nodes.length && alive; i++) {
+        const n = nodes[i]!;
+        const dx = n.pos[0] - a[0];
+        const dy = n.pos[1] - a[1];
+        const dz = n.pos[2] - a[2];
+        if (dx * dx + dy * dy + dz * dz <= dKillSq) alive = false;
+      }
+      if (alive) {
+        for (let i = 0; i < newStart && alive; i++) {
+          const n = nodes[i]!;
+          const dx = n.pos[0] - a[0];
+          const dy = n.pos[1] - a[1];
+          const dz = n.pos[2] - a[2];
+          if (dx * dx + dy * dy + dz * dz <= dKillSq) alive = false;
+        }
+      }
+      if (alive) attractors[w++] = a;
+    }
+    attractors.length = w;
+
+    if (attractors.length === 0) break;
+  }
+
+  // Murray radii, bottom-up. Topological order = reverse insertion order
+  // since parent < child by construction.
+  for (let idx = nodes.length - 1; idx >= 0; idx--) {
+    const node = nodes[idx]!;
+    if (node.children.length === 0) {
+      node.radius = opts.tipRadius;
+    } else {
+      let sumP = 0;
+      for (const ci of node.children) {
+        sumP += Math.pow(nodes[ci]!.radius, opts.radiusExponent);
+      }
+      node.radius = Math.pow(sumP, 1 / opts.radiusExponent);
+    }
+  }
+
+  // Rescale so root.radius = rootRadius. Murray gives ratios; user gives
+  // the absolute scale.
+  if (nodes[0]!.radius > 1e-9) {
+    const scale = opts.rootRadius / nodes[0]!.radius;
+    for (const n of nodes) n.radius *= scale;
+  }
+
+  return nodeTreeToBranchGraph(nodes);
+}
+
+function nodeTreeToBranchGraph(nodes: ScNode[]): BranchGraphValue {
+  if (nodes.length === 0) return emptyBranchGraph();
+  if (nodes.length === 1) {
+    return finalizeBranches([
+      {
+        parentIndex: -1,
+        parentT: 0,
+        depth: 0,
+        polyline: [[nodes[0]!.pos[0], nodes[0]!.pos[1], nodes[0]!.pos[2]]],
+        radii: [nodes[0]!.radius],
+      },
+    ]);
+  }
+
+  const raws: RawBranch[] = [];
+
+  // Emit a chain starting at `head`. If `leading` is set, it becomes the
+  // first vertex — used to share the branch-point position between parent
+  // and child so tubes meet cleanly without a visible gap.
+  function emitChain(
+    head: number,
+    parentBranchIdx: number,
+    parentT: number,
+    depth: number,
+    leading: { pos: [number, number, number]; radius: number } | null,
+  ): void {
+    const polyline: Array<[number, number, number]> = [];
+    const radii: number[] = [];
+    if (leading) {
+      polyline.push([leading.pos[0], leading.pos[1], leading.pos[2]]);
+      radii.push(leading.radius);
+    }
+    let cur = head;
+    while (true) {
+      const n = nodes[cur]!;
+      polyline.push([n.pos[0], n.pos[1], n.pos[2]]);
+      radii.push(n.radius);
+      if (n.children.length !== 1) break;
+      cur = n.children[0]!;
+    }
+    const myIdx = raws.length;
+    raws.push({ parentIndex: parentBranchIdx, parentT, depth, polyline, radii });
+    const tail = nodes[cur]!;
+    if (tail.children.length > 1) {
+      const shared = {
+        pos: [tail.pos[0], tail.pos[1], tail.pos[2]] as [number, number, number],
+        radius: tail.radius,
+      };
+      for (const childIdx of tail.children) {
+        emitChain(childIdx, myIdx, 1, depth + 1, shared);
+      }
+    }
+  }
+
+  const root = nodes[0]!;
+  if (root.children.length === 1) {
+    emitChain(0, -1, 0, 0, null);
+  } else if (root.children.length > 1) {
+    const shared = {
+      pos: [root.pos[0], root.pos[1], root.pos[2]] as [number, number, number],
+      radius: root.radius,
+    };
+    for (const childIdx of root.children) {
+      emitChain(childIdx, -1, 0, 0, shared);
+    }
+  } else {
+    // Root with no children — single-vertex degenerate (handled at top).
+    return emptyBranchGraph();
+  }
+
+  return finalizeBranches(raws);
+}

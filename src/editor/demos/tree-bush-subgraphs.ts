@@ -595,3 +595,154 @@ export function buildBranchPineSubgraph(): SubgraphDef {
     outputNodeId: outputNode.id,
   };
 }
+
+// Space-colonization canopy tree. Scatters attractor points on the surface
+// of a lifted sphere, then grows a tree from origin toward them — produces
+// the irregular forking + canopy-conforming silhouette characteristic of
+// big deciduous trees (oak, maple, beech).
+export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
+  const id = 'branch-canopy';
+  const g = createGraph();
+
+  const inputNode = addNode(g, `subgraph-input/${id}`, {
+    position: { x: 0, y: ROW * 2 },
+  });
+  const outputNode = addNode(g, `subgraph-output/${id}`, {
+    position: { x: COL * 10, y: ROW * 2 },
+  });
+
+  // === Attractor envelope: a sphere lifted into the canopy zone. ========
+  const crownSphere = addNode(g, 'core/sphere', {
+    position: { x: 0, y: 0 },
+    inputValues: { radius: 4, segments: 14, rings: 10 },
+  });
+  const crownLift = addNode(g, 'core/transform', {
+    position: { x: COL, y: 0 },
+    inputValues: { translate: [0, 9, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  const attractors = addNode(g, 'core/distribute-on-faces', {
+    position: { x: COL * 2, y: 0 },
+    inputValues: { density: 1, seed: 0.27 },
+  });
+
+  // === Grow toward attractors ==========================================
+  const sc = addNode(g, 'branch/space-colonization', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: {
+      trunkStart: [0, 0, 0],
+      trunkInitialDirection: [0, 1, 0],
+      attractorRadius: 3.5,
+      killRadius: 0.5,
+      segmentLength: 0.4,
+      maxIterations: 300,
+      upBias: 0.18,
+      rootRadius: 0.35,
+      tipRadius: 0.03,
+      radiusExponent: 2.5,
+    },
+  });
+  const tropism = addNode(g, 'branch/tropism', {
+    position: { x: COL * 4, y: 0 },
+    inputValues: {
+      gravity: 0.03,
+      phototropism: [0, 0, 0],
+      wobble: 0.005,
+      wobbleSeed: 0.2,
+    },
+  });
+
+  // === Trunk geometry ===================================================
+  const tube = addNode(g, 'branch/tube', {
+    position: { x: COL * 5, y: 0 },
+    inputValues: { sides: 8, uvTilingV: 0.6 },
+  });
+  const bark = addNode(g, 'subgraph/bark-texture', {
+    position: { x: COL * 5, y: -ROW * 1.4 },
+    inputValues: {
+      seed: 0.62,
+      color_dark: [0.15, 0.09, 0.05, 1],
+      color_light: [0.48, 0.32, 0.19, 1],
+    },
+  });
+  const trunkMat = addNode(g, 'core/material', {
+    position: { x: COL * 6, y: -ROW * 0.7 },
+    inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.55 },
+  });
+  const trunkEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 7, y: 0 },
+  });
+
+  // === Leaves: thin twigs at the canopy ================================
+  const leafPoints = addNode(g, 'branch/sample-points', {
+    position: { x: COL * 5, y: ROW * 2.3 },
+    inputValues: {
+      depthMin: 1,
+      depthMax: 99,
+      radiusMin: 0,
+      radiusMax: 0.06,
+      onlyTips: false,
+      density: 80,
+      tipCount: 1,
+      seed: 0.35,
+    },
+  });
+  const leafGeo = addNode(g, 'core/sphere', {
+    position: { x: COL, y: ROW * 3.4 },
+    inputValues: { radius: 1, segments: 6, rings: 4 },
+  });
+  const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
+    position: { x: COL * 6, y: ROW * 2.7 },
+    inputValues: { scale: 0.13, align: true },
+  });
+  const leafColor = addNode(g, 'core/solid-color', {
+    position: { x: COL * 5, y: ROW * 4.2 },
+    inputValues: { color: [0.2, 0.46, 0.16, 1], resolution: 16 },
+  });
+  const leafMat = addNode(g, 'core/material', {
+    position: { x: COL * 6, y: ROW * 4.2 },
+    inputValues: { roughness: 0.9, metallic: 0 },
+  });
+  const leafEntity = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 7, y: ROW * 3 },
+  });
+
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 9, y: ROW * 1.5 },
+  });
+
+  // === Edges ===========================================================
+  addEdge(g, { node: crownSphere.id, socket: 'geometry' }, { node: crownLift.id, socket: 'geometry' });
+  addEdge(g, { node: crownLift.id, socket: 'geometry' }, { node: attractors.id, socket: 'geometry' });
+  addEdge(g, { node: attractors.id, socket: 'points' }, { node: sc.id, socket: 'attractors' });
+  addEdge(g, { node: sc.id, socket: 'branches' }, { node: tropism.id, socket: 'branches' });
+  addEdge(g, { node: tropism.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+  addEdge(g, { node: tropism.id, socket: 'branches' }, { node: leafPoints.id, socket: 'branches' });
+
+  addEdge(g, { node: tube.id, socket: 'geometry' }, { node: trunkEntity.id, socket: 'geometry' });
+  addEdge(g, { node: bark.id, socket: 'basecolor' }, { node: trunkMat.id, socket: 'basecolor' });
+  addEdge(g, { node: bark.id, socket: 'normal' }, { node: trunkMat.id, socket: 'normal' });
+  addEdge(g, { node: bark.id, socket: 'detail_basecolor' }, { node: trunkMat.id, socket: 'detail_basecolor' });
+  addEdge(g, { node: bark.id, socket: 'detail_normal' }, { node: trunkMat.id, socket: 'detail_normal' });
+  addEdge(g, { node: trunkMat.id, socket: 'material' }, { node: trunkEntity.id, socket: 'material' });
+
+  addEdge(g, { node: leafPoints.id, socket: 'points' }, { node: leafScatter.id, socket: 'points' });
+  addEdge(g, { node: leafGeo.id, socket: 'geometry' }, { node: leafScatter.id, socket: 'instance' });
+  addEdge(g, { node: leafScatter.id, socket: 'geometry' }, { node: leafEntity.id, socket: 'geometry' });
+  addEdge(g, { node: leafColor.id, socket: 'texture' }, { node: leafMat.id, socket: 'basecolor' });
+  addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
+
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'Branch Canopy',
+    category: 'Trees',
+    inputs: [],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
+}

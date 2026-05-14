@@ -6,6 +6,7 @@ import { branchMergeNode } from './branch-merge.js';
 import { branchPalmNode } from './branch-palm.js';
 import { branchRecursiveNode } from './branch-recursive.js';
 import { branchSamplePointsNode } from './branch-sample-points.js';
+import { branchSpaceColonizationNode } from './branch-space-colonization.js';
 import { branchTropismNode } from './branch-tropism.js';
 import { branchTubeNode } from './branch-tube.js';
 import { branchWhorledPineNode } from './branch-whorled-pine.js';
@@ -90,6 +91,7 @@ export const CORE_NODES = [
   branchTropismNode,
   branchTubeNode,
   branchSamplePointsNode,
+  branchSpaceColonizationNode,
   branchWhorledPineNode,
   singlePointNode,
   distanceTransformNode,
@@ -121,6 +123,7 @@ export {
   branchPalmNode,
   branchRecursiveNode,
   branchSamplePointsNode,
+  branchSpaceColonizationNode,
   branchTropismNode,
   branchTubeNode,
   branchWhorledPineNode,

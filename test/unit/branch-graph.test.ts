@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyTropismToBranchGraph,
+  generatePalmBranchGraph,
   generateRecursiveBranchGraph,
+  generateSpaceColonizationBranchGraph,
+  generateWhorledPineBranchGraph,
+  mergeBranchGraphs,
   sampleBranchGraphPoints,
   sweepBranchGraphToMesh,
 } from '../../src/render/branch-graph.js';
@@ -108,6 +112,7 @@ test('branch/sample-points emits leaves on depth >= 1', () => {
     radiusMax: 99,
     onlyTips: false,
     density: 30,
+    tipCount: 1,
     seed: 0.5,
   });
   assert.ok(pc.count > 0, 'should sample some points');
@@ -125,9 +130,138 @@ test('branch/sample-points onlyTips emits one point per qualifying branch', () =
     radiusMax: 99,
     onlyTips: true,
     density: 0,
+    tipCount: 1,
     seed: 0.5,
   });
   assert.equal(pc.count, g.branchCount);
+});
+
+test('branch/sample-points onlyTips with tipCount=N emits N points per tip', () => {
+  const g = generateRecursiveBranchGraph(DEFAULT_OPTS);
+  const tipCount = 6;
+  const pc = sampleBranchGraphPoints(g, {
+    depthMin: 0,
+    depthMax: 99,
+    radiusMin: 0,
+    radiusMax: 99,
+    onlyTips: true,
+    density: 0,
+    tipCount,
+    seed: 0.5,
+  });
+  assert.equal(pc.count, g.branchCount * tipCount);
+});
+
+// Build a small attractor cloud on the surface of a sphere at (0, height, 0).
+function sphereAttractors(
+  centerY: number,
+  radius: number,
+  count: number,
+): { attractors: Float32Array; attractorCount: number } {
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    // Quasi-uniform sphere via golden-ratio spiral. Deterministic, no RNG.
+    const u = (i + 0.5) / count;
+    const theta = 2 * Math.PI * i * (1 + Math.sqrt(5)) / 2;
+    const z = 1 - 2 * u;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    positions[i * 3] = Math.cos(theta) * r * radius;
+    positions[i * 3 + 1] = centerY + z * radius;
+    positions[i * 3 + 2] = Math.sin(theta) * r * radius;
+  }
+  return { attractors: positions, attractorCount: count };
+}
+
+const SC_DEFAULT_OPTS = {
+  trunkStart: [0, 0, 0] as [number, number, number],
+  trunkInitialDirection: [0, 1, 0] as [number, number, number],
+  attractorRadius: 3.5,
+  killRadius: 0.5,
+  segmentLength: 0.4,
+  maxIterations: 200,
+  upBias: 0.18,
+  rootRadius: 0.3,
+  tipRadius: 0.04,
+  radiusExponent: 2.5,
+};
+
+test('branch/space-colonization grows a non-trivial tree toward attractors', () => {
+  const { attractors, attractorCount } = sphereAttractors(9, 4, 120);
+  const g = generateSpaceColonizationBranchGraph({
+    ...SC_DEFAULT_OPTS,
+    attractors,
+    attractorCount,
+  });
+  assert.ok(g.branchCount >= 2, 'expected at least a trunk + 1 child branch');
+  assert.ok(g.vertexCount >= g.branchCount);
+  // Trunk anchored at origin.
+  assert.equal(g.positions[0], 0);
+  assert.equal(g.positions[1], 0);
+  assert.equal(g.positions[2], 0);
+  // Root branch carries depth 0 and is a root.
+  assert.equal(g.parentIndex[0], -1);
+  assert.equal(g.branchDepth[0], 0);
+  // At least one vertex made it into the canopy zone (y > 5).
+  let reachedCanopy = false;
+  for (let v = 0; v < g.vertexCount; v++) {
+    if (g.positions[v * 3 + 1]! > 5) {
+      reachedCanopy = true;
+      break;
+    }
+  }
+  assert.ok(reachedCanopy, 'expected branches to reach the lifted canopy (y > 5)');
+});
+
+test('branch/space-colonization: Murray-law radii scale root to rootRadius', () => {
+  const { attractors, attractorCount } = sphereAttractors(9, 4, 120);
+  const g = generateSpaceColonizationBranchGraph({
+    ...SC_DEFAULT_OPTS,
+    attractors,
+    attractorCount,
+  });
+  // The first vertex of the trunk-root branch is the root node; its radius
+  // should match the input rootRadius.
+  assert.ok(Math.abs(g.radii[0]! - SC_DEFAULT_OPTS.rootRadius) < 1e-4,
+    `root radius ${g.radii[0]} != ${SC_DEFAULT_OPTS.rootRadius}`);
+});
+
+test('branch/space-colonization: branch-point vertex shared between parent and child', () => {
+  const { attractors, attractorCount } = sphereAttractors(9, 4, 120);
+  const g = generateSpaceColonizationBranchGraph({
+    ...SC_DEFAULT_OPTS,
+    attractors,
+    attractorCount,
+  });
+  // Find a non-root branch and verify its first vertex matches the LAST
+  // vertex of its parent (shared branch-point position).
+  for (let b = 1; b < g.branchCount; b++) {
+    const p = g.parentIndex[b]!;
+    if (p < 0) continue;
+    const parentLastIdx = g.vertexStart[p]! + g.vertexLength[p]! - 1;
+    const childFirstIdx = g.vertexStart[b]!;
+    assert.equal(g.positions[childFirstIdx * 3], g.positions[parentLastIdx * 3]);
+    assert.equal(g.positions[childFirstIdx * 3 + 1], g.positions[parentLastIdx * 3 + 1]);
+    assert.equal(g.positions[childFirstIdx * 3 + 2], g.positions[parentLastIdx * 3 + 2]);
+    return;
+  }
+  // If no child branch found, the test setup didn't produce branching —
+  // bump the attractor count or the test parameters.
+  throw new Error('space-colonization test produced no branching');
+});
+
+test('branch/space-colonization with no attractors returns near-trivial graph', () => {
+  const g = generateSpaceColonizationBranchGraph({
+    ...SC_DEFAULT_OPTS,
+    attractors: new Float32Array(0),
+    attractorCount: 0,
+  });
+  // With no attractors, no growth happens past iteration 0's seed step
+  // (which doesn't fire when there's nothing to grow toward either —
+  // iter 0 only seeds when nodes.length === 1 AND influence is empty,
+  // which only matters when there are SOMEDAY attractors).
+  // Should still produce a valid (possibly tiny) BranchGraph.
+  assert.ok(g.branchCount >= 1);
+  assert.ok(g.vertexCount >= 1);
 });
 
 test('branch/tropism preserves trunk base (depth 0 stays anchored)', () => {
@@ -142,6 +276,154 @@ test('branch/tropism preserves trunk base (depth 0 stays anchored)', () => {
   assert.equal(bent.positions[0], g.positions[0]);
   assert.equal(bent.positions[1], g.positions[1]);
   assert.equal(bent.positions[2], g.positions[2]);
+});
+
+test('branch/palm produces a single-branch BranchGraph rooted at origin', () => {
+  const g = generatePalmBranchGraph({
+    height: 8,
+    trunkRadiusBase: 0.16,
+    trunkRadiusTip: 0.1,
+    trunkSegments: 14,
+    leanAngleDeg: 6,
+    leanCurvatureDeg: 0.6,
+    leanAzimuthDeg: 0,
+    seed: 0.41,
+  });
+  assert.equal(g.branchCount, 1, 'palm has exactly one branch');
+  assert.equal(g.parentIndex[0], -1, 'palm trunk is a root branch');
+  assert.equal(g.branchDepth[0], 0, 'palm trunk is depth 0');
+  assert.equal(g.positions[0], 0);
+  assert.equal(g.positions[1], 0);
+  assert.equal(g.positions[2], 0);
+});
+
+test('branch/whorled-pine produces trunk + whorl branches with correct depths', () => {
+  const g = generateWhorledPineBranchGraph({
+    trunkHeight: 12,
+    trunkRadiusBase: 0.32,
+    trunkRadiusTip: 0.04,
+    trunkSegments: 16,
+    trunkLeanDeg: 0,
+    whorlCount: 5,
+    whorlStart: 0.25,
+    whorlEnd: 0.95,
+    branchesPerWhorl: 6,
+    whorlPhaseOffsetDeg: 35,
+    branchLengthAtBase: 3,
+    branchLengthAtTop: 0.5,
+    branchAngleDeg: 80,
+    branchSegments: 6,
+    branchRadiusFraction: 0.25,
+    branchTipRadiusFraction: 0.15,
+    subBranchCount: 0,
+    subBranchLengthRatio: 0.4,
+    subBranchAngleDeg: 55,
+    seed: 0.58,
+  });
+  assert.equal(g.branchCount, 1 + 5 * 6, 'trunk + 5×6 whorl branches');
+  assert.equal(g.branchDepth[0], 0);
+  for (let b = 1; b < g.branchCount; b++) {
+    assert.equal(g.parentIndex[b], 0, `whorl branch ${b} attaches to trunk`);
+    assert.equal(g.branchDepth[b], 1);
+  }
+});
+
+test('branch/whorled-pine with subBranchCount emits depth-2 branches', () => {
+  const g = generateWhorledPineBranchGraph({
+    trunkHeight: 12,
+    trunkRadiusBase: 0.32,
+    trunkRadiusTip: 0.04,
+    trunkSegments: 12,
+    trunkLeanDeg: 0,
+    whorlCount: 3,
+    whorlStart: 0.3,
+    whorlEnd: 0.9,
+    branchesPerWhorl: 4,
+    whorlPhaseOffsetDeg: 0,
+    branchLengthAtBase: 2,
+    branchLengthAtTop: 0.5,
+    branchAngleDeg: 80,
+    branchSegments: 6,
+    branchRadiusFraction: 0.25,
+    branchTipRadiusFraction: 0.15,
+    subBranchCount: 2,
+    subBranchLengthRatio: 0.4,
+    subBranchAngleDeg: 55,
+    seed: 0.58,
+  });
+  // trunk + 3*4 whorl + 3*4*2 sub-branches
+  assert.equal(g.branchCount, 1 + 12 + 24);
+  let depth2 = 0;
+  for (let b = 0; b < g.branchCount; b++) {
+    if (g.branchDepth[b] === 2) depth2++;
+  }
+  assert.equal(depth2, 24);
+});
+
+test('branch/merge concatenates branches and rebases indices', () => {
+  const palm = generatePalmBranchGraph({
+    height: 5,
+    trunkRadiusBase: 0.1,
+    trunkRadiusTip: 0.08,
+    trunkSegments: 6,
+    leanAngleDeg: 0,
+    leanCurvatureDeg: 0,
+    leanAzimuthDeg: 0,
+    seed: 0,
+  });
+  const recursive = generateRecursiveBranchGraph(DEFAULT_OPTS);
+  const merged = mergeBranchGraphs(palm, recursive);
+  assert.equal(merged.branchCount, palm.branchCount + recursive.branchCount);
+  assert.equal(merged.vertexCount, palm.vertexCount + recursive.vertexCount);
+
+  // The first palm.branchCount entries should match palm.
+  assert.equal(merged.parentIndex[0], -1);
+
+  // Recursive's root (at index palm.branchCount in merged) should remain -1.
+  assert.equal(merged.parentIndex[palm.branchCount], -1);
+  // And a non-root entry from recursive should have its parent shifted.
+  if (recursive.branchCount > 1) {
+    const origParent = recursive.parentIndex[1]!;
+    const expectedShifted = origParent === -1 ? -1 : origParent + palm.branchCount;
+    assert.equal(merged.parentIndex[palm.branchCount + 1], expectedShifted);
+  }
+
+  // Vertex ranges contiguous.
+  let lastEnd = 0;
+  for (let b = 0; b < merged.branchCount; b++) {
+    assert.equal(merged.vertexStart[b], lastEnd);
+    lastEnd += merged.vertexLength[b]!;
+  }
+  assert.equal(lastEnd, merged.vertexCount);
+});
+
+test('branch/merge with empty graph returns the other unchanged', () => {
+  const palm = generatePalmBranchGraph({
+    height: 5,
+    trunkRadiusBase: 0.1,
+    trunkRadiusTip: 0.08,
+    trunkSegments: 6,
+    leanAngleDeg: 0,
+    leanCurvatureDeg: 0,
+    leanAzimuthDeg: 0,
+    seed: 0,
+  });
+  const empty = {
+    branchCount: 0,
+    vertexCount: 0,
+    parentIndex: new Int32Array(0),
+    parentT: new Float32Array(0),
+    branchDepth: new Int32Array(0),
+    vertexStart: new Uint32Array(0),
+    vertexLength: new Uint32Array(0),
+    positions: new Float32Array(0),
+    radii: new Float32Array(0),
+    arcLength: new Float32Array(0),
+  };
+  const a = mergeBranchGraphs(empty, palm);
+  assert.equal(a.branchCount, palm.branchCount);
+  const b = mergeBranchGraphs(palm, empty);
+  assert.equal(b.branchCount, palm.branchCount);
 });
 
 test('branch/tropism: depth-1+ branches sag downward with positive gravity', () => {
