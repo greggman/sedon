@@ -2,6 +2,13 @@ import type { CpuMesh } from './mesh.js';
 
 // XZ plane centered at origin, normal +Y. Winding is CCW from above so default
 // back-face culling drops the underside.
+//
+// UV convention: U follows +X, V follows +Z (no flip). Combined with WebGPU's
+// V=0-at-top-of-image sampling rule and the default preview camera (which
+// looks down at the plane from +Z), this puts v=0 at the far edge → top of
+// screen, matching how the node-thumbnail blit displays a texture. The
+// earlier `1 - zi/divZ` mapping rendered textures upside-down relative to
+// their authored orientation everywhere they landed on a plane.
 export function generatePlane(
   width: number,
   depth: number,
@@ -27,7 +34,7 @@ export function generatePlane(
       normals[p + 1] = 1;
       normals[p + 2] = 0;
       uvs[u] = xi / divX;
-      uvs[u + 1] = 1 - zi / divZ;
+      uvs[u + 1] = zi / divZ;
       p += 3;
       u += 2;
     }

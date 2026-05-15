@@ -9,6 +9,7 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 interface PreviewTileProps {
@@ -34,7 +35,9 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   const rendererRef = useRef<SceneRenderer | null>(null);
 
   // Configure context once per (canvas, device) pair, plus a DPR-aware
-  // resize observer so the backing buffer tracks CSS size.
+  // resize observer so the backing buffer tracks CSS size. Resizes
+  // request a fresh render — the canvas is now blank until we draw into
+  // it, since we no longer paint every frame unconditionally.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -42,6 +45,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     const resize = () => {
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      requestRender();
     };
     resize();
     const obs = new ResizeObserver(resize);
@@ -63,20 +67,17 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     };
   }, [gpu, scene]);
 
-  // rAF loop. Reads shared camera each frame — the parent's master rAF
-  // mutates it from WASD input, and pointer drags on the wrapper update
-  // it directly. We always redraw (no dirty flag): drag motion and the
-  // continuous WASD path both want fresh frames.
+  // Render-on-demand. The render closure captures current scene / lighting
+  // / flatPreview by being recreated whenever those change; that recreated
+  // closure is then registered with the render bus AND invoked once so the
+  // first frame paints. Camera mutation, WASD motion, resize, and eval
+  // boundaries all funnel through `requestRender()`.
   //
   // The SceneRenderer owns depth + HDR + bloom intermediates internally
   // and (re)allocates them when we hand it a new size — we just pass
-  // canvas.width/height each frame.
+  // canvas.width/height each render.
   useEffect(() => {
-    let raf = 0;
-    let cancelled = false;
-    const frame = () => {
-      if (cancelled) return;
-      raf = requestAnimationFrame(frame);
+    const draw = () => {
       const canvas = canvasRef.current;
       const ctx = ctxRef.current;
       const renderer = rendererRef.current;
@@ -107,12 +108,12 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       });
       gpu.device.queue.submit([encoder.finish()]);
     };
-    raf = requestAnimationFrame(frame);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-    };
-  }, [gpu, cameraRef, lighting, flatPreview]);
+    const unsubscribe = subscribeRender(draw);
+    // Initial paint for this scene/lighting/flatPreview combination.
+    // Coalesced into a single rAF with any other tiles' initial draws.
+    requestRender();
+    return unsubscribe;
+  }, [gpu, scene, cameraRef, lighting, flatPreview]);
 
   return (
     <div className="sedon-preview-tile">

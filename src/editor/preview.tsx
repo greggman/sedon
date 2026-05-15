@@ -7,6 +7,7 @@ import { multiply, rotationX, rotationY } from '../render/mat4.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
+import { requestRender } from './render-bus.js';
 import { useEditorStore, type CameraState } from './store.js';
 
 // Camera math: orbit around `target` at `distance`, oriented by yaw/pitch.
@@ -50,6 +51,10 @@ export function Preview() {
 
   const cameraRef = useRef<OrbitCamera>(cloneCamera(DEFAULT_CAMERA));
   const keysRef = useRef<Set<string>>(new Set());
+  // Kicked by keydown to start the WASD motion rAF when it isn't already
+  // running. Filled in by the motion-loop effect below; default no-op so
+  // pre-mount keydown is a no-op rather than a crash.
+  const motionStartRef = useRef<() => void>(() => {});
 
   const graph = useEditorStore((s) => s.graph);
   const rootNodeId = useEditorStore((s) => s.rootNodeId);
@@ -131,6 +136,7 @@ export function Preview() {
           Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * sens),
         );
       }
+      requestRender();
     };
     const onPointerUp = (e: PointerEvent) => {
       if (!dragging) return;
@@ -151,6 +157,7 @@ export function Preview() {
       cam.distance = Math.max(0.5, Math.min(250, cam.distance * factor));
       const id = useEditorStore.getState().currentEditingId;
       useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+      requestRender();
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -158,6 +165,7 @@ export function Preview() {
       if (!HANDLED_KEYS.has(k)) return;
       e.preventDefault();
       keysRef.current.add(k);
+      if (MOVEMENT_KEYS.has(k)) motionStartRef.current();
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
@@ -201,48 +209,70 @@ export function Preview() {
     };
   }, []);
 
-  // Master rAF: process WASD motion every frame so all tiles see the
-  // updated camera on their own render loops. Tiles don't process WASD
-  // themselves — that would mean N tiles each adding motion N times.
+  // WASD motion loop. The rAF only runs *while a movement key is held* —
+  // when the user releases the last movement key, the loop self-terminates
+  // and the app goes back to fully idle. Each motion frame calls
+  // requestRender() so the tiles redraw the new camera. The keydown
+  // handler kicks the loop on by calling `ensureRunning()` via the ref
+  // we expose here.
   useEffect(() => {
     let raf = 0;
+    let running = false;
     let cancelled = false;
-    let lastFrameTime = performance.now();
+    let lastFrameTime = 0;
+
     const frame = () => {
-      if (cancelled) return;
+      if (cancelled) {
+        running = false;
+        return;
+      }
       const now = performance.now();
       const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
       lastFrameTime = now;
       const cam = cameraRef.current;
       const keys = keysRef.current;
-      if (keys.size > 0) {
-        const sprint = keys.has('shift') ? 3 : 1;
-        const speed = cam.distance * 0.5 * sprint * dt;
-        const r = multiply(rotationX(cam.pitch), rotationY(cam.yaw));
-        const rightX = r[0]!, rightZ = r[8]!;
-        const fwdRawX = -r[2]!, fwdRawZ = -r[10]!;
-        const fwdLen = Math.hypot(fwdRawX, fwdRawZ);
-        const fwdX = fwdRawX / fwdLen, fwdZ = fwdRawZ / fwdLen;
-        let dx = 0, dy = 0, dz = 0;
-        if (keys.has('w')) { dx += fwdX; dz += fwdZ; }
-        if (keys.has('s')) { dx -= fwdX; dz -= fwdZ; }
-        if (keys.has('d')) { dx += rightX; dz += rightZ; }
-        if (keys.has('a')) { dx -= rightX; dz -= rightZ; }
-        if (keys.has('e')) { dy += 1; }
-        if (keys.has('q')) { dy -= 1; }
-        const len = Math.hypot(dx, dy, dz);
-        if (len > 0) {
-          const k = speed / len;
-          cam.target[0] += dx * k;
-          cam.target[1] += dy * k;
-          cam.target[2] += dz * k;
-        }
+      const movementHeld =
+        keys.has('w') || keys.has('a') || keys.has('s') ||
+        keys.has('d') || keys.has('q') || keys.has('e');
+      if (!movementHeld) {
+        running = false;
+        return;
+      }
+      const sprint = keys.has('shift') ? 3 : 1;
+      const speed = cam.distance * 0.5 * sprint * dt;
+      const r = multiply(rotationX(cam.pitch), rotationY(cam.yaw));
+      const rightX = r[0]!, rightZ = r[8]!;
+      const fwdRawX = -r[2]!, fwdRawZ = -r[10]!;
+      const fwdLen = Math.hypot(fwdRawX, fwdRawZ);
+      const fwdX = fwdRawX / fwdLen, fwdZ = fwdRawZ / fwdLen;
+      let dx = 0, dy = 0, dz = 0;
+      if (keys.has('w')) { dx += fwdX; dz += fwdZ; }
+      if (keys.has('s')) { dx -= fwdX; dz -= fwdZ; }
+      if (keys.has('d')) { dx += rightX; dz += rightZ; }
+      if (keys.has('a')) { dx -= rightX; dz -= rightZ; }
+      if (keys.has('e')) { dy += 1; }
+      if (keys.has('q')) { dy -= 1; }
+      const len = Math.hypot(dx, dy, dz);
+      if (len > 0) {
+        const k = speed / len;
+        cam.target[0] += dx * k;
+        cam.target[1] += dy * k;
+        cam.target[2] += dz * k;
+        requestRender();
       }
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
+
+    motionStartRef.current = () => {
+      if (running || cancelled) return;
+      running = true;
+      lastFrameTime = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+
     return () => {
       cancelled = true;
+      motionStartRef.current = () => {};
       cancelAnimationFrame(raf);
     };
   }, []);
@@ -267,6 +297,9 @@ export function Preview() {
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
     prevContextRef.current = currentEditingId;
     prevCamerasRef.current = cameras;
+    // The camera ref was mutated outside React; request a render so tiles
+    // pick up the new viewpoint without waiting for the next input event.
+    requestRender();
   }, [currentEditingId, cameras]);
 
   // Look up the root node's def — we need its declared output list to
