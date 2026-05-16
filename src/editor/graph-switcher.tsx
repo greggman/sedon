@@ -1,5 +1,6 @@
 import { useReactFlow } from '@xyflow/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDismiss } from './use-dismiss.js';
 import { useEditorStore } from './store.js';
 
 // Toolbar dropdown for navigating between the main project graph and any
@@ -8,6 +9,8 @@ import { useEditorStore } from './store.js';
 // active and route back to mainGraph or the matching SubgraphDef on commit.
 export function GraphSwitcher() {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, rootRef, () => setOpen(false));
   const rf = useReactFlow();
   const subgraphs = useEditorStore((s) => s.subgraphs);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
@@ -35,7 +38,7 @@ export function GraphSwitcher() {
   };
 
   return (
-    <div className="sedon-demos-menu">
+    <div className="sedon-demos-menu" ref={rootRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

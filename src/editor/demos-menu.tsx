@@ -1,13 +1,16 @@
 import { useReactFlow } from '@xyflow/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { buildRegistry } from './registry.js';
 import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
+import { useDismiss } from './use-dismiss.js';
 import { useEditorStore } from './store.js';
 
 export function DemosMenu() {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, rootRef, () => setOpen(false));
   const rf = useReactFlow();
   const setGraph = useEditorStore((s) => s.setGraph);
 
@@ -31,7 +34,7 @@ export function DemosMenu() {
   };
 
   return (
-    <div className="sedon-demos-menu">
+    <div className="sedon-demos-menu" ref={rootRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
