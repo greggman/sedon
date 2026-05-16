@@ -6,7 +6,13 @@ import {
   type Folder,
 } from '../core/folder.js';
 import type { SubgraphDef } from '../core/subgraph.js';
+import { AssetThumbnail } from './asset-thumbnail.js';
 import { useEditorStore } from './store.js';
+
+// Pixel size of the live subgraph preview shown in icon-view tiles.
+// Matches roughly the natural tile width set by the icon-grid CSS so
+// the canvas isn't upscaled past its rendered size.
+const THUMBNAIL_PX = 64;
 
 // Drag-and-drop MIME type for asset moves. Payload is a JSON
 // `{ kind: 'folder' | 'subgraph', id: string }`. The Asset view reads
@@ -580,6 +586,19 @@ interface SubgraphTileProps {
 }
 
 function SubgraphTile(p: SubgraphTileProps) {
+  // Icon-mode tiles get a live preview thumbnail (auto-framed to the
+  // subgraph's output). List mode keeps the static diamond glyph — at
+  // list-row height a 14px rendered scene is just noise.
+  const icon =
+    p.viewMode === 'icons' ? (
+      <AssetThumbnail
+        subgraphId={p.sg.id}
+        size={THUMBNAIL_PX}
+        fallback={<span className="sedon-assets-tile-icon">◇</span>}
+      />
+    ) : (
+      <span className="sedon-assets-tile-icon">◇</span>
+    );
   return (
     <div
       className={`sedon-assets-tile sedon-assets-tile--${p.viewMode} sedon-assets-tile--subgraph`}
@@ -589,7 +608,7 @@ function SubgraphTile(p: SubgraphTileProps) {
       onContextMenu={p.onContextMenu}
       title="Drag onto a canvas to instance this subgraph; double-click to edit"
     >
-      <span className="sedon-assets-tile-icon">◇</span>
+      {icon}
       {p.renaming ? (
         <RenameInput
           initial={p.sg.label}
