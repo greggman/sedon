@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   buildFolderIndex,
@@ -19,23 +19,29 @@ export interface AssetDndPayload {
   id: string;
 }
 
+type AssetTarget = AssetDndPayload | { kind: 'root' };
+type ViewMode = 'icons' | 'list';
+type RenameTarget = { kind: 'folder' | 'subgraph'; id: string } | null;
+type ContextMenu = {
+  x: number;
+  y: number;
+  target: AssetTarget;
+} | null;
+
 // =========================================================================
-// AssetsPanel — Unity-style two-pane Project view.
+// AssetsPanel — Unity-style two-pane Project view with rename, context
+// menu, and Icons / List view modes.
 //
-//   ┌─────────────────────────┬──────────────────────────────────────────┐
-//   │ Folder tree (left)      │ Selected folder's contents (right)       │
-//   │                         │                                          │
-//   │ ▾ Root                  │ ▸ Trees                                  │
-//   │   ▸ Trees               │ ◇ Bark Texture                           │
-//   │   ▸ Bushes              │ ◇ Oak leaf                               │
-//   │                         │                                          │
-//   └─────────────────────────┴──────────────────────────────────────────┘
+//   ┌──────────────┬──────────────────────────────────────────┐
+//   │ Folder tree  │ Selected folder's contents               │
+//   │              │ ╔═════════╗ ╔═════════╗ ╔═════════╗      │
+//   │ ▾ Project    │ ║ 📁      ║ ║ ◇        ║ ║ ◇        ║   │
+//   │   ▾ Trees    │ ║ Trees   ║ ║ Bark Tex ║ ║ Oak Leaf ║   │
+//   │   ▸ Bushes   │ ╚═════════╝ ╚═════════╝ ╚═════════╝      │
+//   │              │                                          │
+//   └──────────────┴──────────────────────────────────────────┘
 //
-// Left tree shows folders only (matches Unity's Project window). Right
-// pane shows the selected folder's immediate folder + subgraph
-// children. Dragging within the asset view re-parents; dragging a
-// subgraph row onto a canvas adds a wrapper of that subgraph at the
-// drop point (cycle-checked in node-canvas.tsx).
+// Right-click any row/tile for Rename / Delete / New Folder.
 // =========================================================================
 export function AssetsPanel() {
   const folders = useEditorStore((s) => s.folders);
@@ -44,9 +50,13 @@ export function AssetsPanel() {
   const deleteFolder = useEditorStore((s) => s.deleteFolder);
   const moveSubgraphToFolder = useEditorStore((s) => s.moveSubgraphToFolder);
   const moveFolderToFolder = useEditorStore((s) => s.moveFolderToFolder);
+  const renameFolder = useEditorStore((s) => s.renameFolder);
+  const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
 
-  // Tree expansion state (purely UI; not persisted).
+  // ----- UI state -----
+  // Tree expansion. Auto-expands ancestors of the selected folder so the
+  // tree always shows the active selection without manual disclosure.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([ROOT_FOLDER_ID]));
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -60,28 +70,99 @@ export function AssetsPanel() {
   // Selected folder for the right pane. `ROOT_FOLDER_ID` is the synthetic
   // "Project root" node — selecting it shows top-level items.
   const [selectedFolderId, setSelectedFolderId] = useState<string>(ROOT_FOLDER_ID);
+  const [renaming, setRenaming] = useState<RenameTarget>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenu>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('icons');
+
+  // Expand the chain of ancestors leading to the selected folder, so
+  // selecting a deep folder from elsewhere (e.g. a future "find" action)
+  // naturally surfaces it in the tree.
+  useEffect(() => {
+    if (selectedFolderId === ROOT_FOLDER_ID) return;
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const toExpand: string[] = [ROOT_FOLDER_ID];
+    let cursor: string | null = selectedFolderId;
+    while (cursor !== null) {
+      const f = byId.get(cursor);
+      if (!f) break;
+      toExpand.push(f.parentFolderId ?? ROOT_FOLDER_ID);
+      cursor = f.parentFolderId;
+    }
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const id of toExpand) next.add(id);
+      return next;
+    });
+  }, [selectedFolderId, folders]);
+
+  // Close the context menu on any outside click / Escape.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onDown = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
+
+  // F2 → rename the current selection. Ignored while typing in an
+  // input/textarea so it doesn't fight with text editing elsewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F2') return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      )
+        return;
+      if (selectedFolderId === ROOT_FOLDER_ID) return;
+      setRenaming({ kind: 'folder', id: selectedFolderId });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedFolderId]);
 
   const index = useMemo(
     () => buildFolderIndex(folders, subgraphs),
     [folders, subgraphs],
   );
 
-  const onNewFolder = () => {
-    const parent =
-      selectedFolderId === ROOT_FOLDER_ID ? null : selectedFolderId;
+  // ----- Actions -----
+  const onNewFolder = (parentId: string | null) => {
     const label = `New Folder ${folders.length + 1}`;
-    const newId = createFolder(parent, label);
+    const newId = createFolder(parentId, label);
     setExpanded((prev) => {
       const next = new Set(prev);
-      // Auto-expand the parent so the new folder is visible.
-      next.add(parent ?? ROOT_FOLDER_ID);
+      next.add(parentId ?? ROOT_FOLDER_ID);
       next.add(newId);
       return next;
     });
     setSelectedFolderId(newId);
+    // Open the rename editor immediately so the user can name it on
+    // creation, like Finder / Explorer.
+    setRenaming({ kind: 'folder', id: newId });
+  };
+  const onNewFolderFromToolbar = () => {
+    const parent = selectedFolderId === ROOT_FOLDER_ID ? null : selectedFolderId;
+    onNewFolder(parent);
   };
 
-  // Drag handlers shared between the tree and the right-pane rows.
+  const openContextMenu = (
+    e: React.MouseEvent<HTMLElement>,
+    target: AssetTarget,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, target });
+  };
+
+  // ----- DnD -----
   const onDragStart = (
     e: React.DragEvent<HTMLDivElement>,
     payload: AssetDndPayload,
@@ -90,7 +171,15 @@ export function AssetsPanel() {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  // Folder drop target: re-parent the dragged item into this folder.
+  const onDragOverFolder = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  // Folder drop target: re-parent the dragged item into this folder
+  // (or root when `targetFolderId === null`).
   const onDropOnFolder = (
     e: React.DragEvent<HTMLDivElement>,
     targetFolderId: string | null,
@@ -111,24 +200,40 @@ export function AssetsPanel() {
     }
   };
 
-  const onDragOverFolder = (e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    }
-  };
-
   return (
     <div className="sedon-assets">
       <div className="sedon-assets-toolbar">
         <button
           type="button"
           className="sedon-assets-toolbar-button"
-          onClick={onNewFolder}
-          title="Create a new folder at the current selection"
+          onClick={onNewFolderFromToolbar}
+          title="Create a new folder in the current selection"
         >
           + New Folder
         </button>
+        <div className="sedon-assets-toolbar-spacer" />
+        <div className="sedon-assets-view-toggle" role="tablist" aria-label="View mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'icons'}
+            className={`sedon-assets-toolbar-button${viewMode === 'icons' ? ' sedon-assets-toolbar-button--active' : ''}`}
+            onClick={() => setViewMode('icons')}
+            title="Icon view"
+          >
+            ▦ Icons
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'list'}
+            className={`sedon-assets-toolbar-button${viewMode === 'list' ? ' sedon-assets-toolbar-button--active' : ''}`}
+            onClick={() => setViewMode('list')}
+            title="List view"
+          >
+            ☰ List
+          </button>
+        </div>
       </div>
       <div className="sedon-assets-body">
         <div
@@ -136,6 +241,7 @@ export function AssetsPanel() {
           // Drop on tree background = root.
           onDragOver={onDragOverFolder}
           onDrop={(e) => onDropOnFolder(e, null)}
+          onContextMenu={(e) => openContextMenu(e, { kind: 'root' })}
         >
           <FolderTreeRow
             id={ROOT_FOLDER_ID}
@@ -146,85 +252,143 @@ export function AssetsPanel() {
             hasChildren={(index.get(ROOT_FOLDER_ID)?.childFolders.length ?? 0) > 0}
             onToggle={() => toggle(ROOT_FOLDER_ID)}
             onSelect={() => setSelectedFolderId(ROOT_FOLDER_ID)}
-            // Root accepts drops but isn't itself draggable.
+            // Root accepts drops but isn't itself draggable or renameable.
             isDraggable={false}
+            renaming={false}
             onDragOver={onDragOverFolder}
             onDrop={(e) => onDropOnFolder(e, null)}
+            onContextMenu={(e) => openContextMenu(e, { kind: 'root' })}
+            onCommitRename={() => {}}
+            onCancelRename={() => {}}
           />
           {expanded.has(ROOT_FOLDER_ID) &&
-            renderFolderSubtree(
+            renderFolderSubtree({
               index,
-              null,
-              1,
+              parentId: null,
+              depth: 1,
               expanded,
-              selectedFolderId,
+              selectedId: selectedFolderId,
+              renaming,
               toggle,
-              setSelectedFolderId,
+              setSelected: setSelectedFolderId,
               onDragStart,
-              onDragOverFolder,
-              onDropOnFolder,
-            )}
+              onDragOver: onDragOverFolder,
+              onDrop: onDropOnFolder,
+              onContextMenu: openContextMenu,
+              onCommitRename: (id, label) => {
+                renameFolder(id, label);
+                setRenaming(null);
+              },
+              onCancelRename: () => setRenaming(null),
+            })}
         </div>
-        <div className="sedon-assets-contents">
+        <div
+          className="sedon-assets-contents"
+          onContextMenu={(e) => {
+            // Background of the right pane: act like the selected
+            // folder was the target so "New Folder" goes there.
+            if (e.target === e.currentTarget) {
+              openContextMenu(e, { kind: 'folder', id: selectedFolderId });
+            }
+          }}
+        >
           <AssetsContents
             folderId={selectedFolderId}
             index={index}
+            viewMode={viewMode}
+            renaming={renaming}
             onSelectFolder={setSelectedFolderId}
             onDragStart={onDragStart}
+            onDragOverFolder={onDragOverFolder}
+            onDropOnFolder={onDropOnFolder}
             onOpenSubgraph={(id) => setActiveEditing(id)}
-            onDeleteFolder={deleteFolder}
+            onContextMenu={openContextMenu}
+            onCommitRename={(t, label) => {
+              if (t.kind === 'folder') renameFolder(t.id, label);
+              else renameSubgraph(t.id, label);
+              setRenaming(null);
+            }}
+            onCancelRename={() => setRenaming(null)}
           />
         </div>
       </div>
+      {contextMenu && (
+        <AssetContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          target={contextMenu.target}
+          folderLookup={folders}
+          subgraphLookup={subgraphs}
+          onClose={() => setContextMenu(null)}
+          onRename={(t) => {
+            setRenaming(t);
+            setContextMenu(null);
+          }}
+          onDelete={(folderId) => {
+            deleteFolder(folderId);
+            setContextMenu(null);
+            if (selectedFolderId === folderId) setSelectedFolderId(ROOT_FOLDER_ID);
+          }}
+          onNewFolder={(parentId) => {
+            onNewFolder(parentId);
+            setContextMenu(null);
+          }}
+          onOpenSubgraph={(id) => {
+            setActiveEditing(id);
+            setContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function renderFolderSubtree(
-  index: ReturnType<typeof buildFolderIndex>,
-  parentId: string | null,
-  depth: number,
-  expanded: Set<string>,
-  selectedId: string,
-  toggle: (id: string) => void,
-  setSelected: (id: string) => void,
-  onDragStart: (e: React.DragEvent<HTMLDivElement>, p: AssetDndPayload) => void,
-  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void,
-  onDrop: (e: React.DragEvent<HTMLDivElement>, targetId: string | null) => void,
-): React.ReactNode[] {
-  const folders = index.get(parentId ?? ROOT_FOLDER_ID)?.childFolders ?? [];
+interface RenderSubtreeProps {
+  index: ReturnType<typeof buildFolderIndex>;
+  parentId: string | null;
+  depth: number;
+  expanded: Set<string>;
+  selectedId: string;
+  renaming: RenameTarget;
+  toggle: (id: string) => void;
+  setSelected: (id: string) => void;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>, p: AssetDndPayload) => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>, targetId: string | null) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLElement>, target: AssetTarget) => void;
+  onCommitRename: (id: string, label: string) => void;
+  onCancelRename: () => void;
+}
+
+function renderFolderSubtree(p: RenderSubtreeProps): React.ReactNode[] {
+  const folders = p.index.get(p.parentId ?? ROOT_FOLDER_ID)?.childFolders ?? [];
   return folders.flatMap((f) => {
-    const isExpanded = expanded.has(f.id);
-    const hasChildren = (index.get(f.id)?.childFolders.length ?? 0) > 0;
+    const isExpanded = p.expanded.has(f.id);
+    const hasChildren = (p.index.get(f.id)?.childFolders.length ?? 0) > 0;
+    const isRenaming =
+      p.renaming?.kind === 'folder' && p.renaming.id === f.id;
     return [
       <FolderTreeRow
         key={f.id}
         id={f.id}
         label={f.label}
-        depth={depth}
+        depth={p.depth}
         expanded={isExpanded}
-        selected={selectedId === f.id}
+        selected={p.selectedId === f.id}
         hasChildren={hasChildren}
-        onToggle={() => toggle(f.id)}
-        onSelect={() => setSelected(f.id)}
+        onToggle={() => p.toggle(f.id)}
+        onSelect={() => p.setSelected(f.id)}
         isDraggable
-        onDragStart={(e) => onDragStart(e, { kind: 'folder', id: f.id })}
-        onDragOver={onDragOver}
-        onDrop={(e) => onDrop(e, f.id)}
+        renaming={isRenaming}
+        onDragStart={(e) => p.onDragStart(e, { kind: 'folder', id: f.id })}
+        onDragOver={p.onDragOver}
+        onDrop={(e) => p.onDrop(e, f.id)}
+        onContextMenu={(e) => p.onContextMenu(e, { kind: 'folder', id: f.id })}
+        onCommitRename={(label) => p.onCommitRename(f.id, label)}
+        onCancelRename={p.onCancelRename}
       />,
       ...(isExpanded
-        ? renderFolderSubtree(
-            index,
-            f.id,
-            depth + 1,
-            expanded,
-            selectedId,
-            toggle,
-            setSelected,
-            onDragStart,
-            onDragOver,
-            onDrop,
-          )
+        ? renderFolderSubtree({ ...p, parentId: f.id, depth: p.depth + 1 })
         : []),
     ];
   });
@@ -240,9 +404,13 @@ interface FolderTreeRowProps {
   onToggle: () => void;
   onSelect: () => void;
   isDraggable: boolean;
+  renaming: boolean;
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLElement>) => void;
+  onCommitRename: (label: string) => void;
+  onCancelRename: () => void;
 }
 
 function FolderTreeRow(props: FolderTreeRowProps) {
@@ -251,10 +419,11 @@ function FolderTreeRow(props: FolderTreeRowProps) {
       className={`sedon-assets-folder-row${props.selected ? ' sedon-assets-folder-row--selected' : ''}`}
       style={{ paddingLeft: 4 + props.depth * 12 }}
       onClick={props.onSelect}
-      draggable={props.isDraggable}
+      draggable={props.isDraggable && !props.renaming}
       {...(props.onDragStart ? { onDragStart: props.onDragStart } : {})}
       onDragOver={props.onDragOver}
       onDrop={props.onDrop}
+      onContextMenu={props.onContextMenu}
     >
       <span
         className="sedon-assets-folder-twisty"
@@ -266,7 +435,15 @@ function FolderTreeRow(props: FolderTreeRowProps) {
         {props.hasChildren ? (props.expanded ? '▾' : '▸') : ' '}
       </span>
       <span className="sedon-assets-folder-icon">📁</span>
-      <span className="sedon-assets-folder-label">{props.label}</span>
+      {props.renaming ? (
+        <RenameInput
+          initial={props.label}
+          onCommit={props.onCommitRename}
+          onCancel={props.onCancelRename}
+        />
+      ) : (
+        <span className="sedon-assets-folder-label">{props.label}</span>
+      )}
     </div>
   );
 }
@@ -274,21 +451,20 @@ function FolderTreeRow(props: FolderTreeRowProps) {
 interface ContentsProps {
   folderId: string;
   index: ReturnType<typeof buildFolderIndex>;
+  viewMode: ViewMode;
+  renaming: RenameTarget;
   onSelectFolder: (id: string) => void;
   onDragStart: (e: React.DragEvent<HTMLDivElement>, p: AssetDndPayload) => void;
+  onDragOverFolder: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDropOnFolder: (e: React.DragEvent<HTMLDivElement>, targetId: string | null) => void;
   onOpenSubgraph: (id: string) => void;
-  onDeleteFolder: (id: string) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLElement>, target: AssetTarget) => void;
+  onCommitRename: (target: { kind: 'folder' | 'subgraph'; id: string }, label: string) => void;
+  onCancelRename: () => void;
 }
 
-function AssetsContents({
-  folderId,
-  index,
-  onSelectFolder,
-  onDragStart,
-  onOpenSubgraph,
-  onDeleteFolder,
-}: ContentsProps) {
-  const entry = index.get(folderId);
+function AssetsContents(p: ContentsProps) {
+  const entry = p.index.get(p.folderId);
   if (!entry) {
     return <div className="sedon-assets-empty">Folder not found.</div>;
   }
@@ -296,84 +472,256 @@ function AssetsContents({
   if (childFolders.length === 0 && subgraphs.length === 0) {
     return <div className="sedon-assets-empty">Empty folder.</div>;
   }
+  const gridClass = `sedon-assets-grid sedon-assets-grid--${p.viewMode}`;
   return (
-    <div className="sedon-assets-grid">
-      {childFolders.map((f) => (
-        <FolderTile
-          key={f.id}
-          folder={f}
-          onOpen={() => onSelectFolder(f.id)}
-          onDragStart={(e) => onDragStart(e, { kind: 'folder', id: f.id })}
-          onDelete={() => onDeleteFolder(f.id)}
-        />
-      ))}
-      {subgraphs.map((sg) => (
-        <SubgraphTile
-          key={sg.id}
-          sg={sg}
-          onOpen={() => onOpenSubgraph(sg.id)}
-          onDragStart={(e) => onDragStart(e, { kind: 'subgraph', id: sg.id })}
-        />
-      ))}
+    <div className={gridClass}>
+      {childFolders.map((f) => {
+        const isRenaming = p.renaming?.kind === 'folder' && p.renaming.id === f.id;
+        return (
+          <FolderTile
+            key={f.id}
+            folder={f}
+            viewMode={p.viewMode}
+            renaming={isRenaming}
+            onOpen={() => p.onSelectFolder(f.id)}
+            onDragStart={(e) => p.onDragStart(e, { kind: 'folder', id: f.id })}
+            onDragOver={p.onDragOverFolder}
+            onDrop={(e) => p.onDropOnFolder(e, f.id)}
+            onContextMenu={(e) => p.onContextMenu(e, { kind: 'folder', id: f.id })}
+            onCommitRename={(label) => p.onCommitRename({ kind: 'folder', id: f.id }, label)}
+            onCancelRename={p.onCancelRename}
+          />
+        );
+      })}
+      {subgraphs.map((sg) => {
+        const isRenaming = p.renaming?.kind === 'subgraph' && p.renaming.id === sg.id;
+        return (
+          <SubgraphTile
+            key={sg.id}
+            sg={sg}
+            viewMode={p.viewMode}
+            renaming={isRenaming}
+            onOpen={() => p.onOpenSubgraph(sg.id)}
+            onDragStart={(e) => p.onDragStart(e, { kind: 'subgraph', id: sg.id })}
+            onContextMenu={(e) => p.onContextMenu(e, { kind: 'subgraph', id: sg.id })}
+            onCommitRename={(label) => p.onCommitRename({ kind: 'subgraph', id: sg.id }, label)}
+            onCancelRename={p.onCancelRename}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function FolderTile({
-  folder,
-  onOpen,
-  onDragStart,
-  onDelete,
-}: {
+interface FolderTileProps {
   folder: Folder;
+  viewMode: ViewMode;
+  renaming: boolean;
   onOpen: () => void;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDelete: () => void;
-}) {
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLElement>) => void;
+  onCommitRename: (label: string) => void;
+  onCancelRename: () => void;
+}
+
+function FolderTile(p: FolderTileProps) {
   return (
     <div
-      className="sedon-assets-tile sedon-assets-tile--folder"
-      onDoubleClick={onOpen}
-      draggable
-      onDragStart={onDragStart}
-      title="Double-click to enter"
+      className={`sedon-assets-tile sedon-assets-tile--${p.viewMode} sedon-assets-tile--folder`}
+      onDoubleClick={p.onOpen}
+      draggable={!p.renaming}
+      onDragStart={p.onDragStart}
+      // Folder tiles in the grid are ALSO drop targets — drop a
+      // subgraph or another folder onto one to re-parent it.
+      onDragOver={p.onDragOver}
+      onDrop={p.onDrop}
+      onContextMenu={p.onContextMenu}
+      title="Double-click to enter; drop items here to move them in"
     >
       <span className="sedon-assets-tile-icon">📁</span>
-      <span className="sedon-assets-tile-label">{folder.label}</span>
-      <button
-        type="button"
-        className="sedon-assets-tile-action"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        title="Delete folder (contents move up one level)"
-      >
-        ×
-      </button>
+      {p.renaming ? (
+        <RenameInput
+          initial={p.folder.label}
+          onCommit={p.onCommitRename}
+          onCancel={p.onCancelRename}
+        />
+      ) : (
+        <span className="sedon-assets-tile-label">{p.folder.label}</span>
+      )}
     </div>
   );
 }
 
-function SubgraphTile({
-  sg,
-  onOpen,
-  onDragStart,
-}: {
+interface SubgraphTileProps {
   sg: SubgraphDef;
+  viewMode: ViewMode;
+  renaming: boolean;
   onOpen: () => void;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
-}) {
+  onContextMenu: (e: React.MouseEvent<HTMLElement>) => void;
+  onCommitRename: (label: string) => void;
+  onCancelRename: () => void;
+}
+
+function SubgraphTile(p: SubgraphTileProps) {
   return (
     <div
-      className="sedon-assets-tile sedon-assets-tile--subgraph"
-      onDoubleClick={onOpen}
-      draggable
-      onDragStart={onDragStart}
+      className={`sedon-assets-tile sedon-assets-tile--${p.viewMode} sedon-assets-tile--subgraph`}
+      onDoubleClick={p.onOpen}
+      draggable={!p.renaming}
+      onDragStart={p.onDragStart}
+      onContextMenu={p.onContextMenu}
       title="Drag onto a canvas to instance this subgraph; double-click to edit"
     >
       <span className="sedon-assets-tile-icon">◇</span>
-      <span className="sedon-assets-tile-label">{sg.label}</span>
+      {p.renaming ? (
+        <RenameInput
+          initial={p.sg.label}
+          onCommit={p.onCommitRename}
+          onCancel={p.onCancelRename}
+        />
+      ) : (
+        <span className="sedon-assets-tile-label">{p.sg.label}</span>
+      )}
+    </div>
+  );
+}
+
+// Inline-rename text field. Enter / blur commits; Escape cancels; Esc
+// also cancels through the keyDown handler so the field can sit inside
+// a clickable row without click-handling getting in the way.
+function RenameInput({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, []);
+  return (
+    <input
+      ref={ref}
+      type="text"
+      className="sedon-assets-rename"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') onCommit(value);
+        else if (e.key === 'Escape') onCancel();
+      }}
+    />
+  );
+}
+
+// Right-click context menu. Item set depends on the target kind:
+//   • subgraph → Rename, Open in Canvas
+//   • folder   → Rename, Delete, New Folder Inside
+//   • root     → New Folder
+function AssetContextMenu({
+  x,
+  y,
+  target,
+  folderLookup,
+  subgraphLookup,
+  onClose,
+  onRename,
+  onDelete,
+  onNewFolder,
+  onOpenSubgraph,
+}: {
+  x: number;
+  y: number;
+  target: AssetTarget;
+  folderLookup: ReadonlyArray<Folder>;
+  subgraphLookup: ReadonlyArray<SubgraphDef>;
+  onClose: () => void;
+  onRename: (t: { kind: 'folder' | 'subgraph'; id: string }) => void;
+  onDelete: (folderId: string) => void;
+  onNewFolder: (parentId: string | null) => void;
+  onOpenSubgraph: (id: string) => void;
+}) {
+  // Pre-resolve labels so the menu can show the target name in its
+  // title row — small nicety, helps when the same right-click hit the
+  // wrong row by accident.
+  let title = 'Project';
+  if (target.kind === 'folder') {
+    const f = folderLookup.find((x) => x.id === target.id);
+    if (f) title = f.label;
+    else if (target.id === ROOT_FOLDER_ID) title = 'Project';
+  } else if (target.kind === 'subgraph') {
+    const s = subgraphLookup.find((x) => x.id === target.id);
+    if (s) title = s.label;
+  }
+  const items: { label: string; action: () => void; disabled?: boolean }[] = [];
+  if (target.kind === 'subgraph') {
+    items.push(
+      { label: 'Rename', action: () => onRename({ kind: 'subgraph', id: target.id }) },
+      { label: 'Open in Canvas', action: () => onOpenSubgraph(target.id) },
+    );
+  } else if (target.kind === 'folder') {
+    const isRoot = target.id === ROOT_FOLDER_ID;
+    items.push(
+      {
+        label: 'Rename',
+        action: () => onRename({ kind: 'folder', id: target.id }),
+        disabled: isRoot,
+      },
+      {
+        label: 'Delete',
+        action: () => onDelete(target.id),
+        disabled: isRoot,
+      },
+      {
+        label: 'New Folder Inside',
+        action: () => onNewFolder(isRoot ? null : target.id),
+      },
+    );
+  } else {
+    items.push({ label: 'New Folder', action: () => onNewFolder(null) });
+  }
+
+  return (
+    <div
+      className="sedon-assets-context-menu"
+      style={{ left: x, top: y }}
+      // Eat the click so the global mousedown listener doesn't dismiss
+      // the menu before the chosen item's onClick fires.
+      onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="sedon-assets-context-menu-title">{title}</div>
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          disabled={item.disabled}
+          className="sedon-assets-context-menu-item"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!item.disabled) {
+              item.action();
+              onClose();
+            }
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }

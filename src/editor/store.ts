@@ -133,6 +133,17 @@ export interface EditorState {
    * folder into itself or one of its descendants). Undoable.
    */
   moveFolderToFolder: (folderId: string, newParentId: string | null) => void;
+
+  /** Rename a folder. No-op on whitespace-only or unchanged labels. Undoable. */
+  renameFolder: (folderId: string, newLabel: string) => void;
+  /**
+   * Rename a subgraph. Only the user-visible `label` changes — the
+   * stable `id` (referenced by every wrapper instance's kind
+   * `subgraph/<id>`) is untouched, so all existing edges stay valid.
+   * Bumps the subgraph's version so the eval cache invalidates and
+   * wrapper instances pick up the new label in their headers. Undoable.
+   */
+  renameSubgraph: (subgraphId: string, newLabel: string) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
@@ -501,6 +512,36 @@ export const useEditorStore = create<EditorState>((set, get) => {
       dispatchProject({
         ...projectSnapshot(),
         folders,
+      });
+    },
+
+    renameFolder: (folderId, newLabel) => {
+      const trimmed = newLabel.trim();
+      if (trimmed.length === 0) return;
+      const state = get();
+      const target = state.folders.find((f) => f.id === folderId);
+      if (!target || target.label === trimmed) return;
+      const folders = state.folders.map((f) =>
+        f.id === folderId ? { ...f, label: trimmed } : f,
+      );
+      dispatchProject({
+        ...projectSnapshot(),
+        folders,
+      });
+    },
+
+    renameSubgraph: (subgraphId, newLabel) => {
+      const trimmed = newLabel.trim();
+      if (trimmed.length === 0) return;
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target || target.label === trimmed) return;
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id === subgraphId ? { ...s, label: trimmed } : s,
+      );
+      dispatchProject({
+        ...projectSnapshot(),
+        subgraphs,
       });
     },
 

@@ -56,10 +56,18 @@
 }
 .sedon-assets-toolbar {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 4px 6px;
   border-bottom: 1px solid #2a2a2f;
   background: #1a1a1f;
+}
+.sedon-assets-toolbar-spacer {
+  flex: 1;
+}
+.sedon-assets-view-toggle {
+  display: flex;
+  gap: 2px;
 }
 .sedon-assets-toolbar-button {
   background: #2a2a35;
@@ -72,6 +80,14 @@
 }
 .sedon-assets-toolbar-button:hover {
   background: #3a3a48;
+}
+.sedon-assets-toolbar-button--active {
+  background: #3a5a8a;
+  border-color: #5a7aaa;
+  color: #fff;
+}
+.sedon-assets-toolbar-button--active:hover {
+  background: #466ca0;
 }
 .sedon-assets-body {
   display: grid;
@@ -124,15 +140,17 @@
   padding: 8px;
 }
 .sedon-assets-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 4px;
 }
-.sedon-assets-tile {
+.sedon-assets-grid--icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+}
+.sedon-assets-grid--list {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  flex-direction: column;
+}
+.sedon-assets-tile {
   background: #1f1f28;
   border: 1px solid #2c2c38;
   border-radius: 4px;
@@ -144,6 +162,26 @@
 .sedon-assets-tile:hover {
   border-color: #555;
 }
+.sedon-assets-tile--icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.sedon-assets-tile--icons .sedon-assets-tile-icon {
+  font-size: 28px;
+}
+.sedon-assets-tile--list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+.sedon-assets-tile--list .sedon-assets-tile-icon {
+  font-size: 14px;
+}
 .sedon-assets-tile--folder .sedon-assets-tile-icon {
   color: #d6c280;
 }
@@ -151,7 +189,7 @@
   color: #80c0e0;
 }
 .sedon-assets-tile-icon {
-  font-size: 14px;
+  line-height: 1;
 }
 .sedon-assets-tile-label {
   flex: 1;
@@ -159,6 +197,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .sedon-assets-tile-action {
   background: transparent;
@@ -171,6 +210,67 @@
 }
 .sedon-assets-tile-action:hover {
   color: #f88;
+}
+
+/* Inline rename field — borderless, fills the slot the label was in. */
+.sedon-assets-rename {
+  flex: 1;
+  min-width: 0;
+  background: #11141a;
+  border: 1px solid #5a7aaa;
+  border-radius: 2px;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 4px;
+  outline: none;
+}
+.sedon-assets-tile--icons .sedon-assets-rename {
+  text-align: center;
+  width: 100%;
+}
+
+/* Right-click context menu — positioned absolutely via inline left/top. */
+.sedon-assets-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  background: #22222a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 0;
+  color: #ddd;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.sedon-assets-context-menu-title {
+  padding: 2px 10px 4px;
+  color: #888;
+  font-size: 11px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sedon-assets-context-menu-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: inherit;
+  padding: 4px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.sedon-assets-context-menu-item:hover:not(:disabled) {
+  background: #2c3e60;
+  color: #fff;
+}
+.sedon-assets-context-menu-item:disabled {
+  color: #555;
+  cursor: default;
 }
 
 .sedon-pane {
