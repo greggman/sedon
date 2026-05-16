@@ -14,17 +14,38 @@ export interface GpuDevice {
   format: GPUTextureFormat;
 }
 
-export async function acquireGpuDevice(): Promise<GpuDevice> {
-  if (!navigator.gpu) {
-    throw new Error('WebGPU not supported in this browser. Try Chrome 113+ or Edge.');
-  }
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error('No WebGPU adapter available.');
-  }
-  const device = await adapter.requestDevice();
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  return { device, format };
+// Memoized so every consumer in the app shares the same GPUDevice. A
+// second Preview pane (or a popped-out window) calling this would
+// otherwise request a fresh adapter + device — each device owns its
+// own pipelines/buffers, so resources created against one device can't
+// render on canvases configured for another. WebGPU explicitly forbids
+// the mix and silently produces no output if you try.
+//
+// The cache holds the in-flight Promise (not the resolved value) so
+// concurrent calls during initial mount coalesce onto a single request
+// instead of racing two requestAdapter() calls.
+let cachedAcquire: Promise<GpuDevice> | null = null;
+
+export function acquireGpuDevice(): Promise<GpuDevice> {
+  if (cachedAcquire) return cachedAcquire;
+  cachedAcquire = (async () => {
+    if (!navigator.gpu) {
+      throw new Error('WebGPU not supported in this browser. Try Chrome 113+ or Edge.');
+    }
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error('No WebGPU adapter available.');
+    }
+    const device = await adapter.requestDevice();
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    return { device, format };
+  })().catch((e) => {
+    // Failed acquisitions shouldn't poison the cache — let a later
+    // caller retry (e.g. if the user reloads after granting permission).
+    cachedAcquire = null;
+    throw e;
+  });
+  return cachedAcquire;
 }
 
 export function configureCanvas(

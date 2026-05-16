@@ -566,6 +566,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({
         graph: updated,
         ...routeBack(updated, state.rootNodeId),
+        // Bump syncCounter so OTHER canvas panels viewing this graph
+        // re-merge their RF state and pick up the new positions. The
+        // committing canvas's RF state already matches what we just
+        // wrote, so mergeRfNodes returns existing nodes unchanged for it
+        // — no flicker, no fight against the drag that just finished.
+        syncCounter: get().syncCounter + 1,
         // Position-only changes don't dirty: dragging is the same as before
         // this method existed, just newly persisted into the store.
       });

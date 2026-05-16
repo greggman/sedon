@@ -12,6 +12,23 @@
 
 --- new ---
 
+- [*] subscene needs preview
+- [ ] too many previews
+- [ ] add Ctrl-Shift-P
+- [ ] cut/copy/paste
+- [ ] duplicate
+- [*] subscene needs edit button
+- [ ] frame subscenes
+- [*] nodes need icons?
+- [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
+- [*] asset list view should be a table, not span
+- [ ] divider between folders and content needs to be slidable
+- [*] show type with name in asset view both icon and list
+- [ ] figure out UX for graph selection and scene selection? Not needed, use asset view
+- [ ] design should not be "extra inputs". It should be "array of input name,type"
+- [*] scene merge needs N inputs
+- [*] can not zoom out enough
+- [*] render on demand - not constantly
 - [ ] move the WebGPU parts to a worker
 - [*] make input and output nodes have a "drop here +" spot
   to auto add an input or output
@@ -23,7 +40,7 @@
   Might need an import map?
 - [ ] seems like clicking on a node should select it?
 
-  currently, to delete a node, you must drag select. then
+  currently, to delete a node, you must drag select (hold shift). then
   delete. seems like click delete should work
 
 - [ ] need a better UI than 3 numbers for setting a direction 

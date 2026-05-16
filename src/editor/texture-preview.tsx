@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Texture2DValue } from '../core/resources.js';
 import blitShader from './blit.wgsl';
+import { usePopoutGeneration } from './popout-bus.js';
 
 interface BlitCache {
   pipeline: GPURenderPipeline;
@@ -41,22 +42,30 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
 
-  // Configure the canvas's WebGPU context once per device.
+  // Configure the canvas's WebGPU context. Re-runs on popout so the
+  // context is reconfigured against the canvas's new ownerDocument.
+  // Format is resolved via the canvas's current window's navigator.gpu.
+  const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('webgpu');
     if (!ctx) return;
-    const format = navigator.gpu.getPreferredCanvasFormat();
+    const win = canvas.ownerDocument.defaultView ?? window;
+    const format = win.navigator.gpu.getPreferredCanvasFormat();
     ctx.configure({ device, format, alphaMode: 'opaque' });
     ctxRef.current = ctx;
     formatRef.current = format;
     return () => {
-      ctx.unconfigure();
+      try {
+        ctx.unconfigure();
+      } catch {
+        // ignore: context detached after popout window closed
+      }
       ctxRef.current = null;
       formatRef.current = null;
     };
-  }, [device]);
+  }, [device, popoutGen]);
 
   // Blit whenever the source texture changes.
   useEffect(() => {
@@ -87,7 +96,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);
-  }, [device, value]);
+  }, [device, value, popoutGen]);
 
   const dpr = window.devicePixelRatio || 1;
   return (

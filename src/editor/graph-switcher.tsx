@@ -1,4 +1,3 @@
-import { useReactFlow } from '@xyflow/react';
 import { useRef, useState } from 'react';
 import { useDismiss } from './use-dismiss.js';
 import { useEditorStore } from './store.js';
@@ -11,11 +10,9 @@ export function GraphSwitcher() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useDismiss(open, rootRef, () => setOpen(false));
-  const rf = useReactFlow();
   const subgraphs = useEditorStore((s) => s.subgraphs);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
-  const commitActivePositions = useEditorStore((s) => s.commitActivePositions);
 
   // No subgraphs in the project → nothing to switch to. Hide the dropdown
   // entirely so the toolbar isn't cluttered for the basic demo.
@@ -27,12 +24,9 @@ export function GraphSwitcher() {
       : subgraphs.find((s) => s.id === currentEditingId)?.label ?? currentEditingId;
 
   const select = (id: string) => {
-    // Persist drag-positions of the current graph into the store before
-    // switching — RF discards them on graph change otherwise.
-    const positions = new Map(
-      rf.getNodes().map((n) => [n.id, n.position]),
-    );
-    commitActivePositions(positions);
+    // Drag positions are continuously synced via NodeCanvas's
+    // onNodeDragStop, so the store is already current and we just need
+    // to flip the active editing id.
     setActiveEditing(id);
     setOpen(false);
   };

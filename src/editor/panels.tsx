@@ -1,4 +1,4 @@
-import { useReactFlow } from '@xyflow/react';
+import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import type { IDockviewPanelProps } from 'dockview';
 import { useRef } from 'react';
 import { wouldCreateCycle } from '../core/folder.js';
@@ -15,7 +15,22 @@ import { useEditorStore } from './store.js';
 // lives above this in App.tsx; per-panel RF providers (one per canvas)
 // land in Phase 2b when canvases pin to different graphs.
 
-export function NodeCanvasPanel(_props: IDockviewPanelProps) {
+// DockView panel wrapper for a canvas. We mount a fresh
+// ReactFlowProvider per panel so each canvas gets its own RF store —
+// without this, two canvases would share viewport + nodes through the
+// app-level provider, and panning one would scroll both.
+//
+// The inner component lives below the provider so it can use
+// useReactFlow(), which only resolves inside its provider's subtree.
+export function NodeCanvasPanel(props: IDockviewPanelProps) {
+  return (
+    <ReactFlowProvider>
+      <NodeCanvasPanelInner panelId={props.api.id} />
+    </ReactFlowProvider>
+  );
+}
+
+function NodeCanvasPanelInner({ panelId }: { panelId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
   const addNode = useEditorStore((s) => s.addNode);
@@ -76,7 +91,7 @@ export function NodeCanvasPanel(_props: IDockviewPanelProps) {
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <NodeCanvas />
+      <NodeCanvas panelId={panelId} />
       <AddNodeMenu canvasRef={containerRef} />
     </div>
   );

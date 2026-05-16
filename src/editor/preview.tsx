@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Graph } from '../core/graph.js';
 import { sweepCache } from '../core/eval-cache.js';
 import { evaluateGraph } from '../core/evaluate.js';
@@ -74,6 +74,23 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // listeners on every pin change.
   const effectiveGraphIdRef = useRef<string>('main');
 
+  // Commit this panel's camera. Per-panel × per-graph state lives in
+  // the layout store so two Preview panes on the same graph don't echo
+  // each other through the project-shared cameras map. Without a
+  // panelId (legacy single-pane caller) we fall back to the project
+  // map so the camera still persists across sessions.
+  const commitCamera = useCallback(
+    (graphId: string, cam: OrbitCamera) => {
+      const snapshot = cloneCamera(cam);
+      if (panelId) {
+        useLayoutStore.getState().savePreviewCamera(panelId, graphId, snapshot);
+      } else {
+        useEditorStore.getState().saveCameraFor(graphId, snapshot);
+      }
+    },
+    [panelId],
+  );
+
   // Resolve which graph this Preview is showing. Unpinned panels follow
   // `currentEditingId` (legacy behavior); pinned ones lock to a specific
   // graph independently. The eval below runs against THIS graph, not
@@ -131,8 +148,16 @@ export function Preview({ panelId }: PreviewProps = {}) {
 
   const [tiles, setTiles] = useState<PreviewTileSpec[]>([]);
 
-  // Acquire the GPU device once. Canvases are configured per-tile against
-  // this shared device.
+  // Acquire the (shared) GPU device. `acquireGpuDevice` is memoized,
+  // so opening a second Preview hits the same device the first one
+  // already published to the store — no second adapter, no orphaned
+  // pipelines. The local `gpu` state still exists because PreviewTile
+  // needs both `device` and `format` (the store only carries device).
+  //
+  // We deliberately don't clear `device` from the store on unmount:
+  // other consumers (asset thumbnails, in-node thumbnails) keep using
+  // the device after a Preview pane closes, and the device itself
+  // lives for the app's lifetime.
   useEffect(() => {
     let cancelled = false;
     acquireGpuDevice()
@@ -148,7 +173,6 @@ export function Preview({ panelId }: PreviewProps = {}) {
       });
     return () => {
       cancelled = true;
-      setDevice(null);
     };
   }, [setDevice]);
 
@@ -217,7 +241,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       // cameras['main'] even while the user is editing a leaf subgraph
       // in another panel.
       const id = effectiveGraphIdRef.current;
-      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+      commitCamera(id, cameraRef.current);
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -225,7 +249,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       const factor = Math.exp(e.deltaY * 0.001);
       cam.distance = Math.max(0.5, Math.min(250, cam.distance * factor));
       const id = effectiveGraphIdRef.current;
-      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+      commitCamera(id, cameraRef.current);
       requestRender();
     };
 
@@ -247,14 +271,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
       });
       if (!stillMoving) {
         const id = effectiveGraphIdRef.current;
-        useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+        commitCamera(id, cameraRef.current);
       }
     };
     const onBlur = () => {
       if (keysRef.current.size === 0) return;
       keysRef.current.clear();
       const id = effectiveGraphIdRef.current;
-      useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
+      commitCamera(id, cameraRef.current);
     };
 
     wrapper.addEventListener('pointerdown', onPointerDown);
@@ -276,7 +300,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       wrapper.removeEventListener('keyup', onKeyUp);
       wrapper.removeEventListener('blur', onBlur);
     };
-  }, []);
+  }, [commitCamera]);
 
   // WASD motion loop. The rAF only runs *while a movement key is held* —
   // when the user releases the last movement key, the loop self-terminates
@@ -350,29 +374,35 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // Keyed by `effectiveGraphId` so pinned previews load their pinned
   // graph's camera even when the user navigates the active editing
   // context to a different graph.
-  const cameras = useEditorStore((s) => s.cameras);
+  // Project-level cameras (per-graph defaults, persisted to save file) —
+  // used only as the seed when this panel hasn't recorded its own
+  // camera for the new graph yet. Two Preview panels never echo each
+  // other through this map because gestures now write to layout-store
+  // via commitCamera, not back to the project map.
+  const projectCameras = useEditorStore((s) => s.cameras);
+  const panelCameras = useLayoutStore((s) =>
+    panelId ? s.previewCameras[panelId] : undefined,
+  );
   const prevContextRef = useRef<string | null>(null);
-  const prevCamerasRef = useRef<typeof cameras | null>(null);
+  const prevPanelCamerasRef = useRef<typeof panelCameras | null>(null);
   useEffect(() => {
     effectiveGraphIdRef.current = effectiveGraphId;
     const prevId = prevContextRef.current;
-    const prevCameras = prevCamerasRef.current;
+    const prevPanelCameras = prevPanelCamerasRef.current;
     const idChanged = prevId !== effectiveGraphId;
-    const camerasChanged = prevCameras !== cameras;
-    if (!idChanged && !camerasChanged) return;
+    const panelCamerasChanged = prevPanelCameras !== panelCameras;
+    if (!idChanged && !panelCamerasChanged) return;
     if (idChanged && prevId !== null) {
-      useEditorStore
-        .getState()
-        .saveCameraFor(prevId, cloneCamera(cameraRef.current));
+      commitCamera(prevId, cameraRef.current);
     }
-    const stored = cameras[effectiveGraphId];
+    const stored = panelCameras?.[effectiveGraphId] ?? projectCameras[effectiveGraphId];
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
     prevContextRef.current = effectiveGraphId;
-    prevCamerasRef.current = cameras;
+    prevPanelCamerasRef.current = panelCameras;
     // The camera ref was mutated outside React; request a render so tiles
     // pick up the new viewpoint without waiting for the next input event.
     requestRender();
-  }, [effectiveGraphId, cameras]);
+  }, [effectiveGraphId, panelCameras, projectCameras, commitCamera]);
 
   // Look up the root node's def — we need its declared output list to
   // map values back to socket names + types when synthesizing tiles.

@@ -898,3 +898,78 @@
   font-family: monospace;
   font-size: 12px;
 }
+
+/* ============================================================
+ * Command palette (Cmd/Ctrl+Shift+P)
+ * ============================================================ */
+.sedon-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 10000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.sedon-palette {
+  width: min(640px, 80vw);
+  background: #22222a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: #ddd;
+}
+.sedon-palette-input {
+  background: #1a1a1f;
+  color: #fff;
+  border: none;
+  outline: none;
+  padding: 10px 12px;
+  font: inherit;
+  border-bottom: 1px solid #333;
+}
+.sedon-palette-results {
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.sedon-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.sedon-palette-item--active {
+  background: #2c3e60;
+  color: #fff;
+}
+.sedon-palette-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sedon-palette-shortcut {
+  color: #888;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sedon-palette-empty {
+  padding: 8px 12px;
+  color: #888;
+  font-style: italic;
+}

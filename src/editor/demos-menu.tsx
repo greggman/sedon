@@ -1,9 +1,6 @@
-import { useReactFlow } from '@xyflow/react';
 import { useRef, useState } from 'react';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
-import { buildRegistry } from './registry.js';
-import { graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { useDismiss } from './use-dismiss.js';
 import { useEditorStore } from './store.js';
 
@@ -11,7 +8,6 @@ export function DemosMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useDismiss(open, rootRef, () => setOpen(false));
-  const rf = useReactFlow();
   const setGraph = useEditorStore((s) => s.setGraph);
 
   const loadDemo = (id: string) => {
@@ -22,14 +18,12 @@ export function DemosMenu() {
       return;
     }
     const { graph, rootNodeId, subgraphs, cameras } = demo.build();
+    // setGraph bumps syncCounter, so every NodeCanvas re-syncs its RF
+    // state from the new store graph + rebuilt registry. Each canvas's
+    // own viewport effect handles fitView when no per-panel viewport
+    // exists yet — we don't fitView from here because there's no
+    // longer a single canvas to target.
     setGraph(graph, rootNodeId, subgraphs, cameras);
-    // Build the registry from the demo's subgraphs so edge colors resolve
-    // against the same kinds the new graph references.
-    const registry = buildRegistry(subgraphs ?? []);
-    rf.setNodes(graphToRfNodes(graph));
-    rf.setEdges(graphToRfEdges(graph, registry));
-    // Frame the new graph after RF has applied the new nodes.
-    requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
     setOpen(false);
   };
 

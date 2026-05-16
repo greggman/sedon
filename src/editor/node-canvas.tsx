@@ -28,8 +28,10 @@ import {
   CustomNode,
   subgraphIdFromBoundaryKind,
 } from './custom-node.js';
+import { useLayoutStore } from './layout-store.js';
 import { buildRegistry, useRegistry } from './registry.js';
 import { edgeColor, graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
+import { registerCanvasRf, unregisterCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
 const nodeTypes = { sedon: CustomNode };
@@ -46,11 +48,29 @@ const seedState = useEditorStore.getState();
 const seedRegistry = buildRegistry(seedState.subgraphs);
 const seed = seedState.graph;
 
-export function NodeCanvas() {
+interface NodeCanvasProps {
+  /**
+   * DockView panel id. Used to scope per-canvas viewport (pan/zoom)
+   * state in the layout store so two canvas panes editing the same
+   * graph maintain independent views.
+   */
+  panelId: string;
+}
+
+export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(graphToRfNodes(seed));
   const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed, seedRegistry));
 
   const rf = useReactFlow();
+  // Register this canvas's RF instance so toolbar items that need RF
+  // (CleanupButton's auto-layout, etc.) can look it up by panelId
+  // instead of relying on a shared provider. Unregister on unmount so
+  // a closed panel's stale RF isn't picked up by "active canvas"
+  // lookups.
+  useEffect(() => {
+    registerCanvasRf(panelId, rf);
+    return () => unregisterCanvasRf(panelId);
+  }, [panelId, rf]);
   // We use RF's internal store directly (not useUpdateNodeInternals) because
   // the public hook defers measurement to a requestAnimationFrame — by the
   // time it actually runs, our setRfEdges has already triggered a render
@@ -65,7 +85,14 @@ export function NodeCanvas() {
   const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
   const addNodeExtraInputWithEdge = useEditorStore((s) => s.addNodeExtraInputWithEdge);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
-  const viewports = useEditorStore((s) => s.viewports);
+  // Project-level viewports map — used only as the initial seed for a
+  // panel that hasn't recorded its own viewport for this graph yet.
+  // Once the user pans/zooms in a panel, the per-panel layout-store
+  // entry below takes over; we no longer write back to project.viewports
+  // so two panels can't race the persistent map.
+  const projectViewports = useEditorStore((s) => s.viewports);
+  const panelViewports = useLayoutStore((s) => s.canvasViewports[panelId]);
+  const saveCanvasViewport = useLayoutStore((s) => s.saveCanvasViewport);
   const registry = useRegistry();
 
   // External graph changes (load, undo, redo, drag-create) reach React
@@ -110,28 +137,34 @@ export function NodeCanvas() {
     setRfEdges(graphToRfEdges(graph, registry));
   }, [syncCounter, registry, setRfNodes, setRfEdges, rfStore]);
 
-  // Per-graph viewport: save on context switch, load (or fit) on entry.
-  // Same shape as the per-graph camera effect in preview.tsx. Fires also
-  // when the viewports map identity changes (e.g., demo load pre-seeds a
-  // viewport for 'main'), but skips the redundant setViewport when the
-  // stored value already matches RF's current viewport so we don't fight
-  // the user's own pan/zoom that just produced it.
+  // Per-panel × per-graph viewport: save the outgoing panel/graph view
+  // before swapping, then restore (or fit) for the new one. The lookup
+  // tier is:
+  //
+  //   1. This panel's own recorded viewport for this graph (panelViewports)
+  //   2. The project-level last-known viewport for this graph (projectViewports)
+  //   3. Fallback to fitView()
+  //
+  // Two canvases editing the same graph each have their own entry under
+  // (1), so panning one doesn't move the other. We only seed from (2)
+  // on the very first time a panel sees a graph; from then on (1) is
+  // authoritative for this panel.
   const prevContextRef = useRef<string | null>(null);
-  const prevViewportsRef = useRef<typeof viewports | null>(null);
+  const prevPanelViewportsRef = useRef<typeof panelViewports | null>(null);
   useEffect(() => {
     const prevId = prevContextRef.current;
-    const prevViewports = prevViewportsRef.current;
+    const prevPanelViewports = prevPanelViewportsRef.current;
     const idChanged = prevId !== currentEditingId;
-    const viewportsChanged = prevViewports !== viewports;
+    const panelViewportsChanged = prevPanelViewports !== panelViewports;
     prevContextRef.current = currentEditingId;
-    prevViewportsRef.current = viewports;
-    if (!idChanged && !viewportsChanged) return;
+    prevPanelViewportsRef.current = panelViewports;
+    if (!idChanged && !panelViewportsChanged) return;
 
     if (idChanged && prevId !== null) {
-      useEditorStore.getState().saveViewportFor(prevId, rf.getViewport());
+      saveCanvasViewport(panelId, prevId, rf.getViewport());
     }
 
-    const stored = viewports[currentEditingId];
+    const stored = panelViewports?.[currentEditingId] ?? projectViewports[currentEditingId];
     if (stored) {
       const current = rf.getViewport();
       const same =
@@ -145,14 +178,32 @@ export function NodeCanvas() {
       // ran in this same render cycle).
       requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
     }
-  }, [currentEditingId, viewports, rf]);
+  }, [currentEditingId, panelViewports, projectViewports, panelId, rf, saveCanvasViewport]);
 
   const onMoveEnd = useCallback<OnMove>(
     (_event, viewport: Viewport) => {
       const id = useEditorStore.getState().currentEditingId;
-      useEditorStore.getState().saveViewportFor(id, viewport);
+      saveCanvasViewport(panelId, id, viewport);
     },
-    [],
+    [panelId, saveCanvasViewport],
+  );
+
+  // Commit node positions to the store at drag-stop and bump syncCounter
+  // so any OTHER canvas viewing the same graph re-renders with the new
+  // positions. `nodes` is RF's selection-aware set: if the user dragged
+  // a multi-selection, all selected nodes commit together.
+  const commitDragged = useCallback((nodes: Node[]) => {
+    if (nodes.length === 0) return;
+    const positions = new Map(nodes.map((n) => [n.id, n.position]));
+    useEditorStore.getState().commitActivePositions(positions);
+  }, []);
+  const onNodeDragStop = useCallback(
+    (_evt: unknown, _node: Node, nodes: Node[]) => commitDragged(nodes),
+    [commitDragged],
+  );
+  const onSelectionDragStop = useCallback(
+    (_evt: unknown, nodes: Node[]) => commitDragged(nodes),
+    [commitDragged],
   );
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y = redo.
@@ -352,6 +403,8 @@ export function NodeCanvas() {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onMoveEnd={onMoveEnd}
+      onNodeDragStop={onNodeDragStop}
+      onSelectionDragStop={onSelectionDragStop}
       proOptions={{ hideAttribution: true }}
       selectionMode={SelectionMode.Partial}
       minZoom={0.1}
@@ -370,10 +423,24 @@ function mergeRfNodes(current: Node[], graph: Graph): Node[] {
   return graph.nodes.map((g, i) => {
     const existing = currentById.get(g.id);
     if (existing) {
-      // Keep RF state; just update the kind in case it ever changes.
+      // Keep RF's measured dimensions / selection / etc., but reconcile
+      // the few graph-authored fields that can drift between canvases:
+      //   • `kind` (rarely changes, but a wrapper swap could)
+      //   • `position` — when another canvas commits a drag through the
+      //     store, the resulting graph carries the new position and
+      //     other canvases must pick it up. The dragging canvas's RF
+      //     position already matches, so this is a no-op for it.
       const existingKind = (existing.data as { kind?: string }).kind;
-      if (existingKind === g.kind) return existing;
-      return { ...existing, data: { ...existing.data, kind: g.kind } };
+      const sameKind = existingKind === g.kind;
+      const gpos = g.position;
+      const samePos =
+        !gpos ||
+        (existing.position.x === gpos.x && existing.position.y === gpos.y);
+      if (sameKind && samePos) return existing;
+      const next: Node = { ...existing };
+      if (!sameKind) next.data = { ...existing.data, kind: g.kind };
+      if (!samePos && gpos) next.position = gpos;
+      return next;
     }
     return {
       id: g.id,

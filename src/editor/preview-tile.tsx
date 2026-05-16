@@ -9,6 +9,7 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { usePopoutGeneration } from './popout-bus.js';
 import { requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
@@ -38,24 +39,41 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   // resize observer so the backing buffer tracks CSS size. Resizes
   // request a fresh render — the canvas is now blank until we draw into
   // it, since we no longer paint every frame unconditionally.
+  //
+  // Re-runs on popout: DockView reparents the canvas DOM to a different
+  // document, which invalidates the existing swap chain and the
+  // ResizeObserver (which was created against the old window). DPR is
+  // also re-read from the canvas's CURRENT window in case the popout is
+  // on a different-DPR display.
+  const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
+    const win = canvas.ownerDocument.defaultView ?? window;
+    const dpr = win.devicePixelRatio || 1;
     const resize = () => {
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
       requestRender();
     };
     resize();
-    const obs = new ResizeObserver(resize);
+    // Use the canvas's current window's ResizeObserver constructor so
+    // observation happens against the popout's frame timing, not the
+    // original window's.
+    const ResizeObs = win.ResizeObserver ?? ResizeObserver;
+    const obs = new ResizeObs(resize);
     obs.observe(canvas);
     ctxRef.current = configureCanvas(canvas, gpu);
     return () => {
       obs.disconnect();
+      try {
+        ctxRef.current?.unconfigure();
+      } catch {
+        // ignore: detached if popout window closed first
+      }
       ctxRef.current = null;
     };
-  }, [gpu]);
+  }, [gpu, popoutGen]);
 
   // Build a scene renderer whenever the synthesized scene changes. New
   // scene every eval, but reference-equal across frames so the renderer
@@ -65,7 +83,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     return () => {
       rendererRef.current = null;
     };
-  }, [gpu, scene]);
+  }, [gpu, scene, popoutGen]);
 
   // Render-on-demand. The render closure captures current scene / lighting
   // / flatPreview by being recreated whenever those change; that recreated

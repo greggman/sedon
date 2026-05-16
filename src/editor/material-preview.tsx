@@ -6,6 +6,7 @@ import { identity, multiply, perspective, rotationX, rotationY, translation } fr
 import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
 import { generateSphere } from '../render/sphere.js';
+import { usePopoutGeneration } from './popout-bus.js';
 
 // MaterialPreview wraps (mesh + material) into a single-entity Scene with an
 // identity transform, to feed the Scene-based renderer.
@@ -32,22 +33,30 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
 
   const [shape, setShape] = useState<Shape>('sphere');
 
-  // Configure context once per device.
+  // Configure context. Re-runs on popout so the GPUCanvasContext is
+  // reconfigured against the canvas's new ownerDocument; format is
+  // resolved via the canvas's current window's navigator.gpu.
+  const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('webgpu');
     if (!ctx) return;
-    const format = navigator.gpu.getPreferredCanvasFormat();
+    const win = canvas.ownerDocument.defaultView ?? window;
+    const format = win.navigator.gpu.getPreferredCanvasFormat();
     ctx.configure({ device, format, alphaMode: 'opaque' });
     ctxRef.current = ctx;
     formatRef.current = format;
     return () => {
-      ctx.unconfigure();
+      try {
+        ctx.unconfigure();
+      } catch {
+        // ignore: context detached after popout window closed
+      }
       ctxRef.current = null;
       formatRef.current = null;
     };
-  }, [device]);
+  }, [device, popoutGen]);
 
   // Pointer handlers (set up once on mount) call renderRef.current() to
   // re-render after camera updates. The geometry effect installs the real
@@ -112,7 +121,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       resourcesRef.current = null;
       renderRef.current = () => {};
     };
-  }, [device, material, shape]);
+  }, [device, material, shape, popoutGen]);
 
   // Wire orbit camera input on the canvas.
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { usePopoutGeneration } from './popout-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
@@ -54,27 +55,39 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
   const cameraRef = useRef<CameraState>(framedCamera);
   cameraRef.current = framedCamera;
 
-  // Configure the canvas's WebGPU context once per device.
+  // Configure the canvas's WebGPU context. Re-runs on popout (DockView
+  // reparents the canvas DOM to a different document, invalidating the
+  // existing swap chain). `getPreferredCanvasFormat` is resolved via
+  // the canvas's CURRENT defaultView so we read whatever the popout
+  // window prefers, not the original window's value.
+  const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('webgpu');
     if (!ctx) return;
-    const format = navigator.gpu.getPreferredCanvasFormat();
+    const win = canvas.ownerDocument.defaultView ?? window;
+    const format = win.navigator.gpu.getPreferredCanvasFormat();
     ctx.configure({ device, format, alphaMode: 'opaque' });
     ctxRef.current = ctx;
     formatRef.current = format;
     return () => {
-      ctx.unconfigure();
+      try {
+        ctx.unconfigure();
+      } catch {
+        // Context may already be detached (popout window closed); ignore.
+      }
       ctxRef.current = null;
       formatRef.current = null;
     };
-  }, [device]);
+  }, [device, popoutGen]);
 
   // Build a fresh scene renderer when the scene changes. The SceneRenderer
   // pre-bakes pipelines + per-entity bind groups, so we cannot re-use it
   // across scenes — but it stays put across eval rounds when the scene
-  // value is reference-equal.
+  // value is reference-equal. Also rebuilds on popout: if the new window's
+  // preferred canvas format differs, the pipelines must be recreated to
+  // target it.
   useEffect(() => {
     const format = formatRef.current;
     if (!format) return;
@@ -82,7 +95,7 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
     return () => {
       rendererRef.current = null;
     };
-  }, [device, scene]);
+  }, [device, scene, popoutGen]);
 
   // Single render on mount and whenever the scene / camera changes.
   // Deliberately NOT subscribed to the global render bus: thumbnails
@@ -121,7 +134,7 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
       device.queue.submit([encoder.finish()]);
     };
     draw();
-  }, [device, scene, framedCamera]);
+  }, [device, scene, framedCamera, popoutGen]);
 
   const dpr = window.devicePixelRatio || 1;
   return (
