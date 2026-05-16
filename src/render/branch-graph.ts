@@ -452,19 +452,94 @@ export interface TubeOpts {
   uvTilingV: number;
 }
 
+/**
+ * Parent-attach state at a child branch's parentT. Used by Y-joint
+ * blending: the child's first ring snaps onto the parent's cylinder
+ * surface using `pivot` (point on parent's centerline) + `tangent`
+ * (parent's local direction) + `radius` (parent's local radius).
+ */
+interface ParentAttachState {
+  pivotX: number; pivotY: number; pivotZ: number;
+  tangentX: number; tangentY: number; tangentZ: number;
+  radius: number;
+}
+
+function computeParentAttachState(
+  graph: BranchGraphValue,
+  branchIdx: number,
+): ParentAttachState | null {
+  const parentIdx = graph.parentIndex[branchIdx]!;
+  if (parentIdx < 0) return null;
+  const pVs = graph.vertexStart[parentIdx]!;
+  const pVc = graph.vertexLength[parentIdx]!;
+  if (pVc < 2) return null;
+  const tRaw = graph.parentT[branchIdx]! * (pVc - 1);
+  const tClamped = Math.max(0, Math.min(pVc - 1, tRaw));
+  const i0 = Math.max(0, Math.min(pVc - 2, Math.floor(tClamped)));
+  const i1 = i0 + 1;
+  const f = tClamped - i0;
+  const ax = graph.positions[(pVs + i0) * 3]!;
+  const ay = graph.positions[(pVs + i0) * 3 + 1]!;
+  const az = graph.positions[(pVs + i0) * 3 + 2]!;
+  const bx = graph.positions[(pVs + i1) * 3]!;
+  const by = graph.positions[(pVs + i1) * 3 + 1]!;
+  const bz = graph.positions[(pVs + i1) * 3 + 2]!;
+  const pivotX = ax + (bx - ax) * f;
+  const pivotY = ay + (by - ay) * f;
+  const pivotZ = az + (bz - az) * f;
+  let tx = bx - ax;
+  let ty = by - ay;
+  let tz = bz - az;
+  const tlen = Math.hypot(tx, ty, tz) || 1;
+  tx /= tlen; ty /= tlen; tz /= tlen;
+  const r0 = graph.radii[pVs + i0]!;
+  const r1 = graph.radii[pVs + i1]!;
+  const radius = r0 + (r1 - r0) * f;
+  return {
+    pivotX, pivotY, pivotZ,
+    tangentX: tx, tangentY: ty, tangentZ: tz,
+    radius,
+  };
+}
+
+/**
+ * Push the snapped ring this far OUTSIDE the parent's surface, so the
+ * child's first ring lies just above the parent rather than coinciding
+ * with it (which would z-fight along the boundary curve).
+ */
+const Y_JOINT_EPSILON = 1e-3;
+
 export function sweepBranchGraphToMesh(graph: BranchGraphValue, opts: TubeOpts): CpuMesh {
   const sides = Math.max(3, Math.floor(opts.sides));
 
-  // Each branch gets its own ring-strip section (no Y-joint blending in
-  // Phase 1; branches plain-intersect their parents). +1 ring vertex per
-  // segment row for UV-seam continuity.
+  // Each branch gets its own ring-strip section. +1 ring vertex per row
+  // for UV-seam continuity. For child branches, the first ring is
+  // SNAPPED onto the parent's cylinder surface (Y-joint blending) — see
+  // `computeParentAttachState` + the `attach != null && i === 0` path
+  // below. The natural side effect is a flare at the joint: the
+  // snapped ring sits at the parent's radius, the next ring at the
+  // child's radius, and the quad strip between them tapers.
+  //
+  // Every branch also gets a TIP CAP (a small fan of triangles closing
+  // the open end of the tube), and every ROOT branch gets a BASE CAP too
+  // — without these the renderer's backface culling reveals the hollow
+  // interior of any tube end the viewer can see down. The caps share
+  // positions with the existing side-ring vertices but get their own
+  // vertex slots so the cap's normal can point along the branch axis
+  // instead of radially.
   let totalV = 0;
   let totalI = 0;
   for (let b = 0; b < graph.branchCount; b++) {
     const vc = graph.vertexLength[b]!;
     if (vc < 2) continue;
-    totalV += vc * (sides + 1);
-    totalI += (vc - 1) * sides * 6;
+    // Side strip + tip cap (always present).
+    totalV += vc * (sides + 1) + sides + 1;
+    totalI += (vc - 1) * sides * 6 + sides * 3;
+    // Root branches additionally get a base cap.
+    if (graph.parentIndex[b]! < 0) {
+      totalV += sides + 1;
+      totalI += sides * 3;
+    }
   }
 
   const positions = new Float32Array(totalV * 3);
@@ -482,6 +557,32 @@ export function sweepBranchGraphToMesh(graph: BranchGraphValue, opts: TubeOpts):
 
     const frames = computePolylineFrames(graph.positions, vs, vc);
     const branchBaseV = vCursor;
+    const attach = computeParentAttachState(graph, b);
+
+    // Y-joint mode selection for child branches' first ring:
+    //   • SNAP — project ring 0 onto the parent's cylinder. Produces a
+    //     nice tilted-ellipse flare. Requires the child to be reasonably
+    //     non-perpendicular to the parent; otherwise the projection
+    //     U-turns through the parent's centerline and quads twist.
+    //   • ENLARGE — keep ring 0 in the natural plane (perpendicular to
+    //     child tangent) but blow its radius up to the parent's radius.
+    //     Half of the ring sits inside the parent's volume (occluded);
+    //     the rest emerges. No degenerate projection, no twist.
+    //
+    // Heuristic: use snap when |child_t · parent_t| > 0.3 (branch angle
+    // < ~72°); enlarge otherwise. The threshold is empirical — picked
+    // so the canopy tree's near-perpendicular siblings stop tearing.
+    let yJointMode: 'snap' | 'enlarge' | 'none' = 'none';
+    if (attach !== null && vc >= 2) {
+      const ct0x = graph.positions[(vs + 1) * 3]! - graph.positions[vs * 3]!;
+      const ct0y = graph.positions[(vs + 1) * 3 + 1]! - graph.positions[vs * 3 + 1]!;
+      const ct0z = graph.positions[(vs + 1) * 3 + 2]! - graph.positions[vs * 3 + 2]!;
+      const ct0Len = Math.hypot(ct0x, ct0y, ct0z) || 1;
+      const align = Math.abs(
+        (ct0x * attach.tangentX + ct0y * attach.tangentY + ct0z * attach.tangentZ) / ct0Len,
+      );
+      yJointMode = align > 0.3 ? 'snap' : 'enlarge';
+    }
 
     for (let i = 0; i < vc; i++) {
       const px = graph.positions[(vs + i) * 3]!;
@@ -491,20 +592,79 @@ export function sweepBranchGraphToMesh(graph: BranchGraphValue, opts: TubeOpts):
       const arc = graph.arcLength[vs + i]!;
       const f = frames[i]!;
 
+      const snapToParent = i === 0 && yJointMode === 'snap' && attach !== null;
+      const enlargeAtJoint = i === 0 && yJointMode === 'enlarge' && attach !== null;
+
       for (let s = 0; s <= sides; s++) {
         const theta = (s / sides) * 2 * Math.PI;
         const c = Math.cos(theta);
         const sn = Math.sin(theta);
-        const dx = c * f.n1x + sn * f.n2x;
-        const dy = c * f.n1y + sn * f.n2y;
-        const dz = c * f.n1z + sn * f.n2z;
         const idx = vCursor + i * (sides + 1) + s;
-        positions[idx * 3] = px + dx * r;
-        positions[idx * 3 + 1] = py + dy * r;
-        positions[idx * 3 + 2] = pz + dz * r;
-        normals[idx * 3] = dx;
-        normals[idx * 3 + 1] = dy;
-        normals[idx * 3 + 2] = dz;
+
+        // Direction from this ring vertex's CENTER (the polyline vertex)
+        // outward, in the child's local frame.
+        const dirX = c * f.n1x + sn * f.n2x;
+        const dirY = c * f.n1y + sn * f.n2y;
+        const dirZ = c * f.n1z + sn * f.n2z;
+
+        if (snapToParent) {
+          // Snap to the parent's cylinder. The un-snapped vertex offset
+          // from pivot is `r * dir`; decompose into the parent's local
+          // basis (tangent + perpendicular-to-tangent), then scale the
+          // perpendicular component out to the parent's radius.
+          const dpx = dirX * r;
+          const dpy = dirY * r;
+          const dpz = dirZ * r;
+          const dAlong = dpx * attach.tangentX + dpy * attach.tangentY + dpz * attach.tangentZ;
+          let perpX = dpx - dAlong * attach.tangentX;
+          let perpY = dpy - dAlong * attach.tangentY;
+          let perpZ = dpz - dAlong * attach.tangentZ;
+          const perpLen = Math.hypot(perpX, perpY, perpZ);
+          if (perpLen < 1e-9) {
+            // Degenerate: ring vertex points along the parent's tangent
+            // (child is collinear with parent — shouldn't happen with
+            // the dominant-child structure, but fall back to a
+            // pickPerpendicular direction so we never NaN).
+            const fallback = pickPerpendicular([attach.tangentX, attach.tangentY, attach.tangentZ]);
+            perpX = fallback[0];
+            perpY = fallback[1];
+            perpZ = fallback[2];
+          } else {
+            perpX /= perpLen;
+            perpY /= perpLen;
+            perpZ /= perpLen;
+          }
+          const rOut = attach.radius + Y_JOINT_EPSILON;
+          positions[idx * 3] = attach.pivotX + dAlong * attach.tangentX + rOut * perpX;
+          positions[idx * 3 + 1] = attach.pivotY + dAlong * attach.tangentY + rOut * perpY;
+          positions[idx * 3 + 2] = attach.pivotZ + dAlong * attach.tangentZ + rOut * perpZ;
+          // Normal points outward from the parent's centerline so
+          // lighting flows continuously from the parent's bark across
+          // the joint into the child's bark.
+          normals[idx * 3] = perpX;
+          normals[idx * 3 + 1] = perpY;
+          normals[idx * 3 + 2] = perpZ;
+        } else if (enlargeAtJoint && attach !== null) {
+          // Enlarge ring 0's radius to the parent's so it overlaps the
+          // parent's volume and the child's tube emerges through the
+          // parent's intact surface. No projection — keeps the ring's
+          // plane perpendicular to the child's tangent.
+          const rOut = Math.max(r, attach.radius + Y_JOINT_EPSILON);
+          positions[idx * 3] = px + dirX * rOut;
+          positions[idx * 3 + 1] = py + dirY * rOut;
+          positions[idx * 3 + 2] = pz + dirZ * rOut;
+          normals[idx * 3] = dirX;
+          normals[idx * 3 + 1] = dirY;
+          normals[idx * 3 + 2] = dirZ;
+        } else {
+          positions[idx * 3] = px + dirX * r;
+          positions[idx * 3 + 1] = py + dirY * r;
+          positions[idx * 3 + 2] = pz + dirZ * r;
+          normals[idx * 3] = dirX;
+          normals[idx * 3 + 1] = dirY;
+          normals[idx * 3 + 2] = dirZ;
+        }
+
         uvs[idx * 2] = s / sides;
         uvs[idx * 2 + 1] = arc * opts.uvTilingV;
       }
@@ -524,6 +684,98 @@ export function sweepBranchGraphToMesh(graph: BranchGraphValue, opts: TubeOpts):
         indices[iCursor++] = a;
         indices[iCursor++] = c1;
         indices[iCursor++] = d;
+      }
+    }
+
+    // ----- Tip cap -----
+    // Fan of `sides` triangles closing the tube's tip. Cap-ring vertices
+    // share positions with the existing tip ring but get axis-aligned
+    // normals so lighting reads the cap as a flat disc rather than a
+    // continuation of the curved side. UV maps the cap to a unit disc
+    // around (0.5, 0.5).
+    const tipIdx = vc - 1;
+    const tipX = graph.positions[(vs + tipIdx) * 3]!;
+    const tipY = graph.positions[(vs + tipIdx) * 3 + 1]!;
+    const tipZ = graph.positions[(vs + tipIdx) * 3 + 2]!;
+    let ttx = tipX - graph.positions[(vs + tipIdx - 1) * 3]!;
+    let tty = tipY - graph.positions[(vs + tipIdx - 1) * 3 + 1]!;
+    let ttz = tipZ - graph.positions[(vs + tipIdx - 1) * 3 + 2]!;
+    const ttLen = Math.hypot(ttx, tty, ttz) || 1;
+    ttx /= ttLen; tty /= ttLen; ttz /= ttLen;
+
+    const tipCapRingBase = vCursor;
+    for (let s = 0; s < sides; s++) {
+      const srcIdx = branchBaseV + tipIdx * (sides + 1) + s;
+      positions[(tipCapRingBase + s) * 3] = positions[srcIdx * 3]!;
+      positions[(tipCapRingBase + s) * 3 + 1] = positions[srcIdx * 3 + 1]!;
+      positions[(tipCapRingBase + s) * 3 + 2] = positions[srcIdx * 3 + 2]!;
+      normals[(tipCapRingBase + s) * 3] = ttx;
+      normals[(tipCapRingBase + s) * 3 + 1] = tty;
+      normals[(tipCapRingBase + s) * 3 + 2] = ttz;
+      const theta = (s / sides) * 2 * Math.PI;
+      uvs[(tipCapRingBase + s) * 2] = 0.5 + 0.5 * Math.cos(theta);
+      uvs[(tipCapRingBase + s) * 2 + 1] = 0.5 + 0.5 * Math.sin(theta);
+    }
+    const tipCapCenter = tipCapRingBase + sides;
+    positions[tipCapCenter * 3] = tipX;
+    positions[tipCapCenter * 3 + 1] = tipY;
+    positions[tipCapCenter * 3 + 2] = tipZ;
+    normals[tipCapCenter * 3] = ttx;
+    normals[tipCapCenter * 3 + 1] = tty;
+    normals[tipCapCenter * 3 + 2] = ttz;
+    uvs[tipCapCenter * 2] = 0.5;
+    uvs[tipCapCenter * 2 + 1] = 0.5;
+    vCursor = tipCapCenter + 1;
+    // Winding: side rings walk CW viewed from +tangent (n1 × n2 = -tangent
+    // in our frame convention), so a fan center→r[s]→r[s+1] is also CW
+    // from +tangent — which gives the cap an OUTWARD normal facing the
+    // viewer looking down the branch.
+    for (let s = 0; s < sides; s++) {
+      indices[iCursor++] = tipCapCenter;
+      indices[iCursor++] = tipCapRingBase + s;
+      indices[iCursor++] = tipCapRingBase + ((s + 1) % sides);
+    }
+
+    // ----- Base cap (root branches only) -----
+    if (graph.parentIndex[b]! < 0) {
+      const baseX = graph.positions[vs * 3]!;
+      const baseY = graph.positions[vs * 3 + 1]!;
+      const baseZ = graph.positions[vs * 3 + 2]!;
+      // Outward direction at the base is the reverse of the first segment.
+      let btx = baseX - graph.positions[(vs + 1) * 3]!;
+      let bty = baseY - graph.positions[(vs + 1) * 3 + 1]!;
+      let btz = baseZ - graph.positions[(vs + 1) * 3 + 2]!;
+      const btLen = Math.hypot(btx, bty, btz) || 1;
+      btx /= btLen; bty /= btLen; btz /= btLen;
+
+      const baseCapRingBase = vCursor;
+      for (let s = 0; s < sides; s++) {
+        const srcIdx = branchBaseV + 0 * (sides + 1) + s;
+        positions[(baseCapRingBase + s) * 3] = positions[srcIdx * 3]!;
+        positions[(baseCapRingBase + s) * 3 + 1] = positions[srcIdx * 3 + 1]!;
+        positions[(baseCapRingBase + s) * 3 + 2] = positions[srcIdx * 3 + 2]!;
+        normals[(baseCapRingBase + s) * 3] = btx;
+        normals[(baseCapRingBase + s) * 3 + 1] = bty;
+        normals[(baseCapRingBase + s) * 3 + 2] = btz;
+        const theta = (s / sides) * 2 * Math.PI;
+        uvs[(baseCapRingBase + s) * 2] = 0.5 + 0.5 * Math.cos(theta);
+        uvs[(baseCapRingBase + s) * 2 + 1] = 0.5 + 0.5 * Math.sin(theta);
+      }
+      const baseCapCenter = baseCapRingBase + sides;
+      positions[baseCapCenter * 3] = baseX;
+      positions[baseCapCenter * 3 + 1] = baseY;
+      positions[baseCapCenter * 3 + 2] = baseZ;
+      normals[baseCapCenter * 3] = btx;
+      normals[baseCapCenter * 3 + 1] = bty;
+      normals[baseCapCenter * 3 + 2] = btz;
+      uvs[baseCapCenter * 2] = 0.5;
+      uvs[baseCapCenter * 2 + 1] = 0.5;
+      vCursor = baseCapCenter + 1;
+      // Reverse winding so the cap normal faces -tangent (down/out at base).
+      for (let s = 0; s < sides; s++) {
+        indices[iCursor++] = baseCapCenter;
+        indices[iCursor++] = baseCapRingBase + ((s + 1) % sides);
+        indices[iCursor++] = baseCapRingBase + s;
       }
     }
   }
@@ -1259,9 +1511,18 @@ function nodeTreeToBranchGraph(nodes: ScNode[]): BranchGraphValue {
 
   const raws: RawBranch[] = [];
 
-  // Emit a chain starting at `head`. If `leading` is set, it becomes the
-  // first vertex — used to share the branch-point position between parent
-  // and child so tubes meet cleanly without a visible gap.
+  // Emit a chain starting at `head`. When a node has multiple children we
+  // pick a "dominant" one whose direction best continues the incoming
+  // tangent (or `+Y` as a tiebreak at the root) and merge it into THIS
+  // chain. Non-dominant siblings become new branches that attach
+  // mid-parent at the branch-point's parametric position.
+  //
+  // This matches how the recursive generator emits children — they
+  // branch off mid-parent rather than at the parent's end, so the
+  // parent's tube remains continuous through the joint and the child's
+  // first ring (after snapping in `sweepBranchGraphToMesh`) emerges from
+  // the parent's intact surface. No more wedge gaps where the parent
+  // formerly terminated.
   function emitChain(
     head: number,
     parentBranchIdx: number,
@@ -1271,47 +1532,109 @@ function nodeTreeToBranchGraph(nodes: ScNode[]): BranchGraphValue {
   ): void {
     const polyline: Array<[number, number, number]> = [];
     const radii: number[] = [];
+    // (vertexIndexInPolyline, [nonDominantSiblingNodeIdx]) per branch
+    // point on this chain. Emitted after the chain is complete so each
+    // sibling's parentT reflects the final polyline length.
+    const pendingSiblings: Array<{ vertexIdx: number; siblings: number[] }> = [];
+
+    let prevPosX = 0, prevPosY = 0, prevPosZ = 0;
+    let havePrev = false;
+    let lastDirX = 0, lastDirY = 1, lastDirZ = 0; // default: +Y tiebreak
+    let haveDir = false;
+
     if (leading) {
       polyline.push([leading.pos[0], leading.pos[1], leading.pos[2]]);
       radii.push(leading.radius);
+      prevPosX = leading.pos[0];
+      prevPosY = leading.pos[1];
+      prevPosZ = leading.pos[2];
+      havePrev = true;
     }
+
     let cur = head;
     while (true) {
       const n = nodes[cur]!;
       polyline.push([n.pos[0], n.pos[1], n.pos[2]]);
       radii.push(n.radius);
-      if (n.children.length !== 1) break;
-      cur = n.children[0]!;
+
+      if (havePrev) {
+        const dx = n.pos[0] - prevPosX;
+        const dy = n.pos[1] - prevPosY;
+        const dz = n.pos[2] - prevPosZ;
+        const dLen = Math.hypot(dx, dy, dz) || 1;
+        lastDirX = dx / dLen;
+        lastDirY = dy / dLen;
+        lastDirZ = dz / dLen;
+        haveDir = true;
+      }
+      prevPosX = n.pos[0];
+      prevPosY = n.pos[1];
+      prevPosZ = n.pos[2];
+      havePrev = true;
+
+      if (n.children.length === 0) break; // leaf
+
+      // Pick the dominant child. With prior direction, most aligned.
+      // Without (root, no leading), bias upward.
+      let dominantIdx: number;
+      if (n.children.length === 1) {
+        dominantIdx = n.children[0]!;
+      } else {
+        let bestDot = -Infinity;
+        let bestIdx = n.children[0]!;
+        for (const ci of n.children) {
+          const c = nodes[ci]!;
+          const cdx = c.pos[0] - n.pos[0];
+          const cdy = c.pos[1] - n.pos[1];
+          const cdz = c.pos[2] - n.pos[2];
+          const cdLen = Math.hypot(cdx, cdy, cdz) || 1;
+          const dot = haveDir
+            ? (cdx * lastDirX + cdy * lastDirY + cdz * lastDirZ) / cdLen
+            : cdy / cdLen;
+          if (dot > bestDot) {
+            bestDot = dot;
+            bestIdx = ci;
+          }
+        }
+        dominantIdx = bestIdx;
+        const siblings = n.children.filter((ci) => ci !== dominantIdx);
+        if (siblings.length > 0) {
+          pendingSiblings.push({ vertexIdx: polyline.length - 1, siblings });
+        }
+      }
+
+      cur = dominantIdx;
     }
+
     const myIdx = raws.length;
     raws.push({ parentIndex: parentBranchIdx, parentT, depth, polyline, radii });
-    const tail = nodes[cur]!;
-    if (tail.children.length > 1) {
-      const shared = {
-        pos: [tail.pos[0], tail.pos[1], tail.pos[2]] as [number, number, number],
-        radius: tail.radius,
-      };
-      for (const childIdx of tail.children) {
-        emitChain(childIdx, myIdx, 1, depth + 1, shared);
+
+    // Emit non-dominant siblings as new branches. Each sibling's polyline
+    // starts at the branch-point position (passed as `leading`) so its
+    // first ring is centered on the parent's centerline — exactly where
+    // the snap-to-parent-surface step in the tube sweep expects it.
+    const numSegs = polyline.length - 1;
+    for (const ps of pendingSiblings) {
+      const t = numSegs > 0 ? ps.vertexIdx / numSegs : 0;
+      const bpPos: [number, number, number] = [
+        polyline[ps.vertexIdx]![0],
+        polyline[ps.vertexIdx]![1],
+        polyline[ps.vertexIdx]![2],
+      ];
+      const bpRadius = radii[ps.vertexIdx]!;
+      const sharedLeading = { pos: bpPos, radius: bpRadius };
+      for (const siblingIdx of ps.siblings) {
+        emitChain(siblingIdx, myIdx, t, depth + 1, sharedLeading);
       }
     }
   }
 
   const root = nodes[0]!;
-  if (root.children.length === 1) {
-    emitChain(0, -1, 0, 0, null);
-  } else if (root.children.length > 1) {
-    const shared = {
-      pos: [root.pos[0], root.pos[1], root.pos[2]] as [number, number, number],
-      radius: root.radius,
-    };
-    for (const childIdx of root.children) {
-      emitChain(childIdx, -1, 0, 0, shared);
-    }
-  } else {
-    // Root with no children — single-vertex degenerate (handled at top).
+  if (root.children.length === 0) {
+    // Degenerate handled at top; defensive return.
     return emptyBranchGraph();
   }
+  emitChain(0, -1, 0, 0, null);
 
   return finalizeBranches(raws);
 }

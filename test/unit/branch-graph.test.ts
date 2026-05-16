@@ -225,27 +225,30 @@ test('branch/space-colonization: Murray-law radii scale root to rootRadius', () 
     `root radius ${g.radii[0]} != ${SC_DEFAULT_OPTS.rootRadius}`);
 });
 
-test('branch/space-colonization: branch-point vertex shared between parent and child', () => {
+test('branch/space-colonization: child branch attaches at a parent polyline vertex (dominant-child)', () => {
   const { attractors, attractorCount } = sphereAttractors(9, 4, 120);
   const g = generateSpaceColonizationBranchGraph({
     ...SC_DEFAULT_OPTS,
     attractors,
     attractorCount,
   });
-  // Find a non-root branch and verify its first vertex matches the LAST
-  // vertex of its parent (shared branch-point position).
+  // With dominant-child restructuring, non-root branches attach mid-parent
+  // at an integer-vertex parentT, NOT at the parent's tip. Each non-root
+  // branch's first vertex equals the parent's vertex at parentT *
+  // (vertexLength - 1).
   for (let b = 1; b < g.branchCount; b++) {
     const p = g.parentIndex[b]!;
     if (p < 0) continue;
-    const parentLastIdx = g.vertexStart[p]! + g.vertexLength[p]! - 1;
-    const childFirstIdx = g.vertexStart[b]!;
-    assert.equal(g.positions[childFirstIdx * 3], g.positions[parentLastIdx * 3]);
-    assert.equal(g.positions[childFirstIdx * 3 + 1], g.positions[parentLastIdx * 3 + 1]);
-    assert.equal(g.positions[childFirstIdx * 3 + 2], g.positions[parentLastIdx * 3 + 2]);
+    const pVs = g.vertexStart[p]!;
+    const pVc = g.vertexLength[p]!;
+    const tIdx = Math.round(g.parentT[b]! * (pVc - 1));
+    const parentVertex = pVs + tIdx;
+    const childFirst = g.vertexStart[b]!;
+    assert.ok(Math.abs(g.positions[childFirst * 3]! - g.positions[parentVertex * 3]!) < 1e-5);
+    assert.ok(Math.abs(g.positions[childFirst * 3 + 1]! - g.positions[parentVertex * 3 + 1]!) < 1e-5);
+    assert.ok(Math.abs(g.positions[childFirst * 3 + 2]! - g.positions[parentVertex * 3 + 2]!) < 1e-5);
     return;
   }
-  // If no child branch found, the test setup didn't produce branching —
-  // bump the attractor count or the test parameters.
   throw new Error('space-colonization test produced no branching');
 });
 
