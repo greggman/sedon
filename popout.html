@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sedon</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1a1a1f; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Intentionally empty. DockView's popout flow:
+        1. Opens this URL in a new window.
+        2. Waits for `load`.
+        3. Appends the popped-out panel's DOM into <body>.
+        4. Copies every stylesheet from the main window into this document
+           (`addStyles(externalDocument, window.document.styleSheets)` —
+           see dockview-core/popoutWindow.js).
+      So this page doesn't need to link CSS or bootstrap the React app —
+      the panel's React tree lives in the main window and portals render
+      INTO this window's DOM.
+    -->
+  </body>
+</html>

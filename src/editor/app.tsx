@@ -1,5 +1,12 @@
 import { ReactFlowProvider } from '@xyflow/react';
-import { DockviewReact, themeAbyss, type DockviewReadyEvent } from 'dockview';
+import {
+  DockviewReact,
+  themeAbyss,
+  type BuiltInContextMenuItem,
+  type DockviewReadyEvent,
+  type GetTabContextMenuItemsParams,
+  type ReactContextMenuItemConfig,
+} from 'dockview';
 import { useCallback } from 'react';
 import { CleanupButton } from './cleanup-button.js';
 import { DemosMenu } from './demos-menu.js';
@@ -46,6 +53,32 @@ export function App() {
     });
   }, []);
 
+  // Right-click tab → menu with the standard close items plus
+  // "Pop out to window". Popout creates a real OS-level browser window
+  // hosting the panel's DOM (Sedon's WebGPU device is shared across
+  // windows, so canvases keep working). DockView serves popout.html as
+  // the new window's base; the panel's React tree lives in the parent
+  // and portals render into the popout's body.
+  const getTabContextMenuItems = useCallback(
+    (
+      params: GetTabContextMenuItemsParams,
+    ): (BuiltInContextMenuItem | ReactContextMenuItemConfig)[] => {
+      return [
+        'close',
+        'closeOthers',
+        'closeAll',
+        'separator',
+        {
+          label: 'Pop out to window',
+          action: () => {
+            void params.api.addPopoutGroup(params.panel);
+          },
+        },
+      ];
+    },
+    [],
+  );
+
   return (
     <ReactFlowProvider>
       <div className="sedon-app">
@@ -61,6 +94,7 @@ export function App() {
             components={PANEL_COMPONENTS}
             onReady={onReady}
             theme={themeAbyss}
+            getTabContextMenuItems={getTabContextMenuItems}
           />
         </div>
       </div>
