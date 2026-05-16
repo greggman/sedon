@@ -14,11 +14,31 @@
  * App layout
  * ============================================================ */
 .sedon-app {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  gap: 1px;
   background: #2a2a2f;
+}
+
+/* DockView root fills the area below the top toolbar. */
+.sedon-dockview-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Panels are the editable surfaces hosted by DockView. */
+.sedon-panel {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.sedon-panel--canvas {
+  background: #1a1a1f;
+}
+.sedon-panel--preview {
+  background: #0d0d10;
 }
 
 .sedon-pane {
@@ -113,12 +133,13 @@
  * Top-right toolbar (Demos, File menu)
  * ============================================================ */
 .sedon-top-toolbar {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 10;
   display: flex;
   gap: 4px;
+  padding: 6px 8px;
+  background: #1a1a1f;
+  border-bottom: 1px solid #2a2a2f;
+  z-index: 10;
+  justify-content: flex-end;
 }
 
 /* ============================================================
