@@ -13,6 +13,7 @@ import { useEditorStore } from './store.js';
 export function FileMenu() {
   const rf = useReactFlow();
   const setGraph = useEditorStore((s) => s.setGraph);
+  const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
   const markClean = useEditorStore((s) => s.markClean);
   const commitActivePositions = useEditorStore((s) => s.commitActivePositions);
 
@@ -25,15 +26,22 @@ export function FileMenu() {
     );
     commitActivePositions(activePositions);
 
-    // Read MAIN graph + subgraphs from the store (NOT the active graph,
-    // which may be a subgraph the user is currently editing — Save always
-    // serializes the whole project).
+    // Read MAIN graph + subgraphs + project-scoped UX (cameras, viewports)
+    // from the store. The active editing id goes into the LAYOUT block,
+    // separately serialized so merge-style loaders can ignore it cleanly.
     const state = useEditorStore.getState();
     const file: SaveFile = {
       formatVersion: SAVE_FORMAT_VERSION,
-      graph: state.mainGraph,
-      rootNodeId: state.mainRootNodeId,
-      subgraphs: state.subgraphs,
+      project: {
+        graph: state.mainGraph,
+        rootNodeId: state.mainRootNodeId,
+        subgraphs: state.subgraphs,
+        ...(Object.keys(state.cameras).length > 0 ? { cameras: state.cameras } : {}),
+        ...(Object.keys(state.viewports).length > 0 ? { viewports: state.viewports } : {}),
+      },
+      ...(state.currentEditingId !== 'main'
+        ? { layout: { currentEditingId: state.currentEditingId } }
+        : {}),
     };
     const json = serializeSaveFile(file);
     const blob = new Blob([json], { type: 'application/json' });
@@ -57,10 +65,23 @@ export function FileMenu() {
       try {
         const text = await file.text();
         const parsed = parseSaveFile(text);
-        setGraph(parsed.graph, parsed.rootNodeId, parsed.subgraphs);
-        const registry = buildRegistry(parsed.subgraphs);
-        rf.setNodes(graphToRfNodes(parsed.graph));
-        rf.setEdges(graphToRfEdges(parsed.graph, registry));
+        const { project, layout } = parsed;
+        // Apply project always; layout is opt-in. For "Load", we DO apply
+        // the saved layout if present. A future "merge into current
+        // project" path will read `parsed.project` and ignore `layout`.
+        setGraph(
+          project.graph,
+          project.rootNodeId,
+          project.subgraphs,
+          project.cameras,
+          project.viewports,
+        );
+        if (layout?.currentEditingId && layout.currentEditingId !== 'main') {
+          setActiveEditing(layout.currentEditingId);
+        }
+        const registry = buildRegistry(project.subgraphs);
+        rf.setNodes(graphToRfNodes(project.graph));
+        rf.setEdges(graphToRfEdges(project.graph, registry));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         // eslint-disable-next-line no-alert

@@ -13,16 +13,21 @@ import {
 test('save → load round-trips an empty project', () => {
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: createGraph(),
-    rootNodeId: 'nothing',
-    subgraphs: [],
+    project: {
+      graph: createGraph(),
+      rootNodeId: 'nothing',
+      subgraphs: [],
+    },
   };
   const restored = parseSaveFile(serializeSaveFile(file));
   assert.equal(restored.formatVersion, SAVE_FORMAT_VERSION);
-  assert.equal(restored.rootNodeId, 'nothing');
-  assert.equal(restored.subgraphs.length, 0);
-  assert.equal(restored.graph.nodes.length, 0);
-  assert.equal(restored.graph.edges.length, 0);
+  assert.equal(restored.project.rootNodeId, 'nothing');
+  assert.equal(restored.project.subgraphs.length, 0);
+  assert.equal(restored.project.graph.nodes.length, 0);
+  assert.equal(restored.project.graph.edges.length, 0);
+  // No layout block emitted when none authored — that's the merge
+  // contract: producers don't force layout on consumers.
+  assert.equal(restored.layout, undefined);
 });
 
 test('save → load preserves a graph with inputValues and edges', () => {
@@ -37,15 +42,17 @@ test('save → load preserves a graph with inputValues and edges', () => {
 
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: g,
-    rootNodeId: b.id,
-    subgraphs: [],
+    project: {
+      graph: g,
+      rootNodeId: b.id,
+      subgraphs: [],
+    },
   };
   const restored = parseSaveFile(serializeSaveFile(file));
-  assert.equal(restored.graph.nodes.length, 2);
-  assert.equal(restored.graph.edges.length, 1);
-  const restoredA = restored.graph.nodes.find((n) => n.id === a.id);
-  const restoredB = restored.graph.nodes.find((n) => n.id === b.id);
+  assert.equal(restored.project.graph.nodes.length, 2);
+  assert.equal(restored.project.graph.edges.length, 1);
+  const restoredA = restored.project.graph.nodes.find((n) => n.id === a.id);
+  const restoredB = restored.project.graph.nodes.find((n) => n.id === b.id);
   assert.deepEqual(restoredA?.inputValues, { scale: [4, 4], octaves: 3, seed: 0.7 });
   assert.deepEqual(restoredB?.inputValues, {
     roughness: 0.85,
@@ -53,14 +60,11 @@ test('save → load preserves a graph with inputValues and edges', () => {
     detail_scale: 6,
     detail_strength: 0.55,
   });
-  assert.deepEqual(restored.graph.edges[0]?.from, { node: a.id, socket: 'texture' });
-  assert.deepEqual(restored.graph.edges[0]?.to, { node: b.id, socket: 'basecolor' });
+  assert.deepEqual(restored.project.graph.edges[0]?.from, { node: a.id, socket: 'texture' });
+  assert.deepEqual(restored.project.graph.edges[0]?.to, { node: b.id, socket: 'basecolor' });
 });
 
 test('save → load preserves subgraph inputs/outputs and the inner graph', () => {
-  // Hand-author a subgraph that exercises both edited socket lists and
-  // an inner graph with edges — same shape as a user-built subgraph in
-  // the editor.
   const sg = createEmptySubgraph('greeter', 'Greeter');
   sg.inputs = [
     { name: 'who', type: 'Float', default: 0.5 },
@@ -69,7 +73,6 @@ test('save → load preserves subgraph inputs/outputs and the inner graph', () =
   sg.outputs = [
     { name: 'greeting', type: 'Float' },
   ];
-  // Wire the input boundary's 'who' output → output boundary's 'greeting' input.
   addEdge(
     sg.graph,
     { node: sg.inputNodeId, socket: 'who' },
@@ -78,14 +81,16 @@ test('save → load preserves subgraph inputs/outputs and the inner graph', () =
 
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: createGraph(),
-    rootNodeId: 'none',
-    subgraphs: [sg],
+    project: {
+      graph: createGraph(),
+      rootNodeId: 'none',
+      subgraphs: [sg],
+    },
   };
 
   const restored = parseSaveFile(serializeSaveFile(file));
-  assert.equal(restored.subgraphs.length, 1);
-  const rsg = restored.subgraphs[0]!;
+  assert.equal(restored.project.subgraphs.length, 1);
+  const rsg = restored.project.subgraphs[0]!;
   assert.equal(rsg.id, 'greeter');
   assert.equal(rsg.label, 'Greeter');
   assert.equal(rsg.category, 'Subgraphs');
@@ -101,40 +106,32 @@ test('save → load preserves subgraph inputs/outputs and the inner graph', () =
 });
 
 test('save → load round-trips the full forest demo', () => {
-  // createForestDemo just builds graph structures — no GPU calls — so it's
-  // safe to run in plain Node. Use it as a realistic shape that exercises
-  // multiple subgraphs nesting subgraphs (forest → oak → bark-texture).
   const demo = createForestDemo();
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: demo.graph,
-    rootNodeId: demo.rootNodeId,
-    subgraphs: demo.subgraphs,
+    project: {
+      graph: demo.graph,
+      rootNodeId: demo.rootNodeId,
+      subgraphs: demo.subgraphs,
+    },
   };
   const restored = parseSaveFile(serializeSaveFile(file));
 
-  assert.equal(restored.rootNodeId, demo.rootNodeId);
-  assert.equal(restored.graph.nodes.length, demo.graph.nodes.length);
-  assert.equal(restored.graph.edges.length, demo.graph.edges.length);
-  assert.equal(restored.subgraphs.length, demo.subgraphs.length);
+  assert.equal(restored.project.rootNodeId, demo.rootNodeId);
+  assert.equal(restored.project.graph.nodes.length, demo.graph.nodes.length);
+  assert.equal(restored.project.graph.edges.length, demo.graph.edges.length);
+  assert.equal(restored.project.subgraphs.length, demo.subgraphs.length);
 
-  // Subgraph identity preserved.
-  const restoredIds = restored.subgraphs.map((s) => s.id).sort();
+  const restoredIds = restored.project.subgraphs.map((s) => s.id).sort();
   const originalIds = demo.subgraphs.map((s) => s.id).sort();
   assert.deepEqual(restoredIds, originalIds);
 
-  // Pick the bark-texture subgraph and check a specific authored value
-  // survives — catches "we silently dropped the inputs[].default field"
-  // kinds of regression.
-  const bark = restored.subgraphs.find((s) => s.id === 'bark-texture');
+  const bark = restored.project.subgraphs.find((s) => s.id === 'bark-texture');
   assert.ok(bark, 'bark-texture should be present after restore');
   const seedInput = bark.inputs.find((i) => i.name === 'seed');
   assert.equal(seedInput?.type, 'Float');
   assert.equal(seedInput?.default, 0.3);
 
-  // The bark subgraph also declares detail outputs since we moved detail
-  // textures into the texture subgraphs — guard against future cleanup
-  // dropping them.
   const outputNames = bark.outputs.map((o) => o.name).sort();
   assert.deepEqual(
     outputNames,
@@ -142,25 +139,95 @@ test('save → load round-trips the full forest demo', () => {
   );
 });
 
-test('parseSaveFile accepts v1 (no subgraphs field)', () => {
-  // v1 save: graph + rootNodeId, no subgraphs field. Files created
-  // before subgraphs existed should still load.
+test('save → load round-trips project-scoped cameras and viewports', () => {
+  const file: SaveFile = {
+    formatVersion: SAVE_FORMAT_VERSION,
+    project: {
+      graph: createGraph(),
+      rootNodeId: 'r',
+      subgraphs: [],
+      cameras: {
+        main: { yaw: 0.3, pitch: 0.2, distance: 5, target: [0, 1, 0] },
+        'sub-1': { yaw: 0.5, pitch: 0.4, distance: 3, target: [1, 2, 3] },
+      },
+      viewports: {
+        main: { x: 100, y: 200, zoom: 0.8 },
+      },
+    },
+  };
+  const restored = parseSaveFile(serializeSaveFile(file));
+  assert.deepEqual(restored.project.cameras, file.project.cameras);
+  assert.deepEqual(restored.project.viewports, file.project.viewports);
+});
+
+test('save → load round-trips a layout block when present', () => {
+  const file: SaveFile = {
+    formatVersion: SAVE_FORMAT_VERSION,
+    project: {
+      graph: createGraph(),
+      rootNodeId: 'r',
+      subgraphs: [],
+    },
+    layout: { currentEditingId: 'oak-tree' },
+  };
+  const restored = parseSaveFile(serializeSaveFile(file));
+  assert.deepEqual(restored.layout, { currentEditingId: 'oak-tree' });
+});
+
+test('layout block is structurally separable — a merge consumer can ignore it', () => {
+  // The contract that motivates the project/layout split: a "merge two
+  // projects" workflow should pull authored content from both files
+  // while keeping the destination's workspace state. Concretely, the
+  // consumer just doesn't touch `parsed.layout`.
+  const file: SaveFile = {
+    formatVersion: SAVE_FORMAT_VERSION,
+    project: {
+      graph: createGraph(),
+      rootNodeId: 'r',
+      subgraphs: [],
+    },
+    layout: { currentEditingId: 'should-be-ignored' },
+  };
+  const parsed = parseSaveFile(serializeSaveFile(file));
+  // The "merge" consumer reads project only.
+  const projectOnly = parsed.project;
+  assert.equal(projectOnly.rootNodeId, 'r');
+  // The layout block is structurally separated — discarding it is a
+  // no-op on project content.
+  assert.deepEqual(projectOnly.graph, file.project.graph);
+});
+
+test('parseSaveFile accepts v1 (no subgraphs field) and promotes to v3 shape', () => {
   const v1Json = JSON.stringify({
     formatVersion: 1,
     graph: { version: 1, nodes: [], edges: [] },
     rootNodeId: 'foo',
   });
   const restored = parseSaveFile(v1Json);
-  assert.equal(restored.rootNodeId, 'foo');
-  assert.equal(restored.subgraphs.length, 0);
+  assert.equal(restored.formatVersion, SAVE_FORMAT_VERSION);
+  assert.equal(restored.project.rootNodeId, 'foo');
+  assert.equal(restored.project.subgraphs.length, 0);
+  assert.equal(restored.layout, undefined);
+});
+
+test('parseSaveFile accepts v2 (top-level subgraphs) and promotes to v3 shape', () => {
+  const v2Json = JSON.stringify({
+    formatVersion: 2,
+    graph: { version: 1, nodes: [], edges: [] },
+    rootNodeId: 'bar',
+    subgraphs: [],
+  });
+  const restored = parseSaveFile(v2Json);
+  assert.equal(restored.formatVersion, SAVE_FORMAT_VERSION);
+  assert.equal(restored.project.rootNodeId, 'bar');
+  assert.equal(restored.project.subgraphs.length, 0);
+  assert.equal(restored.layout, undefined);
 });
 
 test('parseSaveFile rejects unknown format versions', () => {
   const futureJson = JSON.stringify({
     formatVersion: 99,
-    graph: { version: 1, nodes: [], edges: [] },
-    rootNodeId: 'foo',
-    subgraphs: [],
+    project: { graph: { version: 1, nodes: [], edges: [] }, rootNodeId: 'foo', subgraphs: [] },
   });
   assert.throws(() => parseSaveFile(futureJson), /unsupported save file format/);
 });
@@ -168,8 +235,7 @@ test('parseSaveFile rejects unknown format versions', () => {
 test('parseSaveFile rejects missing rootNodeId', () => {
   const badJson = JSON.stringify({
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: { version: 1, nodes: [], edges: [] },
-    subgraphs: [],
+    project: { graph: { version: 1, nodes: [], edges: [] }, subgraphs: [] },
   });
   assert.throws(() => parseSaveFile(badJson), /missing rootNodeId/);
 });
@@ -177,9 +243,11 @@ test('parseSaveFile rejects missing rootNodeId', () => {
 test('parseSaveFile rejects malformed subgraphs', () => {
   const badJson = JSON.stringify({
     formatVersion: SAVE_FORMAT_VERSION,
-    graph: { version: 1, nodes: [], edges: [] },
-    rootNodeId: 'r',
-    subgraphs: [{ id: 'no-graph', label: 'Bad', category: 'Subgraphs' }],
+    project: {
+      graph: { version: 1, nodes: [], edges: [] },
+      rootNodeId: 'r',
+      subgraphs: [{ id: 'no-graph', label: 'Bad', category: 'Subgraphs' }],
+    },
   });
   assert.throws(() => parseSaveFile(badJson), /invalid subgraph/);
 });
