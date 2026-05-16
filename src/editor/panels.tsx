@@ -104,7 +104,10 @@ export function PreviewPanel(props: IDockviewPanelProps) {
     } catch {
       return;
     }
-    if (payload.kind !== 'subgraph') return;
+    // Both subgraph and main are valid pin targets — main pins this
+    // Preview to the project's root graph (same effect as picking
+    // "Main" from the dropdown). Folders aren't pinnable.
+    if (payload.kind !== 'subgraph' && payload.kind !== 'main') return;
     useLayoutStore.getState().setPanelPinnedGraph(panelId, payload.id);
   };
   return (

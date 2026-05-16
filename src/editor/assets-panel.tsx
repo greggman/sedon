@@ -15,15 +15,25 @@ import { useEditorStore } from './store.js';
 const THUMBNAIL_PX = 64;
 
 // Drag-and-drop MIME type for asset moves. Payload is a JSON
-// `{ kind: 'folder' | 'subgraph', id: string }`. The Asset view reads
-// this for re-parenting; NodeCanvasPanel reads it for "drop into graph"
-// (subgraph-only).
+// `{ kind: 'folder' | 'subgraph' | 'main', id: string }`. The Asset view
+// reads this for re-parenting; NodeCanvasPanel reads it for "drop into
+// graph" (subgraph-only — main can't be instanced); Preview reads it to
+// pin (subgraph or main).
+//
+// The synthetic 'main' kind carries `id: 'main'` so consumers that key
+// on id (preview pin, etc.) work without a separate code path.
 export const ASSET_DND_TYPE = 'application/sedon-asset';
 
 export interface AssetDndPayload {
-  kind: 'folder' | 'subgraph';
+  kind: 'folder' | 'subgraph' | 'main';
   id: string;
 }
+
+// The id used by the preview pin / GraphSwitcher for the project's root
+// graph. Mirrors the literal used in store.ts and preview.tsx — kept
+// here so the asset view doesn't have to import either one just to make
+// a drag payload.
+const MAIN_GRAPH_ID = 'main';
 
 type AssetTarget = AssetDndPayload | { kind: 'root' };
 type ViewMode = 'icons' | 'list';
@@ -314,6 +324,7 @@ export function AssetsPanel() {
             onDragOverFolder={onDragOverFolder}
             onDropOnFolder={onDropOnFolder}
             onOpenSubgraph={(id) => setActiveEditing(id)}
+            onOpenMain={() => setActiveEditing(MAIN_GRAPH_ID)}
             onContextMenu={openContextMenu}
             onCommitRename={(t, label) => {
               if (t.kind === 'folder') renameFolder(t.id, label);
@@ -347,6 +358,10 @@ export function AssetsPanel() {
           }}
           onOpenSubgraph={(id) => {
             setActiveEditing(id);
+            setContextMenu(null);
+          }}
+          onOpenMain={() => {
+            setActiveEditing(MAIN_GRAPH_ID);
             setContextMenu(null);
           }}
         />
@@ -470,6 +485,7 @@ interface ContentsProps {
   onDragOverFolder: (e: React.DragEvent<HTMLDivElement>) => void;
   onDropOnFolder: (e: React.DragEvent<HTMLDivElement>, targetId: string | null) => void;
   onOpenSubgraph: (id: string) => void;
+  onOpenMain: () => void;
   onContextMenu: (e: React.MouseEvent<HTMLElement>, target: AssetTarget) => void;
   onCommitRename: (target: { kind: 'folder' | 'subgraph'; id: string }, label: string) => void;
   onCancelRename: () => void;
@@ -481,7 +497,11 @@ function AssetsContents(p: ContentsProps) {
     return <div className="sedon-assets-empty">Folder not found.</div>;
   }
   const { childFolders, subgraphs } = entry;
-  if (childFolders.length === 0 && subgraphs.length === 0) {
+  // Main always shows at the project root, alongside top-level folders
+  // and root-level subgraphs. It's never empty (a project always has a
+  // main graph), so "Empty folder" never fires for the root.
+  const showMain = p.folderId === ROOT_FOLDER_ID;
+  if (!showMain && childFolders.length === 0 && subgraphs.length === 0) {
     return <div className="sedon-assets-empty">Empty folder.</div>;
   }
   const gridClass = `sedon-assets-grid sedon-assets-grid--${p.viewMode}`;
@@ -493,6 +513,14 @@ function AssetsContents(p: ContentsProps) {
           <span>Name</span>
           <span>Type</span>
         </div>
+      )}
+      {showMain && (
+        <MainTile
+          viewMode={p.viewMode}
+          onOpen={p.onOpenMain}
+          onDragStart={(e) => p.onDragStart(e, { kind: 'main', id: MAIN_GRAPH_ID })}
+          onContextMenu={(e) => p.onContextMenu(e, { kind: 'main', id: MAIN_GRAPH_ID })}
+        />
       )}
       {childFolders.map((f) => {
         const isRenaming = p.renaming?.kind === 'folder' && p.renaming.id === f.id;
@@ -574,6 +602,47 @@ function FolderTile(p: FolderTileProps) {
   );
 }
 
+interface MainTileProps {
+  viewMode: ViewMode;
+  onOpen: () => void;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLElement>) => void;
+}
+
+// The project's root graph rendered as a fixed asset at the root of the
+// tree. Operations are a strict subset of SubgraphTile's:
+//   • double-click → switch the active canvas to main
+//   • drag → preview-only (drop on Preview to pin; canvas drop is a no-op
+//     because main can't be instanced as a wrapper)
+//   • right-click → context menu with "Open in Canvas"
+//   • no rename, no delete, no folder re-parent
+function MainTile(p: MainTileProps) {
+  const icon =
+    p.viewMode === 'icons' ? (
+      <AssetThumbnail
+        target={{ kind: 'main' }}
+        size={THUMBNAIL_PX}
+        fallback={<span className="sedon-assets-tile-icon">◉</span>}
+      />
+    ) : (
+      <span className="sedon-assets-tile-icon">◉</span>
+    );
+  return (
+    <div
+      className={`sedon-assets-tile sedon-assets-tile--${p.viewMode} sedon-assets-tile--main`}
+      onDoubleClick={p.onOpen}
+      draggable
+      onDragStart={p.onDragStart}
+      onContextMenu={p.onContextMenu}
+      title="The project's main graph. Double-click to edit; drop on a Preview to pin to it."
+    >
+      {icon}
+      <span className="sedon-assets-tile-label">Main</span>
+      <span className="sedon-assets-tile-type">Main</span>
+    </div>
+  );
+}
+
 interface SubgraphTileProps {
   sg: SubgraphDef;
   viewMode: ViewMode;
@@ -592,7 +661,7 @@ function SubgraphTile(p: SubgraphTileProps) {
   const icon =
     p.viewMode === 'icons' ? (
       <AssetThumbnail
-        subgraphId={p.sg.id}
+        target={{ kind: 'subgraph', subgraphId: p.sg.id }}
         size={THUMBNAIL_PX}
         fallback={<span className="sedon-assets-tile-icon">◇</span>}
       />
@@ -685,6 +754,7 @@ function RenameInput({
 
 // Right-click context menu. Item set depends on the target kind:
 //   • subgraph → Rename, Open in Canvas
+//   • main     → Open in Canvas (only; main is fixed and unique)
 //   • folder   → Rename, Delete, New Folder Inside
 //   • root     → New Folder
 function AssetContextMenu({
@@ -698,6 +768,7 @@ function AssetContextMenu({
   onDelete,
   onNewFolder,
   onOpenSubgraph,
+  onOpenMain,
 }: {
   x: number;
   y: number;
@@ -709,6 +780,7 @@ function AssetContextMenu({
   onDelete: (folderId: string) => void;
   onNewFolder: (parentId: string | null) => void;
   onOpenSubgraph: (id: string) => void;
+  onOpenMain: () => void;
 }) {
   // Pre-resolve labels so the menu can show the target name in its
   // title row — small nicety, helps when the same right-click hit the
@@ -721,6 +793,8 @@ function AssetContextMenu({
   } else if (target.kind === 'subgraph') {
     const s = subgraphLookup.find((x) => x.id === target.id);
     if (s) title = s.label;
+  } else if (target.kind === 'main') {
+    title = 'Main';
   }
   const items: { label: string; action: () => void; disabled?: boolean }[] = [];
   if (target.kind === 'subgraph') {
@@ -728,6 +802,8 @@ function AssetContextMenu({
       { label: 'Rename', action: () => onRename({ kind: 'subgraph', id: target.id }) },
       { label: 'Open in Canvas', action: () => onOpenSubgraph(target.id) },
     );
+  } else if (target.kind === 'main') {
+    items.push({ label: 'Open in Canvas', action: () => onOpenMain() });
   } else if (target.kind === 'folder') {
     const isRoot = target.id === ROOT_FOLDER_ID;
     items.push(

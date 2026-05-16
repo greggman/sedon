@@ -220,6 +220,9 @@
 .sedon-assets-tile--subgraph .sedon-assets-tile-icon {
   color: #80c0e0;
 }
+.sedon-assets-tile--main .sedon-assets-tile-icon {
+  color: #e08080;
+}
 .sedon-assets-tile-icon {
   line-height: 1;
 }

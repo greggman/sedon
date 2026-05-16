@@ -27,24 +27,34 @@ const DEFAULT_THUMB_CAMERA: CameraState = {
   target: [0, 0, 0],
 };
 
+export type ThumbnailTarget =
+  | { kind: 'subgraph'; subgraphId: string }
+  | { kind: 'main' };
+
 interface AssetThumbnailProps {
-  subgraphId: string;
+  target: ThumbnailTarget;
   size: number;
   /** Fallback rendered while the eval is pending or no scene is available. */
   fallback: React.ReactNode;
 }
 
-export function AssetThumbnail({ subgraphId, size, fallback }: AssetThumbnailProps) {
+export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) {
   const device = useEditorStore((s) => s.device);
   const registry = useRegistry();
   const evalCache = useEditorStore((s) => s.evalCache);
 
-  // Pull only what's stable for THIS subgraph. Without useShallow this
-  // selector would re-emit whenever the subgraphs array reference
-  // changed, retriggering eval on every unrelated store update.
-  const target = useEditorStore(
+  // Pull only what's stable for THIS asset. Without useShallow this
+  // selector would re-emit whenever a sibling state slice changed,
+  // retriggering eval on every unrelated store update.
+  const resolved = useEditorStore(
     useShallow((s) => {
-      const sg = s.subgraphs.find((x) => x.id === subgraphId);
+      if (target.kind === 'main') {
+        // The store mutates mainGraph in place when editing main, so
+        // useShallow detecting a new graph reference is what re-triggers
+        // the eval. No version counter is needed.
+        return { graph: s.mainGraph, rootNodeId: s.mainRootNodeId, version: 0 };
+      }
+      const sg = s.subgraphs.find((x) => x.id === target.subgraphId);
       if (!sg) return null;
       // Same root-resolution rule as the Preview pane: prefer a
       // user-authored core/output (so the subgraph author can frame
@@ -61,20 +71,20 @@ export function AssetThumbnail({ subgraphId, size, fallback }: AssetThumbnailPro
   const [scene, setScene] = useState<SceneValue | null>(null);
 
   useEffect(() => {
-    if (!device || !target) {
+    if (!device || !resolved) {
       setScene(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const result = await evaluateGraph(target.graph, registry, {
-          rootNodeId: target.rootNodeId,
+        const result = await evaluateGraph(resolved.graph, registry, {
+          rootNodeId: resolved.rootNodeId,
           context: { device },
           cache: evalCache,
         });
         if (cancelled) return;
-        const rootNode = target.graph.nodes.find((n) => n.id === target.rootNodeId);
+        const rootNode = resolved.graph.nodes.find((n) => n.id === resolved.rootNodeId);
         const rootDef = rootNode ? registry.get(rootNode.kind) : undefined;
         const tiles = synthesizeTiles(device, rootDef, result.outputs, defaultLighting());
         // Pick the first tile that has any geometry to show — empty
@@ -89,7 +99,7 @@ export function AssetThumbnail({ subgraphId, size, fallback }: AssetThumbnailPro
     return () => {
       cancelled = true;
     };
-  }, [device, target, registry, evalCache]);
+  }, [device, resolved, registry, evalCache]);
 
   if (!device || !scene) {
     return <>{fallback}</>;
