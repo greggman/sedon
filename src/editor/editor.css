@@ -517,6 +517,40 @@
   background: #000;
 }
 
+/* "Pin this preview to..." dropdown that floats over the top-left of a
+ * preview pane. Lets one Preview tab watch a graph different from
+ * what the canvas is currently editing. */
+.sedon-preview-pin {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(20, 20, 24, 0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #333;
+  font-size: 11px;
+  color: #aaa;
+  pointer-events: auto;
+}
+.sedon-preview-pin-label {
+  font-weight: 500;
+}
+.sedon-preview-pin-select {
+  background: #222;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 2px;
+  font-size: 11px;
+  padding: 1px 4px;
+}
+.sedon-preview-pin-stale {
+  color: #e6a23c;
+}
+
 /* ============================================================
  * Main preview pane (right side)
  * ============================================================ */

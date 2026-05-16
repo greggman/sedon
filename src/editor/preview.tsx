@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Graph } from '../core/graph.js';
 import { sweepCache } from '../core/eval-cache.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY } from '../render/mat4.js';
+import { useLayoutStore } from './layout-store.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
@@ -44,7 +46,18 @@ function cloneCamera(c: OrbitCamera): OrbitCamera {
   };
 }
 
-export function Preview() {
+interface PreviewProps {
+  /**
+   * DockView panel id. When set, the Preview reads its "pinned graph"
+   * from the layout store via this id, letting different Preview tabs
+   * watch different graphs (e.g. forest while editing leaf). Unset
+   * means "follow active editing context" — the legacy single-pane
+   * behavior.
+   */
+  panelId?: string;
+}
+
+export function Preview({ panelId }: PreviewProps = {}) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuDevice | null>(null);
@@ -56,13 +69,65 @@ export function Preview() {
   // pre-mount keydown is a no-op rather than a crash.
   const motionStartRef = useRef<() => void>(() => {});
 
-  const graph = useEditorStore((s) => s.graph);
-  const rootNodeId = useEditorStore((s) => s.rootNodeId);
+  // Mirror `effectiveGraphId` into a ref so input handlers (mounted once)
+  // always read the current value without us tearing down + re-binding
+  // listeners on every pin change.
+  const effectiveGraphIdRef = useRef<string>('main');
+
+  // Resolve which graph this Preview is showing. Unpinned panels follow
+  // `currentEditingId` (legacy behavior); pinned ones lock to a specific
+  // graph independently. The eval below runs against THIS graph, not
+  // necessarily the one the user is currently editing.
+  const pinnedGraphId = useLayoutStore((s) =>
+    panelId ? s.pinnedGraphIds[panelId] : undefined,
+  );
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
+  const effectiveGraphId = pinnedGraphId ?? currentEditingId;
+  const isActive = effectiveGraphId === currentEditingId;
+
+  const activeGraph = useEditorStore((s) => s.graph);
+  const activeRootNodeId = useEditorStore((s) => s.rootNodeId);
+  const mainGraph = useEditorStore((s) => s.mainGraph);
+  const mainRootNodeId = useEditorStore((s) => s.mainRootNodeId);
+  const subgraphs = useEditorStore((s) => s.subgraphs);
   const setEvalResult = useEditorStore((s) => s.setEvalResult);
   const setDevice = useEditorStore((s) => s.setDevice);
   const evalCache = useEditorStore((s) => s.evalCache);
   const registry = useRegistry();
+
+  // The (graph, rootNodeId) pair the eval runs against. For pinned
+  // previews this is a non-active subgraph (or main); the eval still
+  // shares the global cache so any nodes both views reference get
+  // computed once. For "Active" panels we deliberately read the
+  // already-resolved store fields so we don't re-derive what the store
+  // already tracks.
+  const { graph, rootNodeId } = useMemo(() => {
+    if (effectiveGraphId === currentEditingId) {
+      return { graph: activeGraph, rootNodeId: activeRootNodeId };
+    }
+    if (effectiveGraphId === 'main') {
+      return { graph: mainGraph, rootNodeId: mainRootNodeId };
+    }
+    const sg = subgraphs.find((s) => s.id === effectiveGraphId);
+    if (!sg) {
+      // Pinned graph went away (deleted subgraph) — fall back to active.
+      return { graph: activeGraph, rootNodeId: activeRootNodeId };
+    }
+    // Same root-resolution rule as setActiveEditing: prefer a
+    // user-authored core/output for standalone preview, else the
+    // boundary output.
+    const previewOutput = sg.graph.nodes.find((n) => n.kind === 'core/output');
+    const rootId = previewOutput?.id ?? sg.outputNodeId;
+    return { graph: sg.graph as Graph, rootNodeId: rootId };
+  }, [
+    effectiveGraphId,
+    currentEditingId,
+    activeGraph,
+    activeRootNodeId,
+    mainGraph,
+    mainRootNodeId,
+    subgraphs,
+  ]);
 
   const [tiles, setTiles] = useState<PreviewTileSpec[]>([]);
 
@@ -147,7 +212,11 @@ export function Preview() {
       } catch {
         // ignore — already released
       }
-      const id = useEditorStore.getState().currentEditingId;
+      // Save under the panel's effective graph id, NOT the global
+      // currentEditingId — so a pinned Forest preview saves to
+      // cameras['main'] even while the user is editing a leaf subgraph
+      // in another panel.
+      const id = effectiveGraphIdRef.current;
       useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
     };
     const onWheel = (e: WheelEvent) => {
@@ -155,7 +224,7 @@ export function Preview() {
       const cam = cameraRef.current;
       const factor = Math.exp(e.deltaY * 0.001);
       cam.distance = Math.max(0.5, Math.min(250, cam.distance * factor));
-      const id = useEditorStore.getState().currentEditingId;
+      const id = effectiveGraphIdRef.current;
       useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
       requestRender();
     };
@@ -177,14 +246,14 @@ export function Preview() {
         if (MOVEMENT_KEYS.has(held)) stillMoving = true;
       });
       if (!stillMoving) {
-        const id = useEditorStore.getState().currentEditingId;
+        const id = effectiveGraphIdRef.current;
         useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
       }
     };
     const onBlur = () => {
       if (keysRef.current.size === 0) return;
       keysRef.current.clear();
-      const id = useEditorStore.getState().currentEditingId;
+      const id = effectiveGraphIdRef.current;
       useEditorStore.getState().saveCameraFor(id, cloneCamera(cameraRef.current));
     };
 
@@ -277,15 +346,18 @@ export function Preview() {
     };
   }, []);
 
-  // Camera load/save on context switch — preserves per-graph framing as
-  // the user drills into / out of subgraphs.
+  // Camera load/save on context switch — preserves per-graph framing.
+  // Keyed by `effectiveGraphId` so pinned previews load their pinned
+  // graph's camera even when the user navigates the active editing
+  // context to a different graph.
   const cameras = useEditorStore((s) => s.cameras);
   const prevContextRef = useRef<string | null>(null);
   const prevCamerasRef = useRef<typeof cameras | null>(null);
   useEffect(() => {
+    effectiveGraphIdRef.current = effectiveGraphId;
     const prevId = prevContextRef.current;
     const prevCameras = prevCamerasRef.current;
-    const idChanged = prevId !== currentEditingId;
+    const idChanged = prevId !== effectiveGraphId;
     const camerasChanged = prevCameras !== cameras;
     if (!idChanged && !camerasChanged) return;
     if (idChanged && prevId !== null) {
@@ -293,14 +365,14 @@ export function Preview() {
         .getState()
         .saveCameraFor(prevId, cloneCamera(cameraRef.current));
     }
-    const stored = cameras[currentEditingId];
+    const stored = cameras[effectiveGraphId];
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
-    prevContextRef.current = currentEditingId;
+    prevContextRef.current = effectiveGraphId;
     prevCamerasRef.current = cameras;
     // The camera ref was mutated outside React; request a render so tiles
     // pick up the new viewpoint without waiting for the next input event.
     requestRender();
-  }, [currentEditingId, cameras]);
+  }, [effectiveGraphId, cameras]);
 
   // Look up the root node's def — we need its declared output list to
   // map values back to socket names + types when synthesizing tiles.
@@ -348,16 +420,20 @@ export function Preview() {
       const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs, nextLighting);
       // For backward compat with the in-node previews and anything else
       // reading evalResult.scene, surface the first tile's scene (or an
-      // empty scene if none).
-      const firstScene = nextTiles[0]?.scene ?? { entities: [] };
-      setEvalResult({ scene: firstScene, allOutputs: result.allOutputs });
+      // empty scene if none). Only the panel viewing the ACTIVE graph
+      // writes back — pinned panels eval their own graphs but mustn't
+      // overwrite the active eval that drives node-thumbnail data.
+      if (isActive) {
+        const firstScene = nextTiles[0]?.scene ?? { entities: [] };
+        setEvalResult({ scene: firstScene, allOutputs: result.allOutputs });
+      }
       setTiles(nextTiles);
       setError(null);
     })();
     return () => {
       cancelled = true;
     };
-  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, setEvalResult]);
+  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, setEvalResult, isActive]);
 
   return (
     <div
@@ -365,6 +441,14 @@ export function Preview() {
       ref={wrapperRef}
       tabIndex={0}
     >
+      {panelId && (
+        <PreviewPinDropdown
+          panelId={panelId}
+          subgraphs={subgraphs}
+          pinnedGraphId={pinnedGraphId}
+          activeId={currentEditingId}
+        />
+      )}
       <div className="sedon-preview-grid">
         {gpu &&
           tiles.map((t) => (
@@ -380,6 +464,53 @@ export function Preview() {
           ))}
       </div>
       {error !== null && <div className="sedon-preview-error">{error}</div>}
+    </div>
+  );
+}
+
+// Per-Preview "pin" dropdown. Lets the user lock this Preview pane to a
+// specific graph regardless of which graph the canvas is currently
+// editing. "Active (current)" reverts to follow-active behavior.
+function PreviewPinDropdown({
+  panelId,
+  subgraphs,
+  pinnedGraphId,
+  activeId,
+}: {
+  panelId: string;
+  subgraphs: ReadonlyArray<{ id: string; label: string }>;
+  pinnedGraphId: string | undefined;
+  activeId: string;
+}) {
+  const setPanelPinnedGraph = useLayoutStore((s) => s.setPanelPinnedGraph);
+  const value = pinnedGraphId ?? '__auto__';
+  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value;
+    setPanelPinnedGraph(panelId, v === '__auto__' ? undefined : v);
+  };
+  // Detect a pin that points at a missing subgraph (deleted) so the
+  // dropdown can flag it instead of silently snapping to active.
+  const pinIsStale =
+    pinnedGraphId !== undefined &&
+    pinnedGraphId !== 'main' &&
+    !subgraphs.find((s) => s.id === pinnedGraphId);
+  return (
+    <div className="sedon-preview-pin">
+      <span className="sedon-preview-pin-label">View:</span>
+      <select className="sedon-preview-pin-select" value={value} onChange={onChange}>
+        <option value="__auto__">
+          Active{pinnedGraphId === undefined ? '' : ''} ({activeId === 'main' ? 'Main' : activeId})
+        </option>
+        <option value="main">Main</option>
+        {subgraphs.map((sg) => (
+          <option key={sg.id} value={sg.id}>{sg.label}</option>
+        ))}
+      </select>
+      {pinIsStale && (
+        <span className="sedon-preview-pin-stale" title="Pinned graph no longer exists">
+          ⚠
+        </span>
+      )}
     </div>
   );
 }

@@ -20,10 +20,10 @@ export function NodeCanvasPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function PreviewPanel(_props: IDockviewPanelProps) {
+export function PreviewPanel(props: IDockviewPanelProps) {
   return (
     <div className="sedon-panel sedon-panel--preview">
-      <Preview />
+      <Preview panelId={props.api.id} />
     </div>
   );
 }
