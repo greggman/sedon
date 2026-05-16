@@ -177,6 +177,10 @@
 .sedon-assets-tile--icons .sedon-assets-tile-type {
   font-size: 10px;
   color: #888;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* List view = aligned columns. The header row and every tile row share
@@ -206,6 +210,9 @@
   font-size: 11px;
   color: #888;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sedon-assets-tile--folder .sedon-assets-tile-icon {
   color: #d6c280;

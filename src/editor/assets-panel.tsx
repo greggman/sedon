@@ -599,6 +599,7 @@ function SubgraphTile(p: SubgraphTileProps) {
     ) : (
       <span className="sedon-assets-tile-icon">◇</span>
     );
+  const typeLabel = subgraphTypeLabel(p.sg);
   return (
     <div
       className={`sedon-assets-tile sedon-assets-tile--${p.viewMode} sedon-assets-tile--subgraph`}
@@ -606,7 +607,7 @@ function SubgraphTile(p: SubgraphTileProps) {
       draggable={!p.renaming}
       onDragStart={p.onDragStart}
       onContextMenu={p.onContextMenu}
-      title="Drag onto a canvas to instance this subgraph; double-click to edit"
+      title={`Drag onto a canvas to instance this subgraph; double-click to edit (outputs: ${typeLabel})`}
     >
       {icon}
       {p.renaming ? (
@@ -618,9 +619,29 @@ function SubgraphTile(p: SubgraphTileProps) {
       ) : (
         <span className="sedon-assets-tile-label">{p.sg.label}</span>
       )}
-      <span className="sedon-assets-tile-type">Subgraph</span>
+      <span className="sedon-assets-tile-type">{typeLabel}</span>
     </div>
   );
+}
+
+// Human-readable summary of a subgraph's output types for the asset
+// view's "Type" column. We deliberately use OUTPUT types here (what a
+// caller sees when they wire the wrapper) rather than input types —
+// the asset is what the subgraph produces.
+//
+//   • no outputs       → "Subgraph"  (fallback, shouldn't normally happen)
+//   • one type         → that type (e.g. "Scene")
+//   • two unique types → "Scene, Texture2D"
+//   • three or more    → "Scene, Texture2D, ..."
+function subgraphTypeLabel(sg: SubgraphDef): string {
+  if (sg.outputs.length === 0) return 'Subgraph';
+  const seen: string[] = [];
+  for (const o of sg.outputs) {
+    if (!seen.includes(o.type)) seen.push(o.type);
+  }
+  if (seen.length === 1) return seen[0]!;
+  if (seen.length === 2) return seen.join(', ');
+  return `${seen[0]}, ${seen[1]}, ...`;
 }
 
 // Inline-rename text field. Enter / blur commits; Escape cancels; Esc
