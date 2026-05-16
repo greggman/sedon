@@ -168,7 +168,13 @@ export function AssetsPanel() {
     payload: AssetDndPayload,
   ) => {
     e.dataTransfer.setData(ASSET_DND_TYPE, JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = 'move';
+    // copyMove because a single drag can land on different targets:
+    //   • folder tile / tree row  → "move" (re-parent)
+    //   • canvas                  → "copy" (instance the subgraph)
+    //   • preview                 → "link" (pin this preview to it)
+    // effectAllowed must include each target's chosen dropEffect or the
+    // browser rejects the drop. 'all' is the catch-all.
+    e.dataTransfer.effectAllowed = 'all';
   };
 
   const onDragOverFolder = (e: React.DragEvent<HTMLDivElement>) => {
@@ -475,6 +481,13 @@ function AssetsContents(p: ContentsProps) {
   const gridClass = `sedon-assets-grid sedon-assets-grid--${p.viewMode}`;
   return (
     <div className={gridClass}>
+      {p.viewMode === 'list' && (
+        <div className="sedon-assets-list-header">
+          <span />
+          <span>Name</span>
+          <span>Type</span>
+        </div>
+      )}
       {childFolders.map((f) => {
         const isRenaming = p.renaming?.kind === 'folder' && p.renaming.id === f.id;
         return (
@@ -550,6 +563,7 @@ function FolderTile(p: FolderTileProps) {
       ) : (
         <span className="sedon-assets-tile-label">{p.folder.label}</span>
       )}
+      <span className="sedon-assets-tile-type">Folder</span>
     </div>
   );
 }
@@ -585,6 +599,7 @@ function SubgraphTile(p: SubgraphTileProps) {
       ) : (
         <span className="sedon-assets-tile-label">{p.sg.label}</span>
       )}
+      <span className="sedon-assets-tile-type">Subgraph</span>
     </div>
   );
 }

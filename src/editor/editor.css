@@ -166,21 +166,46 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 8px 6px;
   text-align: center;
 }
 .sedon-assets-tile--icons .sedon-assets-tile-icon {
   font-size: 28px;
+  margin-bottom: 2px;
 }
+.sedon-assets-tile--icons .sedon-assets-tile-type {
+  font-size: 10px;
+  color: #888;
+}
+
+/* List view = aligned columns. The header row and every tile row share
+ * the same grid template so the Name/Type columns line up. */
+.sedon-assets-list-header,
 .sedon-assets-tile--list {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px 1fr 90px;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 3px 8px;
+}
+.sedon-assets-list-header {
+  font-size: 11px;
+  color: #888;
+  border-bottom: 1px solid #2a2a2f;
+  cursor: default;
+  user-select: none;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
 }
 .sedon-assets-tile--list .sedon-assets-tile-icon {
   font-size: 14px;
+  text-align: center;
+}
+.sedon-assets-tile--list .sedon-assets-tile-type {
+  font-size: 11px;
+  color: #888;
+  text-align: left;
 }
 .sedon-assets-tile--folder .sedon-assets-tile-icon {
   color: #d6c280;

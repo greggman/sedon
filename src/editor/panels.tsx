@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { wouldCreateCycle } from '../core/folder.js';
 import { AddNodeMenu } from './add-node-menu.js';
 import { AssetsPanel, ASSET_DND_TYPE, type AssetDndPayload } from './assets-panel.js';
+import { useLayoutStore } from './layout-store.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
 import { useEditorStore } from './store.js';
@@ -82,9 +83,37 @@ export function NodeCanvasPanel(_props: IDockviewPanelProps) {
 }
 
 export function PreviewPanel(props: IDockviewPanelProps) {
+  // Asset → Preview: dropping a subgraph here pins this Preview pane to
+  // that graph (same effect as picking it from the "View:" dropdown).
+  // The pin lives in the layout store keyed by DockView panel id, so
+  // each Preview maintains an independent target.
+  const panelId = props.api.id;
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'link';
+    }
+  };
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
+    if (!raw) return;
+    e.preventDefault();
+    let payload: AssetDndPayload;
+    try {
+      payload = JSON.parse(raw) as AssetDndPayload;
+    } catch {
+      return;
+    }
+    if (payload.kind !== 'subgraph') return;
+    useLayoutStore.getState().setPanelPinnedGraph(panelId, payload.id);
+  };
   return (
-    <div className="sedon-panel sedon-panel--preview">
-      <Preview panelId={props.api.id} />
+    <div
+      className="sedon-panel sedon-panel--preview"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <Preview panelId={panelId} />
     </div>
   );
 }
