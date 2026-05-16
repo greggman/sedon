@@ -1,3 +1,4 @@
+import type { Folder } from '../core/folder.js';
 import type { Graph, GraphEdge, GraphNode, SocketRef } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 
@@ -39,6 +40,11 @@ export interface GraphState {
 // of the "what was authored" history.
 export interface ProjectSnapshot {
   subgraphs: SubgraphDef[];
+  /**
+   * Asset-view folders. Captured in project snapshots so undo restores
+   * folder layout alongside any subgraph re-parenting that touched it.
+   */
+  folders: Folder[];
   mainGraph: Graph;
   mainRootNodeId: string;
   graph: Graph;

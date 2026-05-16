@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
+import type { Folder } from '../core/folder.js';
+import { wouldCreateFolderCycle } from '../core/folder.js';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import type { NodeOutputs } from '../core/node-def.js';
 import type { SceneValue } from '../core/resources.js';
@@ -58,6 +60,13 @@ export interface EditorState {
    * zustand subscribers see a new reference.
    */
   subgraphs: SubgraphDef[];
+  /**
+   * Project-level folders for organizing subgraphs in the Asset view.
+   * Pure metadata — doesn't affect evaluation or the registry. Folders
+   * form a tree via `Folder.parentFolderId`; subgraphs join the tree
+   * via `SubgraphDef.parentFolderId`.
+   */
+  folders: Folder[];
   /** 'main' or the id of a subgraph in `subgraphs`. Drives which graph the editor displays. */
   currentEditingId: string;
   /**
@@ -107,7 +116,23 @@ export interface EditorState {
     subgraphs?: SubgraphDef[],
     cameras?: Record<string, CameraState>,
     viewports?: Record<string, ViewportState>,
+    folders?: Folder[],
   ) => void;
+
+  /** Create a new folder in the Asset view. Undoable. */
+  createFolder: (parentFolderId: string | null, label: string) => string;
+  /**
+   * Delete a folder. Re-parents any contents to the deleted folder's
+   * parent (no recursive prompt). Undoable.
+   */
+  deleteFolder: (folderId: string) => void;
+  /** Move a subgraph into a folder (or to root with `null`). Undoable. */
+  moveSubgraphToFolder: (subgraphId: string, folderId: string | null) => void;
+  /**
+   * Re-parent a folder. Refuses if it would create a cycle (drag a
+   * folder into itself or one of its descendants). Undoable.
+   */
+  moveFolderToFolder: (folderId: string, newParentId: string | null) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
@@ -278,6 +303,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     const s = get();
     return {
       subgraphs: s.subgraphs,
+      folders: s.folders,
       mainGraph: s.mainGraph,
       mainRootNodeId: s.mainRootNodeId,
       graph: s.graph,
@@ -373,6 +399,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     mainGraph: initial.graph,
     mainRootNodeId: initial.rootNodeId,
     subgraphs: [],
+    folders: [],
     currentEditingId: 'main',
     cameras: {},
     viewports: {},
@@ -390,13 +417,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // Replace the entire graph (load file, load demo). NOT undoable: clears
     // both undo and redo stacks. Always returns to editing the main graph
     // — switching demos shouldn't drop you inside an old subgraph.
-    setGraph: (graph, rootNodeId, subgraphs, cameras, viewports) => {
+    setGraph: (graph, rootNodeId, subgraphs, cameras, viewports, folders) => {
       set({
         graph,
         rootNodeId,
         mainGraph: graph,
         mainRootNodeId: rootNodeId,
         subgraphs: subgraphs ?? [],
+        folders: folders ?? [],
         currentEditingId: 'main',
         // New project state ⇒ either the demo-provided initial cameras
         // (so the user sees a sensibly-framed scene on load) or an empty
@@ -410,6 +438,69 @@ export const useEditorStore = create<EditorState>((set, get) => {
         redoStack: [],
         dirty: false,
         syncCounter: get().syncCounter + 1,
+      });
+    },
+
+    createFolder: (parentFolderId, label) => {
+      const state = get();
+      const id = crypto.randomUUID();
+      const folder: Folder = { id, parentFolderId, label };
+      dispatchProject({
+        ...projectSnapshot(),
+        folders: [...state.folders, folder],
+      });
+      return id;
+    },
+
+    deleteFolder: (folderId) => {
+      const state = get();
+      const target = state.folders.find((f) => f.id === folderId);
+      if (!target) return;
+      const orphanParent = target.parentFolderId;
+      // Re-parent direct children to the deleted folder's parent.
+      // (Doesn't recurse — descendants of the deleted folder follow
+      // their own parent chain, which by transitivity ends up at
+      // orphanParent.)
+      const folders = state.folders
+        .filter((f) => f.id !== folderId)
+        .map((f) => (f.parentFolderId === folderId ? { ...f, parentFolderId: orphanParent } : f));
+      const subgraphs = state.subgraphs.map((s) =>
+        s.parentFolderId === folderId ? { ...s, parentFolderId: orphanParent } : s,
+      );
+      dispatchProject({
+        ...projectSnapshot(),
+        folders,
+        subgraphs,
+      });
+    },
+
+    moveSubgraphToFolder: (subgraphId, folderId) => {
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      const current = target.parentFolderId ?? null;
+      if (current === folderId) return; // no-op
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id === subgraphId ? { ...s, parentFolderId: folderId } : s,
+      );
+      dispatchProject({
+        ...projectSnapshot(),
+        subgraphs,
+      });
+    },
+
+    moveFolderToFolder: (folderId, newParentId) => {
+      const state = get();
+      const target = state.folders.find((f) => f.id === folderId);
+      if (!target) return;
+      if ((target.parentFolderId ?? null) === newParentId) return; // no-op
+      if (wouldCreateFolderCycle(target, newParentId, state.folders)) return;
+      const folders = state.folders.map((f) =>
+        f.id === folderId ? { ...f, parentFolderId: newParentId } : f,
+      );
+      dispatchProject({
+        ...projectSnapshot(),
+        folders,
       });
     },
 
@@ -448,6 +539,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // handles gracefully.
       dispatchProject({
         subgraphs: [...state.subgraphs, sg],
+        folders: state.folders,
         mainGraph: state.mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: sg.graph,
@@ -485,6 +577,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       );
       dispatchProject({
         subgraphs,
+        folders: state.folders,
         mainGraph: state.mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: state.graph,
@@ -556,6 +649,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
       dispatchProject({
         subgraphs,
+        folders: state.folders,
         mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: activeGraph,
@@ -611,6 +705,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
       dispatchProject({
         subgraphs,
+        folders: state.folders,
         mainGraph: state.mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: activeGraph,
@@ -654,6 +749,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       );
       dispatchProject({
         subgraphs,
+        folders: state.folders,
         mainGraph: state.mainGraph,
         mainRootNodeId: state.mainRootNodeId,
         graph: state.graph,

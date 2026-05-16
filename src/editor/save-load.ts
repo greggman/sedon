@@ -1,3 +1,4 @@
+import type { Folder } from '../core/folder.js';
 import { fromJSON, type Graph } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 import type { CameraState, ViewportState } from './store.js';
@@ -24,6 +25,12 @@ export interface ProjectData {
   rootNodeId: string;
   /** Subgraph definitions used by the project. */
   subgraphs: SubgraphDef[];
+  /**
+   * User-authored folders for the Asset view. Pure organisational
+   * metadata — pre-v3 saves don't include them; the loader treats
+   * `undefined` as "no folders".
+   */
+  folders?: Folder[];
   /**
    * Per-graph orbit-camera framing, keyed by editing id ('main' or
    * subgraph id). "How I last framed this graph" — pinned to a graph's
@@ -114,6 +121,10 @@ export function parseSaveFile(text: string): SaveFile {
   if (projectRaw.viewports && typeof projectRaw.viewports === 'object') {
     project.viewports = projectRaw.viewports as Record<string, ViewportState>;
   }
+  // Folders also v3-only.
+  if (Array.isArray(projectRaw.folders)) {
+    project.folders = projectRaw.folders as Folder[];
+  }
 
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
@@ -156,7 +167,7 @@ export function parseSubgraphDef(raw: unknown): SubgraphDef {
     throw new Error('invalid subgraph: missing required fields');
   }
   const innerGraph = fromJSON(JSON.stringify(o.graph));
-  return {
+  const result: SubgraphDef = {
     id: o.id,
     label: o.label,
     category: o.category,
@@ -166,4 +177,10 @@ export function parseSubgraphDef(raw: unknown): SubgraphDef {
     inputNodeId: o.inputNodeId,
     outputNodeId: o.outputNodeId,
   };
+  // `parentFolderId` is v3+ Asset-view metadata. Older saves don't have
+  // it; the loader leaves it undefined (= "at project root").
+  if (o.parentFolderId !== undefined) {
+    result.parentFolderId = o.parentFolderId;
+  }
+  return result;
 }

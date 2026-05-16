@@ -36,6 +36,7 @@ export function FileMenu() {
         graph: state.mainGraph,
         rootNodeId: state.mainRootNodeId,
         subgraphs: state.subgraphs,
+        ...(state.folders.length > 0 ? { folders: state.folders } : {}),
         ...(Object.keys(state.cameras).length > 0 ? { cameras: state.cameras } : {}),
         ...(Object.keys(state.viewports).length > 0 ? { viewports: state.viewports } : {}),
       },
@@ -75,6 +76,7 @@ export function FileMenu() {
           project.subgraphs,
           project.cameras,
           project.viewports,
+          project.folders,
         );
         if (layout?.currentEditingId && layout.currentEditingId !== 'main') {
           setActiveEditing(layout.currentEditingId);

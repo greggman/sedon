@@ -41,9 +41,15 @@ export function App() {
   // work.
   const onReady = useCallback((event: DockviewReadyEvent) => {
     event.api.addPanel({
+      id: 'assets-main',
+      component: 'assets',
+      title: 'Assets',
+    });
+    event.api.addPanel({
       id: 'canvas-main',
       component: 'node-canvas',
       title: 'Canvas',
+      position: { referencePanel: 'assets-main', direction: 'right' },
     });
     event.api.addPanel({
       id: 'preview-main',

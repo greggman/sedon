@@ -36,6 +36,13 @@ export interface SubgraphDef {
   /** ID of the output-boundary node placed in the inner graph. Used as evaluator root. */
   outputNodeId: string;
   /**
+   * Folder this subgraph lives under in the project's Asset view.
+   * `null`/undefined = at the project root (alongside top-level
+   * folders). Doesn't affect evaluation — purely organizational
+   * metadata for the user.
+   */
+  parentFolderId?: string | null;
+  /**
    * Monotonic counter bumped by the editor store on every mutation to
    * this subgraph (inner graph, I/O list, anything that affects the
    * wrapper's behavior). The wrapper's `NodeDef.version` is set to this

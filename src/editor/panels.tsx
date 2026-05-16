@@ -1,19 +1,80 @@
-import { useRef } from 'react';
+import { useReactFlow } from '@xyflow/react';
 import type { IDockviewPanelProps } from 'dockview';
+import { useRef } from 'react';
+import { wouldCreateCycle } from '../core/folder.js';
 import { AddNodeMenu } from './add-node-menu.js';
+import { AssetsPanel, ASSET_DND_TYPE, type AssetDndPayload } from './assets-panel.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
+import { useEditorStore } from './store.js';
 
 // DockView panel components. Each panel kind ('node-canvas', 'preview',
-// later 'inspector' / 'assets') is registered once via the components
+// 'assets', later 'inspector' / …) is registered once via the components
 // map passed to <DockviewReact />. The app's single ReactFlowProvider
 // lives above this in App.tsx; per-panel RF providers (one per canvas)
 // land in Phase 2b when canvases pin to different graphs.
 
 export function NodeCanvasPanel(_props: IDockviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const rf = useReactFlow();
+  const addNode = useEditorStore((s) => s.addNode);
+
+  // Accept drops from the Assets view: an `application/sedon-asset`
+  // payload with `kind: 'subgraph'` instantiates a wrapper of that
+  // subgraph at the drop point. Folder-kind drops are ignored here —
+  // they only mean something inside the Asset view.
+  //
+  // Cycle prevention: a wrapper of subgraph X can't be dropped into
+  // X's own inner graph (or anywhere that's already reachable from X
+  // via wrapper chains). `wouldCreateCycle` walks the candidate
+  // forward and refuses any drop that would close the loop. Without
+  // this, evaluator hits MAX_SUBGRAPH_DEPTH at run time — better to
+  // never let the user author the cycle in the first place.
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
+    if (!raw) return;
+    e.preventDefault();
+    let payload: AssetDndPayload;
+    try {
+      payload = JSON.parse(raw) as AssetDndPayload;
+    } catch {
+      return;
+    }
+    if (payload.kind !== 'subgraph') return;
+    const state = useEditorStore.getState();
+    if (wouldCreateCycle(state.currentEditingId, payload.id, state.subgraphs)) {
+      // eslint-disable-next-line no-alert
+      window.alert(
+        `Can't drop "${payload.id}" here — it would create a subgraph cycle.`,
+      );
+      return;
+    }
+    const sg = state.subgraphs.find((s) => s.id === payload.id);
+    if (!sg) return;
+    const id = crypto.randomUUID();
+    const position = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    rf.addNodes({
+      id,
+      type: 'sedon',
+      position,
+      data: { kind: `subgraph/${sg.id}` },
+    });
+    addNode({ id, kind: `subgraph/${sg.id}`, position });
+  };
+
   return (
-    <div ref={containerRef} className="sedon-panel sedon-panel--canvas">
+    <div
+      ref={containerRef}
+      className="sedon-panel sedon-panel--canvas"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <NodeCanvas />
       <AddNodeMenu canvasRef={containerRef} />
     </div>
@@ -28,9 +89,18 @@ export function PreviewPanel(props: IDockviewPanelProps) {
   );
 }
 
+export function AssetsPanelWrapper(_props: IDockviewPanelProps) {
+  return (
+    <div className="sedon-panel sedon-panel--assets">
+      <AssetsPanel />
+    </div>
+  );
+}
+
 // Registry passed to <DockviewReact components={...}>. Each key is the
 // `component` string referenced when calling `api.addPanel({...})`.
 export const PANEL_COMPONENTS = {
   'node-canvas': NodeCanvasPanel,
   preview: PreviewPanel,
+  assets: AssetsPanelWrapper,
 };
