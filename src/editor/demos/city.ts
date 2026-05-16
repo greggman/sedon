@@ -87,6 +87,10 @@ export function createCityDemo(): { graph: Graph; rootNodeId: string } {
   });
   const sceneMerge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 5, y: ROW * 1 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 6, y: ROW * 1 },
@@ -115,8 +119,8 @@ export function createCityDemo(): { graph: Graph; rootNodeId: string } {
   addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: scatter.id, socket: 'per_point_tint' });
 
   // Final.
-  addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'a' });
-  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'b' });
+  addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
+  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
   addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   return { graph: g, rootNodeId: output.id };

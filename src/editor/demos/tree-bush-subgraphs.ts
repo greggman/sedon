@@ -163,11 +163,19 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
   });
 
   // === Merge: trunk + leaves → tree; tree + flowers → final =============
+  // `core/scene-merge` is variadic — pre-declare two Scene sockets per
+  // merge so the existing pairwise wiring fits without runtime clicks.
+  const SM2 = [
+    { name: 'scene_0', type: 'Scene', optional: true },
+    { name: 'scene_1', type: 'Scene', optional: true },
+  ];
   const mergeTreeLeaves = addNode(g, 'core/scene-merge', {
     position: { x: COL * 7, y: ROW * 1.5 },
+    extraInputs: SM2,
   });
   const mergeAll = addNode(g, 'core/scene-merge', {
     position: { x: COL * 8, y: ROW * 3 },
+    extraInputs: SM2,
   });
 
   // === Edges =============================================================
@@ -201,10 +209,10 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
   addEdge(g, { node: flowerMat.id, socket: 'material' }, { node: flowerEntity.id, socket: 'material' });
 
   // Merge.
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'a' });
-  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'b' });
-  addEdge(g, { node: mergeTreeLeaves.id, socket: 'scene' }, { node: mergeAll.id, socket: 'a' });
-  addEdge(g, { node: flowerEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'b' });
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'scene_0' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'scene_1' });
+  addEdge(g, { node: mergeTreeLeaves.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
+  addEdge(g, { node: flowerEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -322,6 +330,10 @@ export function buildBranchBushSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 7, y: ROW * 1 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
   });
 
   addEdge(g, { node: recursive.id, socket: 'branches' }, { node: tropism.id, socket: 'branches' });
@@ -340,8 +352,8 @@ export function buildBranchBushSubgraph(): SubgraphDef {
   addEdge(g, { node: leafCard.id, socket: 'normal' }, { node: leafMat.id, socket: 'normal' });
   addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
 
-  addEdge(g, { node: stemEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
-  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: stemEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -447,6 +459,10 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 7, y: ROW * 1.5 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
   });
 
   addEdge(g, { node: palm.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
@@ -465,8 +481,8 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
   addEdge(g, { node: frondColor.id, socket: 'texture' }, { node: frondMat.id, socket: 'basecolor' });
   addEdge(g, { node: frondMat.id, socket: 'material' }, { node: frondEntity.id, socket: 'material' });
 
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
-  addEdge(g, { node: frondEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: frondEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -585,6 +601,10 @@ export function buildBranchPineSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 8, y: ROW * 1.5 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
   });
 
   addEdge(g, { node: pine.id, socket: 'branches' }, { node: tropism.id, socket: 'branches' });
@@ -604,8 +624,8 @@ export function buildBranchPineSubgraph(): SubgraphDef {
   addEdge(g, { node: needleColor.id, socket: 'texture' }, { node: needleMat.id, socket: 'basecolor' });
   addEdge(g, { node: needleMat.id, socket: 'material' }, { node: needleEntity.id, socket: 'material' });
 
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
-  addEdge(g, { node: needleEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: needleEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -746,6 +766,10 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 9, y: ROW * 1.5 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
   });
 
   // === Edges ===========================================================
@@ -771,8 +795,8 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   addEdge(g, { node: leafCard.id, socket: 'normal' }, { node: leafMat.id, socket: 'normal' });
   addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
 
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'a' });
-  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'b' });
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

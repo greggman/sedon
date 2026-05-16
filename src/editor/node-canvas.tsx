@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import {
+  ADD_EXTRA_INPUT_HANDLE_ID,
   ADD_INPUT_HANDLE_ID,
   ADD_OUTPUT_HANDLE_ID,
   CustomNode,
@@ -62,6 +63,7 @@ export function NodeCanvas() {
   const removeEdges = useEditorStore((s) => s.removeEdges);
   const removeNodes = useEditorStore((s) => s.removeNodes);
   const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
+  const addNodeExtraInputWithEdge = useEditorStore((s) => s.addNodeExtraInputWithEdge);
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const viewports = useEditorStore((s) => s.viewports);
   const registry = useRegistry();
@@ -228,12 +230,37 @@ export function NodeCanvas() {
         if (!boundary || boundary.side !== 'input') return;
         const toNode = findNode(graph, params.target);
         const toDef = toNode ? registry.get(toNode.kind) : undefined;
-        const toIn = toDef?.inputs.find((i) => i.name === params.targetHandle);
+        const toIn =
+          toDef?.inputs.find((i) => i.name === params.targetHandle) ??
+          toNode?.extraInputs?.find((i) => i.name === params.targetHandle);
         if (!toIn) return;
         addSubgraphSocketWithEdge(boundary.subgraphId, 'input', toIn.type, {
           node: params.target,
           socket: params.targetHandle,
         });
+        return;
+      }
+
+      // Phantom drop on a variadic node's "+ Add" handle: create a new
+      // extra input and connect the dropped edge to it in one undoable
+      // step.
+      if (params.targetHandle === ADD_EXTRA_INPUT_HANDLE_ID) {
+        const toNode = findNode(graph, params.target);
+        const toDef = toNode ? registry.get(toNode.kind) : undefined;
+        const spec = toDef?.extraInputsSpec;
+        if (!toDef || !spec) return;
+        const fromNode = findNode(graph, params.source);
+        const fromDef = fromNode ? registry.get(fromNode.kind) : undefined;
+        const fromOut = fromDef?.outputs.find((o) => o.name === params.sourceHandle);
+        if (!fromOut) return;
+        if (!types.isCompatible(fromOut.type, spec.type)) return;
+        addNodeExtraInputWithEdge(
+          params.target,
+          spec.type,
+          spec.namePrefix,
+          toDef.inputs.length,
+          { node: params.source, socket: params.sourceHandle },
+        );
         return;
       }
 
@@ -258,7 +285,7 @@ export function NodeCanvas() {
         { node: params.target, socket: params.targetHandle },
       );
     },
-    [connect, setRfEdges, registry, addSubgraphSocketWithEdge],
+    [connect, setRfEdges, registry, addSubgraphSocketWithEdge, addNodeExtraInputWithEdge],
   );
 
   const isValidConnection = useCallback<IsValidConnection>(
@@ -290,11 +317,25 @@ export function NodeCanvas() {
       if (sourceHandle === ADD_INPUT_HANDLE_ID) {
         const boundary = subgraphIdFromBoundaryKind(fromNode.kind);
         if (!boundary || boundary.side !== 'input') return false;
-        return !!toDef.inputs.find((i) => i.name === targetHandle);
+        return (
+          !!toDef.inputs.find((i) => i.name === targetHandle) ||
+          !!toNode.extraInputs?.find((i) => i.name === targetHandle)
+        );
+      }
+      // Phantom drop on a variadic node's "+ Add" handle: source must be
+      // a real output whose type is compatible with the spec's type.
+      if (targetHandle === ADD_EXTRA_INPUT_HANDLE_ID) {
+        const spec = toDef.extraInputsSpec;
+        if (!spec) return false;
+        const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
+        if (!fromOut) return false;
+        return types.isCompatible(fromOut.type, spec.type);
       }
 
       const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
-      const toIn = toDef.inputs.find((i) => i.name === targetHandle);
+      const toIn =
+        toDef.inputs.find((i) => i.name === targetHandle) ??
+        toNode.extraInputs?.find((i) => i.name === targetHandle);
       if (!fromOut || !toIn) return false;
       return types.isCompatible(fromOut.type, toIn.type);
     },
@@ -313,6 +354,7 @@ export function NodeCanvas() {
       onMoveEnd={onMoveEnd}
       proOptions={{ hideAttribution: true }}
       selectionMode={SelectionMode.Partial}
+      minZoom={0.1}
     >
       <Background />
       <Controls />

@@ -1,4 +1,4 @@
-import type { NodeRegistry } from './node-def.js';
+import type { InputDef, NodeRegistry } from './node-def.js';
 import type { TypeRegistry } from './types.js';
 
 export const GRAPH_VERSION = 1;
@@ -8,6 +8,18 @@ export interface GraphNode {
   kind: string;
   position?: { x: number; y: number };
   inputValues?: Record<string, unknown>;
+  /**
+   * Per-instance dynamic inputs appended to whatever the NodeDef
+   * declares. Only meaningful for node kinds whose def has an
+   * `extraInputsSpec` (variadic nodes like `core/scene-merge`). The
+   * evaluator and validator gather inputs from
+   * `def.inputs.concat(node.extraInputs ?? [])`.
+   *
+   * Stored on the node (not the def) so each instance keeps its own
+   * socket count. Persists across save/load because it's part of the
+   * graph JSON.
+   */
+  extraInputs?: InputDef[];
 }
 
 export interface SocketRef {
@@ -39,6 +51,13 @@ export interface AddNodeOptions {
   id?: string;
   position?: { x: number; y: number };
   inputValues?: Record<string, unknown>;
+  /**
+   * Pre-populate per-instance dynamic inputs at construction time.
+   * Useful for code-built demos that wire to variadic nodes (e.g.
+   * `core/scene-merge`) — the demo can declare the sockets explicitly
+   * up front instead of clicking the "+ Add" button at runtime.
+   */
+  extraInputs?: InputDef[];
 }
 
 export function addNode(graph: Graph, kind: string, opts: AddNodeOptions = {}): GraphNode {
@@ -47,6 +66,7 @@ export function addNode(graph: Graph, kind: string, opts: AddNodeOptions = {}): 
     kind,
     ...(opts.position !== undefined ? { position: opts.position } : {}),
     ...(opts.inputValues !== undefined ? { inputValues: opts.inputValues } : {}),
+    ...(opts.extraInputs !== undefined ? { extraInputs: opts.extraInputs } : {}),
   };
   graph.nodes.push(node);
   return node;
@@ -126,7 +146,9 @@ export function validateGraph(
     if (!fromDef || !toDef) continue; // already reported above
 
     const fromOut = fromDef.outputs.find((o) => o.name === e.from.socket);
-    const toIn = toDef.inputs.find((i) => i.name === e.to.socket);
+    const toIn =
+      toDef.inputs.find((i) => i.name === e.to.socket) ??
+      toNode.extraInputs?.find((i) => i.name === e.to.socket);
     if (!fromOut) {
       issues.push({
         severity: 'error',
@@ -160,7 +182,10 @@ export function validateGraph(
   for (const n of graph.nodes) {
     const def = nodes.get(n.kind);
     if (!def) continue;
-    for (const input of def.inputs) {
+    const effectiveInputs = n.extraInputs
+      ? [...def.inputs, ...n.extraInputs]
+      : def.inputs;
+    for (const input of effectiveInputs) {
       if (input.optional) continue;
       const hasEdge = incomingByTarget.has(`${n.id}/${input.name}`);
       const hasOverride = n.inputValues !== undefined && input.name in n.inputValues;

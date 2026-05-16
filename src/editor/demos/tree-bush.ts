@@ -59,7 +59,6 @@ export function createTreeBushDemo(): {
     { id: palm.id, x: 18, rowIdx: 4 },
   ];
 
-  const merges: { id: string; position: { x: number; y: number } }[] = [];
   const speciesOutputs: { id: string; socket: string }[] = [];
 
   for (const s of species) {
@@ -79,24 +78,28 @@ export function createTreeBushDemo(): {
     speciesOutputs.push({ id: scatter.id, socket: 'scene' });
   }
 
-  // Chain N scene-merges to combine all four species into one Scene.
-  let current = speciesOutputs[0]!;
-  for (let i = 1; i < speciesOutputs.length; i++) {
-    const next = speciesOutputs[i]!;
-    const m = addNode(g, 'core/scene-merge', {
-      position: { x: COL * 3, y: (i - 0.5) * ROW },
-    });
-    addEdge(g, { node: current.id, socket: current.socket }, { node: m.id, socket: 'a' });
-    addEdge(g, { node: next.id, socket: next.socket }, { node: m.id, socket: 'b' });
-    merges.push({ id: m.id, position: { x: COL * 3, y: (i - 0.5) * ROW } });
-    current = { id: m.id, socket: 'scene' };
+  // One variadic scene-merge collects every species into a single Scene.
+  // Pre-populate one extra socket per species so the wiring is in place
+  // before the user touches anything; clicking "+ Add scene" on the node
+  // adds more.
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 3, y: ROW * 1.5 },
+    extraInputs: speciesOutputs.map((_, i) => ({
+      name: `scene_${i}`,
+      type: 'Scene',
+      optional: true,
+    })),
+  });
+  for (let i = 0; i < speciesOutputs.length; i++) {
+    const src = speciesOutputs[i]!;
+    addEdge(g, { node: src.id, socket: src.socket }, { node: merge.id, socket: `scene_${i}` });
   }
 
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: ROW * 1.5 },
     inputValues: { fog_density: 0, ambient: [0.25, 0.25, 0.28, 1] },
   });
-  addEdge(g, { node: current.id, socket: current.socket }, { node: output.id, socket: 'scene' });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   const cameras: Record<string, CameraState> = {
     main: { yaw: 0.45, pitch: 0.18, distance: 44, target: [0, 5, 0] },

@@ -165,14 +165,24 @@ export function createForestDemo(): {
   });
 
   // === Final =============================================================
+  // `core/scene-merge` is variadic — pre-declare two Scene sockets per
+  // merge so the existing pairwise wiring (a → scene_0, b → scene_1)
+  // works without the user clicking "+ Add scene" first.
+  const SM2 = [
+    { name: 'scene_0', type: 'Scene', optional: true },
+    { name: 'scene_1', type: 'Scene', optional: true },
+  ];
   const mergeTrees = addNode(g, 'core/scene-merge', {
     position: { x: COL * 9, y: ROW * 0.8 },
+    extraInputs: SM2,
   });
   const mergeVeg = addNode(g, 'core/scene-merge', {
     position: { x: COL * 10, y: ROW * 1.6 },
+    extraInputs: SM2,
   });
   const mergeAll = addNode(g, 'core/scene-merge', {
     position: { x: COL * 11, y: ROW * 1.8 },
+    extraInputs: SM2,
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 12, y: ROW * 1.8 },
@@ -239,12 +249,12 @@ export function createForestDemo(): {
 
   // Merge: oak+pine scatters → trees; trees+rock scatter → vegetation;
   // terrain+vegetation → all.
-  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'a' });
-  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'b' });
-  addEdge(g, { node: mergeTrees.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'a' });
-  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'b' });
-  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'a' });
-  addEdge(g, { node: mergeVeg.id, socket: 'scene' }, { node: mergeAll.id, socket: 'b' });
+  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'scene_0' });
+  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'scene_1' });
+  addEdge(g, { node: mergeTrees.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'scene_0' });
+  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'scene_1' });
+  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
+  addEdge(g, { node: mergeVeg.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Per-graph initial framings. With the world scaled to meters, the

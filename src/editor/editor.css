@@ -172,7 +172,27 @@
   border-bottom: 1px solid #555;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
+}
+
+/* Subgraph-wrapper "Edit" button — drills the editor into the wrapper's
+ * inner graph. Mirrors the size/feel of small toolbar buttons elsewhere
+ * in the app, but stays unobtrusive inside the node header. */
+.sedon-subgraph-edit {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #4a4a58;
+  color: #ddd;
+  border: 1px solid #666;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.sedon-subgraph-edit:hover {
+  background: #5a5a68;
+  border-color: #888;
 }
 
 .sedon-node-preview-block {
@@ -459,6 +479,16 @@
  * Texture preview
  * ============================================================ */
 .sedon-texture-preview {
+  /* width/height inline (size prop) */
+  display: block;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: #000;
+}
+
+/* Scene preview — same shape/size as texture preview, separate class
+ * for future styling (e.g. an overlay HUD). */
+.sedon-scene-preview {
   /* width/height inline (size prop) */
   display: block;
   margin: 0 auto;

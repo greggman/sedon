@@ -1,8 +1,14 @@
-import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useConnection, useReactFlow, type NodeProps } from '@xyflow/react';
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
-import type { HeightfieldValue, MaterialValue, Texture2DValue } from '../core/resources.js';
+import type {
+  HeightfieldValue,
+  MaterialValue,
+  SceneValue,
+  Texture2DValue,
+} from '../core/resources.js';
+import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
@@ -11,7 +17,8 @@ import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { MaterialPreview } from './material-preview.js';
 import { useRegistry } from './registry.js';
-import { useEditorStore } from './store.js';
+import { ScenePreview } from './scene-preview.js';
+import { useEditorStore, type CameraState } from './store.js';
 import { TexturePreview } from './texture-preview.js';
 
 const types = createCoreTypeRegistry();
@@ -90,9 +97,18 @@ function isHeightfield(v: unknown): v is HeightfieldValue {
   );
 }
 
+function isScene(v: unknown): v is SceneValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    Array.isArray((v as { entities?: unknown }).entities)
+  );
+}
+
 type PreviewTarget =
   | { kind: 'texture'; value: Texture2DValue }
-  | { kind: 'material'; value: MaterialValue };
+  | { kind: 'material'; value: MaterialValue }
+  | { kind: 'scene'; value: SceneValue };
 
 function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | null {
   if (!outputs) return null;
@@ -100,6 +116,7 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
     if (isMaterial(v)) return { kind: 'material', value: v };
     if (isHeightfield(v)) return { kind: 'texture', value: v.texture };
     if (isTexture2D(v)) return { kind: 'texture', value: v };
+    if (isScene(v)) return { kind: 'scene', value: v };
   }
   return null;
 }
@@ -111,12 +128,24 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
 // preview arrives.
 function hasPreviewSlot(def: NodeDef): boolean {
   for (const out of def.outputs) {
-    if (out.type === 'Texture2D' || out.type === 'Material' || out.type === 'Heightfield') {
+    if (
+      out.type === 'Texture2D' ||
+      out.type === 'Material' ||
+      out.type === 'Heightfield' ||
+      out.type === 'Scene'
+    ) {
       return true;
     }
   }
   return false;
 }
+
+const DEFAULT_SCENE_PREVIEW_CAMERA: CameraState = {
+  yaw: 0.4,
+  pitch: 0.2,
+  distance: 8,
+  target: [0, 1, 0],
+};
 
 interface TypedHandleProps {
   socketName: string;
@@ -318,6 +347,12 @@ export function subgraphIdFromBoundaryKind(kind: string | undefined): {
 export const ADD_OUTPUT_HANDLE_ID = '__add_output__';
 export const ADD_INPUT_HANDLE_ID = '__add_input__';
 
+// Phantom handle id for variadic node-defs (those that declare
+// `extraInputsSpec`). Drops here create a new per-instance extra input
+// and connect the dropped edge in one undoable step. Same drag-target
+// shape as the subgraph boundary's phantom — different routing.
+export const ADD_EXTRA_INPUT_HANDLE_ID = '__add_extra_input__';
+
 // Inline-rename editor for a subgraph boundary socket label. Click
 // swaps the static label for a text input that commits on Enter/blur
 // (and reverts on Escape). The caller passes a list of *other* socket
@@ -401,12 +436,30 @@ export function CustomNode({ id, data }: NodeProps) {
   const addSubgraphSocket = useEditorStore((s) => s.addSubgraphSocket);
   const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
   const renameSubgraphSocket = useEditorStore((s) => s.renameSubgraphSocket);
+  const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
+  const commitActivePositions = useEditorStore((s) => s.commitActivePositions);
+  const addNodeExtraInput = useEditorStore((s) => s.addNodeExtraInput);
+  const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
+  const extraInputs = useEditorStore(
+    useShallow((s) => s.graph.nodes.find((n) => n.id === id)?.extraInputs ?? []),
+  );
+  const rf = useReactFlow();
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
   // the output-boundary. We render +/× affordances on that side only.
   const boundary = subgraphIdFromBoundaryKind(kind);
   const [adding, setAdding] = useState(false);
+
+  // Subgraph-wrapper handling. A wrapper node (kind = `subgraph/<id>`)
+  // shows an Edit button that swaps the editor into that subgraph and
+  // looks up the per-subgraph saved camera so its Scene preview reads
+  // as the user authored it.
+  const subgraphId =
+    kind && isSubgraphInstanceKind(kind) ? subgraphIdFromKind(kind) : null;
+  const subgraphCamera = useEditorStore((s) =>
+    subgraphId ? s.cameras[subgraphId] : undefined,
+  );
 
   if (!def) {
     return <div className="sedon-node sedon-node--unknown">unknown: {kind ?? '(no kind)'}</div>;
@@ -416,6 +469,15 @@ export function CustomNode({ id, data }: NodeProps) {
   const hasSlot = hasPreviewSlot(def);
   const previewBlockHeight = hasSlot ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
   const inputsTop = OUTPUT_BAR_HEIGHT + HEADER_HEIGHT + previewBlockHeight;
+
+  const onEditSubgraph = () => {
+    if (!subgraphId) return;
+    // Persist drag-positions of the current graph BEFORE switching, just
+    // like the graph-switcher dropdown — RF discards them on graph swap.
+    const positions = new Map(rf.getNodes().map((n) => [n.id, n.position]));
+    commitActivePositions(positions);
+    setActiveEditing(subgraphId);
+  };
 
   const valueOf = (input: InputDef) => {
     const v = inputValues?.[input.name];
@@ -437,7 +499,19 @@ export function CustomNode({ id, data }: NodeProps) {
           borderTopRightRadius: NODE_RADIUS - 1,
         }}
       />
-      <div className="sedon-node-header" style={{ height: HEADER_HEIGHT }}>{def.id}</div>
+      <div className="sedon-node-header" style={{ height: HEADER_HEIGHT }}>
+        <span>{def.id}</span>
+        {subgraphId && (
+          <button
+            type="button"
+            className="nodrag nopan sedon-subgraph-edit"
+            title="Edit this subgraph"
+            onClick={onEditSubgraph}
+          >
+            Edit
+          </button>
+        )}
+      </div>
 
       {hasSlot && (
         <div className="sedon-node-preview-block" style={{ padding: PREVIEW_PADDING }}>
@@ -446,6 +520,13 @@ export function CustomNode({ id, data }: NodeProps) {
               <MaterialPreview
                 device={device}
                 material={previewTarget.value}
+                size={PREVIEW_SIZE}
+              />
+            ) : previewTarget.kind === 'scene' ? (
+              <ScenePreview
+                device={device}
+                scene={previewTarget.value}
+                camera={subgraphCamera ?? DEFAULT_SCENE_PREVIEW_CAMERA}
                 size={PREVIEW_SIZE}
               />
             ) : (
@@ -466,6 +547,9 @@ export function CustomNode({ id, data }: NodeProps) {
         </div>
       )}
 
+      {/* Render def.inputs FIRST, then any per-instance extra inputs.
+       * Both sets get type-colored handles + row UI; extras additionally
+       * get a × remove button (the regular inputs aren't user-removable). */}
       {def.inputs.map((input, i) => (
         <TypedHandle
           key={`h-in-${input.name}`}
@@ -473,6 +557,15 @@ export function CustomNode({ id, data }: NodeProps) {
           socketType={input.type}
           side="input"
           top={inputsTop + i * ROW_HEIGHT + ROW_HEIGHT / 2}
+        />
+      ))}
+      {extraInputs.map((input, i) => (
+        <TypedHandle
+          key={`h-in-extra-${input.name}`}
+          socketName={input.name}
+          socketType={input.type}
+          side="input"
+          top={inputsTop + (def.inputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
         />
       ))}
 
@@ -519,13 +612,36 @@ export function CustomNode({ id, data }: NodeProps) {
         );
       })}
 
+      {extraInputs.map((input) => (
+        <div
+          key={`row-in-extra-${input.name}`}
+          className="sedon-node-row"
+          style={{ height: ROW_HEIGHT }}
+          title={input.type}
+        >
+          <span className="sedon-node-label">{input.name}</span>
+          <button
+            type="button"
+            className="nodrag nopan sedon-boundary-remove"
+            title="Remove this input"
+            onClick={() => removeNodeExtraInput(id, input.name)}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+
       {def.outputs.map((output, i) => (
         <TypedHandle
           key={`h-out-${output.name}`}
           socketName={output.name}
           socketType={output.type}
           side="output"
-          top={inputsTop + (def.inputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
+          top={
+            inputsTop +
+            (def.inputs.length + extraInputs.length + i) * ROW_HEIGHT +
+            ROW_HEIGHT / 2
+          }
         />
       ))}
       {def.outputs.map((output) => {
@@ -594,7 +710,65 @@ export function CustomNode({ id, data }: NodeProps) {
           </>
         )
       )}
+
+      {/* Variadic-node "+ Add" affordance — phantom drop target on the
+       * left edge plus a button. Dragging a source output onto the
+       * phantom creates a new extra socket AND the edge in one undoable
+       * step; clicking the button just adds an empty socket. Only
+       * renders when the def opts in via `extraInputsSpec`. */}
+      {def.extraInputsSpec && !boundary && (
+        <>
+          <AddExtraInputHandle
+            top={
+              inputsTop +
+              (def.inputs.length + extraInputs.length + def.outputs.length) * ROW_HEIGHT +
+              ROW_HEIGHT / 2
+            }
+          />
+          <button
+            type="button"
+            className="nodrag nopan sedon-boundary-add"
+            onClick={() =>
+              addNodeExtraInput(
+                id,
+                def.extraInputsSpec!.type,
+                def.extraInputsSpec!.namePrefix,
+                def.inputs.length,
+              )
+            }
+          >
+            {def.extraInputsSpec.addLabel ?? '+ Add input'}
+          </button>
+        </>
+      )}
     </div>
+  );
+}
+
+// Phantom drop target for a variadic node's "+ Add" row. Highlights
+// whenever a source-side drag is in progress (the only kind we can
+// receive — extras are inputs, so the user is dragging an output here).
+function AddExtraInputHandle({ top }: { top: number }) {
+  const connection = useConnection();
+  let active = false;
+  if (connection.inProgress && connection.fromHandle) {
+    active = connection.fromHandle.type === 'source';
+  }
+  const style: React.CSSProperties = {
+    top,
+    width: HANDLE_SIZE,
+    height: HANDLE_SIZE,
+    background: '#bbb',
+    border: '1px dashed #fff',
+    boxShadow: active ? '0 0 0 3px #ffffff44, 0 0 8px #ffffffaa' : 'none',
+  };
+  return (
+    <Handle
+      type="target"
+      position={Position.Left}
+      id={ADD_EXTRA_INPUT_HANDLE_ID}
+      style={style}
+    />
   );
 }
 

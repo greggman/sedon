@@ -159,10 +159,17 @@ export async function evaluateGraph(
     // node that just got added with required Texture2D inputs (e.g. Material
     // with unconnected basecolor) doesn't blow up the whole eval — it just
     // won't produce a preview until wired up.
+    //
+    // The effective input list is the static def.inputs PLUS any
+    // per-instance extras stored on the graph node (variadic nodes like
+    // core/scene-merge use this).
+    const effectiveInputs = node.extraInputs
+      ? [...def.inputs, ...node.extraInputs]
+      : def.inputs;
     const inputs: Record<string, unknown> = {};
     const upstreamFingerprints: Record<string, string> = {};
     let canEvaluate = true;
-    for (const input of def.inputs) {
+    for (const input of effectiveInputs) {
       const upstream = incomingBySocket.get(`${nodeId}/${input.name}`);
       if (upstream) {
         const upstreamOutputs = outputs.get(upstream.node);
@@ -195,12 +202,16 @@ export async function evaluateGraph(
     const boundaryExtra = def.id.startsWith('subgraph-input/')
       ? JSON.stringify(sharedCtx.subgraphInputFingerprints ?? {})
       : undefined;
-    const filteredInputValues = filterInputValues(node.inputValues, def.inputs);
+    const filteredInputValues = filterInputValues(node.inputValues, effectiveInputs);
     const fpParams: Parameters<typeof nodeFingerprint>[0] = {
       nodeId,
       kind: def.id,
       inputValues: filteredInputValues,
       upstreamFingerprints,
+      // Including the extra-input names ensures that adding/removing a
+      // socket invalidates the cache even when no value changes — the
+      // node's effective shape is different.
+      extraInputs: node.extraInputs ?? [],
     };
     if (def.version !== undefined) fpParams.version = def.version;
     if (boundaryExtra !== undefined) fpParams.extra = boundaryExtra;

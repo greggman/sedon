@@ -79,14 +79,26 @@ export function nodeFingerprint(params: {
   version?: string | number;
   inputValues: Record<string, unknown> | undefined;
   upstreamFingerprints: Record<string, string>;
+  /**
+   * Per-instance dynamic input definitions for variadic nodes. The
+   * shape (names + types) participates in the fingerprint so adding
+   * or removing a socket invalidates the cache even when upstream
+   * values are unchanged. Defaults to empty for normal nodes.
+   */
+  extraInputs?: ReadonlyArray<{ name: string; type: string }>;
   extra?: string;
 }): string {
+  const extraInputsKey =
+    params.extraInputs && params.extraInputs.length > 0
+      ? params.extraInputs.map((i) => `${i.name}:${i.type}`).join(',')
+      : '';
   const parts = [
     params.nodeId,
     params.kind,
     params.version != null ? String(params.version) : '',
     canonicalJson(params.inputValues ?? {}),
     canonicalJson(params.upstreamFingerprints),
+    extraInputsKey,
     params.extra ?? '',
   ];
   return hash(parts.join('|'));
