@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject } from './file-ops.js';
+import { useLayoutStore } from './layout-store.js';
+import { getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
 // Catalog of "no-argument" actions invokable from the command palette.
@@ -110,8 +112,38 @@ function splitActivePanel(direction: 'right' | 'below'): void {
   // canvas. "Split Right" on a Preview yields a second Preview, which
   // is what users expect from editor splits.
   const component = active.view.contentComponent;
+  const newPanelId = freshPanelId(component);
+  const layout = useLayoutStore.getState();
+
+  // Sibling-prefer for splits: the new panel should land on the same
+  // graph showing the same view as the panel it was split from, so
+  // the split looks like a literal duplication. We seed the new
+  // panel's per-panel slot BEFORE addPanel; the auto-pin effect in
+  // NodeCanvas/Preview sees the slot already populated and skips
+  // its own default seeding. The viewport/camera effect then restores
+  // from the seeded slot instead of falling through to fitView or LRU.
+  if (component === 'node-canvas') {
+    const sourceGraphId = layout.canvasGraphIds[active.id];
+    const sourceRf = getCanvasRf(active.id);
+    if (sourceGraphId) {
+      layout.setCanvasGraphId(newPanelId, sourceGraphId);
+      if (sourceRf) {
+        layout.saveCanvasViewport(newPanelId, sourceGraphId, sourceRf.getViewport());
+      }
+    }
+  } else if (component === 'preview') {
+    const sourcePinned = layout.pinnedGraphIds[active.id];
+    if (sourcePinned) {
+      layout.setPanelPinnedGraph(newPanelId, sourcePinned);
+      const sourceCamera = layout.previewCameras[active.id]?.[sourcePinned];
+      if (sourceCamera) {
+        layout.savePreviewCamera(newPanelId, sourcePinned, sourceCamera);
+      }
+    }
+  }
+
   api.addPanel({
-    id: freshPanelId(component),
+    id: newPanelId,
     component,
     title: defaultTitle(component),
     position: { referencePanel: active.id, direction },

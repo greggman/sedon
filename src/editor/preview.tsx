@@ -403,6 +403,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
   const panelCameras = useLayoutStore((s) =>
     panelId ? s.previewCameras[panelId] : undefined,
   );
+  const recentPreviewCameras = useLayoutStore((s) => s.recentPreviewCameras);
   const prevContextRef = useRef<string | null>(null);
   const prevPanelCamerasRef = useRef<typeof panelCameras | null>(null);
   useEffect(() => {
@@ -415,14 +416,24 @@ export function Preview({ panelId }: PreviewProps = {}) {
     if (idChanged && prevId !== null) {
       commitCamera(prevId, cameraRef.current);
     }
-    const stored = panelCameras?.[effectiveGraphId] ?? projectCameras[effectiveGraphId];
+    // Lookup chain when this preview hasn't recorded its own camera
+    // for the new graph yet:
+    //   1. recentPreviewCameras[graphId] — LRU across all previews this
+    //      session (a freshly opened preview on a graph gets the last
+    //      view another preview had).
+    //   2. projectCameras[graphId] — cross-session seed from save file.
+    //   3. DEFAULT_CAMERA.
+    const stored =
+      panelCameras?.[effectiveGraphId] ??
+      recentPreviewCameras[effectiveGraphId] ??
+      projectCameras[effectiveGraphId];
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
     prevContextRef.current = effectiveGraphId;
     prevPanelCamerasRef.current = panelCameras;
     // The camera ref was mutated outside React; request a render so tiles
     // pick up the new viewpoint without waiting for the next input event.
     requestRender();
-  }, [effectiveGraphId, panelCameras, projectCameras, commitCamera]);
+  }, [effectiveGraphId, panelCameras, recentPreviewCameras, projectCameras, commitCamera]);
 
   // Look up the root node's def — we need its declared output list to
   // map values back to socket names + types when synthesizing tiles.

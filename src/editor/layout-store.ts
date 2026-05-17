@@ -40,6 +40,18 @@ export interface LayoutState {
   canvasViewports: Record<string, Record<string, Viewport>>;
 
   /**
+   * Most recent canvas viewport per graph, regardless of which panel
+   * produced it. Updated on every canvas pan/zoom (alongside the
+   * per-panel map above). New panels — opened via "Create Canvas
+   * View" or asset-view "Open in Canvas" — seed their initial view
+   * from here, so the user gets the last view they had of that graph
+   * instead of an unconditional fitView. Splits don't use this: the
+   * splitter copies the source panel's exact viewport directly into
+   * the new panel's per-panel slot.
+   */
+  recentCanvasViewports: Record<string, Viewport>;
+
+  /**
    * Panel id → graph id → orbit camera state. Same shape and rationale
    * as canvasViewports — two Preview panes on the same graph each keep
    * their own pan/zoom/rotate without fighting through the project's
@@ -48,6 +60,9 @@ export interface LayoutState {
    * graph; subsequent gestures write here, not there.
    */
   previewCameras: Record<string, Record<string, CameraState>>;
+
+  /** Most recent preview camera per graph. Same role as recentCanvasViewports. */
+  recentPreviewCameras: Record<string, CameraState>;
 
   /**
    * Last DockView panel of each kind that the user interacted with.
@@ -85,7 +100,9 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   pinnedGraphIds: {},
   canvasGraphIds: {},
   canvasViewports: {},
+  recentCanvasViewports: {},
   previewCameras: {},
+  recentPreviewCameras: {},
   lastActiveCanvasPanelId: null,
   lastActivePreviewPanelId: null,
 
@@ -122,6 +139,12 @@ export const useLayoutStore = create<LayoutState>((set) => ({
           [graphId]: viewport,
         },
       },
+      // Also bump the per-graph LRU so a future new panel seeing this
+      // graph for the first time can pick up the user's last view.
+      recentCanvasViewports: {
+        ...state.recentCanvasViewports,
+        [graphId]: viewport,
+      },
     })),
 
   savePreviewCamera: (panelId, graphId, camera) =>
@@ -132,6 +155,10 @@ export const useLayoutStore = create<LayoutState>((set) => ({
           ...(state.previewCameras[panelId] ?? {}),
           [graphId]: camera,
         },
+      },
+      recentPreviewCameras: {
+        ...state.recentPreviewCameras,
+        [graphId]: camera,
       },
     })),
 

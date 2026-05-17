@@ -1,4 +1,5 @@
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
+import { useLayoutStore } from './layout-store.js';
 import {
   parseSaveFile,
   SAVE_FORMAT_VERSION,
@@ -17,6 +18,15 @@ import { useEditorStore } from './store.js';
 
 export function saveProject(): void {
   const state = useEditorStore.getState();
+  // Pans / zooms / orbit gestures during this session go to the layout
+  // store's per-graph LRU maps (so multi-pane viewport state stays
+  // independent at runtime). For persistence we merge those over the
+  // editor store's project maps — runtime wins because it reflects the
+  // user's current view. Graphs only seen in a previous session (in
+  // project maps, but not touched this session) are preserved.
+  const layout = useLayoutStore.getState();
+  const cameras = { ...state.cameras, ...layout.recentPreviewCameras };
+  const viewports = { ...state.viewports, ...layout.recentCanvasViewports };
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
     project: {
@@ -24,8 +34,8 @@ export function saveProject(): void {
       rootNodeId: state.mainRootNodeId,
       subgraphs: state.subgraphs,
       ...(state.folders.length > 0 ? { folders: state.folders } : {}),
-      ...(Object.keys(state.cameras).length > 0 ? { cameras: state.cameras } : {}),
-      ...(Object.keys(state.viewports).length > 0 ? { viewports: state.viewports } : {}),
+      ...(Object.keys(cameras).length > 0 ? { cameras } : {}),
+      ...(Object.keys(viewports).length > 0 ? { viewports } : {}),
     },
     ...(state.currentEditingId !== 'main'
       ? { layout: { currentEditingId: state.currentEditingId } }
@@ -63,6 +73,17 @@ export function loadProject(): void {
         project.viewports,
         project.folders,
       );
+      // Clear runtime LRU maps so the loaded project's viewports/cameras
+      // become the new defaults. Without this, stale entries from the
+      // previous session would shadow the loaded values (recentCanvas/
+      // PreviewCameras win over projectViewports / projectCameras in
+      // each panel's lookup chain). Per-panel state stays — existing
+      // panels keep their identity but will re-seed from the new
+      // project on next access.
+      useLayoutStore.setState({
+        recentCanvasViewports: {},
+        recentPreviewCameras: {},
+      });
       if (layout?.currentEditingId && layout.currentEditingId !== 'main') {
         useEditorStore.getState().setActiveEditing(layout.currentEditingId);
       }

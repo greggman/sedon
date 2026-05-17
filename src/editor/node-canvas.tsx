@@ -141,6 +141,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // so two panels can't race the persistent map.
   const projectViewports = useEditorStore((s) => s.viewports);
   const panelViewports = useLayoutStore((s) => s.canvasViewports[panelId]);
+  const recentCanvasViewports = useLayoutStore((s) => s.recentCanvasViewports);
   const saveCanvasViewport = useLayoutStore((s) => s.saveCanvasViewport);
   const registry = useRegistry();
 
@@ -345,7 +346,17 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       saveCanvasViewport(panelId, prevId, rf.getViewport());
     }
 
-    const stored = panelViewports?.[effectiveGraphId] ?? projectViewports[effectiveGraphId];
+    // Lookup chain when this panel hasn't recorded its own viewport
+    // for the new graph yet:
+    //   1. recentCanvasViewports[graphId] — LRU across all canvases this
+    //      session. Covers "I had a view of this graph in another panel,
+    //      now I'm opening it here".
+    //   2. projectViewports[graphId] — cross-session seed from save file.
+    //   3. fitView (handled by the `else if (idChanged)` branch below).
+    const stored =
+      panelViewports?.[effectiveGraphId] ??
+      recentCanvasViewports[effectiveGraphId] ??
+      projectViewports[effectiveGraphId];
     if (stored) {
       const current = rf.getViewport();
       const same =
@@ -359,7 +370,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       // ran in this same render cycle).
       requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
     }
-  }, [effectiveGraphId, panelViewports, projectViewports, panelId, rf, saveCanvasViewport]);
+  }, [effectiveGraphId, panelViewports, recentCanvasViewports, projectViewports, panelId, rf, saveCanvasViewport]);
 
   const onMoveEnd = useCallback<OnMove>(
     (_event, viewport: Viewport) => {
