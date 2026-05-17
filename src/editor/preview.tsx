@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Graph } from '../core/graph.js';
-import { sweepCache } from '../core/eval-cache.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY } from '../render/mat4.js';
+import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { useLayoutStore } from './layout-store.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
@@ -100,17 +100,37 @@ export function Preview({ panelId }: PreviewProps = {}) {
   );
   const currentEditingId = useEditorStore((s) => s.currentEditingId);
   const effectiveGraphId = pinnedGraphId ?? currentEditingId;
-  const isActive = effectiveGraphId === currentEditingId;
 
   const activeGraph = useEditorStore((s) => s.graph);
   const activeRootNodeId = useEditorStore((s) => s.rootNodeId);
   const mainGraph = useEditorStore((s) => s.mainGraph);
   const mainRootNodeId = useEditorStore((s) => s.mainRootNodeId);
   const subgraphs = useEditorStore((s) => s.subgraphs);
-  const setEvalResult = useEditorStore((s) => s.setEvalResult);
   const setDevice = useEditorStore((s) => s.setDevice);
   const evalCache = useEditorStore((s) => s.evalCache);
+  // This Preview is one consumer of the shared eval cache. Reporting
+  // our `touched` set after each eval lets the coordinator union it
+  // with every OTHER consumer's set (other Previews, asset thumbnails)
+  // and sweep only entries nobody is using — avoiding the
+  // "Buffer used in submit while destroyed" we hit when each pane
+  // swept independently.
+  const reportWorking = useCacheConsumer();
   const registry = useRegistry();
+
+  // Auto-pin each Preview to whatever graph it first shows. Without
+  // this, an unpinned Preview falls back to `currentEditingId`, so the
+  // moment something else flips that global (e.g. asset-view "Open in
+  // Canvas" → setActiveEditing) every unpinned Preview swaps too.
+  // Pinning at mount captures the user's intent: this pane shows X
+  // until they explicitly retarget it.
+  useEffect(() => {
+    if (!panelId) return;
+    const layout = useLayoutStore.getState();
+    if (layout.pinnedGraphIds[panelId] === undefined) {
+      const initial = useEditorStore.getState().currentEditingId;
+      layout.setPanelPinnedGraph(panelId, initial);
+    }
+  }, [panelId]);
 
   // The (graph, rootNodeId) pair the eval runs against. For pinned
   // previews this is a non-active subgraph (or main); the eval still
@@ -423,6 +443,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
+    // Bracket the eval with begin/endCacheEval so the cache coordinator
+    // defers sweeps while ANY consumer is in flight. Without this,
+    // whichever consumer's eval finishes first triggers a sweep that
+    // destroys cache entries the other in-flight evals just populated
+    // but haven't yet reported. That manifests as "Destroyed texture
+    // used in submit" on startup when Previews + asset thumbnails all
+    // evaluate concurrently.
+    beginCacheEval();
     (async () => {
       const touched = new Set<string>();
       let result;
@@ -439,31 +467,24 @@ export function Preview({ panelId }: PreviewProps = {}) {
         console.error(e);
         setError(msg);
         return;
+      } finally {
+        endCacheEval();
       }
       if (cancelled) return;
-      // Sweep AFTER consuming `result.outputs` — destroying a texture
-      // before synthesizeTiles reads it would be a use-after-destroy.
-      // We've already used the outputs by the time we get here.
-      sweepCache(evalCache, touched);
+      // Hand our touched set to the cache coordinator. It unions with
+      // every other live consumer's set (other Previews, asset
+      // thumbnails) and sweeps only entries no one references.
+      reportWorking(touched);
       const nextLighting =
         (result.outputs.lighting as LightingValue | undefined) ?? defaultLighting();
       const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs, nextLighting);
-      // For backward compat with the in-node previews and anything else
-      // reading evalResult.scene, surface the first tile's scene (or an
-      // empty scene if none). Only the panel viewing the ACTIVE graph
-      // writes back — pinned panels eval their own graphs but mustn't
-      // overwrite the active eval that drives node-thumbnail data.
-      if (isActive) {
-        const firstScene = nextTiles[0]?.scene ?? { entities: [] };
-        setEvalResult({ scene: firstScene, allOutputs: result.allOutputs });
-      }
       setTiles(nextTiles);
       setError(null);
     })();
     return () => {
       cancelled = true;
     };
-  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, setEvalResult, isActive]);
+  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, reportWorking]);
 
   return (
     <div
@@ -476,7 +497,6 @@ export function Preview({ panelId }: PreviewProps = {}) {
           panelId={panelId}
           subgraphs={subgraphs}
           pinnedGraphId={pinnedGraphId}
-          activeId={currentEditingId}
         />
       )}
       <div className="sedon-preview-grid">
@@ -500,26 +520,26 @@ export function Preview({ panelId }: PreviewProps = {}) {
 
 // Per-Preview "pin" dropdown. Lets the user lock this Preview pane to a
 // specific graph regardless of which graph the canvas is currently
-// editing. "Active (current)" reverts to follow-active behavior.
+// Every Preview pane is auto-pinned on mount (see the
+// useEffect that calls setPanelPinnedGraph above), so the dropdown
+// always shows a concrete graph. The list is just Main + every
+// subgraph; selecting one repins this pane.
 function PreviewPinDropdown({
   panelId,
   subgraphs,
   pinnedGraphId,
-  activeId,
 }: {
   panelId: string;
   subgraphs: ReadonlyArray<{ id: string; label: string }>;
   pinnedGraphId: string | undefined;
-  activeId: string;
 }) {
   const setPanelPinnedGraph = useLayoutStore((s) => s.setPanelPinnedGraph);
-  const value = pinnedGraphId ?? '__auto__';
+  const value = pinnedGraphId ?? 'main';
   const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const v = e.target.value;
-    setPanelPinnedGraph(panelId, v === '__auto__' ? undefined : v);
+    setPanelPinnedGraph(panelId, e.target.value);
   };
   // Detect a pin that points at a missing subgraph (deleted) so the
-  // dropdown can flag it instead of silently snapping to active.
+  // dropdown can flag it instead of silently snapping to main.
   const pinIsStale =
     pinnedGraphId !== undefined &&
     pinnedGraphId !== 'main' &&
@@ -528,9 +548,6 @@ function PreviewPinDropdown({
     <div className="sedon-preview-pin">
       <span className="sedon-preview-pin-label">View:</span>
       <select className="sedon-preview-pin-select" value={value} onChange={onChange}>
-        <option value="__auto__">
-          Active{pinnedGraphId === undefined ? '' : ''} ({activeId === 'main' ? 'Main' : activeId})
-        </option>
         <option value="main">Main</option>
         {subgraphs.map((sg) => (
           <option key={sg.id} value={sg.id}>{sg.label}</option>

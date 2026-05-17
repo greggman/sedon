@@ -18,9 +18,14 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { evaluateGraph } from '../core/evaluate.js';
 import { findNode, type Graph } from '../core/graph.js';
+import type { NodeOutputs } from '../core/node-def.js';
 import { createCoreTypeRegistry } from '../core/types.js';
+import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
+import { CanvasPanelContext } from './canvas-panel-context.js';
 import {
   ADD_EXTRA_INPUT_HANDLE_ID,
   ADD_INPUT_HANDLE_ID,
@@ -37,16 +42,14 @@ import { useEditorStore } from './store.js';
 const nodeTypes = { sedon: CustomNode };
 const types = createCoreTypeRegistry();
 
-// Snapshot from the store at mount time. After this, React Flow's local state
-// owns visual representation; user actions sync compute-relevant changes back
-// to the store via the callbacks below. The syncCounter effect below
-// reconciles RF when the graph mutates from outside (load, undo, redo).
-// The seed registry is built once from the initial subgraphs list so the
-// first-mount edges already render with their type colors instead of
-// flashing default-styled then re-styling on first sync.
+// Module-level seed registry — built once from the initial subgraphs
+// list so the first-mount edges already render with their type colors
+// instead of flashing default-styled then re-styling on first sync.
+// The graph itself is now per-canvas (see `panelGraph` inside
+// NodeCanvas) since each canvas pins to its own graph; only the
+// registry is process-wide.
 const seedState = useEditorStore.getState();
 const seedRegistry = buildRegistry(seedState.subgraphs);
-const seed = seedState.graph;
 
 interface NodeCanvasProps {
   /**
@@ -58,8 +61,40 @@ interface NodeCanvasProps {
 }
 
 export function NodeCanvas({ panelId }: NodeCanvasProps) {
-  const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(graphToRfNodes(seed));
-  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(seed, seedRegistry));
+  // Which graph THIS canvas is editing. Per-canvas pinning replaces the
+  // old "every canvas follows currentEditingId" model: now each canvas
+  // can show a different graph and asset-view "Open in Canvas" actions
+  // target one panel without disturbing the others. Falls back to the
+  // editor store's currentEditingId for canvases that haven't been
+  // pinned yet (the default for a freshly-created Canvas View).
+  const pinnedGraphId = useLayoutStore((s) => s.canvasGraphIds[panelId]);
+  const currentEditingId = useEditorStore((s) => s.currentEditingId);
+  const effectiveGraphId = pinnedGraphId ?? currentEditingId;
+
+  // Subscribe to whichever graph this canvas is showing. useShallow
+  // means a render only happens when this specific graph reference
+  // changes — edits to a different canvas's graph don't disturb us.
+  // Also resolve the eval root: prefer a user-authored core/output in
+  // the graph (the same rule Preview uses), falling back to the
+  // subgraph's boundary output. We need a valid root id even with
+  // scope: 'all' because evaluateGraph reads `rootOutputs` from it.
+  const { graph: panelGraph, rootNodeId: panelRootNodeId } = useEditorStore(
+    useShallow((s) => {
+      if (effectiveGraphId === 'main') {
+        return { graph: s.mainGraph, rootNodeId: s.mainRootNodeId };
+      }
+      const sg = s.subgraphs.find((x) => x.id === effectiveGraphId);
+      if (!sg) return { graph: s.mainGraph, rootNodeId: s.mainRootNodeId };
+      const previewOutput = sg.graph.nodes.find((n) => n.kind === 'core/output');
+      return {
+        graph: sg.graph,
+        rootNodeId: previewOutput?.id ?? sg.outputNodeId,
+      };
+    }),
+  );
+
+  const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(graphToRfNodes(panelGraph));
+  const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(panelGraph, seedRegistry));
 
   const rf = useReactFlow();
   // Register this canvas's RF instance so toolbar items that need RF
@@ -71,6 +106,21 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     registerCanvasRf(panelId, rf);
     return () => unregisterCanvasRf(panelId);
   }, [panelId, rf]);
+
+  // Auto-pin each canvas to whatever graph it first sees. Without
+  // this, an unpinned canvas falls back to `currentEditingId`, so the
+  // moment something else flips that global (e.g. asset-view double-
+  // click → openGraphInCanvas → setActiveEditing) every unpinned
+  // canvas changes too. Pinning at mount captures the user's intent:
+  // "this panel was showing X" stays "this panel shows X" unless they
+  // explicitly retarget it.
+  useEffect(() => {
+    const layout = useLayoutStore.getState();
+    if (!layout.canvasGraphIds[panelId]) {
+      const initial = useEditorStore.getState().currentEditingId;
+      layout.setCanvasGraphId(panelId, initial);
+    }
+  }, [panelId]);
   // We use RF's internal store directly (not useUpdateNodeInternals) because
   // the public hook defers measurement to a requestAnimationFrame — by the
   // time it actually runs, our setRfEdges has already triggered a render
@@ -84,7 +134,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const removeNodes = useEditorStore((s) => s.removeNodes);
   const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
   const addNodeExtraInputWithEdge = useEditorStore((s) => s.addNodeExtraInputWithEdge);
-  const currentEditingId = useEditorStore((s) => s.currentEditingId);
   // Project-level viewports map — used only as the initial seed for a
   // panel that hasn't recorded its own viewport for this graph yet.
   // Once the user pans/zooms in a panel, the per-panel layout-store
@@ -94,6 +143,55 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const panelViewports = useLayoutStore((s) => s.canvasViewports[panelId]);
   const saveCanvasViewport = useLayoutStore((s) => s.saveCanvasViewport);
   const registry = useRegistry();
+
+  // Per-canvas evaluation. Each canvas evaluates ITS pinned graph so
+  // in-node previews (ScenePreview, MaterialPreview, TexturePreview)
+  // have outputs to display — independent of which graph any Preview
+  // pane is showing. Without this, opening a subgraph in a canvas
+  // while no Preview is pinned to it would leave every node showing
+  // just the "—" placeholder (state.evalResult is fed by the active
+  // Preview, which doesn't know about this canvas).
+  //
+  // Also registers as a cache consumer so the entries this canvas
+  // depends on aren't evicted by another consumer's sweep. Without
+  // that, an eval round in a sibling Preview would destroy textures
+  // this canvas's in-node previews still hold → "Destroyed texture
+  // used in a submit".
+  const device = useEditorStore((s) => s.device);
+  const evalCache = useEditorStore((s) => s.evalCache);
+  const reportWorking = useCacheConsumer();
+  const [canvasAllOutputs, setCanvasAllOutputs] = useState<Map<string, NodeOutputs> | null>(null);
+  useEffect(() => {
+    if (!device) return;
+    let cancelled = false;
+    beginCacheEval();
+    void (async () => {
+      const touched = new Set<string>();
+      try {
+        const result = await evaluateGraph(panelGraph, registry, {
+          rootNodeId: panelRootNodeId,
+          context: { device },
+          cache: evalCache,
+          touched,
+          scope: 'all',
+        });
+        if (cancelled) return;
+        reportWorking(touched);
+        setCanvasAllOutputs(result.allOutputs);
+      } catch (e) {
+        // Eval errors are common in mid-edit graphs (missing required
+        // input, type mismatch). Log but keep the canvas usable —
+        // in-node previews will just show placeholders for the
+        // affected nodes.
+        if (!cancelled) console.warn('canvas eval failed', e);
+      } finally {
+        endCacheEval();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [device, panelGraph, panelRootNodeId, registry, evalCache, reportWorking]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-
@@ -114,15 +212,98 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // call its `updateNodeInternals` action ourselves. By the time
   // setRfEdges propagates, every handle the new edges reference is
   // already in RF's nodeLookup with measured bounds.
-  const syncCounter = useEditorStore((s) => s.syncCounter);
-  useEffect(() => {
-    if (syncCounter === 0) return;
-    const graph = useEditorStore.getState().graph;
-    setRfNodes((current) => mergeRfNodes(current, graph));
+  // External graph changes (load, undo, redo, edits in another canvas
+  // pinned to this same graph) AND panel-graph switches (asset
+  // "Open in Canvas") both flow through this effect now. mergeRfNodes
+  // reconciles against `panelGraph` — the per-canvas graph reference —
+  // not the editor store's global active graph, so canvas A swapping
+  // graphs no longer disrupts canvas B.
+  //
+  // Re-runs on:
+  //   • syncCounter (any store edit)
+  //   • panelGraph reference change (panel switched to a different graph,
+  //     or this graph was edited by another canvas)
+  //   • registry (subgraph defs changed, so edge colors update)
+  // Two-pass sync state. When the panel swaps to a different graph,
+  // Effect 1 clears RF edges + writes new nodes, then sets
+  // pendingEdgeSync. Effect 2 fires on the NEXT render (after Effect
+  // 1's commit), by which time:
+  //   • Phase A's render has committed: new nodes are in the DOM.
+  //   • Each new node's NodeWrapper passive useEffect has run, which
+  //     calls observer.observe() on the node element.
+  //   • Even if ResizeObserver hasn't delivered yet, we call
+  //     updateNodeInternals(force:true, nodeElement) which forces a
+  //     synchronous getBoundingClientRect — that's how handleBounds
+  //     gets populated. Then we setRfEdges, and RF renders edges
+  //     against measured handles.
+  // The state-based two-pass is deterministic — rAF + ResizeObserver
+  // timing varies between browsers and React reconciliation phases.
+  const [pendingEdgeSync, setPendingEdgeSync] = useState<{
+    panelGraph: Graph;
+    registry: typeof seedRegistry;
+  } | null>(null);
 
+  // Re-sync trigger: only the `panelGraph` reference. When this canvas's
+  // graph changes (open-in-canvas, edit to THIS graph in another pane,
+  // load), the selector returns a new graph object and this effect fires.
+  // We deliberately do NOT depend on syncCounter — that bumps for every
+  // edit anywhere, including edits to other canvases' graphs, and used
+  // to cause this effect to re-run unnecessarily on this canvas. The
+  // spurious re-runs called updateNodeInternals → set({}) → cascade →
+  // EdgeWrapper selectors → getEdgePosition for handles that may be
+  // mid-rebuild, producing React Flow error 008.
+  useEffect(() => {
+    // Swap detection: do ANY current RF nodes appear in the new graph?
+    // If not, this is a full replacement (asset-view "Open in Canvas",
+    // project load, demo switch). We use node-set overlap rather than
+    // graphId change because load-project keeps the same graphId
+    // ('main') but replaces the whole node list.
+    const currentRfNodes = rfStore.getState().nodes;
+    const newIds = new Set(panelGraph.nodes.map((n) => n.id));
+    const hasOverlap = currentRfNodes.some((n) => newIds.has(n.id));
+    const isSwap = currentRfNodes.length > 0 && !hasOverlap;
+
+    if (!isSwap) {
+      // Incremental case: same graph, edits applied to it. Existing RF
+      // nodes already have measured handles; any new handle on an
+      // existing node can be measured synchronously since its node
+      // element is in the DOM.
+      setRfNodes((current) => mergeRfNodes(current, panelGraph));
+      const { domNode, updateNodeInternals } = rfStore.getState();
+      const updates = new Map<string, { id: string; nodeElement: HTMLDivElement; force: boolean }>();
+      for (const node of panelGraph.nodes) {
+        const nodeElement = domNode?.querySelector(
+          `.react-flow__node[data-id="${node.id}"]`,
+        ) as HTMLDivElement | null;
+        if (nodeElement) {
+          updates.set(node.id, { id: node.id, nodeElement, force: true });
+        }
+      }
+      if (updates.size > 0) {
+        updateNodeInternals(updates, { triggerFitView: false });
+      }
+      setRfEdges(graphToRfEdges(panelGraph, registry));
+      return;
+    }
+
+    // Swap: clear edges, write new nodes, defer edge re-set to Effect 2.
+    setRfEdges([]);
+    setRfNodes((current) => mergeRfNodes(current, panelGraph));
+    setPendingEdgeSync({ panelGraph, registry });
+  }, [panelGraph, registry, setRfNodes, setRfEdges, rfStore]);
+
+  // Effect 2: fires after Effect 1's commit when a swap has been
+  // initiated. At this point the new nodes' DOM exists and their
+  // NodeWrappers have started observing for measurement. We force a
+  // synchronous measure (getBoundingClientRect via updateNodeInternals)
+  // so RF's nodeLookup has handleBounds for every new node BEFORE we
+  // hand it the new edges. Without this, EdgeWrapper's getEdgePosition
+  // call would race the ResizeObserver and log error 008.
+  useEffect(() => {
+    if (!pendingEdgeSync) return;
     const { domNode, updateNodeInternals } = rfStore.getState();
     const updates = new Map<string, { id: string; nodeElement: HTMLDivElement; force: boolean }>();
-    for (const node of graph.nodes) {
+    for (const node of pendingEdgeSync.panelGraph.nodes) {
       const nodeElement = domNode?.querySelector(
         `.react-flow__node[data-id="${node.id}"]`,
       ) as HTMLDivElement | null;
@@ -133,9 +314,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     if (updates.size > 0) {
       updateNodeInternals(updates, { triggerFitView: false });
     }
-
-    setRfEdges(graphToRfEdges(graph, registry));
-  }, [syncCounter, registry, setRfNodes, setRfEdges, rfStore]);
+    setRfEdges(graphToRfEdges(pendingEdgeSync.panelGraph, pendingEdgeSync.registry));
+    setPendingEdgeSync(null);
+  }, [pendingEdgeSync, setRfEdges, rfStore]);
 
   // Per-panel × per-graph viewport: save the outgoing panel/graph view
   // before swapping, then restore (or fit) for the new one. The lookup
@@ -154,9 +335,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   useEffect(() => {
     const prevId = prevContextRef.current;
     const prevPanelViewports = prevPanelViewportsRef.current;
-    const idChanged = prevId !== currentEditingId;
+    const idChanged = prevId !== effectiveGraphId;
     const panelViewportsChanged = prevPanelViewports !== panelViewports;
-    prevContextRef.current = currentEditingId;
+    prevContextRef.current = effectiveGraphId;
     prevPanelViewportsRef.current = panelViewports;
     if (!idChanged && !panelViewportsChanged) return;
 
@@ -164,7 +345,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       saveCanvasViewport(panelId, prevId, rf.getViewport());
     }
 
-    const stored = panelViewports?.[currentEditingId] ?? projectViewports[currentEditingId];
+    const stored = panelViewports?.[effectiveGraphId] ?? projectViewports[effectiveGraphId];
     if (stored) {
       const current = rf.getViewport();
       const same =
@@ -178,14 +359,13 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       // ran in this same render cycle).
       requestAnimationFrame(() => rf.fitView({ padding: 0.2 }));
     }
-  }, [currentEditingId, panelViewports, projectViewports, panelId, rf, saveCanvasViewport]);
+  }, [effectiveGraphId, panelViewports, projectViewports, panelId, rf, saveCanvasViewport]);
 
   const onMoveEnd = useCallback<OnMove>(
     (_event, viewport: Viewport) => {
-      const id = useEditorStore.getState().currentEditingId;
-      saveCanvasViewport(panelId, id, viewport);
+      saveCanvasViewport(panelId, effectiveGraphId, viewport);
     },
-    [panelId, saveCanvasViewport],
+    [panelId, effectiveGraphId, saveCanvasViewport],
   );
 
   // Commit node positions to the store at drag-stop and bump syncCounter
@@ -393,25 +573,56 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     [registry],
   );
 
+  // Edits dispatched by RF callbacks (onConnect, removeNodes via
+  // onNodesChange, etc.) target the editor store's `state.graph`,
+  // which is the graph currently being edited. With per-canvas
+  // pinning that graph might differ from this canvas's pin until we
+  // claim editing context. Pointer-down (capture phase, runs before
+  // any RF handler) checks and syncs `currentEditingId` first so any
+  // edit landing in the same gesture hits the correct backing graph.
+  const onPointerDownCapture = useCallback(() => {
+    if (effectiveGraphId !== useEditorStore.getState().currentEditingId) {
+      useEditorStore.getState().setActiveEditing(effectiveGraphId);
+    }
+  }, [effectiveGraphId]);
+
+  // Memoize so context consumers don't tear down on every render.
+  // (CustomNode reads `graph` to look itself up — the rendered identity
+  // of every CustomNode in this canvas depends on it staying stable
+  // across renders that don't change the graph.)
+  const canvasPanelInfo = useMemo(
+    () => ({ panelId, graph: panelGraph, allOutputs: canvasAllOutputs }),
+    [panelId, panelGraph, canvasAllOutputs],
+  );
+
   return (
-    <ReactFlow
-      nodes={rfNodes}
-      edges={rfEdges}
-      nodeTypes={nodeTypes}
-      onConnect={onConnect}
-      isValidConnection={isValidConnection}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onMoveEnd={onMoveEnd}
-      onNodeDragStop={onNodeDragStop}
-      onSelectionDragStop={onSelectionDragStop}
-      proOptions={{ hideAttribution: true }}
-      selectionMode={SelectionMode.Partial}
-      minZoom={0.1}
-    >
-      <Background />
-      <Controls />
-    </ReactFlow>
+    <CanvasPanelContext.Provider value={canvasPanelInfo}>
+      <div
+        // Wrapper is fullsize so the capture-phase pointerdown is hit
+        // for clicks anywhere in the canvas, including on nodes.
+        style={{ width: '100%', height: '100%' }}
+        onPointerDownCapture={onPointerDownCapture}
+      >
+        <ReactFlow
+          nodes={rfNodes}
+          edges={rfEdges}
+          nodeTypes={nodeTypes}
+          onConnect={onConnect}
+          isValidConnection={isValidConnection}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onMoveEnd={onMoveEnd}
+          onNodeDragStop={onNodeDragStop}
+          onSelectionDragStop={onSelectionDragStop}
+          proOptions={{ hideAttribution: true }}
+          selectionMode={SelectionMode.Partial}
+          minZoom={0.1}
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+      </div>
+    </CanvasPanelContext.Provider>
   );
 }
 

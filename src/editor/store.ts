@@ -3,8 +3,6 @@ import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
-import type { NodeOutputs } from '../core/node-def.js';
-import type { SceneValue } from '../core/resources.js';
 import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
 import {
   applyBackward,
@@ -13,11 +11,6 @@ import {
   type ProjectSnapshot,
 } from './command.js';
 import { createInitialGraph } from './initial-graph.js';
-
-export interface EvalResult {
-  scene: SceneValue;
-  allOutputs: Map<string, NodeOutputs>;
-}
 
 // Orbit camera state. `target` is the world-space point the camera orbits
 // around; yaw/pitch/distance describe its position relative to that point.
@@ -80,7 +73,6 @@ export interface EditorState {
    * NodeCanvas saves on pan/zoom-end and restores on context switch.
    */
   viewports: Record<string, ViewportState>;
-  evalResult: EvalResult | null;
   device: GPUDevice | null;
   /**
    * Shared evaluation cache: maps per-node fingerprints to outputs so a
@@ -105,7 +97,6 @@ export interface EditorState {
   // prompt before destructive operations (load file, switch demo).
   dirty: boolean;
 
-  setEvalResult: (evalResult: EvalResult | null) => void;
   setDevice: (device: GPUDevice | null) => void;
 
   // Same public API as before — every mutation funnels through dispatch
@@ -375,10 +366,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
       ) {
         const merged: Command = { ...last, after: cmd.after };
         const next = applyForward(state, cmd);
-        // Don't clear evalResult: with async eval there's a real window
-        // before the new result lands, and clearing it makes every preview
-        // disappear (and the nodes resize). Stale-result protection lives
-        // in preview.tsx's cancellation logic.
         set({
           graph: next.graph,
           rootNodeId: next.rootNodeId,
@@ -415,14 +402,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
     cameras: {},
     viewports: {},
     evalCache: createEvalCache(),
-    evalResult: null,
     device: null,
     undoStack: [],
     redoStack: [],
     syncCounter: 0,
     dirty: false,
 
-    setEvalResult: (evalResult) => set({ evalResult }),
     setDevice: (device) => set({ device }),
 
     // Replace the entire graph (load file, load demo). NOT undoable: clears

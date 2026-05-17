@@ -25,8 +25,16 @@ import type { CameraState } from './store.js';
 // project.viewports on canvas pan — two panels panning the same graph
 // would race the persistent state.
 export interface LayoutState {
-  /** Panel id → pinned graph id ('main' or a subgraph id). */
+  /** Preview panel id → pinned graph id ('main' or a subgraph id). */
   pinnedGraphIds: Record<string, string>;
+
+  /**
+   * Canvas panel id → graph id the canvas is currently showing/editing.
+   * Replaces the previous "all canvases follow currentEditingId" model:
+   * with this, each canvas can show a different graph independently.
+   * Falls back to currentEditingId on the editor store when unset.
+   */
+  canvasGraphIds: Record<string, string>;
 
   /** Panel id → graph id → Viewport. Empty until first pan/zoom. */
   canvasViewports: Record<string, Record<string, Viewport>>;
@@ -42,22 +50,44 @@ export interface LayoutState {
   previewCameras: Record<string, Record<string, CameraState>>;
 
   /**
-   * Pin a panel to a specific graph. Passing `undefined` removes the
-   * pin (panel reverts to "follows active").
+   * Last DockView panel of each kind that the user interacted with.
+   * Used to route asset-view actions: double-clicking an asset opens
+   * it in the last-active canvas; "Open in Preview" pushes it into
+   * the last-active preview. App.tsx maintains these via DockView's
+   * onDidActivePanelChange.
+   */
+  lastActiveCanvasPanelId: string | null;
+  lastActivePreviewPanelId: string | null;
+
+  /**
+   * Pin a Preview panel to a specific graph. Passing `undefined`
+   * removes the pin (panel reverts to "follows active").
    */
   setPanelPinnedGraph: (panelId: string, graphId: string | undefined) => void;
+
+  /** Set which graph a canvas panel is currently showing. */
+  setCanvasGraphId: (panelId: string, graphId: string) => void;
+
+  /** Forget a canvas's graph pin (e.g. on panel close). */
+  clearCanvasGraphId: (panelId: string) => void;
 
   /** Record a canvas pane's pan/zoom for a specific graph. */
   saveCanvasViewport: (panelId: string, graphId: string, viewport: Viewport) => void;
 
   /** Record a preview pane's camera state for a specific graph. */
   savePreviewCamera: (panelId: string, graphId: string, camera: CameraState) => void;
+
+  setLastActiveCanvasPanelId: (panelId: string | null) => void;
+  setLastActivePreviewPanelId: (panelId: string | null) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
   pinnedGraphIds: {},
+  canvasGraphIds: {},
   canvasViewports: {},
   previewCameras: {},
+  lastActiveCanvasPanelId: null,
+  lastActivePreviewPanelId: null,
 
   setPanelPinnedGraph: (panelId, graphId) =>
     set((state) => {
@@ -68,6 +98,19 @@ export const useLayoutStore = create<LayoutState>((set) => ({
         next[panelId] = graphId;
       }
       return { pinnedGraphIds: next };
+    }),
+
+  setCanvasGraphId: (panelId, graphId) =>
+    set((state) => ({
+      canvasGraphIds: { ...state.canvasGraphIds, [panelId]: graphId },
+    })),
+
+  clearCanvasGraphId: (panelId) =>
+    set((state) => {
+      if (!(panelId in state.canvasGraphIds)) return state;
+      const next = { ...state.canvasGraphIds };
+      delete next[panelId];
+      return { canvasGraphIds: next };
     }),
 
   saveCanvasViewport: (panelId, graphId, viewport) =>
@@ -91,4 +134,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
         },
       },
     })),
+
+  setLastActiveCanvasPanelId: (panelId) => set({ lastActiveCanvasPanelId: panelId }),
+  setLastActivePreviewPanelId: (panelId) => set({ lastActivePreviewPanelId: panelId }),
 }));

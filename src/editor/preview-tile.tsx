@@ -34,17 +34,22 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
+  // Document the ctx is currently configured against. Used by the draw
+  // path to lazy-reconfigure when the canvas reparents to a different
+  // window (popout). Same-document layout changes (splits, group
+  // reflows) don't touch this so we skip the unconfigure dance that
+  // would otherwise flash black on every DockView event.
+  const configuredDocRef = useRef<Document | null>(null);
 
   // Configure context once per (canvas, device) pair, plus a DPR-aware
   // resize observer so the backing buffer tracks CSS size. Resizes
   // request a fresh render — the canvas is now blank until we draw into
   // it, since we no longer paint every frame unconditionally.
   //
-  // Re-runs on popout: DockView reparents the canvas DOM to a different
-  // document, which invalidates the existing swap chain and the
-  // ResizeObserver (which was created against the old window). DPR is
-  // also re-read from the canvas's CURRENT window in case the popout is
-  // on a different-DPR display.
+  // Cross-document reconfig (popout) is handled inside the draw fn, not
+  // here. popoutGen still triggers the render effect below so the draw
+  // re-fires after popout, but we don't blow away the working swap
+  // chain on every split.
   const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,13 +62,11 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       requestRender();
     };
     resize();
-    // Use the canvas's current window's ResizeObserver constructor so
-    // observation happens against the popout's frame timing, not the
-    // original window's.
     const ResizeObs = win.ResizeObserver ?? ResizeObserver;
     const obs = new ResizeObs(resize);
     obs.observe(canvas);
     ctxRef.current = configureCanvas(canvas, gpu);
+    configuredDocRef.current = canvas.ownerDocument;
     return () => {
       obs.disconnect();
       try {
@@ -72,18 +75,21 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         // ignore: detached if popout window closed first
       }
       ctxRef.current = null;
+      configuredDocRef.current = null;
     };
-  }, [gpu, popoutGen]);
+  }, [gpu]);
 
   // Build a scene renderer whenever the synthesized scene changes. New
   // scene every eval, but reference-equal across frames so the renderer
-  // stays put between eval boundaries.
+  // stays put between eval boundaries. Format-change rebuilds (popout
+  // to a different-preferred-format window) are handled inside the
+  // draw fn rather than via popoutGen here.
   useEffect(() => {
     rendererRef.current = createSceneRenderer(gpu.device, gpu.format, scene);
     return () => {
       rendererRef.current = null;
     };
-  }, [gpu, scene, popoutGen]);
+  }, [gpu, scene]);
 
   // Render-on-demand. The render closure captures current scene / lighting
   // / flatPreview by being recreated whenever those change; that recreated
@@ -97,10 +103,28 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   useEffect(() => {
     const draw = () => {
       const canvas = canvasRef.current;
-      const ctx = ctxRef.current;
-      const renderer = rendererRef.current;
+      let ctx = ctxRef.current;
+      let renderer = rendererRef.current;
       if (!canvas || !ctx || !renderer || canvas.width === 0 || canvas.height === 0) {
         return;
+      }
+      // Lazy popout recovery: if the canvas moved to a different
+      // document, the existing swap chain is invalid. Reconfigure
+      // against the new document's navigator.gpu and rebuild the
+      // renderer (its pipelines are bound to the canvas format which
+      // is window-scoped).
+      if (configuredDocRef.current !== canvas.ownerDocument) {
+        try { ctx.unconfigure(); } catch { /* already detached */ }
+        const win = canvas.ownerDocument.defaultView ?? window;
+        const format = win.navigator.gpu.getPreferredCanvasFormat();
+        const fresh = canvas.getContext('webgpu');
+        if (!fresh) return;
+        fresh.configure({ device: gpu.device, format, alphaMode: 'premultiplied' });
+        ctxRef.current = fresh;
+        configuredDocRef.current = canvas.ownerDocument;
+        rendererRef.current = createSceneRenderer(gpu.device, format, scene);
+        ctx = fresh;
+        renderer = rendererRef.current;
       }
       const cam = cameraRef.current;
       const aspect = canvas.width / canvas.height;
@@ -129,9 +153,12 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     const unsubscribe = subscribeRender(draw);
     // Initial paint for this scene/lighting/flatPreview combination.
     // Coalesced into a single rAF with any other tiles' initial draws.
+    // popoutGen-on-deps re-subscribes after DockView events so the
+    // draw fn re-fires; its lazy doc-check then reconfigures the
+    // ctx only if the canvas actually moved to a different window.
     requestRender();
     return unsubscribe;
-  }, [gpu, scene, cameraRef, lighting, flatPreview]);
+  }, [gpu, scene, cameraRef, lighting, flatPreview, popoutGen]);
 
   return (
     <div className="sedon-preview-tile">

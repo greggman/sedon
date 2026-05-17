@@ -1,6 +1,5 @@
-import { Handle, Position, useConnection, useReactFlow, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
 import { useMemo, useState } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
 import type {
   HeightfieldValue,
@@ -10,11 +9,17 @@ import type {
 } from '../core/resources.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
+import {
+  useCanvasAllOutputs,
+  useCanvasGraph,
+  useCanvasPanelId,
+} from './canvas-panel-context.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
 import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
+import { useLayoutStore } from './layout-store.js';
 import { MaterialPreview } from './material-preview.js';
 import { useRegistry } from './registry.js';
 import { ScenePreview } from './scene-preview.js';
@@ -422,28 +427,42 @@ export function CustomNode({ id, data }: NodeProps) {
     [kind, registry],
   );
 
-  const inputValues = useEditorStore(
-    (s) => s.graph.nodes.find((n) => n.id === id)?.inputValues,
+  // Look up this node's data from THIS canvas's graph (not state.graph,
+  // which is the globally-active editing context). With per-canvas
+  // pinning, those can be different graphs — querying state.graph would
+  // miss this node entirely on any canvas not currently the active edit
+  // target, leaving us with empty extraInputs / inputValues / sockets
+  // and triggering "scene_0 handle not found" / error 008.
+  const canvasGraph = useCanvasGraph();
+  const myNode = useMemo(
+    () => canvasGraph?.nodes.find((n) => n.id === id),
+    [canvasGraph, id],
   );
-  const connectedSockets = useEditorStore(
-    useShallow((s) =>
-      s.graph.edges.filter((e) => e.to.node === id).map((e) => e.to.socket),
-    ),
-  );
+  const inputValues = myNode?.inputValues;
+  const connectedSockets = useMemo(() => {
+    if (!canvasGraph) return [];
+    return canvasGraph.edges.filter((e) => e.to.node === id).map((e) => e.to.socket);
+  }, [canvasGraph, id]);
+  const extraInputs = myNode?.extraInputs ?? [];
   const setInputValue = useEditorStore((s) => s.setInputValue);
-  const myOutputs = useEditorStore((s) => s.evalResult?.allOutputs.get(id));
+  // Outputs come from THIS canvas's eval (NodeCanvas runs its own
+  // evaluateGraph and publishes allOutputs via CanvasPanelContext).
+  // No global fallback: CustomNode is always rendered inside a
+  // NodeCanvas in the live app; rendering it without one is a
+  // test-harness scenario where the lack of outputs is fine.
+  const canvasAllOutputs = useCanvasAllOutputs();
+  const myOutputs = canvasAllOutputs?.get(id);
   const device = useEditorStore((s) => s.device);
   const addSubgraphSocket = useEditorStore((s) => s.addSubgraphSocket);
   const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
   const renameSubgraphSocket = useEditorStore((s) => s.renameSubgraphSocket);
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
-  const commitActivePositions = useEditorStore((s) => s.commitActivePositions);
   const addNodeExtraInput = useEditorStore((s) => s.addNodeExtraInput);
   const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
-  const extraInputs = useEditorStore(
-    useShallow((s) => s.graph.nodes.find((n) => n.id === id)?.extraInputs ?? []),
-  );
-  const rf = useReactFlow();
+  // panelId of the canvas this node renders inside. Provided by
+  // NodeCanvas via CanvasPanelContext. Null for harnesses without a
+  // canvas wrapper — Edit button falls back to setActiveEditing only.
+  const canvasPanelId = useCanvasPanelId();
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
@@ -472,10 +491,15 @@ export function CustomNode({ id, data }: NodeProps) {
 
   const onEditSubgraph = () => {
     if (!subgraphId) return;
-    // Persist drag-positions of the current graph BEFORE switching, just
-    // like the graph-switcher dropdown — RF discards them on graph swap.
-    const positions = new Map(rf.getNodes().map((n) => [n.id, n.position]));
-    commitActivePositions(positions);
+    // Position commit is now redundant — onNodeDragStop in NodeCanvas
+    // keeps positions in the store continuously. We do still flip the
+    // active editing context AND, if we know which canvas this Edit
+    // button lives in, pin that canvas to the subgraph so the click
+    // navigates THIS canvas (rather than every canvas in the app, which
+    // would happen if we relied on setActiveEditing alone).
+    if (canvasPanelId) {
+      useLayoutStore.getState().setCanvasGraphId(canvasPanelId, subgraphId);
+    }
     setActiveEditing(subgraphId);
   };
 

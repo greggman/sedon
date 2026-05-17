@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type SceneValue } from '../core/resources.js';
+import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { ScenePreview } from './scene-preview.js';
 import { synthesizeTiles } from './preview-synth.js';
 import { useRegistry } from './registry.js';
@@ -42,6 +43,11 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
   const device = useEditorStore((s) => s.device);
   const registry = useRegistry();
   const evalCache = useEditorStore((s) => s.evalCache);
+  // Each thumbnail is a cache consumer just like a Preview pane. The
+  // cache coordinator unions our touched set with everyone else's
+  // before sweeping, so a Preview pane re-evaluating its graph won't
+  // destroy entries this thumbnail still renders.
+  const reportWorking = useCacheConsumer();
 
   // Pull only what's stable for THIS asset. Without useShallow this
   // selector would re-emit whenever a sibling state slice changed,
@@ -76,30 +82,41 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
       return;
     }
     let cancelled = false;
+    const touched = new Set<string>();
+    // Bracket with begin/endCacheEval so sibling consumers (other
+    // thumbnails, Previews) don't sweep the cache while we're still
+    // populating it. See cache-coordinator.ts for the full story.
+    beginCacheEval();
     void (async () => {
+      let result;
       try {
-        const result = await evaluateGraph(resolved.graph, registry, {
+        result = await evaluateGraph(resolved.graph, registry, {
           rootNodeId: resolved.rootNodeId,
           context: { device },
           cache: evalCache,
+          touched,
         });
-        if (cancelled) return;
-        const rootNode = resolved.graph.nodes.find((n) => n.id === resolved.rootNodeId);
-        const rootDef = rootNode ? registry.get(rootNode.kind) : undefined;
-        const tiles = synthesizeTiles(device, rootDef, result.outputs, defaultLighting());
-        // Pick the first tile that has any geometry to show — empty
-        // scenes (unwired outputs) become a checkerboard, which is just
-        // noise for a tiny tile.
-        const next = tiles.find((t) => t.scene.entities.length > 0)?.scene;
-        setScene(next ?? null);
       } catch {
         if (!cancelled) setScene(null);
+        return;
+      } finally {
+        endCacheEval();
       }
+      if (cancelled) return;
+      reportWorking(touched);
+      const rootNode = resolved.graph.nodes.find((n) => n.id === resolved.rootNodeId);
+      const rootDef = rootNode ? registry.get(rootNode.kind) : undefined;
+      const tiles = synthesizeTiles(device, rootDef, result.outputs, defaultLighting());
+      // Pick the first tile that has any geometry to show — empty
+      // scenes (unwired outputs) become a checkerboard, which is just
+      // noise for a tiny tile.
+      const next = tiles.find((t) => t.scene.entities.length > 0)?.scene;
+      setScene(next ?? null);
     })();
     return () => {
       cancelled = true;
     };
-  }, [device, resolved, registry, evalCache]);
+  }, [device, resolved, registry, evalCache, reportWorking]);
 
   if (!device || !scene) {
     return <>{fallback}</>;

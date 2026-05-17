@@ -7,6 +7,7 @@ import {
 } from '../core/folder.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 import { AssetThumbnail } from './asset-thumbnail.js';
+import { openGraphInCanvas, openGraphInPreview } from './open-graph.js';
 import { useEditorStore } from './store.js';
 
 // Pixel size of the live subgraph preview shown in icon-view tiles.
@@ -68,7 +69,6 @@ export function AssetsPanel() {
   const moveFolderToFolder = useEditorStore((s) => s.moveFolderToFolder);
   const renameFolder = useEditorStore((s) => s.renameFolder);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
-  const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
 
   // ----- UI state -----
   // Tree expansion. Auto-expands ancestors of the selected folder so the
@@ -323,8 +323,8 @@ export function AssetsPanel() {
             onDragStart={onDragStart}
             onDragOverFolder={onDragOverFolder}
             onDropOnFolder={onDropOnFolder}
-            onOpenSubgraph={(id) => setActiveEditing(id)}
-            onOpenMain={() => setActiveEditing(MAIN_GRAPH_ID)}
+            onOpenSubgraph={(id) => openGraphInCanvas(id)}
+            onOpenMain={() => openGraphInCanvas(MAIN_GRAPH_ID)}
             onContextMenu={openContextMenu}
             onCommitRename={(t, label) => {
               if (t.kind === 'folder') renameFolder(t.id, label);
@@ -357,11 +357,15 @@ export function AssetsPanel() {
             setContextMenu(null);
           }}
           onOpenSubgraph={(id) => {
-            setActiveEditing(id);
+            openGraphInCanvas(id);
             setContextMenu(null);
           }}
           onOpenMain={() => {
-            setActiveEditing(MAIN_GRAPH_ID);
+            openGraphInCanvas(MAIN_GRAPH_ID);
+            setContextMenu(null);
+          }}
+          onOpenInPreview={(id) => {
+            openGraphInPreview(id);
             setContextMenu(null);
           }}
         />
@@ -769,6 +773,7 @@ function AssetContextMenu({
   onNewFolder,
   onOpenSubgraph,
   onOpenMain,
+  onOpenInPreview,
 }: {
   x: number;
   y: number;
@@ -781,6 +786,7 @@ function AssetContextMenu({
   onNewFolder: (parentId: string | null) => void;
   onOpenSubgraph: (id: string) => void;
   onOpenMain: () => void;
+  onOpenInPreview: (graphId: string) => void;
 }) {
   // Pre-resolve labels so the menu can show the target name in its
   // title row — small nicety, helps when the same right-click hit the
@@ -801,9 +807,13 @@ function AssetContextMenu({
     items.push(
       { label: 'Rename', action: () => onRename({ kind: 'subgraph', id: target.id }) },
       { label: 'Open in Canvas', action: () => onOpenSubgraph(target.id) },
+      { label: 'Open in Preview', action: () => onOpenInPreview(target.id) },
     );
   } else if (target.kind === 'main') {
-    items.push({ label: 'Open in Canvas', action: () => onOpenMain() });
+    items.push(
+      { label: 'Open in Canvas', action: () => onOpenMain() },
+      { label: 'Open in Preview', action: () => onOpenInPreview('main') },
+    );
   } else if (target.kind === 'folder') {
     const isRoot = target.id === ROOT_FOLDER_ID;
     items.push(

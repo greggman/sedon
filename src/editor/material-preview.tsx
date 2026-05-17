@@ -30,12 +30,14 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
   const formatRef = useRef<GPUTextureFormat | null>(null);
   const resourcesRef = useRef<RenderResources | null>(null);
   const cameraRef = useRef({ yaw: 0, pitch: 0.4, distance: 3 });
+  const configuredDocRef = useRef<Document | null>(null);
 
   const [shape, setShape] = useState<Shape>('sphere');
 
-  // Configure context. Re-runs on popout so the GPUCanvasContext is
-  // reconfigured against the canvas's new ownerDocument; format is
-  // resolved via the canvas's current window's navigator.gpu.
+  // Configure context. Cross-document reconfig (popout) is handled
+  // lazily inside the render function below so same-document layout
+  // changes (DockView splits) don't trigger an unconfigure+reconfigure
+  // dance that flashes the canvas black.
   const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,6 +49,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
     ctx.configure({ device, format, alphaMode: 'opaque' });
     ctxRef.current = ctx;
     formatRef.current = format;
+    configuredDocRef.current = canvas.ownerDocument;
     return () => {
       try {
         ctx.unconfigure();
@@ -55,8 +58,9 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       }
       ctxRef.current = null;
       formatRef.current = null;
+      configuredDocRef.current = null;
     };
-  }, [device, popoutGen]);
+  }, [device]);
 
   // Pointer handlers (set up once on mount) call renderRef.current() to
   // re-render after camera updates. The geometry effect installs the real
@@ -79,10 +83,32 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
     resourcesRef.current = { renderer, geometry };
 
     const render = () => {
-      const ctx = ctxRef.current;
-      const r = resourcesRef.current;
+      let ctx = ctxRef.current;
       const canvas = canvasRef.current;
+      let r = resourcesRef.current;
       if (!ctx || !r || !canvas) return;
+
+      // Lazy popout recovery: if the canvas reparented to a different
+      // document, the existing swap chain + format-bound pipelines are
+      // stale. Reconfigure against the new document and rebuild the
+      // renderer (which holds format-bound pipelines).
+      if (configuredDocRef.current !== canvas.ownerDocument) {
+        try { ctx.unconfigure(); } catch { /* already detached */ }
+        const win = canvas.ownerDocument.defaultView ?? window;
+        const fresh = canvas.getContext('webgpu');
+        if (!fresh) return;
+        const newFormat = win.navigator.gpu.getPreferredCanvasFormat();
+        fresh.configure({ device, format: newFormat, alphaMode: 'opaque' });
+        ctxRef.current = fresh;
+        formatRef.current = newFormat;
+        configuredDocRef.current = canvas.ownerDocument;
+        const rebuiltRenderer = createSceneRenderer(device, newFormat, {
+          entities: [{ geometry, material, transform: identity(), tint: identityTint() }],
+        });
+        resourcesRef.current = { renderer: rebuiltRenderer, geometry };
+        ctx = fresh;
+        r = resourcesRef.current;
+      }
 
       const cam = cameraRef.current;
       const aspect = canvas.width / canvas.height;

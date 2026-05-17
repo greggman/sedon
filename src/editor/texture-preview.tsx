@@ -41,10 +41,12 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
+  const configuredDocRef = useRef<Document | null>(null);
 
-  // Configure the canvas's WebGPU context. Re-runs on popout so the
-  // context is reconfigured against the canvas's new ownerDocument.
-  // Format is resolved via the canvas's current window's navigator.gpu.
+  // Configure the canvas's WebGPU context. Cross-document reconfig
+  // (popout) is handled lazily inside the blit below so that DockView
+  // splits (same-document layout changes) don't trigger an
+  // unconfigure+reconfigure dance that flashes the canvas black.
   const popoutGen = usePopoutGeneration();
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -56,6 +58,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     ctx.configure({ device, format, alphaMode: 'opaque' });
     ctxRef.current = ctx;
     formatRef.current = format;
+    configuredDocRef.current = canvas.ownerDocument;
     return () => {
       try {
         ctx.unconfigure();
@@ -64,14 +67,31 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
       }
       ctxRef.current = null;
       formatRef.current = null;
+      configuredDocRef.current = null;
     };
-  }, [device, popoutGen]);
+  }, [device]);
 
   // Blit whenever the source texture changes.
   useEffect(() => {
-    const ctx = ctxRef.current;
-    const format = formatRef.current;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let ctx = ctxRef.current;
+    let format = formatRef.current;
     if (!ctx || !format) return;
+    // Lazy popout recovery: rebuild ctx if the canvas reparented to a
+    // different document.
+    if (configuredDocRef.current !== canvas.ownerDocument) {
+      try { ctx.unconfigure(); } catch { /* already detached */ }
+      const win = canvas.ownerDocument.defaultView ?? window;
+      const fresh = canvas.getContext('webgpu');
+      if (!fresh) return;
+      format = win.navigator.gpu.getPreferredCanvasFormat();
+      fresh.configure({ device, format, alphaMode: 'opaque' });
+      ctxRef.current = fresh;
+      formatRef.current = format;
+      configuredDocRef.current = canvas.ownerDocument;
+      ctx = fresh;
+    }
     const { pipeline, sampler } = getBlit(device, format);
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),

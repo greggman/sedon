@@ -16,6 +16,7 @@ import { GraphSwitcher } from './graph-switcher.js';
 import { NewSubgraphButton } from './new-subgraph-button.js';
 import { PANEL_COMPONENTS } from './panels.js';
 import { bumpPopoutGeneration } from './popout-bus.js';
+import { useLayoutStore } from './layout-store.js';
 
 // App shell:
 //
@@ -57,6 +58,28 @@ export function App() {
     event.api.onDidMovePanel(() => bumpPopoutGeneration());
     event.api.onDidAddGroup(() => bumpPopoutGeneration());
     event.api.onDidRemoveGroup(() => bumpPopoutGeneration());
+    // Track the most-recent canvas / preview panel the user activated.
+    // Asset-view actions ("Open in Canvas", "Open in Preview") route to
+    // these. Setters are no-ops when activePanel is undefined (e.g. all
+    // panels closed) — the last value sticks until something else
+    // becomes active, which matches user intuition ("re-open in the one
+    // I just had").
+    const layout = useLayoutStore.getState();
+    event.api.onDidActivePanelChange((panel) => {
+      if (!panel) return;
+      const kind = panel.view.contentComponent;
+      if (kind === 'node-canvas') layout.setLastActiveCanvasPanelId(panel.id);
+      else if (kind === 'preview') layout.setLastActivePreviewPanelId(panel.id);
+    });
+    // Clean up last-active references if the panel they point at is
+    // closed — otherwise a stale id leads asset actions to target a
+    // dead panel.
+    event.api.onDidRemovePanel((panel) => {
+      const l = useLayoutStore.getState();
+      if (l.lastActiveCanvasPanelId === panel.id) l.setLastActiveCanvasPanelId(null);
+      if (l.lastActivePreviewPanelId === panel.id) l.setLastActivePreviewPanelId(null);
+      l.clearCanvasGraphId(panel.id);
+    });
     event.api.addPanel({
       id: 'assets-main',
       component: 'assets',
