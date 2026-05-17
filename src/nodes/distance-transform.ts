@@ -142,7 +142,7 @@ export const distanceTransformNode: NodeDef = {
       device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: { buffer: uniformBuffer } },
+          { binding: 0, resource: uniformBuffer },
           { binding: 1, resource: srcView },
           { binding: 2, resource: sampler },
         ],

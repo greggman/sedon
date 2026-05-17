@@ -12,19 +12,26 @@
 
 --- new ---
 
+- [*] What is the (Active) thing? - Seems not needed
+- [*] Need to save last active view for both graphs (viewport) and preview (camera) (ask LLM)
+- [ ] Asset view needs multiple select (move/cut/copy/paste)
+- [*] selecting a graph in the asset view should not change the canvas view nor the preview
+- [*] double clicking a graph should "open the graph" in the current/last active canvas or right click "open in canvas" or makes new one if none exist
+- [*] right click asset and pick "open in preview" push in current/last preview or makes new one if none exist
+- [ ] left/skeleton needs to start from bottom center?
 - [*] subscene needs preview
 - [ ] too many previews
-- [ ] add Ctrl-Shift-P
+- [*] add Ctrl-Shift-P
 - [ ] cut/copy/paste
 - [ ] duplicate
 - [*] subscene needs edit button
-- [ ] frame subscenes
+- [*] frame subscenes
 - [*] nodes need icons?
 - [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
 - [*] asset list view should be a table, not span
 - [ ] divider between folders and content needs to be slidable
 - [*] show type with name in asset view both icon and list
-- [ ] figure out UX for graph selection and scene selection? Not needed, use asset view
+- [*] figure out UX for graph selection and scene selection? Not needed, use asset view
 - [ ] design should not be "extra inputs". It should be "array of input name,type"
 - [*] scene merge needs N inputs
 - [*] can not zoom out enough

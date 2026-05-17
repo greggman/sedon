@@ -84,7 +84,7 @@ export function createTerrainSplatKind(
           { binding: 0, resource: material.layerA.view },
           { binding: 1, resource: material.layerB.view },
           { binding: 2, resource: material.mask.view },
-          { binding: 3, resource: { buffer: paramBuffer } },
+          { binding: 3, resource: paramBuffer },
           { binding: 4, resource: normalA.view },
           { binding: 5, resource: normalB.view },
         ],

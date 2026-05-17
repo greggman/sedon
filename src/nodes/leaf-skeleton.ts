@@ -166,11 +166,11 @@ export const leafSkeletonNode: NodeDef = {
     // buffer on @binding(0) — so we build one bind group per pipeline.
     const shapeBindGroup = device.createBindGroup({
       layout: shapePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      entries: [{ binding: 0, resource: uniformBuffer }],
     });
     const veinsBindGroup = device.createBindGroup({
       layout: veinsPipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      entries: [{ binding: 0, resource: uniformBuffer }],
     });
 
     const encoder = device.createCommandEncoder();

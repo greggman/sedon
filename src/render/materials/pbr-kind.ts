@@ -134,7 +134,7 @@ export function createPbrKind(
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: material.basecolor.view },
-          { binding: 1, resource: { buffer: paramBuffer } },
+          { binding: 1, resource: paramBuffer },
           { binding: 2, resource: normalTex.view },
           { binding: 3, resource: detailBasecolorTex.view },
           { binding: 4, resource: detailNormalTex.view },

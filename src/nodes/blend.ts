@@ -76,7 +76,7 @@ export const blendNode: NodeDef = {
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 0, resource: uniformBuffer },
         { binding: 1, resource: a.view },
         { binding: 2, resource: b.view },
         { binding: 3, resource: sampler },

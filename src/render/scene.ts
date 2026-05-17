@@ -250,7 +250,7 @@ export function createSceneRenderer(
   const sceneBindGroup = device.createBindGroup({
     layout: sceneBindGroupLayout,
     entries: [
-      { binding: 0, resource: { buffer: sceneUniformBuffer } },
+      { binding: 0, resource: sceneUniformBuffer },
       { binding: 1, resource: sampler },
       { binding: 2, resource: shadowView },
       { binding: 3, resource: shadowSampler },
@@ -276,7 +276,7 @@ export function createSceneRenderer(
   });
   const shadowBindGroup = device.createBindGroup({
     layout: shadowBindGroupLayout,
-    entries: [{ binding: 0, resource: { buffer: shadowUniformBuffer } }],
+    entries: [{ binding: 0, resource: shadowUniformBuffer }],
   });
   const shadowPipeline = createShadowPipeline(device, shadowBindGroupLayout);
 
@@ -313,7 +313,7 @@ export function createSceneRenderer(
   });
   const skyBindGroup = device.createBindGroup({
     layout: skyPipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: skyUniformBuffer } }],
+    entries: [{ binding: 0, resource: skyUniformBuffer }],
   });
   const skyScratch = new Float32Array(20);
 
@@ -455,7 +455,7 @@ export function createSceneRenderer(
       entries: [
         { binding: 0, resource: hdrColorView },
         { binding: 1, resource: postSampler },
-        { binding: 2, resource: { buffer: brightPassUniform } },
+        { binding: 2, resource: brightPassUniform },
       ],
     });
 
@@ -466,7 +466,7 @@ export function createSceneRenderer(
         { binding: 0, resource: hdrColorView },
         { binding: 1, resource: bloomMipViews[0]! },
         { binding: 2, resource: postSampler },
-        { binding: 3, resource: { buffer: compositeUniform } },
+        { binding: 3, resource: compositeUniform },
       ],
     });
 
