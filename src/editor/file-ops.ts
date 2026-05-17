@@ -1,9 +1,12 @@
+import type { SerializedDockview } from 'dockview';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
+import { getDockviewApi } from './dockview-handle.js';
 import { useLayoutStore } from './layout-store.js';
 import {
   parseSaveFile,
   SAVE_FORMAT_VERSION,
   serializeSaveFile,
+  type LayoutData,
   type SaveFile,
 } from './save-load.js';
 import { useEditorStore } from './store.js';
@@ -27,6 +30,33 @@ export function saveProject(): void {
   const layout = useLayoutStore.getState();
   const cameras = { ...state.cameras, ...layout.recentPreviewCameras };
   const viewports = { ...state.viewports, ...layout.recentCanvasViewports };
+
+  // Workspace layout: DockView's serialized panel/group tree plus the
+  // layout-store's panel-keyed state. Restoring all of this on load
+  // brings back the user's full editing setup (which panels exist,
+  // which graph each is showing, the view in each panel).
+  const dockApi = getDockviewApi();
+  const layoutData: LayoutData = {};
+  if (state.currentEditingId !== 'main') {
+    layoutData.currentEditingId = state.currentEditingId;
+  }
+  if (dockApi) {
+    layoutData.dockview = dockApi.toJSON();
+  }
+  if (Object.keys(layout.canvasGraphIds).length > 0) {
+    layoutData.canvasGraphIds = layout.canvasGraphIds;
+  }
+  if (Object.keys(layout.pinnedGraphIds).length > 0) {
+    layoutData.pinnedGraphIds = layout.pinnedGraphIds;
+  }
+  if (Object.keys(layout.canvasViewports).length > 0) {
+    layoutData.canvasViewports = layout.canvasViewports;
+  }
+  if (Object.keys(layout.previewCameras).length > 0) {
+    layoutData.previewCameras = layout.previewCameras;
+  }
+  const hasLayout = Object.keys(layoutData).length > 0;
+
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
     project: {
@@ -37,9 +67,7 @@ export function saveProject(): void {
       ...(Object.keys(cameras).length > 0 ? { cameras } : {}),
       ...(Object.keys(viewports).length > 0 ? { viewports } : {}),
     },
-    ...(state.currentEditingId !== 'main'
-      ? { layout: { currentEditingId: state.currentEditingId } }
-      : {}),
+    ...(hasLayout ? { layout: layoutData } : {}),
   };
   const json = serializeSaveFile(file);
   const blob = new Blob([json], { type: 'application/json' });
@@ -73,17 +101,42 @@ export function loadProject(): void {
         project.viewports,
         project.folders,
       );
-      // Clear runtime LRU maps so the loaded project's viewports/cameras
-      // become the new defaults. Without this, stale entries from the
-      // previous session would shadow the loaded values (recentCanvas/
-      // PreviewCameras win over projectViewports / projectCameras in
-      // each panel's lookup chain). Per-panel state stays — existing
-      // panels keep their identity but will re-seed from the new
-      // project on next access.
+
+      // Workspace layout restore. Order matters:
+      //
+      //   1. Wholesale-replace the layout-store's panel-keyed maps with
+      //      the saved values (or empty if absent). This drops any
+      //      orphans from the previous session and pre-positions
+      //      pinnedGraphIds / canvasViewports / previewCameras to match
+      //      the panels DockView is about to recreate. recentCanvas*
+      //      LRU maps are cleared so the loaded project's viewports/
+      //      cameras become the new defaults.
+      //   2. Call dockApi.fromJSON. DockView fires onDidRemovePanel
+      //      for each existing panel — our App listener clears that
+      //      panel's canvasGraphIds entry (but not the others). So
+      //      after fromJSON, canvasGraphIds may be partially cleared.
+      //   3. Re-set canvasGraphIds from the saved value. dockview's
+      //      panel-mounts haven't reached React yet (synchronous
+      //      block), so each new panel's auto-pin effect sees the
+      //      restored value and skips its own default.
+      //   4. setActiveEditing for currentEditingId.
+      const dockApi = getDockviewApi();
       useLayoutStore.setState({
+        canvasGraphIds: layout?.canvasGraphIds ?? {},
+        pinnedGraphIds: layout?.pinnedGraphIds ?? {},
+        canvasViewports: layout?.canvasViewports ?? {},
+        previewCameras: layout?.previewCameras ?? {},
         recentCanvasViewports: {},
         recentPreviewCameras: {},
       });
+      if (dockApi && layout?.dockview) {
+        dockApi.fromJSON(layout.dockview as SerializedDockview);
+        // onDidRemovePanel during fromJSON cleared canvasGraphIds for
+        // every removed panel. Reapply.
+        if (layout.canvasGraphIds) {
+          useLayoutStore.setState({ canvasGraphIds: layout.canvasGraphIds });
+        }
+      }
       if (layout?.currentEditingId && layout.currentEditingId !== 'main') {
         useEditorStore.getState().setActiveEditing(layout.currentEditingId);
       }

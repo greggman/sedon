@@ -3,6 +3,11 @@ import { fromJSON, type Graph } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 import type { CameraState, ViewportState } from './store.js';
 
+// Workspace layout snapshot. Stored as an opaque blob so save-load
+// doesn't need a dependency on dockview types — file-ops casts to the
+// concrete `SerializedDockview` when handing it back.
+type DockviewLayoutSnapshot = unknown;
+
 // On-disk save format.
 //
 // v1: top-level graph + rootNodeId, no subgraphs.
@@ -47,12 +52,24 @@ export interface ProjectData {
 
 export interface LayoutData {
   /**
-   * Which editing id the main canvas was viewing when the file was
-   * saved. 'main' or a subgraph id. Optional even within layout — a
-   * layout block could in the future carry only window arrangement.
+   * Which editing id the global "active editing" pointer was at when
+   * the file was saved. 'main' or a subgraph id. Optional.
    */
   currentEditingId?: string;
-  // Phase 2 will add: dockview model, per-view graphId, etc.
+  /**
+   * DockView's serialized panel + group + split layout. Opaque from
+   * this module's perspective — file-ops casts back to dockview's
+   * `SerializedDockview` and hands to `api.fromJSON` on load.
+   */
+  dockview?: DockviewLayoutSnapshot;
+  /** Per-canvas-panel pinned graph id. */
+  canvasGraphIds?: Record<string, string>;
+  /** Per-preview-panel pinned graph id. */
+  pinnedGraphIds?: Record<string, string>;
+  /** Per-canvas-panel × per-graph viewport. */
+  canvasViewports?: Record<string, Record<string, ViewportState>>;
+  /** Per-preview-panel × per-graph camera. */
+  previewCameras?: Record<string, Record<string, CameraState>>;
 }
 
 export interface SaveFile {
@@ -131,8 +148,9 @@ export function parseSaveFile(text: string): SaveFile {
     project,
   };
 
-  // Layout block — v3 only. Defensive: only attach if it's an object
-  // with at least one known field.
+  // Layout block — v3 only. Defensive: only attach fields that match
+  // expected shapes. Unknown fields are silently dropped so older
+  // readers can ignore future additions.
   if (v === SAVE_FORMAT_VERSION) {
     const layoutRaw = parsed.layout;
     if (layoutRaw && typeof layoutRaw === 'object') {
@@ -140,6 +158,22 @@ export function parseSaveFile(text: string): SaveFile {
       const layout: LayoutData = {};
       if (typeof lr.currentEditingId === 'string') {
         layout.currentEditingId = lr.currentEditingId;
+      }
+      if (lr.dockview !== undefined && lr.dockview !== null) {
+        // Pass-through. dockview validates on its own fromJSON call.
+        layout.dockview = lr.dockview;
+      }
+      if (lr.canvasGraphIds && typeof lr.canvasGraphIds === 'object') {
+        layout.canvasGraphIds = lr.canvasGraphIds as Record<string, string>;
+      }
+      if (lr.pinnedGraphIds && typeof lr.pinnedGraphIds === 'object') {
+        layout.pinnedGraphIds = lr.pinnedGraphIds as Record<string, string>;
+      }
+      if (lr.canvasViewports && typeof lr.canvasViewports === 'object') {
+        layout.canvasViewports = lr.canvasViewports as Record<string, Record<string, ViewportState>>;
+      }
+      if (lr.previewCameras && typeof lr.previewCameras === 'object') {
+        layout.previewCameras = lr.previewCameras as Record<string, Record<string, CameraState>>;
       }
       if (Object.keys(layout).length > 0) {
         file.layout = layout;
