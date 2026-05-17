@@ -140,7 +140,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       const encoder = gpu.device.createCommandEncoder();
       renderer.render({
         encoder,
-        colorView: ctx.getCurrentTexture().createView(),
+        colorView: ctx.getCurrentTexture(),
         size: [canvas.width, canvas.height],
         modelView,
         projection,

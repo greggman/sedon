@@ -60,7 +60,7 @@ export interface SceneRenderer {
   render(params: {
     encoder: GPUCommandEncoder;
     /** Final swapchain view — the composite pass writes here. */
-    colorView: GPUTextureView;
+    colorView: GPUTextureView | GPUTexture;
     /**
      * Canvas backing-buffer size. The renderer manages depth + HDR scene
      * + bloom textures internally and (re)allocates them when this

@@ -94,7 +94,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       const encoder = device.createCommandEncoder();
       r.renderer.render({
         encoder,
-        colorView: ctx.getCurrentTexture().createView(),
+        colorView: ctx.getCurrentTexture(),
         size: [canvas.width, canvas.height],
         modelView,
         projection,

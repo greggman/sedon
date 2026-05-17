@@ -112,7 +112,7 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
       const encoder = device.createCommandEncoder();
       renderer.render({
         encoder,
-        colorView: ctx.getCurrentTexture().createView(),
+        colorView: ctx.getCurrentTexture(),
         size: [canvas.width, canvas.height],
         modelView,
         projection,

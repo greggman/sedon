@@ -75,7 +75,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: ctx.getCurrentTexture().createView(),
+          view: ctx.getCurrentTexture(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
           loadOp: 'clear',
           storeOp: 'store',
