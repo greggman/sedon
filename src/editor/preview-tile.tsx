@@ -75,16 +75,27 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     };
   }, [gpu]);
 
-  // Build a scene renderer whenever the synthesized scene changes. New
-  // scene every eval, but reference-equal across frames so the renderer
-  // stays put between eval boundaries. Format-change rebuilds (popout
-  // to a different-preferred-format window) are handled inside the
-  // draw fn rather than via popoutGen here.
+  // Build the SceneRenderer once per (device, format). The renderer
+  // owns its pipelines, samplers, shadow texture, depth/HDR/bloom
+  // intermediates, scene/sky/shadow uniform buffers — all of which
+  // are scene-independent and shouldn't churn on every material edit.
+  // The per-scene batch list is pushed in via the separate setScene
+  // effect below. Destroy cleans up the per-canvas-size intermediates
+  // (depth + HDR + bloom mips) on unmount to avoid GPU memory leaks.
   useEffect(() => {
-    rendererRef.current = createSceneRenderer(gpu.device, gpu.format, scene);
+    const renderer = createSceneRenderer(gpu.device, gpu.format);
+    rendererRef.current = renderer;
     return () => {
-      rendererRef.current = null;
+      renderer.destroy();
+      if (rendererRef.current === renderer) rendererRef.current = null;
     };
+  }, [gpu]);
+
+  // Push the latest synthesized scene into the renderer. Just rebuilds
+  // batches (per-entity instance buffers + per-material bind groups);
+  // everything else in the renderer stays alive between calls.
+  useEffect(() => {
+    rendererRef.current?.setScene(scene);
   }, [gpu, scene]);
 
   // Render-on-demand. The render closure captures current scene / lighting
@@ -118,9 +129,15 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         fresh.configure({ device: gpu.device, format, alphaMode: 'premultiplied' });
         ctxRef.current = fresh;
         configuredDocRef.current = canvas.ownerDocument;
-        rendererRef.current = createSceneRenderer(gpu.device, format, scene);
+        // Format may have changed across the popout, so the renderer
+        // built against the old format is stale. Destroy + rebuild and
+        // re-push the current scene.
+        renderer?.destroy();
+        const next = createSceneRenderer(gpu.device, format);
+        next.setScene(scene);
+        rendererRef.current = next;
         ctx = fresh;
-        renderer = rendererRef.current;
+        renderer = next;
       }
       const cam = cameraRef.current;
       const aspect = canvas.width / canvas.height;

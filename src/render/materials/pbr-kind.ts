@@ -130,7 +130,7 @@ export function createPbrKind(
       paramData[5] = material.alphaCutoff ?? 0;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
 
-      return device.createBindGroup({
+      const bindGroup = device.createBindGroup({
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: material.basecolor.texture },
@@ -140,6 +140,7 @@ export function createPbrKind(
           { binding: 4, resource: detailNormalTex.texture },
         ],
       });
+      return { bindGroup, ownedBuffers: [paramBuffer] };
     },
   };
 }

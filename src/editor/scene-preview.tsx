@@ -75,13 +75,24 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
   // pre-bakes pipelines + per-entity bind groups, so we cannot re-use it
   // across scenes — but it stays put across eval rounds when the scene
   // value is reference-equal.
+  // Renderer lives across scene changes — same pattern as PreviewTile.
+  // Without this, every eval-driven scene replacement would destroy +
+  // recreate the depth + HDR + 6 bloom mip textures inside the
+  // renderer, multiplied by however many asset thumbnails are
+  // visible. Splitting create from setScene keeps those alive.
   useEffect(() => {
     const format = formatRef.current;
     if (!format) return;
-    rendererRef.current = createSceneRenderer(device, format, scene);
+    const renderer = createSceneRenderer(device, format);
+    rendererRef.current = renderer;
     return () => {
-      rendererRef.current = null;
+      renderer.destroy();
+      if (rendererRef.current === renderer) rendererRef.current = null;
     };
+  }, [device]);
+
+  useEffect(() => {
+    rendererRef.current?.setScene(scene);
   }, [device, scene]);
 
   // Single render on mount and whenever the scene / camera changes.

@@ -1,4 +1,5 @@
 import type { MaterialValue, Texture2DValue } from '../core/resources.js';
+import { getSampler } from './gpu-cache.js';
 
 // Per-material-kind extension point. A kind owns its shader, its pipeline,
 // and the function that builds a @group(1) bind group for one of its
@@ -49,10 +50,18 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
    */
   pickPipeline?(material: M): GPURenderPipeline;
   /**
-   * Build a @group(1) bind group for one material instance. Called once per
-   * unique material at scene-renderer construction time, not per frame.
+   * Build a @group(1) bind group for one material instance. Called by
+   * the SceneRenderer's `setScene` for every batch in the new scene.
+   *
+   * Returns both the bind group AND the GPU buffers it owns (typically
+   * a single small uniform buffer with per-material scalars). The
+   * renderer keeps these buffer handles on the Batch and explicitly
+   * `.destroy()`s them when the batch is replaced by the next
+   * `setScene` — without that, dragging a slider produces a stream of
+   * leaked uniform buffers (one per material per edit) that GC
+   * eventually claims but accumulates in the meantime.
    */
-  buildBindGroup(material: M): GPUBindGroup;
+  buildBindGroup(material: M): { bindGroup: GPUBindGroup; ownedBuffers: GPUBuffer[] };
 }
 
 /**
@@ -111,8 +120,13 @@ export function createSceneBindGroupLayout(device: GPUDevice): GPUBindGroupLayou
   });
 }
 
+// Both samplers route through the gpu-cache so repeated SceneRenderer
+// rebuilds (one per scene change — e.g. every material edit) reuse the
+// same GPUSampler. createSampler is cheap but it's also the most
+// visible "WebGPU work" the user sees when watching for allocations
+// during edit-time scrubbing, and there's no reason these vary at all.
 export function createSharedSampler(device: GPUDevice): GPUSampler {
-  return device.createSampler({
+  return getSampler(device, {
     magFilter: 'linear',
     minFilter: 'linear',
     mipmapFilter: 'linear',
@@ -129,7 +143,7 @@ export function createSharedSampler(device: GPUDevice): GPUSampler {
 // occluded → 1. clamp-to-edge so fragments outside the shadow extent
 // don't wrap to garbage.
 export function createShadowSampler(device: GPUDevice): GPUSampler {
-  return device.createSampler({
+  return getSampler(device, {
     compare: 'greater-equal',
     magFilter: 'linear',
     minFilter: 'linear',
@@ -169,10 +183,19 @@ export function instanceVertexBuffers(): GPUVertexBufferLayout[] {
   ];
 }
 
+// Per-device singletons for the 1×1 placeholder textures. They never
+// vary — the pixel data is hard-coded — so reusing the same GPUTexture
+// across every SceneRenderer rebuild costs nothing and avoids the
+// stream of 1×1 createTexture calls visible while debugging edits.
+const flatNormalCache = new WeakMap<GPUDevice, Texture2DValue>();
+const flatHalfCache = new WeakMap<GPUDevice, Texture2DValue>();
+
 // Tangent-space "no perturbation": (0, 0, 1) → (0.5, 0.5, 1.0) when packed
 // into rgba8unorm. PBR materials with no normal map use this so the bind
 // group layout stays uniform.
 export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
+  const cached = flatNormalCache.get(device);
+  if (cached) return cached;
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
     size: [1, 1],
@@ -186,18 +209,22 @@ export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
     { bytesPerRow: 4 },
     [1, 1],
   );
-  return {
+  const result: Texture2DValue = {
     texture,
     format,
     width: 1,
     height: 1,
   };
+  flatNormalCache.set(device, result);
+  return result;
 }
 
 // 1×1 mid-grey (R=0.5). Used as the no-op placeholder for detail-basecolor:
 // the shader does `1 + (sample - 0.5) * 2 * strength`, so sample=0.5 leaves
 // albedo untouched regardless of strength.
 export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
+  const cached = flatHalfCache.get(device);
+  if (cached) return cached;
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
     size: [1, 1],
@@ -211,12 +238,14 @@ export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
     { bytesPerRow: 4 },
     [1, 1],
   );
-  return {
+  const result: Texture2DValue = {
     texture,
     format,
     width: 1,
     height: 1,
   };
+  flatHalfCache.set(device, result);
+  return result;
 }
 
 // Common depth-stencil config — reverse-Z float depth, 'greater' compare.

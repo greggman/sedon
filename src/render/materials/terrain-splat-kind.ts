@@ -78,7 +78,7 @@ export function createTerrainSplatKind(
       const normalA = material.normalA ?? ensureFlat();
       const normalB = material.normalB ?? ensureFlat();
 
-      return device.createBindGroup({
+      const bindGroup = device.createBindGroup({
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: material.layerA.texture },
@@ -89,6 +89,7 @@ export function createTerrainSplatKind(
           { binding: 5, resource: normalB.texture },
         ],
       });
+      return { bindGroup, ownedBuffers: [paramBuffer] };
     },
   };
 }

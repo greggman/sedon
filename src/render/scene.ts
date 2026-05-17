@@ -15,6 +15,7 @@ import {
 } from './material-kind.js';
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
+import { getSampler } from './gpu-cache.js';
 import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
 import bloomUpsampleShaderCode from './bloom-upsample.wgsl';
 import brightPassShaderCode from './bright-pass.wgsl';
@@ -29,6 +30,25 @@ import skyShaderCode from './sky.wgsl';
 // box is centered on the camera target each frame so the user can navigate
 // without falling out of the shadowed region.
 const SHADOW_MAP_SIZE = 2048;
+
+// Per-device singleton for the shadow map. Its size is fixed, it's
+// fully overwritten each shadow pass (no carryover state), and only
+// one SceneRenderer is active per device at a time — so reusing the
+// same GPUTexture across renderer rebuilds is safe and avoids a
+// 2048² depth-texture allocation on every scene change.
+const shadowTextureCache = new WeakMap<GPUDevice, GPUTexture>();
+function getShadowTexture(device: GPUDevice): GPUTexture {
+  let tex = shadowTextureCache.get(device);
+  if (!tex) {
+    tex = device.createTexture({
+      size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
+      format: 'depth32float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    shadowTextureCache.set(device, tex);
+  }
+  return tex;
+}
 const SHADOW_HALF_EXTENT = 75;       // ortho XY half-size (150m total each axis)
 const SHADOW_EYE_DISTANCE = 200;     // light "eye" offset from target along light dir
 const SHADOW_NEAR = 50;
@@ -57,6 +77,15 @@ const BLOOM_MIP_COUNT = 6;
 // live in defaultLighting() (resources.ts).
 
 export interface SceneRenderer {
+  /**
+   * Update the per-scene batch list. Called whenever the SceneValue
+   * coming from the eval pipeline changes (every material edit, every
+   * topology change). Cheap compared to recreating the renderer:
+   * pipelines, samplers, layouts, shadow texture, post-process
+   * intermediates all stay alive — only the per-entity instance
+   * buffers and per-material bind groups get rebuilt.
+   */
+  setScene(scene: SceneValue): void;
   render(params: {
     encoder: GPUCommandEncoder;
     /** Final swapchain view — the composite pass writes here. */
@@ -85,6 +114,13 @@ export interface SceneRenderer {
      */
     flatPreview?: boolean;
   }): void;
+  /**
+   * Free the renderer's owned GPU resources (depth + HDR + bloom mip
+   * textures). Call when the renderer is being discarded — e.g. on
+   * PreviewTile unmount. Cached device-level resources (samplers,
+   * pipelines, etc.) survive because they're shared.
+   */
+  destroy(): void;
 }
 
 interface Batch {
@@ -94,6 +130,13 @@ interface Batch {
   materialBindGroup: GPUBindGroup;
   instanceBuffer: GPUBuffer;
   instanceCount: number;
+  /**
+   * GPU buffers owned exclusively by this batch — its per-material
+   * uniform buffer + the instance buffer. Destroyed when setScene
+   * replaces the batch list, so dragging a parameter slider doesn't
+   * leak a stream of unreachable-but-undestroyed buffers.
+   */
+  ownedBuffers: GPUBuffer[];
 }
 
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
@@ -219,7 +262,6 @@ function createPostProcessPipeline(
 export function createSceneRenderer(
   device: GPUDevice,
   format: GPUTextureFormat,
-  scene: SceneValue,
 ): SceneRenderer {
   // Shared resources used by every material kind.
   const sceneBindGroupLayout = createSceneBindGroupLayout(device);
@@ -227,12 +269,9 @@ export function createSceneRenderer(
   const shadowSampler = createShadowSampler(device);
 
   // Shadow map texture — depth-only, written by the shadow pass, sampled
-  // by every kind's color shader.
-  const shadowTexture = device.createTexture({
-    size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
-    format: 'depth32float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-  });
+  // by every kind's color shader. Per-device cached so SceneRenderer
+  // rebuilds (one per scene change) don't churn 2048² depth textures.
+  const shadowTexture = getShadowTexture(device);
 
   // 256 bytes: three mat4x4f (modelView, projection, lightViewProj) +
   // three vec3-with-padding lighting blocks (lightDirWorld, lightColor,
@@ -344,8 +383,10 @@ export function createSceneRenderer(
   );
 
   // Bloom samples with clamp-to-edge so the kernel doesn't smear in
-  // pixels from the opposite edge of the texture.
-  const postSampler = device.createSampler({
+  // pixels from the opposite edge of the texture. Routed through the
+  // gpu-cache so renderer rebuilds (per scene change) reuse the same
+  // sampler.
+  const postSampler = getSampler(device, {
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -474,70 +515,142 @@ export function createSceneRenderer(
     lastHeight = height;
   }
 
-  // Group entities by (kind, geometry, material) reference equality. Sorting
-  // by kind first means we minimize pipeline switches in the render loop.
-  const groupsByKind = new Map<
-    MaterialValue['kind'],
-    Map<GeometryValue, Map<MaterialValue, SceneEntity[]>>
-  >();
-  for (const entity of scene.entities) {
-    const k = entity.material.kind;
-    let byGeometry = groupsByKind.get(k);
-    if (!byGeometry) {
-      byGeometry = new Map();
-      groupsByKind.set(k, byGeometry);
-    }
-    let byMaterial = byGeometry.get(entity.geometry);
-    if (!byMaterial) {
-      byMaterial = new Map();
-      byGeometry.set(entity.geometry, byMaterial);
-    }
-    let entities = byMaterial.get(entity.material);
-    if (!entities) {
-      entities = [];
-      byMaterial.set(entity.material, entities);
-    }
-    entities.push(entity);
-  }
+  // Per-scene state. Empty until setScene is first called — render() is
+  // a no-op for the scene pass in that case (sky/composite still run).
+  // Each setScene call rebuilds these from the new scene; the previous
+  // batches' instance buffers leak to GC (small, short-lived) but
+  // material bind groups don't own GPU resources beyond what their
+  // referenced materials hold.
+  let batches: Batch[] = [];
 
-  const batches: Batch[] = [];
-  for (const [kindId, byGeometry] of groupsByKind) {
-    const kind = kinds.get(kindId);
-    if (!kind) {
-      throw new Error(`unknown material kind: ${kindId}`);
-    }
-    for (const [geometry, byMaterial] of byGeometry) {
-      for (const [material, entities] of byMaterial) {
-        const instanceCount = entities.length;
-        const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
-        for (let i = 0; i < instanceCount; i++) {
-          const e = entities[i]!;
-          instanceData.set(e.transform, i * INSTANCE_FLOATS);
-          instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
-        }
-        const instanceBuffer = device.createBuffer({
-          size: instanceData.byteLength,
-          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
-
-        const materialBindGroup = (
-          kind.buildBindGroup as (m: MaterialValue) => GPUBindGroup
-        )(material);
-
-        batches.push({
-          kindId,
-          material,
-          geometry,
-          materialBindGroup,
-          instanceBuffer,
-          instanceCount,
-        });
+  function destroyBatch(b: Batch): void {
+    for (const buf of b.ownedBuffers) {
+      try {
+        buf.destroy();
+      } catch {
+        // Buffer may have been double-destroyed during teardown;
+        // ignore — same defensive idiom as sweepCache uses.
       }
     }
   }
 
+  function setScene(scene: SceneValue): void {
+    // Group entities by (kind, geometry, material) reference equality.
+    // Sorting by kind first means we minimize pipeline switches in the
+    // render loop.
+    const groupsByKind = new Map<
+      MaterialValue['kind'],
+      Map<GeometryValue, Map<MaterialValue, SceneEntity[]>>
+    >();
+    for (const entity of scene.entities) {
+      const k = entity.material.kind;
+      let byGeometry = groupsByKind.get(k);
+      if (!byGeometry) {
+        byGeometry = new Map();
+        groupsByKind.set(k, byGeometry);
+      }
+      let byMaterial = byGeometry.get(entity.geometry);
+      if (!byMaterial) {
+        byMaterial = new Map();
+        byGeometry.set(entity.geometry, byMaterial);
+      }
+      let entities = byMaterial.get(entity.material);
+      if (!entities) {
+        entities = [];
+        byMaterial.set(entity.material, entities);
+      }
+      entities.push(entity);
+    }
+
+    const next: Batch[] = [];
+    for (const [kindId, byGeometry] of groupsByKind) {
+      const kind = kinds.get(kindId);
+      if (!kind) {
+        throw new Error(`unknown material kind: ${kindId}`);
+      }
+      for (const [geometry, byMaterial] of byGeometry) {
+        for (const [material, entities] of byMaterial) {
+          const instanceCount = entities.length;
+          const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
+          for (let i = 0; i < instanceCount; i++) {
+            const e = entities[i]!;
+            instanceData.set(e.transform, i * INSTANCE_FLOATS);
+            instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
+          }
+          const instanceBuffer = device.createBuffer({
+            size: instanceData.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
+
+          const built = (
+            kind.buildBindGroup as (m: MaterialValue) => {
+              bindGroup: GPUBindGroup;
+              ownedBuffers: GPUBuffer[];
+            }
+          )(material);
+
+          next.push({
+            kindId,
+            material,
+            geometry,
+            materialBindGroup: built.bindGroup,
+            instanceBuffer,
+            instanceCount,
+            // Instance buffer + material's uniform buffers — all owned
+            // by this batch. setScene's next call destroys the previous
+            // batch's buffers; without that, every slider tick leaks a
+            // pile of unreachable GPUBuffers waiting on GC.
+            ownedBuffers: [instanceBuffer, ...built.ownedBuffers],
+          });
+        }
+      }
+    }
+    // Destroy the OLD batches' buffers now that nothing references
+    // them. Safe even if a render is in flight: WebGPU defers physical
+    // destruction until any in-flight submit completes.
+    for (const b of batches) destroyBatch(b);
+    batches = next;
+  }
+
+  function destroy(): void {
+    // Size-bound intermediates.
+    depthTexture?.destroy();
+    hdrColor?.destroy();
+    for (const t of bloomMips) t.destroy();
+    // Bloom mip per-level (1/w, 1/h) uniform buffers allocated alongside
+    // the mip chain in rebuildIntermediates.
+    for (const buf of bloomMipParamBuffers) {
+      try { buf.destroy(); } catch { /* double-destroy guard */ }
+    }
+    // The renderer's own uniform buffers — created once at construction
+    // and live for the renderer's full lifetime. Without these destroys
+    // the per-PreviewTile renderer leaks 5 small uniform buffers every
+    // time the tile unmounts.
+    try { sceneUniformBuffer.destroy(); } catch { /* */ }
+    try { shadowUniformBuffer.destroy(); } catch { /* */ }
+    try { skyUniformBuffer.destroy(); } catch { /* */ }
+    try { brightPassUniform.destroy(); } catch { /* */ }
+    try { compositeUniform.destroy(); } catch { /* */ }
+    // Per-batch instance + material param buffers.
+    for (const b of batches) destroyBatch(b);
+    depthTexture = null;
+    hdrColor = null;
+    hdrColorView = null;
+    bloomMips = [];
+    bloomMipViews = [];
+    bloomMipParamBuffers = [];
+    pyramidBindGroups = [];
+    brightPassBindGroup = null;
+    compositeBindGroup = null;
+    batches = [];
+    lastWidth = 0;
+    lastHeight = 0;
+  }
+
   return {
+    setScene,
+    destroy,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false }) {
       const [width, height] = size;
       if (width !== lastWidth || height !== lastHeight) {

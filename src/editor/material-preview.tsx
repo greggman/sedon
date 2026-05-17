@@ -18,16 +18,12 @@ interface MaterialPreviewProps {
   size?: number;
 }
 
-interface RenderResources {
-  renderer: SceneRenderer;
-  geometry: GeometryValue;
-}
-
 export function MaterialPreview({ device, material, size = 128 }: MaterialPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
-  const resourcesRef = useRef<RenderResources | null>(null);
+  const rendererRef = useRef<SceneRenderer | null>(null);
+  const geometryRef = useRef<GeometryValue | null>(null);
   const cameraRef = useRef({ yaw: 0, pitch: 0.4, distance: 3 });
 
   const [shape, setShape] = useState<Shape>('sphere');
@@ -50,30 +46,54 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
   }, [device]);
 
   // Pointer handlers (set up once on mount) call renderRef.current() to
-  // re-render after camera updates. The geometry effect installs the real
-  // function; until then it's a no-op.
+  // re-render after camera updates. The render-install effect below
+  // installs the real function; until then it's a no-op.
   const renderRef = useRef<() => void>(() => {});
 
-  // Build geometry + scene renderer + render function when shape or material
-  // changes. The render function is installed BEFORE the initial render() call
-  // so the first frame paints — that was the previous bug (the function
-  // wasn't installed until a separate effect that ran later).
+  // The SceneRenderer is device+format-stable. Creating + destroying it
+  // on every material edit was destroying 8+ GPU textures (depth + HDR
+  // + 6 bloom mips) per edit per visible preview — a single material
+  // slider scrub was producing dozens of allocations. Now it's one
+  // renderer for the lifetime of the device.
   useEffect(() => {
     const format = formatRef.current;
     if (!format) return;
+    const renderer = createSceneRenderer(device, format);
+    rendererRef.current = renderer;
+    return () => {
+      renderer.destroy();
+      if (rendererRef.current === renderer) rendererRef.current = null;
+    };
+  }, [device]);
 
+  // Geometry is shape-dependent. The mesh + GPU buffers stay alive
+  // across material edits — only changing the sphere/cube toggle
+  // reallocates them.
+  useEffect(() => {
     const mesh = shape === 'sphere' ? generateSphere(1, 32, 16) : generateCube(1.4);
     const geometry = uploadMeshToGpu(device, mesh);
-    const renderer = createSceneRenderer(device, format, {
+    geometryRef.current = geometry;
+    return () => {
+      destroyGeometry(geometry);
+      if (geometryRef.current === geometry) geometryRef.current = null;
+    };
+  }, [device, shape]);
+
+  // Push the (geometry + material) scene into the renderer and install
+  // the render fn. Only this effect fires on a material edit; the
+  // renderer keeps all its GPU resources.
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const geometry = geometryRef.current;
+    if (!renderer || !geometry) return;
+    renderer.setScene({
       entities: [{ geometry, material, transform: identity(), tint: identityTint() }],
     });
-    resourcesRef.current = { renderer, geometry };
 
     const render = () => {
       const ctx = ctxRef.current;
-      const r = resourcesRef.current;
       const canvas = canvasRef.current;
-      if (!ctx || !r || !canvas) return;
+      if (!ctx || !canvas) return;
 
       const cam = cameraRef.current;
       const aspect = canvas.width / canvas.height;
@@ -92,7 +112,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       const previewLighting = defaultLighting();
 
       const encoder = device.createCommandEncoder();
-      r.renderer.render({
+      renderer.render({
         encoder,
         colorView: ctx.getCurrentTexture(),
         size: [canvas.width, canvas.height],
@@ -106,10 +126,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
 
     renderRef.current = render;
     render();
-
     return () => {
-      destroyGeometry(geometry);
-      resourcesRef.current = null;
       renderRef.current = () => {};
     };
   }, [device, material, shape]);
