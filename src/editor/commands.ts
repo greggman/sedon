@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { getActiveAssetPanel } from './asset-clipboard.js';
 import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
@@ -86,6 +87,46 @@ function buildCommands(): PaletteCommand[] {
       id: 'view.new-assets',
       label: 'View: Create Asset View',
       run: () => createPanel('assets', 'Assets'),
+    },
+    // Assets panel actions. These route through the most-recently-
+    // focused AssetsPanel via the asset-clipboard bus, so the user can
+    // run "Copy selected" from the palette without first re-focusing
+    // the panel. No-ops if no AssetsPanel is mounted.
+    {
+      id: 'assets.cut',
+      label: 'Assets: Cut Selected',
+      shortcut: 'Cmd/Ctrl+X',
+      run: () => getActiveAssetPanel()?.performCut(),
+    },
+    {
+      id: 'assets.copy',
+      label: 'Assets: Copy Selected',
+      shortcut: 'Cmd/Ctrl+C',
+      run: () => getActiveAssetPanel()?.performCopy(),
+    },
+    {
+      id: 'assets.paste',
+      label: 'Assets: Paste',
+      shortcut: 'Cmd/Ctrl+V',
+      run: () => getActiveAssetPanel()?.performPaste(),
+    },
+    {
+      id: 'assets.duplicate',
+      label: 'Assets: Duplicate Selected',
+      shortcut: 'Cmd/Ctrl+D',
+      run: () => getActiveAssetPanel()?.performDuplicate(),
+    },
+    {
+      id: 'assets.delete',
+      label: 'Assets: Delete Selected',
+      shortcut: 'Delete',
+      run: () => getActiveAssetPanel()?.performDelete(),
+    },
+    {
+      id: 'assets.select-all',
+      label: 'Assets: Select All',
+      shortcut: 'Cmd/Ctrl+A',
+      run: () => getActiveAssetPanel()?.performSelectAll(),
     },
   ];
 }

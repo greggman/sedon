@@ -3,7 +3,7 @@ import type { IDockviewPanelProps } from 'dockview';
 import { useRef } from 'react';
 import { wouldCreateCycle } from '../core/folder.js';
 import { AddNodeMenu } from './add-node-menu.js';
-import { AssetsPanel, ASSET_DND_TYPE, type AssetDndPayload } from './assets-panel.js';
+import { AssetsPanel, ASSET_DND_TYPE, type AssetDndItem } from './assets-panel.js';
 import { useLayoutStore } from './layout-store.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
@@ -36,16 +36,20 @@ function NodeCanvasPanelInner({ panelId }: { panelId: string }) {
   const addNode = useEditorStore((s) => s.addNode);
 
   // Accept drops from the Assets view: an `application/sedon-asset`
-  // payload with `kind: 'subgraph'` instantiates a wrapper of that
-  // subgraph at the drop point. Folder-kind drops are ignored here —
-  // they only mean something inside the Asset view.
+  // payload is a JSON array of `AssetDndItem`s. Each subgraph item
+  // becomes a wrapper instance at the drop point; folder and main
+  // items are ignored here (they only mean something to the Asset view
+  // or the Preview pane respectively). Multiple wrappers are staggered
+  // by a small offset so they don't overlap on the canvas.
   //
   // Cycle prevention: a wrapper of subgraph X can't be dropped into
   // X's own inner graph (or anywhere that's already reachable from X
   // via wrapper chains). `wouldCreateCycle` walks the candidate
   // forward and refuses any drop that would close the loop. Without
   // this, evaluator hits MAX_SUBGRAPH_DEPTH at run time — better to
-  // never let the user author the cycle in the first place.
+  // never let the user author the cycle in the first place. Cycle
+  // failures in a multi-drop skip just the offending item; the rest
+  // still drop.
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
       e.preventDefault();
@@ -56,32 +60,46 @@ function NodeCanvasPanelInner({ panelId }: { panelId: string }) {
     const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
     if (!raw) return;
     e.preventDefault();
-    let payload: AssetDndPayload;
+    let items: AssetDndItem[];
     try {
-      payload = JSON.parse(raw) as AssetDndPayload;
+      items = JSON.parse(raw) as AssetDndItem[];
     } catch {
       return;
     }
-    if (payload.kind !== 'subgraph') return;
     const state = useEditorStore.getState();
-    if (wouldCreateCycle(state.currentEditingId, payload.id, state.subgraphs)) {
+    const basePosition = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const offsetStep = 24;
+    let placed = 0;
+    const skipped: string[] = [];
+    for (const item of items) {
+      if (item.kind !== 'subgraph') continue;
+      if (wouldCreateCycle(state.currentEditingId, item.id, state.subgraphs)) {
+        const sg = state.subgraphs.find((s) => s.id === item.id);
+        skipped.push(sg?.label ?? item.id);
+        continue;
+      }
+      const sg = state.subgraphs.find((s) => s.id === item.id);
+      if (!sg) continue;
+      const id = crypto.randomUUID();
+      const position = {
+        x: basePosition.x + placed * offsetStep,
+        y: basePosition.y + placed * offsetStep,
+      };
+      rf.addNodes({
+        id,
+        type: 'sedon',
+        position,
+        data: { kind: `subgraph/${sg.id}` },
+      });
+      addNode({ id, kind: `subgraph/${sg.id}`, position });
+      placed++;
+    }
+    if (skipped.length > 0) {
       // eslint-disable-next-line no-alert
       window.alert(
-        `Can't drop "${payload.id}" here — it would create a subgraph cycle.`,
+        `Skipped ${skipped.length} item${skipped.length === 1 ? '' : 's'} that would create subgraph cycles: ${skipped.join(', ')}`,
       );
-      return;
     }
-    const sg = state.subgraphs.find((s) => s.id === payload.id);
-    if (!sg) return;
-    const id = crypto.randomUUID();
-    const position = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    rf.addNodes({
-      id,
-      type: 'sedon',
-      position,
-      data: { kind: `subgraph/${sg.id}` },
-    });
-    addNode({ id, kind: `subgraph/${sg.id}`, position });
   };
 
   return (
@@ -113,17 +131,17 @@ export function PreviewPanel(props: IDockviewPanelProps) {
     const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
     if (!raw) return;
     e.preventDefault();
-    let payload: AssetDndPayload;
+    let items: AssetDndItem[];
     try {
-      payload = JSON.parse(raw) as AssetDndPayload;
+      items = JSON.parse(raw) as AssetDndItem[];
     } catch {
       return;
     }
-    // Both subgraph and main are valid pin targets — main pins this
-    // Preview to the project's root graph (same effect as picking
-    // "Main" from the dropdown). Folders aren't pinnable.
-    if (payload.kind !== 'subgraph' && payload.kind !== 'main') return;
-    useLayoutStore.getState().setPanelPinnedGraph(panelId, payload.id);
+    // Preview only pins to one graph, so a multi-drop picks the first
+    // pinnable item (subgraph or main). Folder items are ignored.
+    const pinnable = items.find((it) => it.kind === 'subgraph' || it.kind === 'main');
+    if (!pinnable) return;
+    useLayoutStore.getState().setPanelPinnedGraph(panelId, pinnable.id);
   };
   return (
     <div

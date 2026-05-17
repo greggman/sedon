@@ -5,6 +5,14 @@ import { wouldCreateFolderCycle } from '../core/folder.js';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
 import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
 import {
+  cloneFolderSubtree,
+  cloneSubgraphDef,
+  countBrokenRefs as countBrokenRefsImpl,
+  nextCopyLabel,
+  pruneNestedSelection,
+  type AssetSelection,
+} from './asset-ops.js';
+import {
   applyBackward,
   applyForward,
   type Command,
@@ -124,6 +132,54 @@ export interface EditorState {
    * folder into itself or one of its descendants). Undoable.
    */
   moveFolderToFolder: (folderId: string, newParentId: string | null) => void;
+
+  /**
+   * Batched delete of any mix of subgraphs + folders. Single undo step.
+   * Folders in the selection are removed; their direct children (not
+   * already in the deletion set) re-parent to the deleted folder's
+   * parent — matching the existing single-folder behavior. Wrapper
+   * nodes in OTHER graphs that referenced removed subgraphs are left
+   * dangling on purpose; undo restores everything.
+   */
+  deleteAssets: (selection: AssetSelection) => void;
+
+  /**
+   * Deep-clone a mix of subgraphs + folders into their original parent
+   * folders. Single undo step. Each clone is renamed "X copy" (or "X
+   * copy 2", …) to avoid colliding with the source. Returns the new
+   * ids so the caller can update its selection to the freshly-created
+   * items.
+   */
+  duplicateAssets: (selection: AssetSelection) => AssetSelection;
+
+  /**
+   * Batched re-parent of selected subgraphs + folders into
+   * `targetFolderId` (null = project root). Single undo step. Used by
+   * multi-item drag and by paste-of-cut. Refuses to move a folder into
+   * itself or any of its descendants.
+   */
+  moveAssets: (selection: AssetSelection, targetFolderId: string | null) => void;
+
+  /**
+   * Deep-clone a selection into `targetFolderId`. Single undo step.
+   * Used by paste-of-copy. Differs from `duplicateAssets` in that the
+   * destination is explicit instead of the original parent; differs
+   * from `moveAssets` in that it produces clones, not in-place moves.
+   */
+  pasteCopyAssets: (
+    selection: AssetSelection,
+    targetFolderId: string | null,
+  ) => AssetSelection;
+
+  /**
+   * Read-only check: how many wrapper nodes across all graphs would
+   * become dangling if the given subgraph ids were deleted? Used by
+   * the delete-confirm dialog so the user can see the blast radius.
+   */
+  countBrokenRefs: (subgraphIds: ReadonlySet<string>) => {
+    refs: number;
+    graphs: number;
+  };
 
   /** Rename a folder. No-op on whitespace-only or unchanged labels. Undoable. */
   renameFolder: (folderId: string, newLabel: string) => void;
@@ -483,6 +539,231 @@ export const useEditorStore = create<EditorState>((set, get) => {
         ...projectSnapshot(),
         subgraphs,
       });
+    },
+
+    deleteAssets: (selection) => {
+      const state = get();
+      const pruned = pruneNestedSelection(selection, state.folders, state.subgraphs);
+      if (pruned.subgraphIds.length === 0 && pruned.folderIds.length === 0) return;
+      const deletedFolders = new Set(pruned.folderIds);
+      const deletedSubgraphs = new Set(pruned.subgraphIds);
+      const folderById = new Map(state.folders.map((f) => [f.id, f]));
+      // Walk up the parent chain skipping any folder that's also being
+      // deleted, so surviving children land on the closest ancestor that
+      // remains. Same idea as the existing single-folder `deleteFolder`.
+      const resolveParent = (parentId: string | null): string | null => {
+        let cursor = parentId;
+        while (cursor !== null && deletedFolders.has(cursor)) {
+          cursor = folderById.get(cursor)?.parentFolderId ?? null;
+        }
+        return cursor;
+      };
+      const folders = state.folders
+        .filter((f) => !deletedFolders.has(f.id))
+        .map((f) => {
+          const next = resolveParent(f.parentFolderId);
+          return next === f.parentFolderId ? f : { ...f, parentFolderId: next };
+        });
+      const subgraphs = state.subgraphs
+        .filter((s) => !deletedSubgraphs.has(s.id))
+        .map((s) => {
+          const cur = s.parentFolderId ?? null;
+          const next = resolveParent(cur);
+          return next === cur ? s : { ...s, parentFolderId: next };
+        });
+      dispatchProject({
+        ...projectSnapshot(),
+        folders,
+        subgraphs,
+      });
+    },
+
+    duplicateAssets: (selection) => {
+      const state = get();
+      const pruned = pruneNestedSelection(selection, state.folders, state.subgraphs);
+      if (pruned.subgraphIds.length === 0 && pruned.folderIds.length === 0) {
+        return { subgraphIds: [], folderIds: [] };
+      }
+      // labels-in-parent helper, with a working copy so reservations
+      // for one clone don't collide with the next when we duplicate two
+      // sibling assets in a row.
+      const labelsByParent = new Map<string | null, Set<string>>();
+      const getLabelsIn = (parentId: string | null): Set<string> => {
+        let s = labelsByParent.get(parentId);
+        if (s) return s;
+        s = new Set<string>();
+        for (const f of state.folders) {
+          if ((f.parentFolderId ?? null) === parentId) s.add(f.label);
+        }
+        for (const sg of state.subgraphs) {
+          if ((sg.parentFolderId ?? null) === parentId) s.add(sg.label);
+        }
+        labelsByParent.set(parentId, s);
+        return s;
+      };
+
+      const newSubgraphs: SubgraphDef[] = [];
+      const newFolders: Folder[] = [];
+      const newSubgraphIds: string[] = [];
+      const newFolderIds: string[] = [];
+
+      // Direct subgraphs first — each clone goes into the source's
+      // parent folder, gets a fresh "copy" label, fresh id.
+      for (const id of pruned.subgraphIds) {
+        const sg = state.subgraphs.find((s) => s.id === id);
+        if (!sg) continue;
+        const parentId = sg.parentFolderId ?? null;
+        const labels = getLabelsIn(parentId);
+        const label = nextCopyLabel(labels, sg.label);
+        labels.add(label);
+        const newId = crypto.randomUUID();
+        newSubgraphs.push(cloneSubgraphDef(sg, newId, parentId, label));
+        newSubgraphIds.push(newId);
+      }
+
+      // Folder subtrees: clone each into its source's parent folder.
+      for (const folderId of pruned.folderIds) {
+        const folder = state.folders.find((f) => f.id === folderId);
+        if (!folder) continue;
+        const parentId = folder.parentFolderId;
+        const labels = getLabelsIn(parentId);
+        const label = nextCopyLabel(labels, folder.label);
+        labels.add(label);
+        const subtree = cloneFolderSubtree(
+          folderId,
+          parentId,
+          label,
+          state.folders,
+          state.subgraphs,
+        );
+        newFolders.push(...subtree.folders);
+        newSubgraphs.push(...subtree.subgraphs);
+        newFolderIds.push(subtree.rootNewId);
+      }
+
+      dispatchProject({
+        ...projectSnapshot(),
+        folders: [...state.folders, ...newFolders],
+        subgraphs: [...state.subgraphs, ...newSubgraphs],
+      });
+      return { subgraphIds: newSubgraphIds, folderIds: newFolderIds };
+    },
+
+    moveAssets: (selection, targetFolderId) => {
+      const state = get();
+      const pruned = pruneNestedSelection(selection, state.folders, state.subgraphs);
+      if (pruned.subgraphIds.length === 0 && pruned.folderIds.length === 0) return;
+      // Cycle prevention: refuse if the target is itself one of the
+      // moving folders or sits inside one of them. Mirrors the
+      // single-folder `moveFolderToFolder` check, generalized to a set.
+      const movingFolders = new Set(pruned.folderIds);
+      const folderById = new Map(state.folders.map((f) => [f.id, f]));
+      const isInsideMovingFolder = (folderId: string | null): boolean => {
+        let cursor = folderId;
+        while (cursor !== null) {
+          if (movingFolders.has(cursor)) return true;
+          cursor = folderById.get(cursor)?.parentFolderId ?? null;
+        }
+        return false;
+      };
+      if (
+        targetFolderId !== null &&
+        (movingFolders.has(targetFolderId) || isInsideMovingFolder(targetFolderId))
+      ) {
+        return;
+      }
+      const movingSubgraphs = new Set(pruned.subgraphIds);
+      let changed = false;
+      const folders = state.folders.map((f) => {
+        if (!movingFolders.has(f.id)) return f;
+        if ((f.parentFolderId ?? null) === targetFolderId) return f;
+        changed = true;
+        return { ...f, parentFolderId: targetFolderId };
+      });
+      const subgraphs = state.subgraphs.map((s) => {
+        if (!movingSubgraphs.has(s.id)) return s;
+        if ((s.parentFolderId ?? null) === targetFolderId) return s;
+        changed = true;
+        return { ...s, parentFolderId: targetFolderId };
+      });
+      if (!changed) return;
+      dispatchProject({
+        ...projectSnapshot(),
+        folders,
+        subgraphs,
+      });
+    },
+
+    pasteCopyAssets: (selection, targetFolderId) => {
+      const state = get();
+      const pruned = pruneNestedSelection(selection, state.folders, state.subgraphs);
+      if (pruned.subgraphIds.length === 0 && pruned.folderIds.length === 0) {
+        return { subgraphIds: [], folderIds: [] };
+      }
+      // Build a working label-set for the destination folder so
+      // sequential clones don't collide; clones into a folder that
+      // already has "Foo copy" produce "Foo copy 2".
+      const labelsInTarget = new Set<string>();
+      for (const f of state.folders) {
+        if ((f.parentFolderId ?? null) === targetFolderId) labelsInTarget.add(f.label);
+      }
+      for (const sg of state.subgraphs) {
+        if ((sg.parentFolderId ?? null) === targetFolderId) labelsInTarget.add(sg.label);
+      }
+      const newSubgraphs: SubgraphDef[] = [];
+      const newFolders: Folder[] = [];
+      const newSubgraphIds: string[] = [];
+      const newFolderIds: string[] = [];
+
+      // Direct subgraphs: clone with new id into target folder, with
+      // a non-colliding label.
+      for (const id of pruned.subgraphIds) {
+        const sg = state.subgraphs.find((s) => s.id === id);
+        if (!sg) continue;
+        // Use the original label if it's free; otherwise fall back to
+        // the "copy" naming. Paste-of-copy into an unrelated folder is
+        // a normal "place a fresh instance" gesture and shouldn't be
+        // forced to wear "copy" in its name.
+        const baseLabel = labelsInTarget.has(sg.label)
+          ? nextCopyLabel(labelsInTarget, sg.label)
+          : sg.label;
+        labelsInTarget.add(baseLabel);
+        const newId = crypto.randomUUID();
+        newSubgraphs.push(cloneSubgraphDef(sg, newId, targetFolderId, baseLabel));
+        newSubgraphIds.push(newId);
+      }
+
+      // Folder subtrees: clone each into the target.
+      for (const folderId of pruned.folderIds) {
+        const folder = state.folders.find((f) => f.id === folderId);
+        if (!folder) continue;
+        const baseLabel = labelsInTarget.has(folder.label)
+          ? nextCopyLabel(labelsInTarget, folder.label)
+          : folder.label;
+        labelsInTarget.add(baseLabel);
+        const subtree = cloneFolderSubtree(
+          folderId,
+          targetFolderId,
+          baseLabel,
+          state.folders,
+          state.subgraphs,
+        );
+        newFolders.push(...subtree.folders);
+        newSubgraphs.push(...subtree.subgraphs);
+        newFolderIds.push(subtree.rootNewId);
+      }
+
+      dispatchProject({
+        ...projectSnapshot(),
+        folders: [...state.folders, ...newFolders],
+        subgraphs: [...state.subgraphs, ...newSubgraphs],
+      });
+      return { subgraphIds: newSubgraphIds, folderIds: newFolderIds };
+    },
+
+    countBrokenRefs: (subgraphIds) => {
+      const state = get();
+      return countBrokenRefsImpl(subgraphIds, state.mainGraph, state.subgraphs);
     },
 
     moveFolderToFolder: (folderId, newParentId) => {

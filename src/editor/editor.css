@@ -53,6 +53,8 @@
   flex-direction: column;
   height: 100%;
   font-size: 12px;
+  position: relative;
+  outline: none;
 }
 .sedon-assets-toolbar {
   display: flex;
@@ -117,6 +119,9 @@
   background: #2c3e60 !important;
   color: #fff;
 }
+.sedon-assets-folder-row--cut {
+  opacity: 0.45;
+}
 .sedon-assets-folder-twisty {
   display: inline-block;
   width: 12px;
@@ -133,6 +138,15 @@
 .sedon-assets-contents {
   overflow-y: auto;
   padding: 6px;
+  position: relative;
+}
+.sedon-assets-marquee {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(90, 122, 170, 0.15);
+  border: 1px solid #5a7aaa;
+  border-radius: 2px;
+  z-index: 5;
 }
 .sedon-assets-empty {
   color: #666;
@@ -161,6 +175,17 @@
 }
 .sedon-assets-tile:hover {
   border-color: #555;
+}
+.sedon-assets-tile--selected {
+  background: #2c3e60;
+  border-color: #5a7aaa;
+  color: #fff;
+}
+.sedon-assets-tile--selected:hover {
+  border-color: #7a9aca;
+}
+.sedon-assets-tile--cut {
+  opacity: 0.45;
 }
 .sedon-assets-tile--icons {
   display: flex;
@@ -306,6 +331,72 @@
 .sedon-assets-context-menu-item:disabled {
   color: #555;
   cursor: default;
+}
+.sedon-assets-context-menu-sep {
+  height: 1px;
+  background: #333;
+  margin: 4px 0;
+}
+
+/* Delete-confirm dialog. Plain centered modal, anchored over the
+ * AssetsPanel so each panel gets its own (DockView per-panel scoping). */
+.sedon-assets-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sedon-assets-dialog {
+  min-width: 320px;
+  max-width: 480px;
+  background: #22222a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  color: #ddd;
+  font-size: 13px;
+}
+.sedon-assets-dialog-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.sedon-assets-dialog-body {
+  color: #bbb;
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+.sedon-assets-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sedon-assets-dialog-button {
+  background: #2a2a35;
+  color: #ddd;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sedon-assets-dialog-button:hover {
+  background: #3a3a48;
+}
+.sedon-assets-dialog-button:focus {
+  outline: 1px solid #5a7aaa;
+}
+.sedon-assets-dialog-button--danger {
+  background: #6a2222;
+  border-color: #884;
+  color: #ffd4d4;
+}
+.sedon-assets-dialog-button--danger:hover {
+  background: #842a2a;
 }
 
 .sedon-pane {
