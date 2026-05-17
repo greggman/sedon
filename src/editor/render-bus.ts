@@ -10,6 +10,8 @@
 // schedule exactly one rAF. The callbacks all fire in that single tick,
 // so N tiles draw one frame each per request rather than N rAFs each.
 
+import { flushUnusedPools } from '../render/scene.js';
+
 type RenderCallback = () => void;
 
 const callbacks = new Set<RenderCallback>();
@@ -38,5 +40,14 @@ export function requestRender(): void {
     pendingRaf = null;
     // Snapshot so subscribers are free to add/remove during the tick.
     for (const cb of [...callbacks]) cb();
+    // After every frame's renders finish, reclaim any SceneRenderer
+    // pool entries (instance buffers, material bind groups, size-
+    // bound intermediates) whose refcount has fallen to zero — e.g.
+    // because a mesh-segments slider scrub orphaned the previous
+    // tick's positionBuffer-keyed entry. Eviction is deferred until
+    // after the frame's renders so a same-frame remount (React
+    // useEffect cleanup → new mount) reclaims the entry instead of
+    // re-allocating.
+    flushUnusedPools();
   });
 }

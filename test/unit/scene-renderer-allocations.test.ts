@@ -20,7 +20,7 @@ import type {
 } from '../../src/core/resources.js';
 import { identityTint } from '../../src/core/resources.js';
 import { identity } from '../../src/render/mat4.js';
-import { createSceneRenderer } from '../../src/render/scene.js';
+import { createSceneRenderer, flushUnusedPools } from '../../src/render/scene.js';
 
 // Tag every input texture/geometry as "externally owned" so its
 // alloc count is excluded from "what did the renderer allocate?"
@@ -134,13 +134,14 @@ test('SceneRenderer: setScene called repeatedly with new materials neither leaks
   //   • Allocates 1 fresh instance buffer in the module-level instance
   //     buffer pool (structural key differs ⇒ new pool key).
   //
-  // Neither pool evicts — both are bounded by the number of distinct
-  // batch shapes / materials seen this session. Nothing is destroyed;
-  // pool entries accumulate.
+  // Eviction is deferred to `flushUnusedPools`, which the renderer
+  // doesn't call automatically — entries with refs=0 stay alive
+  // until the app or test explicitly flushes. So inside the loop
+  // nothing's destroyed.
   const created = after.createdBuffers - base.createdBuffers;
   const destroyed = after.destroyedBuffers - base.destroyedBuffers;
   assert.equal(created, 40, `expected 40 buffer allocations across 20 iterations (got ${created})`);
-  assert.equal(destroyed, 0, `module-level pools should never destroy buffers (got ${destroyed})`);
+  assert.equal(destroyed, 0, `release defers eviction — no destroys expected during scrub (got ${destroyed})`);
 });
 
 test('SceneRenderer.destroy: repeated create/destroy cycles do not leak GPU resources', () => {
@@ -362,6 +363,95 @@ test('SceneRenderer: changing only the texture handle rebuilds the bind group bu
   assert.ok(
     after.createdBindGroups - base.createdBindGroups >= 5,
     'each new texture handle should produce a new bind group',
+  );
+});
+
+test('flushUnusedPools: a mesh-segments-style slider scrub (changing positionBuffer per tick) gets cleaned up', () => {
+  // Simulates a "sphere segments" slider drag: each tick generates a
+  // new geometry (new positionBuffer handle) → new instance buffer
+  // pool key. With refcounted deferred eviction, old keys sit at
+  // refs=0 in the pool. flushUnusedPools must reclaim them.
+  const device = createMockDevice();
+  const renderer = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  const tex = externalTexture(device);
+  function makeFreshGeometry(): GeometryValue {
+    return externalGeometry(device);
+  }
+  function makeScene(geom: GeometryValue) {
+    const pbr = {
+      kind: 'pbr' as const,
+      basecolor: tex, roughness: 0.5, metallic: 0,
+      normal: tex, detailBasecolor: tex, detailNormal: tex,
+    };
+    return {
+      entities: [{ geometry: geom, material: pbr, transform: identity(), tint: identityTint() }],
+    };
+  }
+  // First tick — establishes a single live entry.
+  renderer.setScene(makeScene(makeFreshGeometry()));
+  const base = snap(device);
+
+  // 10 more ticks, each with a brand-new geometry. Pool grows to 11
+  // total entries (the first one + 10 here). 10 of them are at refs=0
+  // (released as setScene swapped them out), 1 is at refs=1 (current).
+  for (let i = 0; i < 10; i++) {
+    renderer.setScene(makeScene(makeFreshGeometry()));
+  }
+  const beforeFlush = snap(device);
+  // 10 new geometries × 4 buffers each + 10 new instance buffers = 50
+  // buffer creates (we don't audit the geometry creates here — they're
+  // owned by the test scaffolding — just verify zero destroys).
+  assert.equal(
+    beforeFlush.destroyedBuffers - base.destroyedBuffers,
+    0,
+    'release defers eviction — nothing destroyed during the scrub',
+  );
+
+  // Flush. The 10 instance buffers from old ticks (refs=0) should be
+  // destroyed. The 1 current instance buffer (refs=1) stays.
+  flushUnusedPools();
+  const afterFlush = snap(device);
+  assert.equal(
+    afterFlush.destroyedBuffers - beforeFlush.destroyedBuffers,
+    10,
+    `flushUnusedPools should destroy the 10 stale instance buffers (got ${afterFlush.destroyedBuffers - beforeFlush.destroyedBuffers})`,
+  );
+
+  // A subsequent setScene with a never-before-seen geometry should
+  // allocate ONE fresh instance buffer (no zero-ref entry to reclaim).
+  // The current entry's refs goes from 1 to 0 as it's swapped out.
+  const beforeFinal = snap(device);
+  renderer.setScene(makeScene(makeFreshGeometry()));
+  const afterFinal = snap(device);
+  assert.equal(
+    afterFinal.createdBuffers - beforeFinal.createdBuffers,
+    1 + 4, // 1 instance buffer + 4 external geometry buffers
+    'one new geometry + one new instance buffer after flush',
+  );
+  renderer.destroy();
+});
+
+test('flushUnusedPools: after renderer destroy, calling flush destroys the held entries', () => {
+  const device = createMockDevice();
+  const geom = externalGeometry(device);
+  const pbr = makePbr(device, 0.5);
+  const scene = makeScene(geom, pbr);
+  const renderer = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  renderer.setScene(scene);
+  const liveBuffersBefore = device.stats.liveBuffers.size;
+  renderer.destroy();
+  // destroy() released refs to 0 but didn't physically destroy.
+  assert.equal(
+    device.stats.liveBuffers.size,
+    liveBuffersBefore,
+    'renderer.destroy() should not destroy pool entries by itself',
+  );
+  flushUnusedPools();
+  // Now the previously-held buffers (1 paramBuffer + 1 instance) are
+  // gone. Any subsequent renderer would have to re-allocate them.
+  assert.ok(
+    device.stats.liveBuffers.size < liveBuffersBefore,
+    'flushUnusedPools after destroy should reclaim the renderer\'s former entries',
   );
 });
 

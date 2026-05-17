@@ -152,28 +152,70 @@ interface CachedMaterial {
 
 // Module-level shared state. The app holds a single GPUDevice for its
 // lifetime, and almost everything the SceneRenderer needs (pipelines,
-// layouts, samplers, the renderer's own uniform buffers + their bind
+// layouts, samplers, renderer-internal uniform buffers + their bind
 // groups, the material-kind registry) is fully determined by
 // (device, format) and doesn't depend on the scene or the renderer
 // instance. Hoisting this state out of the per-renderer closure means
-// a freshly-mounted ScenePreview's first setScene hits a fully warm
-// device and allocates nothing.
+// a freshly-mounted ScenePreview's first setScene allocates nothing
+// new for content already rendered by another renderer.
 //
-// Three caches at module scope:
+// Three reference-counted pools at module scope plus one always-alive
+// SharedRendererState singleton:
 //
-//   • SharedRendererState — every format-stable resource. Built once
-//     on the first createSceneRenderer call. Subsequent calls reuse.
-//
-//   • intermediatesByKey — depth + HDR + bloom mip textures (size-
-//     bound), keyed by `${width}x${height}`. A canvas at the same
-//     size reuses the same set across renderer remounts.
-//
+//   • materialCacheGlobal — paramBuffer + bind group per material
+//     structural key.
+//   • intermediatesByKey — depth + HDR + bloom mip textures keyed by
+//     `${width}x${height}`.
 //   • instanceBufferPool — per-batch instance buffers keyed by
-//     (geometry positionBuffer id, material structural key,
-//     instance count). Same batch shape across renderers reuses.
+//     (geometry positionBuffer id, material structural key, instance
+//     count).
 //
-// Plus the materialCache that was already at module scope.
-const materialCacheGlobal = new Map<string, CachedMaterial>();
+// The reference counts are per-renderer-instance: each SceneRenderer
+// records the pool keys it's currently holding. setScene/render/
+// destroy adjust the counts via the acquire / release helpers below.
+// When a count drops to zero, the entry is removed and its GPU
+// resources destroyed (safe even with pending GPU work — WebGPU defers
+// physical destruction until in-flight submits complete).
+//
+// Why this matters: without refcounting, a slider scrub on something
+// that changes the GEOMETRY (sphere segments, terrain resolution,
+// scatter count) produces new positionBuffer ids per tick → new
+// batch keys → new pool entries; old keys are never visited again
+// and their instance buffers leak forever. Same for material slider
+// scrubs that change a texture handle and for canvas resize creating
+// new (w,h) intermediates.
+
+interface PoolEntry<T> {
+  value: T;
+  refs: number;
+}
+
+const materialCacheGlobal = new Map<string, PoolEntry<CachedMaterial>>();
+
+function acquireMaterial(
+  key: string,
+  build: () => CachedMaterial,
+): CachedMaterial {
+  let entry = materialCacheGlobal.get(key);
+  if (!entry) {
+    entry = { value: build(), refs: 0 };
+    materialCacheGlobal.set(key, entry);
+  }
+  entry.refs++;
+  return entry.value;
+}
+
+function releaseMaterial(key: string): void {
+  const entry = materialCacheGlobal.get(key);
+  if (!entry) return;
+  entry.refs--;
+  // Don't destroy here. A renderer remount in React looks like:
+  // useEffect cleanup (destroy → release) immediately followed by
+  // the new mount (setScene → acquire). If we destroyed at refs=0
+  // we'd evict the entry the next acquire needs. Instead, leave
+  // refs=0 entries alive and let an external sweep (or the app's
+  // per-frame tick) call `flushUnusedPools` when convenient.
+}
 
 interface SharedRendererState {
   device: GPUDevice;
@@ -314,15 +356,36 @@ interface SizeIntermediates {
   compositeBindGroup: GPUBindGroup;
 }
 
-const intermediatesByKey = new Map<string, SizeIntermediates>();
-function ensureIntermediates(
+const intermediatesByKey = new Map<string, PoolEntry<SizeIntermediates>>();
+
+function acquireIntermediates(
+  shared: SharedRendererState,
+  width: number,
+  height: number,
+): { key: string; value: SizeIntermediates } {
+  const key = `${width}x${height}`;
+  let entry = intermediatesByKey.get(key);
+  if (!entry) {
+    entry = { value: buildIntermediates(shared, width, height), refs: 0 };
+    intermediatesByKey.set(key, entry);
+  }
+  entry.refs++;
+  return { key, value: entry.value };
+}
+
+function releaseIntermediates(key: string): void {
+  const entry = intermediatesByKey.get(key);
+  if (!entry) return;
+  entry.refs--;
+  // See releaseMaterial — eviction is deferred to flushUnusedPools so
+  // a canvas resize back to a recent size still reuses the entry.
+}
+
+function buildIntermediates(
   shared: SharedRendererState,
   width: number,
   height: number,
 ): SizeIntermediates {
-  const key = `${width}x${height}`;
-  const existing = intermediatesByKey.get(key);
-  if (existing) return existing;
   const { device } = shared;
   const depthTexture = device.createTexture({
     size: [width, height],
@@ -387,14 +450,12 @@ function ensureIntermediates(
       { binding: 3, resource: shared.compositeUniform },
     ],
   });
-  const built: SizeIntermediates = {
+  return {
     width, height,
     depthTexture, hdrColor, hdrColorView,
     bloomMips, bloomMipViews, bloomMipParamBuffers,
     pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
   };
-  intermediatesByKey.set(key, built);
-  return built;
 }
 
 // Per-batch instance buffer pool. Reuses across renderer remounts AND
@@ -404,27 +465,79 @@ function ensureIntermediates(
 // consumer writes the same buffer in between setScene calls — the
 // renders happen synchronously inside a single render() call, queued
 // atomically.
-const instanceBufferPool = new Map<string, GPUBuffer>();
-function getInstanceBuffer(
+const instanceBufferPool = new Map<string, PoolEntry<GPUBuffer>>();
+
+function acquireInstanceBuffer(
   device: GPUDevice,
   key: string,
   byteLength: number,
 ): GPUBuffer {
-  const existing = instanceBufferPool.get(key);
-  if (existing) {
-    // Size-bound: if the byteLength matches, reuse; if it doesn't
-    // (instance count changed for this batch key — shouldn't happen
-    // because instance count is part of the key, but defensive),
-    // destroy + reallocate.
-    if (existing.size === byteLength) return existing;
-    try { existing.destroy(); } catch { /* */ }
+  let entry = instanceBufferPool.get(key);
+  if (entry && entry.value.size !== byteLength) {
+    // Same key but the entity count changed — instance count is part
+    // of the key so this shouldn't normally happen, but defensive.
+    try { entry.value.destroy(); } catch { /* */ }
+    entry = undefined;
   }
-  const fresh = device.createBuffer({
-    size: byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  instanceBufferPool.set(key, fresh);
-  return fresh;
+  if (!entry) {
+    entry = {
+      value: device.createBuffer({
+        size: byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      }),
+      refs: 0,
+    };
+    instanceBufferPool.set(key, entry);
+  }
+  entry.refs++;
+  return entry.value;
+}
+
+function releaseInstanceBuffer(key: string): void {
+  const entry = instanceBufferPool.get(key);
+  if (!entry) return;
+  entry.refs--;
+  // Eviction deferred to flushUnusedPools — see releaseMaterial.
+}
+
+/**
+ * Destroy every pool entry currently at refs == 0 across the
+ * materialCache, intermediates, and instance buffer pools. Called by
+ * the app's per-frame tick (or any other "now is a good time to
+ * cleanup" trigger) to reclaim memory used by content that's no
+ * longer in any active scene — e.g. mesh-segment slider scrubs that
+ * produce a new positionBuffer id each tick.
+ *
+ * Safe even with pending GPU work — WebGPU's buffer.destroy() /
+ * texture.destroy() defer physical destruction until any in-flight
+ * submits referencing the resource complete.
+ */
+export function flushUnusedPools(): void {
+  for (const [key, entry] of materialCacheGlobal) {
+    if (entry.refs <= 0) {
+      try { entry.value.paramBuffer.destroy(); } catch { /* */ }
+      materialCacheGlobal.delete(key);
+    }
+  }
+  for (const [key, entry] of instanceBufferPool) {
+    if (entry.refs <= 0) {
+      try { entry.value.destroy(); } catch { /* */ }
+      instanceBufferPool.delete(key);
+    }
+  }
+  for (const [key, entry] of intermediatesByKey) {
+    if (entry.refs <= 0) {
+      try { entry.value.depthTexture.destroy(); } catch { /* */ }
+      try { entry.value.hdrColor.destroy(); } catch { /* */ }
+      for (const t of entry.value.bloomMips) {
+        try { t.destroy(); } catch { /* */ }
+      }
+      for (const b of entry.value.bloomMipParamBuffers) {
+        try { b.destroy(); } catch { /* */ }
+      }
+      intermediatesByKey.delete(key);
+    }
+  }
 }
 
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
@@ -584,7 +697,14 @@ export function createSceneRenderer(
   //     instanceCount) matches. Same matching produces zero buffer
   //     alloc and a single writeBuffer; mismatches destroy + realloc.
   let batches: Batch[] = [];
-  const materialCache = materialCacheGlobal;
+  // Per-renderer ref tracking. Each setScene call updates these to the
+  // CURRENT set of pool keys this renderer is holding refs on. The diff
+  // against the previous round tells us which pool entries to release
+  // (potentially evicting them when their refs hit zero) and which new
+  // ones to acquire. destroy() releases whatever's left.
+  let currentMaterialKeys = new Set<string>();
+  let currentInstanceKeys = new Set<string>();
+  let currentSizeKey: string | null = null;
 
   function setScene(scene: SceneValue): void {
     // Group entities by (kind, geometry, material) reference equality.
@@ -633,6 +753,7 @@ export function createSceneRenderer(
 
     const next: Batch[] = [];
     const usedMaterialKeys = new Set<string>();
+    const usedInstanceKeys = new Set<string>();
 
     for (const [kindId, byGeometry] of groupsByKind) {
       const kind = shared.kinds.get(kindId);
@@ -650,34 +771,31 @@ export function createSceneRenderer(
           )(material);
           const cacheKey = `${kindId}:${structuralKey}`;
           usedMaterialKeys.add(cacheKey);
-          let cached = materialCache.get(cacheKey);
-          if (cached) {
-            // Same texture set — reuse the bind group, rewrite scalars.
-            (kind.writeMaterialParams as (m: MaterialValue, b: GPUBuffer) => void)(
-              material,
-              cached.paramBuffer,
-            );
-          } else {
+          // Acquire (or reuse) the material entry. If the entry was
+          // already in the pool from this OR another renderer, just
+          // increment refs and reuse — but ALWAYS rewrite the scalar
+          // uniforms because they're per-material-instance state, not
+          // per-structural-key.
+          const wasCached = materialCacheGlobal.has(cacheKey);
+          const cached = acquireMaterial(cacheKey, () => {
             const built = (
               kind.buildBindGroup as (m: MaterialValue) => {
                 bindGroup: GPUBindGroup;
                 paramBuffer: GPUBuffer;
               }
             )(material);
-            cached = {
-              bindGroup: built.bindGroup,
-              paramBuffer: built.paramBuffer,
-            };
-            materialCache.set(cacheKey, cached);
+            return { bindGroup: built.bindGroup, paramBuffer: built.paramBuffer };
+          });
+          if (wasCached) {
+            (kind.writeMaterialParams as (m: MaterialValue, b: GPUBuffer) => void)(
+              material,
+              cached.paramBuffer,
+            );
           }
 
-          // Instance side: the buffer comes from the module-level pool
-          // keyed by (positionBuffer id, structuralKey, instance count).
-          // Different consumers drawing the same batch shape share the
-          // buffer; the writeBuffer-then-submit sequence is atomic per
-          // render() call (synchronous JS) so render order is the only
-          // thing that matters, and that's preserved by the device
-          // queue.
+          // Instance side: acquire from the per-batch pool. Refs work
+          // the same way — repeat calls with the same key just bump
+          // the count.
           const instanceCount = entities.length;
           const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
           for (let i = 0; i < instanceCount; i++) {
@@ -686,12 +804,13 @@ export function createSceneRenderer(
             instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
           }
           const instanceKey = `${gpuObjectId(geometry.positionBuffer as object)}|${structuralKey}|${instanceCount}`;
-          const instanceBuffer = getInstanceBuffer(
+          const instanceBuffer = acquireInstanceBuffer(
             device,
             instanceKey,
             instanceData.byteLength,
           );
           device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
+          usedInstanceKeys.add(instanceKey);
 
           next.push({
             kindId,
@@ -706,22 +825,33 @@ export function createSceneRenderer(
       }
     }
 
-    // Module-level pool owns instance buffers. Nothing to destroy
-    // here — entries that match the same key on the next setScene
-    // get reused; mismatches grow the pool (bounded by distinct
-    // batch shapes seen during the session).
+    // Release the refs this renderer USED to hold but no longer does.
+    // Pool entries whose total refs hit zero get destroyed.
+    for (const k of currentMaterialKeys) {
+      if (!usedMaterialKeys.has(k)) releaseMaterial(k);
+    }
+    for (const k of currentInstanceKeys) {
+      if (!usedInstanceKeys.has(k)) releaseInstanceBuffer(k);
+    }
+    // The new "currently held" sets are what this round acquired.
+    // (acquireMaterial / acquireInstanceBuffer already bumped refs.)
+    currentMaterialKeys = usedMaterialKeys;
+    currentInstanceKeys = usedInstanceKeys;
     void prevBatchByKey;
-    void usedMaterialKeys;
 
     batches = next;
   }
 
   function destroy(): void {
-    // Everything the renderer drew with is in module-scoped pools and
-    // caches that other renderers (current or future) may still want.
-    // The renderer instance itself owns no GPU resources; the only
-    // per-renderer state was `batches`, which is just JS references
-    // to module-pooled buffers + cached bind groups.
+    // Release every ref this renderer is currently holding. Pool
+    // entries that hit zero refs are physically destroyed; entries
+    // still held by other renderers stay alive.
+    for (const k of currentMaterialKeys) releaseMaterial(k);
+    for (const k of currentInstanceKeys) releaseInstanceBuffer(k);
+    if (currentSizeKey !== null) releaseIntermediates(currentSizeKey);
+    currentMaterialKeys = new Set();
+    currentInstanceKeys = new Set();
+    currentSizeKey = null;
     batches = [];
   }
 
@@ -730,11 +860,21 @@ export function createSceneRenderer(
     destroy,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false }) {
       const [width, height] = size;
-      const intermediates = ensureIntermediates(shared, width, height);
+      // Acquire intermediates for THIS size. If we previously held a
+      // different size's ref, release it first so a canvas resize
+      // doesn't accumulate stale intermediates forever.
+      const acquired = acquireIntermediates(shared, width, height);
+      if (currentSizeKey !== null && currentSizeKey !== acquired.key) {
+        releaseIntermediates(currentSizeKey);
+      } else if (currentSizeKey === acquired.key) {
+        // Same size as last render — acquire bumped refs by 1, undo.
+        releaseIntermediates(acquired.key);
+      }
+      currentSizeKey = acquired.key;
       const {
         depthTexture, hdrColorView, bloomMips,
         pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
-      } = intermediates;
+      } = acquired.value;
       const {
         sceneUniformBuffer, shadowUniformBuffer, skyUniformBuffer,
         brightPassUniform, compositeUniform,
