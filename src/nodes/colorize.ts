@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './colorize.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -22,7 +23,7 @@ export const colorizeNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const factor = inputs.factor as Texture2DValue;
     const low = inputs.low as [number, number, number, number];
@@ -30,8 +31,10 @@ export const colorizeNode: NodeDef = {
     const midpoint = inputs.midpoint as number;
     const resolution = inputs.resolution as number;
 
-    const texture = device.createTexture({
-      size: [resolution, resolution],
+    const prev = ctx.previousOutput as { texture?: Texture2DValue; __uniformBuffer?: GPUBuffer } | undefined;
+    const out = reusableTexture(device, prev?.texture, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -46,21 +49,22 @@ export const colorizeNode: NodeDef = {
     uniformData.set(high, 4);
     uniformData[8] = midpoint;
 
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer as GPUBuffer | undefined,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
-    const sampler = device.createSampler({
+    const sampler = getSampler(device, {
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     });
 
-    const module = device.createShaderModule({ code: shader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -79,7 +83,7 @@ export const colorizeNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: texture.createView(),
+          view: out.view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -92,14 +96,6 @@ export const colorizeNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return {
-      texture: {
-        texture,
-        view: texture.createView(),
-        format: TEXTURE_FORMAT,
-        width: resolution,
-        height: resolution,
-      },
-    };
+    return { texture: out, __uniformBuffer: uniformBuffer };
   },
 };

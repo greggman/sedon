@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './distance-transform.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -46,7 +47,11 @@ export const distanceTransformNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): {
+    texture: Texture2DValue;
+    __jfa?: [Texture2DValue, Texture2DValue];
+    __uniformBuffer?: GPUBuffer;
+  } {
     const device = requireDevice(ctx);
     const src = inputs.texture as Texture2DValue;
     const threshold = inputs.threshold as number;
@@ -59,7 +64,13 @@ export const distanceTransformNode: NodeDef = {
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_SRC;
 
-    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    const prev = ctx.previousOutput as
+      | {
+          texture?: Texture2DValue;
+          __jfa?: [Texture2DValue, Texture2DValue];
+          __uniformBuffer?: GPUBuffer;
+        }
+      | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
@@ -67,19 +78,21 @@ export const distanceTransformNode: NodeDef = {
       usage,
     });
 
-    // Two intermediate textures for the JFA ping-pong. Created fresh
-    // each eval — JFA only needs them for this one node's pipeline.
-    // (Could pool them per-device if profiling shows allocation cost.)
-    const makeIntermediate = () =>
-      device.createTexture({
-        size: [resolution, resolution],
-        format: TEXTURE_FORMAT,
-        usage,
-      });
-    const a = makeIntermediate();
-    const b = makeIntermediate();
-    const aView = a.createView();
-    const bView = b.createView();
+    // Two intermediate textures for the JFA ping-pong. Reused via the
+    // eval cache: stash both on the output under `__jfa` so the next
+    // eval at the same resolution reuses them. Reusable textures are
+    // also subject to sweep destruction when this node's outputs are
+    // evicted.
+    const jfaDesc = {
+      width: resolution,
+      height: resolution,
+      format: TEXTURE_FORMAT,
+      usage,
+    };
+    const a = reusableTexture(device, prev?.__jfa?.[0], jfaDesc);
+    const b = reusableTexture(device, prev?.__jfa?.[1], jfaDesc);
+    const aView = a.view;
+    const bView = b.view;
 
     // One uniform buffer, rewritten between passes (only `step` changes
     // between JFA iterations; threshold + max_distance + invert are
@@ -90,16 +103,18 @@ export const distanceTransformNode: NodeDef = {
     uniformData[3] = threshold;
     uniformData[4] = maxDistance;
     uniformData[5] = invert ? 1 : 0;
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
     const writeStep = (step: number) => {
       uniformData[2] = step;
       device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
     };
 
-    const sampler = device.createSampler({
+    const sampler = getSampler(device, {
       magFilter: 'nearest',
       minFilter: 'nearest',
       addressModeU: 'clamp-to-edge',
@@ -109,9 +124,9 @@ export const distanceTransformNode: NodeDef = {
     // Three pipelines share the same shader module + bind group layout
     // (one uniform, one texture, one sampler at @group(0)). Only the
     // fragment entry point differs between them.
-    const module = device.createShaderModule({ code: shader });
+    const module = getShaderModule(device, shader);
     const makePipeline = (entry: string): GPURenderPipeline =>
-      device.createRenderPipeline({
+      getRenderPipeline(device, {
         layout: 'auto',
         vertex: { module, entryPoint: 'vs_main' },
         fragment: { module, entryPoint: entry, targets: [{ format: TEXTURE_FORMAT }] },
@@ -197,8 +212,13 @@ export const distanceTransformNode: NodeDef = {
       device.queue.submit([enc.finish()]);
     }
 
-    a.destroy();
-    b.destroy();
-    return { texture: outTexture };
+    // a, b stay alive in the returned outputs so the next eval can
+    // reuse them. The cache sweep destroys them when this node's
+    // outputs are finally evicted.
+    return {
+      texture: outTexture,
+      __jfa: [a, b],
+      __uniformBuffer: uniformBuffer,
+    };
   },
 };

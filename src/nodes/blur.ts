@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './blur.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -23,7 +24,11 @@ export const blurNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): {
+    texture: Texture2DValue;
+    __intermediate?: Texture2DValue;
+    __uniformBuffer?: GPUBuffer;
+  } {
     const device = requireDevice(ctx);
     const src = inputs.texture as Texture2DValue;
     const radius = inputs.radius as number;
@@ -34,22 +39,25 @@ export const blurNode: NodeDef = {
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_SRC;
 
-    // Output texture is reused via the eval cache. The intermediate is
-    // transient (one eval's worth) and just gets recreated each call
-    // — it could be pooled if blur turns into a hot path.
-    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    // Output + intermediate textures are both reused via the eval cache.
+    // The intermediate is stashed as a private field on the output so
+    // the next eval's previousOutput exposes it for reuse.
+    const prev = ctx.previousOutput as
+      | { texture?: Texture2DValue; __intermediate?: Texture2DValue; __uniformBuffer?: GPUBuffer }
+      | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
       usage,
     });
-    const intermediate = device.createTexture({
-      size: [resolution, resolution],
+    const intermediate = reusableTexture(device, prev?.__intermediate, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage,
     });
-    const intermediateView = intermediate.createView();
+    const intermediateView = intermediate.view;
 
     // Uniform buffer: vec2 texel_size, vec2 direction, f32 radius +
     // 3 f32 pad → 32 bytes. We write it once per pass, swapping the
@@ -58,20 +66,22 @@ export const blurNode: NodeDef = {
     uniformData[0] = 1 / resolution;
     uniformData[1] = 1 / resolution;
     uniformData[4] = radius;
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
-    const sampler = device.createSampler({
+    const sampler = getSampler(device, {
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
     });
 
-    const module = device.createShaderModule({ code: shader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -144,7 +154,13 @@ export const blurNode: NodeDef = {
       device.queue.submit([encoder.finish()]);
     }
 
-    intermediate.destroy();
-    return { texture: outTexture };
+    // intermediate stays alive in the returned outputs so the next
+    // eval can reuse it via prev.__intermediate; the cache sweep will
+    // destroy it when this node's outputs are evicted.
+    return {
+      texture: outTexture,
+      __intermediate: intermediate,
+      __uniformBuffer: uniformBuffer,
+    };
   },
 };

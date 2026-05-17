@@ -1,5 +1,11 @@
 import type { TerrainSplatMaterial, Texture2DValue } from '../../core/resources.js';
 import {
+  getBindGroupLayout,
+  getPipelineLayout,
+  getRenderPipeline,
+  getShaderModule,
+} from '../gpu-cache.js';
+import {
   createFlatNormalTexture,
   DEPTH_STENCIL,
   instanceVertexBuffers,
@@ -13,7 +19,7 @@ export function createTerrainSplatKind(
   format: GPUTextureFormat,
   sceneBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<TerrainSplatMaterial> {
-  const materialBindGroupLayout = device.createBindGroupLayout({
+  const materialBindGroupLayout = getBindGroupLayout(device, {
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // layerA basecolor
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // layerB basecolor
@@ -29,7 +35,7 @@ export function createTerrainSplatKind(
     ],
   });
 
-  const pipelineLayout = device.createPipelineLayout({
+  const pipelineLayout = getPipelineLayout(device, {
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
@@ -37,8 +43,8 @@ export function createTerrainSplatKind(
   // no #include but a string concat at module-creation time is enough
   // — `sample_shadow` forward-references `uniforms` / `shadow_map` /
   // `shadow_samp` from the host shader.
-  const module = device.createShaderModule({ code: `${shadowPcfCode}\n${shaderCode}` });
-  const pipeline = device.createRenderPipeline({
+  const module = getShaderModule(device, `${shadowPcfCode}\n${shaderCode}`);
+  const pipeline = getRenderPipeline(device, {
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },

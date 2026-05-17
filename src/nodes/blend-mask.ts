@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice } from '../core/resources.js';
+import { requireDevice, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './blend-mask.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -19,15 +20,17 @@ export const blendMaskNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const a = inputs.a as Texture2DValue;
     const b = inputs.b as Texture2DValue;
     const mask = inputs.mask as Texture2DValue;
     const resolution = inputs.resolution as number;
 
-    const texture = device.createTexture({
-      size: [resolution, resolution],
+    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    const out = reusableTexture(device, prev?.texture, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -35,15 +38,15 @@ export const blendMaskNode: NodeDef = {
         GPUTextureUsage.COPY_SRC,
     });
 
-    const sampler = device.createSampler({
+    const sampler = getSampler(device, {
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     });
 
-    const module = device.createShaderModule({ code: shader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -63,7 +66,7 @@ export const blendMaskNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: texture.createView(),
+          view: out.view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -76,14 +79,6 @@ export const blendMaskNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return {
-      texture: {
-        texture,
-        view: texture.createView(),
-        format: TEXTURE_FORMAT,
-        width: resolution,
-        height: resolution,
-      },
-    };
+    return { texture: out };
   },
 };

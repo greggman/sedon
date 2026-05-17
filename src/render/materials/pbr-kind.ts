@@ -1,5 +1,11 @@
 import type { PbrMaterial, Texture2DValue } from '../../core/resources.js';
 import {
+  getBindGroupLayout,
+  getPipelineLayout,
+  getRenderPipeline,
+  getShaderModule,
+} from '../gpu-cache.js';
+import {
   ALPHA_BLEND_STATE,
   createFlatHalfTexture,
   createFlatNormalTexture,
@@ -15,7 +21,7 @@ export function createPbrKind(
   format: GPUTextureFormat,
   sceneBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<PbrMaterial> {
-  const materialBindGroupLayout = device.createBindGroupLayout({
+  const materialBindGroupLayout = getBindGroupLayout(device, {
     entries: [
       // basecolor
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -34,7 +40,7 @@ export function createPbrKind(
     ],
   });
 
-  const pipelineLayout = device.createPipelineLayout({
+  const pipelineLayout = getPipelineLayout(device, {
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
@@ -42,8 +48,8 @@ export function createPbrKind(
   // no #include but a string concat at module-creation time is enough
   // — `sample_shadow` forward-references `uniforms` / `shadow_map` /
   // `shadow_samp` from the host shader.
-  const module = device.createShaderModule({ code: `${shadowPcfCode}\n${shaderCode}` });
-  const pipeline = device.createRenderPipeline({
+  const module = getShaderModule(device, `${shadowPcfCode}\n${shaderCode}`);
+  const pipeline = getRenderPipeline(device, {
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -59,7 +65,7 @@ export function createPbrKind(
   // back-face culling differ: leaf-textured cards are intentionally
   // two-sided since the user wants to see the silhouette from either
   // side during authoring.
-  const pipelineBlended = device.createRenderPipeline({
+  const pipelineBlended = getRenderPipeline(device, {
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: {
@@ -75,7 +81,7 @@ export function createPbrKind(
   // state — the shader's `discard` handles transparency, and binary
   // cutout doesn't need back-to-front sorting. Selected per-batch when
   // a material's `alphaCutoff > 0` (leaf cards, fronds, decals).
-  const pipelineCutout = device.createRenderPipeline({
+  const pipelineCutout = getRenderPipeline(device, {
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },

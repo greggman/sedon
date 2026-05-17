@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import shader from './leaf-skeleton.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -98,7 +99,7 @@ export const leafSkeletonNode: NodeDef = {
     { name: 'shape', type: 'Texture2D' },
     { name: 'veins', type: 'Texture2D' },
   ],
-  evaluate(ctx, inputs): { shape: Texture2DValue; veins: Texture2DValue } {
+  evaluate(ctx, inputs): { shape: Texture2DValue; veins: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
@@ -106,7 +107,7 @@ export const leafSkeletonNode: NodeDef = {
     // texture reuse. Same dims+format on both, so a re-eval that only
     // nudges parameters reuses both textures.
     const prev = ctx.previousOutput as
-      | { shape?: Texture2DValue; veins?: Texture2DValue }
+      | { shape?: Texture2DValue; veins?: Texture2DValue; __uniformBuffer?: GPUBuffer }
       | undefined;
     const usage =
       GPUTextureUsage.RENDER_ATTACHMENT |
@@ -141,19 +142,20 @@ export const leafSkeletonNode: NodeDef = {
     uniformData[10] = inputs.subBranchCurveGrowth as number;
     uniformData[11] = inputs.seed as number;
 
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
-    const module = device.createShaderModule({ code: shader });
-    const shapePipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const shapePipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module, entryPoint: 'vs_main' },
       fragment: { module, entryPoint: 'fs_shape', targets: [{ format: TEXTURE_FORMAT }] },
     });
-    const veinsPipeline = device.createRenderPipeline({
+    const veinsPipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module, entryPoint: 'vs_main' },
       fragment: { module, entryPoint: 'fs_veins', targets: [{ format: TEXTURE_FORMAT }] },
@@ -206,6 +208,6 @@ export const leafSkeletonNode: NodeDef = {
     }
     device.queue.submit([encoder.finish()]);
 
-    return { shape: shapeTexture, veins: veinsTexture };
+    return { shape: shapeTexture, veins: veinsTexture, __uniformBuffer: uniformBuffer };
   },
 };

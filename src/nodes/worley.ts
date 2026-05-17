@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import shader from './worley.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -17,7 +18,7 @@ export const worleyNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
@@ -26,7 +27,8 @@ export const worleyNode: NodeDef = {
     // allocate+destroy cycle per drag-pixel when the user is nudging a
     // value — the same texture stays put, we just re-render new
     // contents into it.
-    const outputTexture = reusableTexture(device, ctx.previousOutput?.texture, {
+    const prev = ctx.previousOutput as { texture?: Texture2DValue; __uniformBuffer?: GPUBuffer } | undefined;
+    const outputTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -45,14 +47,15 @@ export const worleyNode: NodeDef = {
     uniformData[3] = inputs.gain as number;
     uniformData[4] = inputs.seed as number;
 
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer as GPUBuffer | undefined,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
-    const module = device.createShaderModule({ code: shader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },

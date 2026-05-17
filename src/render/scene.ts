@@ -91,15 +91,6 @@ interface Batch {
   kindId: MaterialValue['kind'];
   geometry: GeometryValue;
   materialBindGroup: GPUBindGroup;
-  /**
-   * Pipeline chosen for this batch by the kind's `pickPipeline` (or its
-   * default `pipeline` when the kind doesn't implement the picker).
-   * Captured at batch-build time so the render loop never re-decides.
-   * `null` means "use kind.pipeline / kind.pipelineBlended depending on
-   * flatPreview" — preserves prior behavior for kinds that don't
-   * differentiate per material.
-   */
-  pipeline: GPURenderPipeline | null;
   instanceBuffer: GPUBuffer;
   instanceCount: number;
 }
@@ -534,16 +525,10 @@ export function createSceneRenderer(
           kind.buildBindGroup as (m: MaterialValue) => GPUBindGroup
         )(material);
 
-        const picker = kind.pickPipeline as
-          | ((m: MaterialValue) => GPURenderPipeline)
-          | undefined;
-        const pipeline = picker ? picker(material) : null;
-
         batches.push({
           kindId,
           geometry,
           materialBindGroup,
-          pipeline,
           instanceBuffer,
           instanceCount,
         });
@@ -719,19 +704,14 @@ export function createSceneRenderer(
       // with cutout) composites over the checkerboard instead of
       // punching through it as fully opaque.
       pass.setBindGroup(0, sceneBindGroup);
-      let activePipeline: GPURenderPipeline | null = null;
+      let activeKind: MaterialValue['kind'] | null = null;
       for (const b of batches) {
-        const kind = kinds.get(b.kindId)!;
-        // Priority: flat-preview wants the blended variant (so authored
-        // alpha composites over the checkerboard); otherwise use the
-        // per-batch picked pipeline; otherwise the kind's default.
-        const pipelineForPass =
-          flatPreview && kind.pipelineBlended
-            ? kind.pipelineBlended
-            : (b.pipeline ?? kind.pipeline);
-        if (pipelineForPass !== activePipeline) {
+        if (b.kindId !== activeKind) {
+          const kind = kinds.get(b.kindId)!;
+          const pipelineForPass =
+            flatPreview && kind.pipelineBlended ? kind.pipelineBlended : kind.pipeline;
           pass.setPipeline(pipelineForPass);
-          activePipeline = pipelineForPass;
+          activeKind = b.kindId;
         }
         pass.setBindGroup(1, b.materialBindGroup);
         pass.setVertexBuffer(0, b.geometry.positionBuffer);

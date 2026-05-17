@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import shader from './ridged-noise.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -27,7 +28,7 @@ export const ridgedNoiseNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
@@ -37,7 +38,8 @@ export const ridgedNoiseNode: NodeDef = {
 
     // Reuse the previously-allocated texture when dims+format are
     // unchanged — same texture object, new contents rendered in.
-    const outputTexture = reusableTexture(device, ctx.previousOutput?.texture, {
+    const prev = ctx.previousOutput as { texture?: Texture2DValue; __uniformBuffer?: GPUBuffer } | undefined;
+    const outputTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -58,14 +60,15 @@ export const ridgedNoiseNode: NodeDef = {
     uniformData[4] = inputs.gain as number;
     uniformData[5] = inputs.seed as number;
 
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer as GPUBuffer | undefined,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
-    const module = device.createShaderModule({ code: shader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, shader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },

@@ -1,6 +1,7 @@
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice } from '../core/resources.js';
+import { requireDevice, reusableTexture } from '../core/resources.js';
+import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import gridShader from './grid.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -16,7 +17,7 @@ export const gridNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue } {
+  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
     const device = requireDevice(ctx);
     const fg = inputs.fg as [number, number, number, number];
     const bg = inputs.bg as [number, number, number, number];
@@ -24,8 +25,10 @@ export const gridNode: NodeDef = {
     const lineWidth = inputs.line_width as number;
     const resolution = inputs.resolution as number;
 
-    const texture = device.createTexture({
-      size: [resolution, resolution],
+    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    const out = reusableTexture(device, prev?.texture, {
+      width: resolution,
+      height: resolution,
       format: TEXTURE_FORMAT,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -48,8 +51,8 @@ export const gridNode: NodeDef = {
     });
     device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
 
-    const module = device.createShaderModule({ code: gridShader });
-    const pipeline = device.createRenderPipeline({
+    const module = getShaderModule(device, gridShader);
+    const pipeline = getRenderPipeline(device, {
       layout: 'auto',
       vertex: { module },
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -64,7 +67,7 @@ export const gridNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: texture.createView(),
+          view: out.view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -77,14 +80,6 @@ export const gridNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return {
-      texture: {
-        texture,
-        view: texture.createView(),
-        format: TEXTURE_FORMAT,
-        width: resolution,
-        height: resolution,
-      },
-    };
+    return { texture: out };
   },
 };

@@ -153,12 +153,9 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     const unsubscribe = subscribeRender(draw);
     // Initial paint for this scene/lighting/flatPreview combination.
     // Coalesced into a single rAF with any other tiles' initial draws.
-    // popoutGen-on-deps re-subscribes after DockView events so the
-    // draw fn re-fires; its lazy doc-check then reconfigures the
-    // ctx only if the canvas actually moved to a different window.
     requestRender();
     return unsubscribe;
-  }, [gpu, scene, cameraRef, lighting, flatPreview, popoutGen]);
+  }, [gpu, scene, cameraRef, lighting, flatPreview]);
 
   return (
     <div className="sedon-preview-tile">
