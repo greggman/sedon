@@ -67,6 +67,14 @@ export interface PbrMaterial {
   /** 0 = no detail effect, 1 = full strength. Default 1. */
   detailStrength?: number;
   /**
+   * When >0, enables hard alpha cutout: fragments with basecolor alpha
+   * below this threshold are discarded, and the material is rendered
+   * two-sided (no back-face culling) since cards are typically authored
+   * to be visible from either side. 0 disables cutout (default opaque,
+   * back-face-culled). Typical foliage uses ~0.5.
+   */
+  alphaCutoff?: number;
+  /**
    * When true, the shader outputs the basecolor (× tint × detail) directly,
    * skipping all lighting math (sun, ambient, fog, shadows). Used by the
    * preview pane's flat synthesized tiles so a user authoring a texture

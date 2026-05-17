@@ -36,6 +36,19 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
    */
   readonly pipelineBlended?: GPURenderPipeline;
   /**
+   * Optional alpha-cutout variant. Two-sided, no blend — the shader's
+   * `discard` handles transparency. Selected by `pickPipeline` for
+   * materials with `alphaCutoff > 0` (leaf cards, fronds, decals).
+   */
+  readonly pipelineCutout?: GPURenderPipeline;
+  /**
+   * Optional per-material pipeline selection (cutout vs opaque). When
+   * absent, the renderer uses `pipeline` directly. The flat-preview
+   * blended override is applied by the renderer separately and is not
+   * the responsibility of this hook.
+   */
+  pickPipeline?(material: M): GPURenderPipeline;
+  /**
    * Build a @group(1) bind group for one material instance. Called once per
    * unique material at scene-renderer construction time, not per frame.
    */

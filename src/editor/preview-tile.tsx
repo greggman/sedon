@@ -9,7 +9,6 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { usePopoutGeneration } from './popout-bus.js';
 import { requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
@@ -47,10 +46,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   // it, since we no longer paint every frame unconditionally.
   //
   // Cross-document reconfig (popout) is handled inside the draw fn, not
-  // here. popoutGen still triggers the render effect below so the draw
-  // re-fires after popout, but we don't blow away the working swap
-  // chain on every split.
-  const popoutGen = usePopoutGeneration();
+  // here.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;

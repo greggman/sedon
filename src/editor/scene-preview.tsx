@@ -9,7 +9,6 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { usePopoutGeneration } from './popout-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
