@@ -1,6 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableBuffer,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './distance-transform.wgsl';
 
@@ -51,6 +56,11 @@ export const distanceTransformNode: NodeDef = {
     texture: Texture2DValue;
     __jfa?: [Texture2DValue, Texture2DValue];
     __uniformBuffer?: GPUBuffer;
+    __initBg?: ReusableBindGroup;
+    __jfaBgA?: ReusableBindGroup;
+    __jfaBgB?: ReusableBindGroup;
+    __finalBgA?: ReusableBindGroup;
+    __finalBgB?: ReusableBindGroup;
   } {
     const device = requireDevice(ctx);
     const src = inputs.texture as Texture2DValue;
@@ -69,6 +79,11 @@ export const distanceTransformNode: NodeDef = {
           texture?: Texture2DValue;
           __jfa?: [Texture2DValue, Texture2DValue];
           __uniformBuffer?: GPUBuffer;
+          __initBg?: ReusableBindGroup;
+          __jfaBgA?: ReusableBindGroup;
+          __jfaBgB?: ReusableBindGroup;
+          __finalBgA?: ReusableBindGroup;
+          __finalBgB?: ReusableBindGroup;
         }
       | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
@@ -135,18 +150,52 @@ export const distanceTransformNode: NodeDef = {
     const jfaPipeline = makePipeline('fs_jfa');
     const finalPipeline = makePipeline('fs_final');
 
-    const makeBindGroup = (
-      pipeline: GPURenderPipeline,
-      srcView: GPUTextureView | GPUTexture,
-    ): GPUBindGroup =>
-      device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: uniformBuffer },
-          { binding: 1, resource: srcView },
-          { binding: 2, resource: sampler },
-        ],
-      });
+    const buildEntries = (srcView: GPUTexture) => () => [
+      { binding: 0, resource: uniformBuffer },
+      { binding: 1, resource: srcView },
+      { binding: 2, resource: sampler },
+    ];
+    // Five long-lived bind groups, one per purpose. The JFA passes
+    // need two because the loop swaps which texture is being READ
+    // each iteration; same for the final pass since its read source
+    // depends on the loop's parity. All five are stable across edits
+    // because uniformBuffer / aView / bView / src.texture / sampler
+    // are all reused via reusableBuffer / reusableTexture / getSampler.
+    const initBg = reusableBindGroup(
+      device,
+      prev?.__initBg,
+      initPipeline.getBindGroupLayout(0),
+      [uniformBuffer, src.texture, sampler],
+      buildEntries(src.texture),
+    );
+    const jfaBgA = reusableBindGroup(
+      device,
+      prev?.__jfaBgA,
+      jfaPipeline.getBindGroupLayout(0),
+      [uniformBuffer, aView, sampler],
+      buildEntries(aView),
+    );
+    const jfaBgB = reusableBindGroup(
+      device,
+      prev?.__jfaBgB,
+      jfaPipeline.getBindGroupLayout(0),
+      [uniformBuffer, bView, sampler],
+      buildEntries(bView),
+    );
+    const finalBgA = reusableBindGroup(
+      device,
+      prev?.__finalBgA,
+      finalPipeline.getBindGroupLayout(0),
+      [uniformBuffer, aView, sampler],
+      buildEntries(aView),
+    );
+    const finalBgB = reusableBindGroup(
+      device,
+      prev?.__finalBgB,
+      finalPipeline.getBindGroupLayout(0),
+      [uniformBuffer, bView, sampler],
+      buildEntries(bView),
+    );
 
     const fullScreen = (
       enc: GPUCommandEncoder,
@@ -173,9 +222,8 @@ export const distanceTransformNode: NodeDef = {
     // Init: read original input → write seed UVs into texture A.
     {
       const enc = device.createCommandEncoder();
-      const bg = makeBindGroup(initPipeline, src.texture);
       writeStep(0);
-      fullScreen(enc, initPipeline, aView, bg);
+      fullScreen(enc, initPipeline, aView, initBg.bindGroup);
       device.queue.submit([enc.finish()]);
     }
 
@@ -185,17 +233,21 @@ export const distanceTransformNode: NodeDef = {
     // synchronization point.
     let readView = aView;
     let writeView = bView;
+    let readBg = jfaBgA.bindGroup; // tracks which bind group goes with readView
+    let writeBg = jfaBgB.bindGroup;
     const startStep = Math.floor(resolution / 2);
     for (let step = startStep; step >= 1; step = Math.floor(step / 2)) {
       const enc = device.createCommandEncoder();
       writeStep(step);
-      const bg = makeBindGroup(jfaPipeline, readView);
-      fullScreen(enc, jfaPipeline, writeView, bg);
+      fullScreen(enc, jfaPipeline, writeView, readBg);
       device.queue.submit([enc.finish()]);
       // Swap.
-      const tmp = readView;
+      const tmpView = readView;
       readView = writeView;
-      writeView = tmp;
+      writeView = tmpView;
+      const tmpBg = readBg;
+      readBg = writeBg;
+      writeBg = tmpBg;
       // The integer-divide loop terminates when step reaches 0; do an
       // extra pass at step=1 already covered above, no special case
       // needed since the loop runs while step >= 1.
@@ -203,12 +255,13 @@ export const distanceTransformNode: NodeDef = {
     }
 
     // Final: turn the last JFA result's seed-UVs into normalized
-    // distances and write to the output texture.
+    // distances and write to the output texture. Pick the bind group
+    // matching whichever JFA texture ended up as `readView`.
     {
       const enc = device.createCommandEncoder();
       writeStep(0);
-      const bg = makeBindGroup(finalPipeline, readView);
-      fullScreen(enc, finalPipeline, outTexture.texture, bg);
+      const finalBg = readView === aView ? finalBgA.bindGroup : finalBgB.bindGroup;
+      fullScreen(enc, finalPipeline, outTexture.texture, finalBg);
       device.queue.submit([enc.finish()]);
     }
 
@@ -219,6 +272,11 @@ export const distanceTransformNode: NodeDef = {
       texture: outTexture,
       __jfa: [a, b],
       __uniformBuffer: uniformBuffer,
+      __initBg: initBg,
+      __jfaBgA: jfaBgA,
+      __jfaBgB: jfaBgB,
+      __finalBgA: finalBgA,
+      __finalBgB: finalBgB,
     };
   },
 };

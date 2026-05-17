@@ -1,6 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableBuffer,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import gridShader from './grid.wgsl';
 
@@ -17,7 +22,11 @@ export const gridNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
+  evaluate(ctx, inputs): {
+    texture: Texture2DValue;
+    __uniformBuffer?: GPUBuffer;
+    __bindGroup?: ReusableBindGroup;
+  } {
     const device = requireDevice(ctx);
     const fg = inputs.fg as [number, number, number, number];
     const bg = inputs.bg as [number, number, number, number];
@@ -25,7 +34,11 @@ export const gridNode: NodeDef = {
     const lineWidth = inputs.line_width as number;
     const resolution = inputs.resolution as number;
 
-    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    const prev = ctx.previousOutput as {
+      texture?: Texture2DValue;
+      __uniformBuffer?: GPUBuffer;
+      __bindGroup?: ReusableBindGroup;
+    } | undefined;
     const out = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
@@ -45,11 +58,12 @@ export const gridNode: NodeDef = {
     uniformData[10] = lineWidth;
     uniformData[11] = 0;
 
-    const uniformBuffer = device.createBuffer({
-      size: uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uniformBuffer, 0, uniformData as BufferSource);
+    const uniformBuffer = reusableBuffer(
+      device,
+      prev?.__uniformBuffer,
+      uniformData as BufferSource,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    );
 
     const module = getShaderModule(device, gridShader);
     const pipeline = getRenderPipeline(device, {
@@ -58,10 +72,13 @@ export const gridNode: NodeDef = {
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
     });
 
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: uniformBuffer }],
-    });
+    const bindGroup = reusableBindGroup(
+      device,
+      prev?.__bindGroup,
+      pipeline.getBindGroupLayout(0),
+      [uniformBuffer],
+      () => [{ binding: 0, resource: uniformBuffer }],
+    );
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -75,11 +92,11 @@ export const gridNode: NodeDef = {
       ],
     });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(0, bindGroup.bindGroup);
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return { texture: out };
+    return { texture: out, __uniformBuffer: uniformBuffer, __bindGroup: bindGroup };
   },
 };

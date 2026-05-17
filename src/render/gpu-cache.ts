@@ -33,6 +33,18 @@ function idFor(obj: object): number {
   return id;
 }
 
+/**
+ * Process-wide stable id for any GPU object. Returns the same number
+ * on every call for the same instance, and a fresh number for any
+ * never-seen-before object. Used outside this module for content-
+ * addressed caches keyed on (texture, …) tuples — e.g. material bind
+ * group caches that want "do these two MaterialValues share the same
+ * basecolor texture handle?" without walking every consumer.
+ */
+export function gpuObjectId(obj: object): number {
+  return idFor(obj);
+}
+
 // "Is this a GPU resource handle vs a plain config dictionary?" — used
 // while serializing descriptors. WebGPU resource instances have their
 // own class prototype (GPUShaderModule, GPUBindGroupLayout, GPUSampler,

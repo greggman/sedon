@@ -1,6 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableBuffer,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import shader from './leaf-skeleton.wgsl';
 
@@ -99,7 +104,13 @@ export const leafSkeletonNode: NodeDef = {
     { name: 'shape', type: 'Texture2D' },
     { name: 'veins', type: 'Texture2D' },
   ],
-  evaluate(ctx, inputs): { shape: Texture2DValue; veins: Texture2DValue; __uniformBuffer?: GPUBuffer } {
+  evaluate(ctx, inputs): {
+    shape: Texture2DValue;
+    veins: Texture2DValue;
+    __uniformBuffer?: GPUBuffer;
+    __shapeBindGroup?: ReusableBindGroup;
+    __veinsBindGroup?: ReusableBindGroup;
+  } {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
@@ -107,7 +118,13 @@ export const leafSkeletonNode: NodeDef = {
     // texture reuse. Same dims+format on both, so a re-eval that only
     // nudges parameters reuses both textures.
     const prev = ctx.previousOutput as
-      | { shape?: Texture2DValue; veins?: Texture2DValue; __uniformBuffer?: GPUBuffer }
+      | {
+          shape?: Texture2DValue;
+          veins?: Texture2DValue;
+          __uniformBuffer?: GPUBuffer;
+          __shapeBindGroup?: ReusableBindGroup;
+          __veinsBindGroup?: ReusableBindGroup;
+        }
       | undefined;
     const usage =
       GPUTextureUsage.RENDER_ATTACHMENT |
@@ -164,14 +181,20 @@ export const leafSkeletonNode: NodeDef = {
     // Each pipeline has its own bind group layout (auto-derived from
     // its entry point), but the bindings are identical — same uniform
     // buffer on @binding(0) — so we build one bind group per pipeline.
-    const shapeBindGroup = device.createBindGroup({
-      layout: shapePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: uniformBuffer }],
-    });
-    const veinsBindGroup = device.createBindGroup({
-      layout: veinsPipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: uniformBuffer }],
-    });
+    const shapeBindGroup = reusableBindGroup(
+      device,
+      prev?.__shapeBindGroup,
+      shapePipeline.getBindGroupLayout(0),
+      [uniformBuffer],
+      () => [{ binding: 0, resource: uniformBuffer }],
+    );
+    const veinsBindGroup = reusableBindGroup(
+      device,
+      prev?.__veinsBindGroup,
+      veinsPipeline.getBindGroupLayout(0),
+      [uniformBuffer],
+      () => [{ binding: 0, resource: uniformBuffer }],
+    );
 
     const encoder = device.createCommandEncoder();
     {
@@ -186,7 +209,7 @@ export const leafSkeletonNode: NodeDef = {
         ],
       });
       pass.setPipeline(shapePipeline);
-      pass.setBindGroup(0, shapeBindGroup);
+      pass.setBindGroup(0, shapeBindGroup.bindGroup);
       pass.draw(3);
       pass.end();
     }
@@ -202,12 +225,18 @@ export const leafSkeletonNode: NodeDef = {
         ],
       });
       pass.setPipeline(veinsPipeline);
-      pass.setBindGroup(0, veinsBindGroup);
+      pass.setBindGroup(0, veinsBindGroup.bindGroup);
       pass.draw(3);
       pass.end();
     }
     device.queue.submit([encoder.finish()]);
 
-    return { shape: shapeTexture, veins: veinsTexture, __uniformBuffer: uniformBuffer };
+    return {
+      shape: shapeTexture,
+      veins: veinsTexture,
+      __uniformBuffer: uniformBuffer,
+      __shapeBindGroup: shapeBindGroup,
+      __veinsBindGroup: veinsBindGroup,
+    };
   },
 };

@@ -50,18 +50,31 @@ export interface MaterialKindImpl<M extends MaterialValue = MaterialValue> {
    */
   pickPipeline?(material: M): GPURenderPipeline;
   /**
-   * Build a @group(1) bind group for one material instance. Called by
-   * the SceneRenderer's `setScene` for every batch in the new scene.
-   *
-   * Returns both the bind group AND the GPU buffers it owns (typically
-   * a single small uniform buffer with per-material scalars). The
-   * renderer keeps these buffer handles on the Batch and explicitly
-   * `.destroy()`s them when the batch is replaced by the next
-   * `setScene` — without that, dragging a slider produces a stream of
-   * leaked uniform buffers (one per material per edit) that GC
-   * eventually claims but accumulates in the meantime.
+   * Structural fingerprint of a material — everything that determines
+   * the BIND GROUP's content (texture identities, kind discriminators).
+   * Two materials with the same structural key can share a bind group;
+   * only their scalar uniform values may differ, and those get written
+   * unconditionally via `writeMaterialParams` into the shared
+   * `paramBuffer`. Lets the renderer's per-setScene material cache
+   * reuse bind groups across eval rounds — the slider-scrub case
+   * (same textures, different roughness) becomes one writeBuffer with
+   * no createBuffer / createBindGroup churn.
    */
-  buildBindGroup(material: M): { bindGroup: GPUBindGroup; ownedBuffers: GPUBuffer[] };
+  materialStructuralKey(material: M): string;
+  /**
+   * Write the per-material scalar uniform data into `paramBuffer`. Used
+   * both on the cache-hit path (rewriting scalars over a reused buffer)
+   * and from buildBindGroup's freshly-allocated buffer. Must match the
+   * layout the kind's shader expects.
+   */
+  writeMaterialParams(material: M, paramBuffer: GPUBuffer): void;
+  /**
+   * Build a @group(1) bind group for one material instance. Called on
+   * cache misses inside the renderer's `setScene`. Returns the bind
+   * group + the writable scalar uniform buffer the renderer caches as
+   * `paramBuffer` (and writes new scalars into on slider scrubs).
+   */
+  buildBindGroup(material: M): { bindGroup: GPUBindGroup; paramBuffer: GPUBuffer };
 }
 
 /**

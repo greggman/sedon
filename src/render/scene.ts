@@ -15,7 +15,7 @@ import {
 } from './material-kind.js';
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
-import { getSampler } from './gpu-cache.js';
+import { getSampler, gpuObjectId } from './gpu-cache.js';
 import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
 import bloomUpsampleShaderCode from './bloom-upsample.wgsl';
 import brightPassShaderCode from './bright-pass.wgsl';
@@ -131,12 +131,23 @@ interface Batch {
   instanceBuffer: GPUBuffer;
   instanceCount: number;
   /**
-   * GPU buffers owned exclusively by this batch — its per-material
-   * uniform buffer + the instance buffer. Destroyed when setScene
-   * replaces the batch list, so dragging a parameter slider doesn't
-   * leak a stream of unreachable-but-undestroyed buffers.
+   * The material's structural-fingerprint string. Lets setScene look
+   * the batch up by (geometry, structuralKey, instanceCount) when
+   * rebuilding so the instance buffer can be reused across editing
+   * gestures that don't change the entity layout.
    */
-  ownedBuffers: GPUBuffer[];
+  structuralKey: string;
+}
+
+interface CachedMaterial {
+  bindGroup: GPUBindGroup;
+  /**
+   * The per-material uniform buffer the bind group points at. Cached
+   * setScene calls write new scalar values into this buffer instead of
+   * allocating a new one — slider scrubs become a writeBuffer per
+   * frame, no createBuffer / createBindGroup churn.
+   */
+  paramBuffer: GPUBuffer;
 }
 
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
@@ -515,24 +526,25 @@ export function createSceneRenderer(
     lastHeight = height;
   }
 
-  // Per-scene state. Empty until setScene is first called — render() is
-  // a no-op for the scene pass in that case (sky/composite still run).
-  // Each setScene call rebuilds these from the new scene; the previous
-  // batches' instance buffers leak to GC (small, short-lived) but
-  // material bind groups don't own GPU resources beyond what their
-  // referenced materials hold.
+  // Per-scene state. Empty until setScene is first called — render()
+  // is a no-op for the scene pass in that case (sky/composite still
+  // run). Two caches survive across setScene calls:
+  //
+  //   • materialCache — keyed on the kind's structural fingerprint
+  //     (texture identities + kind discriminators). Same-structure
+  //     materials reuse the bind group and the per-material uniform
+  //     buffer; only the scalar contents get rewritten via
+  //     writeMaterialParams, and only when the scalar fingerprint
+  //     actually differs. The slider-scrub case (one material, same
+  //     textures, dragging roughness) becomes a single writeBuffer per
+  //     frame with zero create/destroy churn.
+  //
+  //   • instance buffers — kept alive on the previous Batch and
+  //     reused across setScene calls when (geometry, structuralKey,
+  //     instanceCount) matches. Same matching produces zero buffer
+  //     alloc and a single writeBuffer; mismatches destroy + realloc.
   let batches: Batch[] = [];
-
-  function destroyBatch(b: Batch): void {
-    for (const buf of b.ownedBuffers) {
-      try {
-        buf.destroy();
-      } catch {
-        // Buffer may have been double-destroyed during teardown;
-        // ignore — same defensive idiom as sweepCache uses.
-      }
-    }
-  }
+  const materialCache = new Map<string, CachedMaterial>();
 
   function setScene(scene: SceneValue): void {
     // Group entities by (kind, geometry, material) reference equality.
@@ -562,7 +574,26 @@ export function createSceneRenderer(
       entities.push(entity);
     }
 
+    // Index the previous batches by their reuse key so we can pull
+    // out a matching instance buffer for each new batch in O(1).
+    // Anything we don't claim by the end of the loop is destroyed.
+    //
+    // The geometry identity is keyed on its `positionBuffer` GPUBuffer
+    // handle, NOT the outer GeometryValue object — `uploadMeshToGpu`
+    // returns a fresh GeometryValue literal each call even when the
+    // inner GPU buffers are reused via `reusableBuffer`. The GPUBuffer
+    // handles are what's actually stable across evals; keying on the
+    // wrapper would miss on every eval round and rebuild every
+    // instance buffer in the scene.
+    const prevBatchByKey = new Map<string, Batch>();
+    for (const b of batches) {
+      const key = `${gpuObjectId(b.geometry.positionBuffer as object)}|${b.structuralKey}|${b.instanceCount}`;
+      prevBatchByKey.set(key, b);
+    }
+
     const next: Batch[] = [];
+    const usedMaterialKeys = new Set<string>();
+
     for (const [kindId, byGeometry] of groupsByKind) {
       const kind = kinds.get(kindId);
       if (!kind) {
@@ -570,6 +601,39 @@ export function createSceneRenderer(
       }
       for (const [geometry, byMaterial] of byGeometry) {
         for (const [material, entities] of byMaterial) {
+          // Material side: cache lookup / build / always rewrite
+          // scalars. We deliberately don't fingerprint the scalars to
+          // skip the write — writeBuffer for ~16-32 bytes is cheap
+          // enough that the comparison's not worth its keep.
+          const structuralKey = (
+            kind.materialStructuralKey as (m: MaterialValue) => string
+          )(material);
+          const cacheKey = `${kindId}:${structuralKey}`;
+          usedMaterialKeys.add(cacheKey);
+          let cached = materialCache.get(cacheKey);
+          if (cached) {
+            // Same texture set — reuse the bind group, rewrite scalars.
+            (kind.writeMaterialParams as (m: MaterialValue, b: GPUBuffer) => void)(
+              material,
+              cached.paramBuffer,
+            );
+          } else {
+            const built = (
+              kind.buildBindGroup as (m: MaterialValue) => {
+                bindGroup: GPUBindGroup;
+                paramBuffer: GPUBuffer;
+              }
+            )(material);
+            cached = {
+              bindGroup: built.bindGroup,
+              paramBuffer: built.paramBuffer,
+            };
+            materialCache.set(cacheKey, cached);
+          }
+
+          // Instance side: try to reuse the buffer from the previous
+          // batch that had the same (geometry, structuralKey,
+          // instanceCount). Same-shape batches reuse without alloc.
           const instanceCount = entities.length;
           const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
           for (let i = 0; i < instanceCount; i++) {
@@ -577,39 +641,46 @@ export function createSceneRenderer(
             instanceData.set(e.transform, i * INSTANCE_FLOATS);
             instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
           }
-          const instanceBuffer = device.createBuffer({
-            size: instanceData.byteLength,
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-          });
+          const instanceKey = `${gpuObjectId(geometry.positionBuffer as object)}|${structuralKey}|${instanceCount}`;
+          const prevBatch = prevBatchByKey.get(instanceKey);
+          let instanceBuffer: GPUBuffer;
+          if (prevBatch) {
+            instanceBuffer = prevBatch.instanceBuffer;
+            prevBatchByKey.delete(instanceKey);
+          } else {
+            instanceBuffer = device.createBuffer({
+              size: instanceData.byteLength,
+              usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            });
+          }
           device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
-
-          const built = (
-            kind.buildBindGroup as (m: MaterialValue) => {
-              bindGroup: GPUBindGroup;
-              ownedBuffers: GPUBuffer[];
-            }
-          )(material);
 
           next.push({
             kindId,
             material,
             geometry,
-            materialBindGroup: built.bindGroup,
+            materialBindGroup: cached.bindGroup,
             instanceBuffer,
             instanceCount,
-            // Instance buffer + material's uniform buffers — all owned
-            // by this batch. setScene's next call destroys the previous
-            // batch's buffers; without that, every slider tick leaks a
-            // pile of unreachable GPUBuffers waiting on GC.
-            ownedBuffers: [instanceBuffer, ...built.ownedBuffers],
+            structuralKey,
           });
         }
       }
     }
-    // Destroy the OLD batches' buffers now that nothing references
-    // them. Safe even if a render is in flight: WebGPU defers physical
-    // destruction until any in-flight submit completes.
-    for (const b of batches) destroyBatch(b);
+
+    // Destroy unclaimed prev-batch instance buffers.
+    for (const b of prevBatchByKey.values()) {
+      try { b.instanceBuffer.destroy(); } catch { /* */ }
+    }
+    // Destroy material cache entries for materials no longer in the
+    // scene. (Keep the rest — they may be hit again next setScene.)
+    for (const [key, cached] of materialCache) {
+      if (!usedMaterialKeys.has(key)) {
+        try { cached.paramBuffer.destroy(); } catch { /* */ }
+        materialCache.delete(key);
+      }
+    }
+
     batches = next;
   }
 
@@ -632,8 +703,15 @@ export function createSceneRenderer(
     try { skyUniformBuffer.destroy(); } catch { /* */ }
     try { brightPassUniform.destroy(); } catch { /* */ }
     try { compositeUniform.destroy(); } catch { /* */ }
-    // Per-batch instance + material param buffers.
-    for (const b of batches) destroyBatch(b);
+    // Per-batch instance buffers and per-material paramBuffers held
+    // in the material cache.
+    for (const b of batches) {
+      try { b.instanceBuffer.destroy(); } catch { /* */ }
+    }
+    for (const cached of materialCache.values()) {
+      try { cached.paramBuffer.destroy(); } catch { /* */ }
+    }
+    materialCache.clear();
     depthTexture = null;
     hdrColor = null;
     hdrColorView = null;

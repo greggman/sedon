@@ -40,6 +40,14 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
+  // Memoized bind group keyed on the source GPUTexture handle. Most
+  // upstream nodes use `reusableTexture` which preserves the underlying
+  // GPUTexture across edits even when the wrapping Texture2DValue
+  // object is recreated each eval — so a fresh `value` prop with the
+  // same `value.texture` handle should reuse the bind group instead of
+  // creating one per edit. With one TexturePreview per node-with-a-
+  // texture-output in a canvas, that's a lot of churn otherwise.
+  const bindGroupRef = useRef<{ tex: GPUTexture; bg: GPUBindGroup } | null>(null);
 
   // Configure the canvas's WebGPU context once per device.
   useEffect(() => {
@@ -55,6 +63,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
       ctx.unconfigure();
       ctxRef.current = null;
       formatRef.current = null;
+      bindGroupRef.current = null;
     };
   }, [device]);
 
@@ -64,13 +73,20 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     const format = formatRef.current;
     if (!ctx || !format) return;
     const { pipeline, sampler } = getBlit(device, format);
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: value.texture },
-        { binding: 1, resource: sampler },
-      ],
-    });
+    let bindGroup = bindGroupRef.current;
+    if (!bindGroup || bindGroup.tex !== value.texture) {
+      bindGroup = {
+        tex: value.texture,
+        bg: device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: value.texture },
+            { binding: 1, resource: sampler },
+          ],
+        }),
+      };
+      bindGroupRef.current = bindGroup;
+    }
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -83,7 +99,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
       ],
     });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(0, bindGroup.bg);
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);

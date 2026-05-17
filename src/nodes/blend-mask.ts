@@ -1,6 +1,10 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './blend-mask.wgsl';
 
@@ -20,14 +24,20 @@ export const blendMaskNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
+  evaluate(ctx, inputs): {
+    texture: Texture2DValue;
+    __bindGroup?: ReusableBindGroup;
+  } {
     const device = requireDevice(ctx);
     const a = inputs.a as Texture2DValue;
     const b = inputs.b as Texture2DValue;
     const mask = inputs.mask as Texture2DValue;
     const resolution = inputs.resolution as number;
 
-    const prev = ctx.previousOutput as { texture?: Texture2DValue } | undefined;
+    const prev = ctx.previousOutput as {
+      texture?: Texture2DValue;
+      __bindGroup?: ReusableBindGroup;
+    } | undefined;
     const out = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
@@ -52,15 +62,18 @@ export const blendMaskNode: NodeDef = {
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
     });
 
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
+    const bindGroup = reusableBindGroup(
+      device,
+      prev?.__bindGroup,
+      pipeline.getBindGroupLayout(0),
+      [a.texture, b.texture, mask.texture, sampler],
+      () => [
         { binding: 0, resource: a.texture },
         { binding: 1, resource: b.texture },
         { binding: 2, resource: mask.texture },
         { binding: 3, resource: sampler },
       ],
-    });
+    );
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -74,11 +87,11 @@ export const blendMaskNode: NodeDef = {
       ],
     });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(0, bindGroup.bindGroup);
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return { texture: out };
+    return { texture: out, __bindGroup: bindGroup };
   },
 };

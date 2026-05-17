@@ -4,6 +4,7 @@ import {
   getPipelineLayout,
   getRenderPipeline,
   getShaderModule,
+  gpuObjectId,
 } from '../gpu-cache.js';
 import {
   ALPHA_BLEND_STATE,
@@ -107,20 +108,23 @@ export function createPbrKind(
       if ((material.alphaCutoff ?? 0) > 0) return pipelineCutout;
       return pipeline;
     },
-    buildBindGroup(material) {
-      const normalTex = material.normal ?? (flatNormal ??= createFlatNormalTexture(device));
-      const detailBasecolorTex =
-        material.detailBasecolor ?? (flatHalf ??= createFlatHalfTexture(device));
-      const detailNormalTex =
-        material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
-
-      const paramBuffer = device.createBuffer({
-        // 6 floats used, padded to 32 bytes (next 16-byte boundary for
-        // WGSL UBO). Layout: roughness, metallic, detailScale,
-        // detailStrength, unlit, alphaCutoff.
-        size: 32,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+    // Structural key: just the texture handle identities (or `none` for
+    // unwired optionals + their flat-placeholder substitutes, since the
+    // bind group's contents depend on which set of textures end up at
+    // each binding). Scalars are NOT included — they're written into
+    // the cached paramBuffer via writeMaterialParams instead.
+    materialStructuralKey(material) {
+      const basecolor = gpuObjectId(material.basecolor.texture);
+      const normal = material.normal ? gpuObjectId(material.normal.texture) : 'flat';
+      const detailB = material.detailBasecolor
+        ? gpuObjectId(material.detailBasecolor.texture)
+        : 'flat';
+      const detailN = material.detailNormal
+        ? gpuObjectId(material.detailNormal.texture)
+        : 'flat';
+      return `pbr|${basecolor}|${normal}|${detailB}|${detailN}`;
+    },
+    writeMaterialParams(material, paramBuffer) {
       const paramData = new Float32Array(8);
       paramData[0] = material.roughness;
       paramData[1] = material.metallic;
@@ -129,6 +133,22 @@ export function createPbrKind(
       paramData[4] = material.unlit ? 1 : 0;
       paramData[5] = material.alphaCutoff ?? 0;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
+    },
+    buildBindGroup(material) {
+      const normalTex = material.normal ?? (flatNormal ??= createFlatNormalTexture(device));
+      const detailBasecolorTex =
+        material.detailBasecolor ?? (flatHalf ??= createFlatHalfTexture(device));
+      const detailNormalTex =
+        material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
+
+      // 6 floats used, padded to 32 bytes (next 16-byte boundary for
+      // WGSL UBO). Layout: roughness, metallic, detailScale,
+      // detailStrength, unlit, alphaCutoff.
+      const paramBuffer = device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.writeMaterialParams(material, paramBuffer);
 
       const bindGroup = device.createBindGroup({
         layout: materialBindGroupLayout,
@@ -140,7 +160,7 @@ export function createPbrKind(
           { binding: 4, resource: detailNormalTex.texture },
         ],
       });
-      return { bindGroup, ownedBuffers: [paramBuffer] };
+      return { bindGroup, paramBuffer };
     },
   };
 }

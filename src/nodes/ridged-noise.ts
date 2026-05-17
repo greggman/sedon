@@ -1,6 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableBuffer,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
 import shader from './ridged-noise.wgsl';
 
@@ -28,7 +33,11 @@ export const ridgedNoiseNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
-  evaluate(ctx, inputs): { texture: Texture2DValue; __uniformBuffer?: GPUBuffer } {
+  evaluate(ctx, inputs): {
+    texture: Texture2DValue;
+    __uniformBuffer?: GPUBuffer;
+    __bindGroup?: ReusableBindGroup;
+  } {
     const device = requireDevice(ctx);
     const resolution = inputs.resolution as number;
 
@@ -38,7 +47,11 @@ export const ridgedNoiseNode: NodeDef = {
 
     // Reuse the previously-allocated texture when dims+format are
     // unchanged — same texture object, new contents rendered in.
-    const prev = ctx.previousOutput as { texture?: Texture2DValue; __uniformBuffer?: GPUBuffer } | undefined;
+    const prev = ctx.previousOutput as {
+      texture?: Texture2DValue;
+      __uniformBuffer?: GPUBuffer;
+      __bindGroup?: ReusableBindGroup;
+    } | undefined;
     const outputTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
       height: resolution,
@@ -74,10 +87,13 @@ export const ridgedNoiseNode: NodeDef = {
       fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
     });
 
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: uniformBuffer }],
-    });
+    const bindGroup = reusableBindGroup(
+      device,
+      prev?.__bindGroup,
+      pipeline.getBindGroupLayout(0),
+      [uniformBuffer],
+      () => [{ binding: 0, resource: uniformBuffer }],
+    );
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -91,11 +107,15 @@ export const ridgedNoiseNode: NodeDef = {
       ],
     });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(0, bindGroup.bindGroup);
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return { texture: outputTexture };
+    return {
+      texture: outputTexture,
+      __uniformBuffer: uniformBuffer,
+      __bindGroup: bindGroup,
+    };
   },
 };

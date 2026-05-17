@@ -188,6 +188,174 @@ test('SceneRenderer.destroy: repeated create/destroy cycles do not leak GPU reso
   );
 });
 
+test('SceneRenderer: slider-scrub (same textures, different scalars) allocates nothing', () => {
+  // The user-facing case this whole optimization exists for. Same
+  // texture handles + same geometry, dragging a scalar (roughness)
+  // should hit the material cache (bind group reuse) and the instance
+  // buffer reuse path; ONLY a writeBuffer per frame for the scalar
+  // uniform and a writeBuffer for the (unchanged) instance data.
+  const device = createMockDevice();
+  const renderer = createSceneRenderer(
+    device as unknown as GPUDevice,
+    'rgba8unorm',
+  );
+  const geom = externalGeometry(device);
+  const tex = externalTexture(device);
+  function pbrAt(roughness: number) {
+    return {
+      kind: 'pbr' as const,
+      basecolor: tex,
+      roughness,
+      metallic: 0,
+      normal: tex,
+      detailBasecolor: tex,
+      detailNormal: tex,
+    };
+  }
+
+  renderer.setScene(makeScene(geom, pbrAt(0.5)));
+  const base = snap(device);
+
+  // 20 ticks of a slider drag. Same textures, same geometry, different
+  // roughness scalar each time.
+  for (let i = 0; i < 20; i++) {
+    renderer.setScene(makeScene(geom, pbrAt(0.5 + i * 0.01)));
+  }
+  const after = snap(device);
+
+  assert.equal(
+    after.createdBuffers - base.createdBuffers,
+    0,
+    'slider scrub should not allocate any new buffers',
+  );
+  assert.equal(
+    after.createdBindGroups - base.createdBindGroups,
+    0,
+    'slider scrub should not allocate any new bind groups',
+  );
+  assert.equal(
+    after.destroyedBuffers - base.destroyedBuffers,
+    0,
+    'slider scrub should not destroy any buffers either',
+  );
+});
+
+test('SceneRenderer: identical setScene calls allocate nothing — just two writeBuffer calls', () => {
+  // A re-eval that produces the exact same scene should bottom out
+  // at: 1 writeBuffer for instance data + 1 writeBuffer for the
+  // material scalars. Both writes are tiny and unconditional —
+  // skipping them would require a content fingerprint compare that
+  // costs more than the writeBuffer itself.
+  const device = createMockDevice();
+  const renderer = createSceneRenderer(
+    device as unknown as GPUDevice,
+    'rgba8unorm',
+  );
+  const geom = externalGeometry(device);
+  const pbr = makePbr(device, 0.5);
+  renderer.setScene(makeScene(geom, pbr));
+  const base = {
+    createdBuffers: device.stats.createdBuffers,
+    createdBindGroups: device.stats.createdBindGroups,
+    writeBufferCalls: device.stats.writeBufferCalls,
+  };
+  renderer.setScene(makeScene(geom, pbr));
+  const after = {
+    createdBuffers: device.stats.createdBuffers,
+    createdBindGroups: device.stats.createdBindGroups,
+    writeBufferCalls: device.stats.writeBufferCalls,
+  };
+
+  assert.equal(after.createdBuffers, base.createdBuffers, 'no new buffers');
+  assert.equal(after.createdBindGroups, base.createdBindGroups, 'no new bind groups');
+  // 1 writeBuffer for the instance data (entities may have moved) +
+  // 1 writeBuffer for the material scalars (always rewritten on
+  // cache hit; cheap, and skipping the write would cost a string
+  // comparison that's likely more expensive than the write itself).
+  assert.equal(
+    after.writeBufferCalls - base.writeBufferCalls,
+    2,
+    'setScene should issue exactly 2 writeBuffer calls per batch on cache hit (instance + scalars)',
+  );
+});
+
+test('SceneRenderer: fresh GeometryValue wrapping the same GPU buffers still hits the instance-buffer cache', () => {
+  // Regression test for a real bug: uploadMeshToGpu returns a NEW
+  // GeometryValue object literal on every call, even when its inner
+  // GPUBuffer handles are reused via reusableBuffer. The cache key
+  // for instance buffer reuse must therefore key on the stable inner
+  // buffer identity (positionBuffer), NOT on the outer GeometryValue
+  // object reference. Without this, every eval rebuilds every batch's
+  // instance buffer even when nothing about the geometry has changed.
+  const device = createMockDevice();
+  const renderer = createSceneRenderer(
+    device as unknown as GPUDevice,
+    'rgba8unorm',
+  );
+  // First scene: geometry "version 1" (one wrapper).
+  const geomA = externalGeometry(device);
+  const pbr = makePbr(device, 0.5);
+  renderer.setScene(makeScene(geomA, pbr));
+  const base = snap(device);
+
+  // Re-wrap the same GPU buffers in a NEW GeometryValue literal —
+  // exactly what uploadMeshToGpu produces when called twice.
+  const geomB: GeometryValue = {
+    positionBuffer: geomA.positionBuffer,
+    normalBuffer: geomA.normalBuffer,
+    uvBuffer: geomA.uvBuffer,
+    indexBuffer: geomA.indexBuffer,
+    indexCount: geomA.indexCount,
+    indexFormat: geomA.indexFormat,
+  };
+  renderer.setScene(makeScene(geomB, pbr));
+  const after = snap(device);
+
+  assert.equal(after.createdBuffers - base.createdBuffers, 0,
+    'fresh GeometryValue wrapping same GPU buffers should reuse instance buffer');
+  assert.equal(after.createdBindGroups - base.createdBindGroups, 0,
+    'same material should still hit the bind group cache');
+});
+
+test('SceneRenderer: changing only the texture handle rebuilds the bind group but not the param buffer dedup chain', () => {
+  // Structural-key invalidation: swapping the basecolor texture should
+  // miss the cache, build a fresh bind group + paramBuffer, and
+  // destroy the previous material entry.
+  const device = createMockDevice();
+  const renderer = createSceneRenderer(
+    device as unknown as GPUDevice,
+    'rgba8unorm',
+  );
+  const geom = externalGeometry(device);
+
+  renderer.setScene(makeScene(geom, makePbr(device, 0.5)));
+  const base = snap(device);
+
+  // Different basecolor texture each iteration → fresh structural key
+  // → cache miss → new bind group + new paramBuffer. The previous
+  // entry's paramBuffer is destroyed by setScene's purge step.
+  for (let i = 0; i < 5; i++) {
+    renderer.setScene(makeScene(geom, makePbr(device, 0.5)));
+  }
+  const after = snap(device);
+
+  // Each iteration: 1 new bind group + 1 new paramBuffer.
+  // Each iteration also destroys the previous param buffer (the
+  // previous instance buffer is reused since geometry/structuralKey/
+  // instanceCount actually MATCH — wait, they don't because
+  // structuralKey changes with the texture). So instance buffer also
+  // rebuilds. Total per iteration: 2 createBuffer + 2 destroyBuffer
+  // + 1 createBindGroup.
+  const buffersCreated = after.createdBuffers - base.createdBuffers;
+  const buffersDestroyed = after.destroyedBuffers - base.destroyedBuffers;
+  assert.equal(buffersCreated, buffersDestroyed,
+    'texture-swap scrub should still balance creates against destroys');
+  assert.ok(
+    after.createdBindGroups - base.createdBindGroups >= 5,
+    'each new texture handle should produce a new bind group',
+  );
+});
+
 test('SceneRenderer: render() allocates per-canvas intermediates once per size', () => {
   // The depth + HDR + 6 bloom mip textures inside the renderer are
   // size-bound — they (re)allocate when canvas size changes. Repeated

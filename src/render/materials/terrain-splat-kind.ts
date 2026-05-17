@@ -4,6 +4,7 @@ import {
   getPipelineLayout,
   getRenderPipeline,
   getShaderModule,
+  gpuObjectId,
 } from '../gpu-cache.js';
 import {
   createFlatNormalTexture,
@@ -61,19 +62,30 @@ export function createTerrainSplatKind(
   return {
     id: 'terrain-splat',
     pipeline,
-    buildBindGroup(material) {
-      const paramBuffer = device.createBuffer({
-        size: 16,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      // Layout: roughnessA, roughnessB at offsets 0/4; tile_scale vec2f at
-      // offset 8 (naturally aligned) — total 16 bytes.
+    materialStructuralKey(material) {
+      const layerA = gpuObjectId(material.layerA.texture);
+      const layerB = gpuObjectId(material.layerB.texture);
+      const mask = gpuObjectId(material.mask.texture);
+      const normalA = material.normalA ? gpuObjectId(material.normalA.texture) : 'flat';
+      const normalB = material.normalB ? gpuObjectId(material.normalB.texture) : 'flat';
+      return `terrain-splat|${layerA}|${layerB}|${mask}|${normalA}|${normalB}`;
+    },
+    writeMaterialParams(material, paramBuffer) {
       const paramData = new Float32Array(4);
       paramData[0] = material.roughnessA;
       paramData[1] = material.roughnessB;
       paramData[2] = material.tileScale[0];
       paramData[3] = material.tileScale[1];
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
+    },
+    buildBindGroup(material) {
+      // Layout: roughnessA, roughnessB at offsets 0/4; tile_scale vec2f at
+      // offset 8 (naturally aligned) — total 16 bytes.
+      const paramBuffer = device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.writeMaterialParams(material, paramBuffer);
 
       const normalA = material.normalA ?? ensureFlat();
       const normalB = material.normalB ?? ensureFlat();
@@ -89,7 +101,7 @@ export function createTerrainSplatKind(
           { binding: 5, resource: normalB.texture },
         ],
       });
-      return { bindGroup, ownedBuffers: [paramBuffer] };
+      return { bindGroup, paramBuffer };
     },
   };
 }

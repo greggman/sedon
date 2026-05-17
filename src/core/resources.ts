@@ -260,6 +260,62 @@ export function identityTint(): Float32Array {
 }
 
 /**
+ * Reuse a node's previous GPUBindGroup if the resources it references
+ * are reference-equal to the previous eval. Cuts the per-edit bind
+ * group allocation count from "one per node per edit" to "one per node
+ * total" for typical slider-scrub scenarios — every node's evaluate
+ * builds a bind group whose entries are stable handles (reused via
+ * `reusableTexture` / `reusableBuffer` / `getSampler`), so the
+ * bindGroup itself is reusable too.
+ *
+ * Usage:
+ *   const refs = [uniformBuffer, factor.texture, sampler];
+ *   const bg = reusableBindGroup(
+ *     device, prev?.__bindGroup, pipeline.getBindGroupLayout(0), refs,
+ *     () => [
+ *       { binding: 0, resource: uniformBuffer },
+ *       { binding: 1, resource: factor.texture },
+ *       { binding: 2, resource: sampler },
+ *     ],
+ *   );
+ *   pass.setBindGroup(0, bg.bindGroup);
+ *   return { texture: out, __bindGroup: bg, ... };
+ *
+ * The `refs` array is identity-compared against the previous eval's
+ * refs. Order MUST match between calls; mismatched length forces a
+ * rebuild. Same-identity refs return the SAME `ReusableBindGroup`
+ * object so the eval cache's previousOutput chain stays stable.
+ */
+export interface ReusableBindGroup {
+  bindGroup: GPUBindGroup;
+  /** Identity-tracked references the bindGroup was built against. */
+  refs: ReadonlyArray<unknown>;
+}
+
+export function reusableBindGroup(
+  device: GPUDevice,
+  previous: ReusableBindGroup | undefined,
+  layout: GPUBindGroupLayout,
+  refs: ReadonlyArray<unknown>,
+  buildEntries: () => GPUBindGroupEntry[],
+): ReusableBindGroup {
+  if (previous && previous.refs.length === refs.length) {
+    let same = true;
+    for (let i = 0; i < refs.length; i++) {
+      if (previous.refs[i] !== refs[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return previous;
+  }
+  return {
+    bindGroup: device.createBindGroup({ layout, entries: buildEntries() }),
+    refs,
+  };
+}
+
+/**
  * Acquire a GPUBuffer that's safe to fill with `data`, reusing the
  * previous buffer when the byte size already matches. Mirrors
  * `reusableTexture` for GeometryValue's vertex/index buffers: when only

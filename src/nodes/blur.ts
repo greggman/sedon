@@ -1,6 +1,11 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
-import { requireDevice, reusableBuffer, reusableTexture } from '../core/resources.js';
+import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
+import {
+  requireDevice,
+  reusableBindGroup,
+  reusableBuffer,
+  reusableTexture,
+} from '../core/resources.js';
 import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './blur.wgsl';
 
@@ -28,6 +33,8 @@ export const blurNode: NodeDef = {
     texture: Texture2DValue;
     __intermediate?: Texture2DValue;
     __uniformBuffer?: GPUBuffer;
+    __bindGroupH?: ReusableBindGroup;
+    __bindGroupV?: ReusableBindGroup;
   } {
     const device = requireDevice(ctx);
     const src = inputs.texture as Texture2DValue;
@@ -43,7 +50,13 @@ export const blurNode: NodeDef = {
     // The intermediate is stashed as a private field on the output so
     // the next eval's previousOutput exposes it for reuse.
     const prev = ctx.previousOutput as
-      | { texture?: Texture2DValue; __intermediate?: Texture2DValue; __uniformBuffer?: GPUBuffer }
+      | {
+          texture?: Texture2DValue;
+          __intermediate?: Texture2DValue;
+          __uniformBuffer?: GPUBuffer;
+          __bindGroupH?: ReusableBindGroup;
+          __bindGroupV?: ReusableBindGroup;
+        }
       | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
       width: resolution,
@@ -95,15 +108,18 @@ export const blurNode: NodeDef = {
 
     // Pass 1: horizontal (src → intermediate).
     writeUniform(1, 0);
+    const bindGroupH = reusableBindGroup(
+      device,
+      prev?.__bindGroupH,
+      pipeline.getBindGroupLayout(0),
+      [uniformBuffer, src.texture, sampler],
+      () => [
+        { binding: 0, resource: uniformBuffer },
+        { binding: 1, resource: src.texture },
+        { binding: 2, resource: sampler },
+      ],
+    );
     {
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: uniformBuffer },
-          { binding: 1, resource: src.texture },
-          { binding: 2, resource: sampler },
-        ],
-      });
       const encoder = device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -116,7 +132,7 @@ export const blurNode: NodeDef = {
         ],
       });
       pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
+      pass.setBindGroup(0, bindGroupH.bindGroup);
       pass.draw(3);
       pass.end();
       device.queue.submit([encoder.finish()]);
@@ -127,15 +143,18 @@ export const blurNode: NodeDef = {
     // requiring a memory barrier (WebGPU's queue submission boundary
     // already orders them).
     writeUniform(0, 1);
+    const bindGroupV = reusableBindGroup(
+      device,
+      prev?.__bindGroupV,
+      pipeline.getBindGroupLayout(0),
+      [uniformBuffer, intermediateView, sampler],
+      () => [
+        { binding: 0, resource: uniformBuffer },
+        { binding: 1, resource: intermediateView },
+        { binding: 2, resource: sampler },
+      ],
+    );
     {
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: uniformBuffer },
-          { binding: 1, resource: intermediateView },
-          { binding: 2, resource: sampler },
-        ],
-      });
       const encoder = device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -148,7 +167,7 @@ export const blurNode: NodeDef = {
         ],
       });
       pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
+      pass.setBindGroup(0, bindGroupV.bindGroup);
       pass.draw(3);
       pass.end();
       device.queue.submit([encoder.finish()]);
@@ -161,6 +180,8 @@ export const blurNode: NodeDef = {
       texture: outTexture,
       __intermediate: intermediate,
       __uniformBuffer: uniformBuffer,
+      __bindGroupH: bindGroupH,
+      __bindGroupV: bindGroupV,
     };
   },
 };
