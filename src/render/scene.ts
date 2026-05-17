@@ -667,7 +667,7 @@ export function createSceneRenderer(
         colorAttachments: [
           {
             view: hdrColorView!,
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            clearValue: [0, 0, 0, 1],
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -725,7 +725,7 @@ export function createSceneRenderer(
       // Bright-pass: scene HDR → mip 0 (half-res, replace).
       const bright = encoder.beginRenderPass({
         colorAttachments: [
-          { view: bloomMips[0]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+          { view: bloomMips[0]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
         ],
       });
       bright.setPipeline(brightPassPipeline);
@@ -738,7 +738,7 @@ export function createSceneRenderer(
       for (let i = 0; i < BLOOM_MIP_COUNT - 1; i++) {
         const pass = encoder.beginRenderPass({
           colorAttachments: [
-            { view: bloomMips[i + 1]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+            { view: bloomMips[i + 1]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
           ],
         });
         pass.setPipeline(downsamplePipeline);
@@ -768,7 +768,7 @@ export function createSceneRenderer(
       // (tone-map + sRGB encode).
       const composite = encoder.beginRenderPass({
         colorAttachments: [
-          { view: colorView, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' },
+          { view: colorView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' },
         ],
       });
       composite.setPipeline(compositePipeline);

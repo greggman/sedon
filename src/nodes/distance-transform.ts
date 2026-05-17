@@ -160,7 +160,7 @@ export const distanceTransformNode: NodeDef = {
             view,
             loadOp: 'clear',
             storeOp: 'store',
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            clearValue: [0, 0, 0, 0],
           },
         ],
       });

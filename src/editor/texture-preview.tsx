@@ -76,7 +76,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
       colorAttachments: [
         {
           view: ctx.getCurrentTexture(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: [0, 0, 0, 1],
           loadOp: 'clear',
           storeOp: 'store',
         },
