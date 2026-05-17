@@ -83,7 +83,7 @@ export const ridgedNoiseNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: outputTexture.view,
+          view: outputTexture.texture,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },

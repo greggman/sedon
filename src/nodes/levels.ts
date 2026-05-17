@@ -82,7 +82,7 @@ export const levelsNode: NodeDef = {
       layout: pipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: uniformBuffer },
-        { binding: 1, resource: src.view },
+        { binding: 1, resource: src.texture },
         { binding: 2, resource: sampler },
       ],
     });
@@ -91,7 +91,7 @@ export const levelsNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: out.view,
+          view: out.texture,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },

@@ -77,8 +77,8 @@ export const blendNode: NodeDef = {
       layout: pipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: uniformBuffer },
-        { binding: 1, resource: a.view },
-        { binding: 2, resource: b.view },
+        { binding: 1, resource: a.texture },
+        { binding: 2, resource: b.texture },
         { binding: 3, resource: sampler },
       ],
     });
@@ -87,7 +87,7 @@ export const blendNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: out.view,
+          view: out.texture,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },

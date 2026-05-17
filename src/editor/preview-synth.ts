@@ -48,7 +48,6 @@ function getResources(device: GPUDevice): PreviewResources {
   );
   const white: Texture2DValue = {
     texture,
-    view: texture.createView(),
     format,
     width: 1,
     height: 1,

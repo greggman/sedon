@@ -151,7 +151,7 @@ test('reusableTexture: matching dims+format → reuse same GPUTexture, fresh vie
   };
   const value = reusableTexture(
     d as unknown as GPUDevice,
-    { texture: previous as unknown as GPUTexture, view: {} as unknown, format: 'rgba8unorm', width: 256, height: 256 },
+    { texture: previous as unknown as GPUTexture, format: 'rgba8unorm', width: 256, height: 256 },
     { width: 256, height: 256, format: 'rgba8unorm', usage: 0 },
   );
   assert.equal(d.createTextureCalls, 0);
@@ -172,7 +172,7 @@ test('reusableTexture: mismatched dims → fresh texture, previous NOT destroyed
   };
   const value = reusableTexture(
     d as unknown as GPUDevice,
-    { texture: previous as unknown as GPUTexture, view: {} as unknown, format: 'rgba8unorm', width: 256, height: 256 },
+    { texture: previous as unknown as GPUTexture, format: 'rgba8unorm', width: 256, height: 256 },
     { width: 512, height: 512, format: 'rgba8unorm', usage: 0 },
   );
   assert.equal(d.createTextureCalls, 1);
@@ -192,7 +192,7 @@ test('reusableTexture: mismatched format → fresh allocation', () => {
   };
   const value = reusableTexture(
     d as unknown as GPUDevice,
-    { texture: previous as unknown as GPUTexture, view: {} as unknown, format: 'rgba8unorm', width: 256, height: 256 },
+    { texture: previous as unknown as GPUTexture, format: 'rgba8unorm', width: 256, height: 256 },
     { width: 256, height: 256, format: 'rgba16float', usage: 0 },
   );
   assert.equal(d.createTextureCalls, 1);

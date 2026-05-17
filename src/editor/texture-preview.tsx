@@ -67,7 +67,7 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: value.view },
+        { binding: 0, resource: value.texture },
         { binding: 1, resource: sampler },
       ],
     });

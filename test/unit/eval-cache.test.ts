@@ -344,10 +344,10 @@ test('sweepCache evicts untouched entries and destroys orphan resources', () => 
 
   // Two entries shaped like Texture2DValue so walkGpuResources finds them.
   cache.entries.set('fpA', {
-    out: { texture: texA, view: {}, format: 'rgba8unorm', width: 1, height: 1 },
+    out: { texture: texA, format: 'rgba8unorm', width: 1, height: 1 },
   });
   cache.entries.set('fpB', {
-    out: { texture: texB, view: {}, format: 'rgba8unorm', width: 1, height: 1 },
+    out: { texture: texB, format: 'rgba8unorm', width: 1, height: 1 },
   });
 
   // Only A was touched this round → B should be evicted and texB destroyed.

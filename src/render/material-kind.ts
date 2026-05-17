@@ -175,7 +175,6 @@ export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
   );
   return {
     texture,
-    view: texture.createView(),
     format,
     width: 1,
     height: 1,
@@ -201,7 +200,6 @@ export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
   );
   return {
     texture,
-    view: texture.createView(),
     format,
     width: 1,
     height: 1,

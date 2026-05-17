@@ -76,7 +76,6 @@ function isTexture2D(v: unknown): v is Texture2DValue {
   return (
     typeof v === 'object' &&
     v !== null &&
-    'view' in v &&
     'texture' in v &&
     'format' in v
   );

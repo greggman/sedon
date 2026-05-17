@@ -133,11 +133,11 @@ export function createPbrKind(
       return device.createBindGroup({
         layout: materialBindGroupLayout,
         entries: [
-          { binding: 0, resource: material.basecolor.view },
+          { binding: 0, resource: material.basecolor.texture },
           { binding: 1, resource: paramBuffer },
-          { binding: 2, resource: normalTex.view },
-          { binding: 3, resource: detailBasecolorTex.view },
-          { binding: 4, resource: detailNormalTex.view },
+          { binding: 2, resource: normalTex.texture },
+          { binding: 3, resource: detailBasecolorTex.texture },
+          { binding: 4, resource: detailNormalTex.texture },
         ],
       });
     },

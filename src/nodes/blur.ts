@@ -57,7 +57,7 @@ export const blurNode: NodeDef = {
       format: TEXTURE_FORMAT,
       usage,
     });
-    const intermediateView = intermediate.view;
+    const intermediateView = intermediate.texture;
 
     // Uniform buffer: vec2 texel_size, vec2 direction, f32 radius +
     // 3 f32 pad → 32 bytes. We write it once per pass, swapping the
@@ -100,7 +100,7 @@ export const blurNode: NodeDef = {
         layout: pipeline.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: uniformBuffer },
-          { binding: 1, resource: src.view },
+          { binding: 1, resource: src.texture },
           { binding: 2, resource: sampler },
         ],
       });
@@ -140,7 +140,7 @@ export const blurNode: NodeDef = {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            view: outTexture.view,
+            view: outTexture.texture,
             loadOp: 'clear',
             storeOp: 'store',
             clearValue: { r: 0, g: 0, b: 0, a: 0 },

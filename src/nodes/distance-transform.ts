@@ -91,8 +91,8 @@ export const distanceTransformNode: NodeDef = {
     };
     const a = reusableTexture(device, prev?.__jfa?.[0], jfaDesc);
     const b = reusableTexture(device, prev?.__jfa?.[1], jfaDesc);
-    const aView = a.view;
-    const bView = b.view;
+    const aView = a.texture;
+    const bView = b.texture;
 
     // One uniform buffer, rewritten between passes (only `step` changes
     // between JFA iterations; threshold + max_distance + invert are
@@ -137,7 +137,7 @@ export const distanceTransformNode: NodeDef = {
 
     const makeBindGroup = (
       pipeline: GPURenderPipeline,
-      srcView: GPUTextureView,
+      srcView: GPUTextureView | GPUTexture,
     ): GPUBindGroup =>
       device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
@@ -151,7 +151,7 @@ export const distanceTransformNode: NodeDef = {
     const fullScreen = (
       enc: GPUCommandEncoder,
       pipeline: GPURenderPipeline,
-      view: GPUTextureView,
+      view: GPUTextureView | GPUTexture,
       bg: GPUBindGroup,
     ) => {
       const pass = enc.beginRenderPass({
@@ -173,7 +173,7 @@ export const distanceTransformNode: NodeDef = {
     // Init: read original input → write seed UVs into texture A.
     {
       const enc = device.createCommandEncoder();
-      const bg = makeBindGroup(initPipeline, src.view);
+      const bg = makeBindGroup(initPipeline, src.texture);
       writeStep(0);
       fullScreen(enc, initPipeline, aView, bg);
       device.queue.submit([enc.finish()]);
@@ -208,7 +208,7 @@ export const distanceTransformNode: NodeDef = {
       const enc = device.createCommandEncoder();
       writeStep(0);
       const bg = makeBindGroup(finalPipeline, readView);
-      fullScreen(enc, finalPipeline, outTexture.view, bg);
+      fullScreen(enc, finalPipeline, outTexture.texture, bg);
       device.queue.submit([enc.finish()]);
     }
 

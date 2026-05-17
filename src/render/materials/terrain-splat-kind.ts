@@ -81,12 +81,12 @@ export function createTerrainSplatKind(
       return device.createBindGroup({
         layout: materialBindGroupLayout,
         entries: [
-          { binding: 0, resource: material.layerA.view },
-          { binding: 1, resource: material.layerB.view },
-          { binding: 2, resource: material.mask.view },
+          { binding: 0, resource: material.layerA.texture },
+          { binding: 1, resource: material.layerB.texture },
+          { binding: 2, resource: material.mask.texture },
           { binding: 3, resource: paramBuffer },
-          { binding: 4, resource: normalA.view },
-          { binding: 5, resource: normalB.view },
+          { binding: 4, resource: normalA.texture },
+          { binding: 5, resource: normalB.texture },
         ],
       });
     },

@@ -178,7 +178,7 @@ export const leafSkeletonNode: NodeDef = {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            view: shapeTexture.view,
+            view: shapeTexture.texture,
             loadOp: 'clear',
             storeOp: 'store',
             clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -194,7 +194,7 @@ export const leafSkeletonNode: NodeDef = {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            view: veinsTexture.view,
+            view: veinsTexture.texture,
             loadOp: 'clear',
             storeOp: 'store',
             clearValue: { r: 0, g: 0, b: 0, a: 0 },

@@ -6,7 +6,6 @@
 
 export interface Texture2DValue {
   texture: GPUTexture;
-  view: GPUTextureView;
   format: GPUTextureFormat;
   width: number;
   height: number;
@@ -315,7 +314,6 @@ export function reusableTexture(
   ) {
     return {
       texture: prev.texture,
-      view: prev.texture.createView(),
       format: desired.format,
       width: desired.width,
       height: desired.height,
@@ -328,7 +326,6 @@ export function reusableTexture(
   });
   return {
     texture,
-    view: texture.createView(),
     format: desired.format,
     width: desired.width,
     height: desired.height,
@@ -361,8 +358,8 @@ export function walkGpuResources(
   if (!value || typeof value !== 'object') return;
   const v = value as Record<string, unknown>;
 
-  // Texture2DValue: { texture, view, format, width, height }
-  if ('texture' in v && 'view' in v && 'format' in v && 'width' in v && 'height' in v) {
+  // Texture2DValue: { texture, format, width, height }
+  if ('texture' in v && 'format' in v && 'width' in v && 'height' in v) {
     const tex = v.texture as Destroyable | undefined;
     if (tex && typeof tex.destroy === 'function') visit(tex);
     return;

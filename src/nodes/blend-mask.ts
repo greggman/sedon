@@ -55,9 +55,9 @@ export const blendMaskNode: NodeDef = {
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: a.view },
-        { binding: 1, resource: b.view },
-        { binding: 2, resource: mask.view },
+        { binding: 0, resource: a.texture },
+        { binding: 1, resource: b.texture },
+        { binding: 2, resource: mask.texture },
         { binding: 3, resource: sampler },
       ],
     });
@@ -66,7 +66,7 @@ export const blendMaskNode: NodeDef = {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: out.view,
+          view: out.texture,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 },

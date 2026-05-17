@@ -232,7 +232,6 @@ export function createSceneRenderer(
     format: 'depth32float',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
-  const shadowView = shadowTexture.createView();
 
   // 256 bytes: three mat4x4f (modelView, projection, lightViewProj) +
   // three vec3-with-padding lighting blocks (lightDirWorld, lightColor,
@@ -252,7 +251,7 @@ export function createSceneRenderer(
     entries: [
       { binding: 0, resource: sceneUniformBuffer },
       { binding: 1, resource: sampler },
-      { binding: 2, resource: shadowView },
+      { binding: 2, resource: shadowTexture },
       { binding: 3, resource: shadowSampler },
     ],
   });
@@ -645,7 +644,7 @@ export function createSceneRenderer(
       const shadowPass = encoder.beginRenderPass({
         colorAttachments: [],
         depthStencilAttachment: {
-          view: shadowView,
+          view: shadowTexture,
           depthClearValue: 0,
           depthLoadOp: 'clear',
           depthStoreOp: 'store',
@@ -674,7 +673,7 @@ export function createSceneRenderer(
           },
         ],
         depthStencilAttachment: {
-          view: depthTexture!.createView(),
+          view: depthTexture!,
           depthClearValue: 0,
           depthLoadOp: 'clear',
           depthStoreOp: 'store',
@@ -726,7 +725,7 @@ export function createSceneRenderer(
       // Bright-pass: scene HDR → mip 0 (half-res, replace).
       const bright = encoder.beginRenderPass({
         colorAttachments: [
-          { view: bloomMipViews[0]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+          { view: bloomMips[0]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
         ],
       });
       bright.setPipeline(brightPassPipeline);
@@ -739,7 +738,7 @@ export function createSceneRenderer(
       for (let i = 0; i < BLOOM_MIP_COUNT - 1; i++) {
         const pass = encoder.beginRenderPass({
           colorAttachments: [
-            { view: bloomMipViews[i + 1]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+            { view: bloomMips[i + 1]!, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
           ],
         });
         pass.setPipeline(downsamplePipeline);
@@ -756,7 +755,7 @@ export function createSceneRenderer(
       for (let i = BLOOM_MIP_COUNT - 1; i > 0; i--) {
         const pass = encoder.beginRenderPass({
           colorAttachments: [
-            { view: bloomMipViews[i - 1]!, loadOp: 'load', storeOp: 'store' },
+            { view: bloomMips[i - 1]!, loadOp: 'load', storeOp: 'store' },
           ],
         });
         pass.setPipeline(upsamplePipeline);
