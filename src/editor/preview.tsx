@@ -491,11 +491,25 @@ export function Preview({ panelId }: PreviewProps = {}) {
       const nextTiles = synthesizeTiles(gpu.device, rootDef, result.outputs, nextLighting);
       setTiles(nextTiles);
       setError(null);
+      // Always schedule a paint at the eval boundary. PreviewTile's own
+      // scene-change effect would normally fire requestRender, but it
+      // compares the new scene to the old by Object.is — and a re-eval
+      // can update GPU resources IN-PLACE (texture content overwritten
+      // via reusableTexture) while leaving the wrapping SceneValue
+      // reference unchanged (cache hit at the root output node). Without
+      // an explicit nudge here, those cases leave the canvas stale until
+      // some other render trigger (camera move, resize) fires. The
+      // render bus coalesces multiple requestRender calls in the same
+      // frame, so this is cheap when the PreviewTile effect also fires.
+      requestRender();
     })();
     return () => {
       cancelled = true;
     };
-  }, [gpu, graph, rootNodeId, rootDef, registry, evalCache, reportWorking]);
+    // `subgraphs` is in deps even though `registry` already changes
+    // when subgraphs changes — extra reference comparison is cheap and
+    // makes the eval-refire dependency obvious to future readers.
+  }, [gpu, graph, rootNodeId, rootDef, registry, subgraphs, evalCache, reportWorking]);
 
   return (
     <div
