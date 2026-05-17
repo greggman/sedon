@@ -35,6 +35,123 @@ function buildRegistry() {
   return { registry: r, bark };
 }
 
+// Helper: run the user's flow against one cache shared by N consumers.
+// Each "consumer" gets its own evaluateGraph call. After every edit
+// every consumer re-evaluates against the shared cache. Counters live
+// on the mock device so the test can assert "edit caused N more
+// createBuffer calls" vs "edit caused 0".
+async function simulateUserFlow(opts: {
+  evalsPerRound: ('standalone' | 'viaWrapper')[];
+}) {
+  const device = createMockDevice();
+  const { registry, bark } = buildRegistry();
+  const cache = createEvalCache();
+
+  // Wrap bark in a synthetic "tree" wrapper so the viaWrapper path
+  // exercises the wrapper.evaluate code-path (which sets up
+  // subgraphInputFingerprints and uses scope: 'rootAncestors'). The
+  // wrapper kind is just `subgraph/<bark.id>` — we instantiate it in
+  // a tiny outer graph.
+  const wrapperGraph = {
+    version: 1 as const,
+    nodes: [
+      { id: 'bark-instance', kind: `subgraph/${bark.id}` },
+    ],
+    edges: [],
+  };
+
+  async function runRound(): Promise<void> {
+    for (const kind of opts.evalsPerRound) {
+      if (kind === 'standalone') {
+        await evaluateGraph(bark.graph, registry, {
+          rootNodeId: bark.outputNodeId,
+          context: { device: device as unknown as GPUDevice, evalCache: cache },
+          cache,
+        });
+      } else {
+        await evaluateGraph(wrapperGraph, registry, {
+          rootNodeId: 'bark-instance',
+          context: { device: device as unknown as GPUDevice, evalCache: cache },
+          cache,
+        });
+      }
+    }
+  }
+
+  // Find fibers perlin so we can mutate octaves.
+  const fibers = bark.graph.nodes.find(
+    (n) =>
+      n.kind === 'core/perlin' &&
+      Array.isArray(n.inputValues?.scale) &&
+      (n.inputValues!.scale as number[])[1] === 14,
+  );
+  if (!fibers) throw new Error('fibers perlin not found');
+
+  // Round 1 — warm-up. Populates cache for both consumer trackerKeys.
+  await runRound();
+  // Round 2 — edit octaves 4 → 3. This is the user's "step 4".
+  fibers.inputValues = { ...fibers.inputValues, octaves: 3 };
+  const before4 = {
+    createdBuffers: device.stats.createdBuffers,
+    createdBindGroups: device.stats.createdBindGroups,
+    createdTextures: device.stats.createdTextures,
+  };
+  await runRound();
+  const after4 = {
+    createdBuffers: device.stats.createdBuffers,
+    createdBindGroups: device.stats.createdBindGroups,
+    createdTextures: device.stats.createdTextures,
+  };
+  // Round 3 — edit octaves 3 → 2. This is the user's "step 5".
+  fibers.inputValues = { ...fibers.inputValues, octaves: 2 };
+  await runRound();
+  const after5 = {
+    createdBuffers: device.stats.createdBuffers,
+    createdBindGroups: device.stats.createdBindGroups,
+    createdTextures: device.stats.createdTextures,
+  };
+  return {
+    step4Delta: {
+      buffers: after4.createdBuffers - before4.createdBuffers,
+      bindGroups: after4.createdBindGroups - before4.createdBindGroups,
+      textures: after4.createdTextures - before4.createdTextures,
+    },
+    step5Delta: {
+      buffers: after5.createdBuffers - after4.createdBuffers,
+      bindGroups: after5.createdBindGroups - after4.createdBindGroups,
+      textures: after5.createdTextures - after4.createdTextures,
+    },
+  };
+}
+
+test('bark scenario: two consumers (viaWrapper + standalone) on the same cache — first edit allocates same as second edit', async () => {
+  // Reproduces the user's "step 4 allocates, step 5 doesn't" report.
+  // Both rounds use the same eval order: viaWrapper, then standalone.
+  // The asymmetry (if any) would mean the first re-eval hits a state
+  // the second doesn't — typically a stale trackerKey or an evicted
+  // previousOutput.
+  const { step4Delta, step5Delta } = await simulateUserFlow({
+    evalsPerRound: ['viaWrapper', 'standalone'],
+  });
+  assert.deepEqual(
+    step4Delta,
+    step5Delta,
+    `first edit and second edit should have identical allocation deltas (got step4=${JSON.stringify(step4Delta)} vs step5=${JSON.stringify(step5Delta)})`,
+  );
+});
+
+test('bark scenario: two consumers — edit allocates zero new resources on either edit', async () => {
+  const { step4Delta, step5Delta } = await simulateUserFlow({
+    evalsPerRound: ['viaWrapper', 'standalone'],
+  });
+  assert.equal(step4Delta.buffers, 0, `step 4 should not allocate buffers (allocated ${step4Delta.buffers})`);
+  assert.equal(step5Delta.buffers, 0, `step 5 should not allocate buffers (allocated ${step5Delta.buffers})`);
+  assert.equal(step4Delta.bindGroups, 0, `step 4 should not allocate bind groups (allocated ${step4Delta.bindGroups})`);
+  assert.equal(step5Delta.bindGroups, 0, `step 5 should not allocate bind groups (allocated ${step5Delta.bindGroups})`);
+  assert.equal(step4Delta.textures, 0, `step 4 should not allocate textures (allocated ${step4Delta.textures})`);
+  assert.equal(step5Delta.textures, 0, `step 5 should not allocate textures (allocated ${step5Delta.textures})`);
+});
+
 test('bark subgraph: editing perlin.octaves allocates zero buffers + zero bind groups after the warm-up eval', async () => {
   const device = createMockDevice();
   const { registry, bark } = buildRegistry();

@@ -127,18 +127,20 @@ test('SceneRenderer: setScene called repeatedly with new materials neither leaks
     'renderer should not allocate textures during plain setScene calls',
   );
 
-  // The renderer DOES allocate per-batch buffers each setScene (1
-  // instance buffer + 1 material paramBuffer), but it should also
-  // destroy the previous batch's buffers when replacing. So the
-  // created-vs-destroyed delta over 20 drags should be EQUAL except
-  // for the final still-live batch.
+  // Each iteration:
+  //   • Allocates 1 fresh paramBuffer in the module-level material
+  //     cache (new structural key — different texture handle per
+  //     iteration since `makePbr` builds a fresh externalTexture).
+  //   • Allocates 1 fresh instance buffer in the module-level instance
+  //     buffer pool (structural key differs ⇒ new pool key).
+  //
+  // Neither pool evicts — both are bounded by the number of distinct
+  // batch shapes / materials seen this session. Nothing is destroyed;
+  // pool entries accumulate.
   const created = after.createdBuffers - base.createdBuffers;
   const destroyed = after.destroyedBuffers - base.destroyedBuffers;
-  assert.equal(
-    created,
-    destroyed,
-    `setScene should destroy the previous batch's buffers (created ${created}, destroyed ${destroyed})`,
-  );
+  assert.equal(created, 40, `expected 40 buffer allocations across 20 iterations (got ${created})`);
+  assert.equal(destroyed, 0, `module-level pools should never destroy buffers (got ${destroyed})`);
 });
 
 test('SceneRenderer.destroy: repeated create/destroy cycles do not leak GPU resources', () => {
@@ -146,26 +148,34 @@ test('SceneRenderer.destroy: repeated create/destroy cycles do not leak GPU reso
   // long-running invariant: a device that's gone through N renderer
   // create+destroy cycles holds the same number of live resources as
   // a device that's gone through ONE such cycle. (Some allocations —
-  // the shadow map, samplers, flat-normal/half placeholders — are
-  // device-scoped per design and survive renderer destruction; they
-  // allocate on the FIRST cycle only.)
+  // the shadow map, samplers, flat-normal/half placeholders, the
+  // device-shared materialCache entries — are device-scoped per
+  // design and survive renderer destruction; they allocate on the
+  // FIRST cycle only.)
   const device = createMockDevice();
+  // External resources shared across cycles — mimics the real editor
+  // where `reusableTexture` / `uploadMeshToGpu` reuse handles across
+  // re-evals, so successive renderer mounts see the SAME texture
+  // identities. Each cycle that uses these same handles will hit the
+  // device-shared materialCache and allocate nothing per-material.
+  const sharedGeom = externalGeometry(device);
+  const sharedTexture = externalTexture(device);
+  function sharedPbr(): { kind: 'pbr'; basecolor: typeof sharedTexture; roughness: number; metallic: number; normal: typeof sharedTexture; detailBasecolor: typeof sharedTexture; detailNormal: typeof sharedTexture } {
+    return {
+      kind: 'pbr',
+      basecolor: sharedTexture,
+      roughness: 0.5,
+      metallic: 0,
+      normal: sharedTexture,
+      detailBasecolor: sharedTexture,
+      detailNormal: sharedTexture,
+    };
+  }
 
-  // Run a single warm-up cycle to populate device-scoped caches.
   function cycle(): void {
     const r = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
-    const geom = externalGeometry(device);
-    const pbr = makePbr(device, 0.5);
-    r.setScene(makeScene(geom, pbr));
+    r.setScene(makeScene(sharedGeom, sharedPbr()));
     r.destroy();
-    // Geometry buffers + material texture are external — the renderer
-    // shouldn't free them. Clean them up here so each cycle nets to
-    // zero new live resources.
-    geom.positionBuffer.destroy();
-    geom.normalBuffer.destroy();
-    geom.uvBuffer.destroy();
-    geom.indexBuffer.destroy();
-    pbr.basecolor.texture.destroy();
   }
   cycle();
   const afterFirstCycle = {
@@ -339,21 +349,92 @@ test('SceneRenderer: changing only the texture handle rebuilds the bind group bu
   }
   const after = snap(device);
 
-  // Each iteration: 1 new bind group + 1 new paramBuffer.
-  // Each iteration also destroys the previous param buffer (the
-  // previous instance buffer is reused since geometry/structuralKey/
-  // instanceCount actually MATCH — wait, they don't because
-  // structuralKey changes with the texture). So instance buffer also
-  // rebuilds. Total per iteration: 2 createBuffer + 2 destroyBuffer
-  // + 1 createBindGroup.
+  // Each iteration produces a new structural key (new texture handle).
+  // The module-level material cache + instance buffer pool each pick up
+  // a new entry (1 paramBuffer + 1 instance buffer + 1 bind group per
+  // iteration). Old entries persist (pools never evict) — bounded
+  // growth, the design tradeoff for cross-renderer reuse + zero-alloc
+  // remounts.
   const buffersCreated = after.createdBuffers - base.createdBuffers;
   const buffersDestroyed = after.destroyedBuffers - base.destroyedBuffers;
-  assert.equal(buffersCreated, buffersDestroyed,
-    'texture-swap scrub should still balance creates against destroys');
+  assert.equal(buffersCreated, 5 * 2, `expected 10 buffer allocs across 5 texture swaps (got ${buffersCreated})`);
+  assert.equal(buffersDestroyed, 0, `module-level pools should never destroy buffers (got ${buffersDestroyed})`);
   assert.ok(
     after.createdBindGroups - base.createdBindGroups >= 5,
     'each new texture handle should produce a new bind group',
   );
+});
+
+test('SceneRenderer: a fresh renderer on the same device reuses cached materials from a previous renderer', () => {
+  // The scenario in the user's stack trace:
+  //   GPUDevice.createBuffer (pbr-kind.ts:147, buildBindGroup)
+  //   ← scene.ts:622 (setScene)
+  //   ← scene-preview.tsx:95 (renderer.setScene(scene))
+  //   ← React commitHookEffectListMount
+  //
+  // The setScene that runs is the FIRST one a freshly-mounted
+  // ScenePreview makes — its renderer is brand-new, its (formerly
+  // per-renderer) materialCache was empty, so the first setScene call
+  // always allocated a paramBuffer + bind group for every material in
+  // the scene.
+  //
+  // But the GPU resources backing that material's textures already
+  // exist on the device — they were allocated by an earlier renderer
+  // (the previous mount of this same ScenePreview, or a sibling
+  // AssetThumbnail's renderer). DockView layout changes / React
+  // StrictMode / scene-preview unmount-remount all throw away the
+  // per-renderer materialCache even though nothing about the GPU state
+  // changed.
+  //
+  // The fix: hoist the materialCache to a per-device shared store so
+  // any renderer on a given device picks up entries already built by
+  // earlier renderers. The per-renderer state that DOES legitimately
+  // need to be rebuilt (scene/shadow/sky uniform buffers + the
+  // per-batch instance buffer) is a separate concern.
+  const device = createMockDevice();
+  const geom = externalGeometry(device);
+  const pbr = makePbr(device, 0.5);
+  const scene = makeScene(geom, pbr);
+
+  const r1 = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  r1.setScene(scene);
+  // Snapshot AFTER r1's creation+setScene so the baseline reflects all
+  // first-time allocations. From here on, no createBuffer or
+  // createBindGroup should fire for an equivalent scene — every GPU
+  // resource the renderer needs already exists somewhere in module-
+  // scoped shared state.
+  const baseline = {
+    buffers: device.stats.createdBuffers,
+    bindGroups: device.stats.createdBindGroups,
+    textures: device.stats.createdTextures,
+  };
+  r1.destroy();
+
+  // Mimics ScenePreview remounting: previous renderer destroyed, fresh
+  // one created. Same scene (same texture handles).
+  const r2 = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  r2.setScene(scene);
+
+  const newBuffers = device.stats.createdBuffers - baseline.buffers;
+  const newBindGroups = device.stats.createdBindGroups - baseline.bindGroups;
+  const newTextures = device.stats.createdTextures - baseline.textures;
+
+  assert.equal(
+    newBuffers,
+    0,
+    `fresh renderer + setScene with already-cached scene should allocate ZERO buffers, allocated ${newBuffers}`,
+  );
+  assert.equal(
+    newBindGroups,
+    0,
+    `fresh renderer + setScene with already-cached scene should allocate ZERO bind groups, allocated ${newBindGroups}`,
+  );
+  assert.equal(
+    newTextures,
+    0,
+    `fresh renderer + setScene with already-cached scene should allocate ZERO textures, allocated ${newTextures}`,
+  );
+  r2.destroy();
 });
 
 test('SceneRenderer: render() allocates per-canvas intermediates once per size', () => {
@@ -399,16 +480,28 @@ test('SceneRenderer: render() allocates per-canvas intermediates once per size',
     0,
     'second render() at same size should not allocate textures',
   );
-  // Resize: intermediates SHOULD reallocate.
+  // Resize: a never-before-seen (width, height) pair allocates a
+  // fresh entry in the module-level intermediates cache. The
+  // previous size's intermediates STAY ALIVE (pool never evicts) —
+  // if the canvas resizes back, those entries get reused.
   renderer.render({ ...renderArgs, size: [512, 512] });
   const after3 = snap(device);
   assert.ok(
     after3.createdTextures - after2.createdTextures > 0,
-    'resize should reallocate the size-bound intermediates',
+    'a new (w,h) should allocate the size-bound intermediates',
   );
-  // The old intermediates should be destroyed as part of that resize.
-  assert.ok(
-    after3.destroyedTextures - after2.destroyedTextures > 0,
-    'resize should destroy the previous size-bound intermediates',
+  assert.equal(
+    after3.destroyedTextures - after2.destroyedTextures,
+    0,
+    'module-level intermediates pool should never destroy on resize',
+  );
+  // Resize BACK to the original size — the previous entries are
+  // still in the pool, so this should allocate nothing.
+  renderer.render(renderArgs);
+  const after4 = snap(device);
+  assert.equal(
+    after4.createdTextures - after3.createdTextures,
+    0,
+    'returning to a previously-seen size should reuse cached intermediates',
   );
 });

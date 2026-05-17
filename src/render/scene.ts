@@ -150,6 +150,283 @@ interface CachedMaterial {
   paramBuffer: GPUBuffer;
 }
 
+// Module-level shared state. The app holds a single GPUDevice for its
+// lifetime, and almost everything the SceneRenderer needs (pipelines,
+// layouts, samplers, the renderer's own uniform buffers + their bind
+// groups, the material-kind registry) is fully determined by
+// (device, format) and doesn't depend on the scene or the renderer
+// instance. Hoisting this state out of the per-renderer closure means
+// a freshly-mounted ScenePreview's first setScene hits a fully warm
+// device and allocates nothing.
+//
+// Three caches at module scope:
+//
+//   • SharedRendererState — every format-stable resource. Built once
+//     on the first createSceneRenderer call. Subsequent calls reuse.
+//
+//   • intermediatesByKey — depth + HDR + bloom mip textures (size-
+//     bound), keyed by `${width}x${height}`. A canvas at the same
+//     size reuses the same set across renderer remounts.
+//
+//   • instanceBufferPool — per-batch instance buffers keyed by
+//     (geometry positionBuffer id, material structural key,
+//     instance count). Same batch shape across renderers reuses.
+//
+// Plus the materialCache that was already at module scope.
+const materialCacheGlobal = new Map<string, CachedMaterial>();
+
+interface SharedRendererState {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  sceneBindGroupLayout: GPUBindGroupLayout;
+  shadowBindGroupLayout: GPUBindGroupLayout;
+  singleInputLayout: GPUBindGroupLayout;
+  compositeLayout: GPUBindGroupLayout;
+  sampler: GPUSampler;
+  shadowSampler: GPUSampler;
+  postSampler: GPUSampler;
+  shadowTexture: GPUTexture;
+  shadowPipeline: GPURenderPipeline;
+  skyPipeline: GPURenderPipeline;
+  flatBackgroundPipeline: GPURenderPipeline;
+  brightPassPipeline: GPURenderPipeline;
+  downsamplePipeline: GPURenderPipeline;
+  upsamplePipeline: GPURenderPipeline;
+  compositePipeline: GPURenderPipeline;
+  sceneUniformBuffer: GPUBuffer;
+  shadowUniformBuffer: GPUBuffer;
+  skyUniformBuffer: GPUBuffer;
+  brightPassUniform: GPUBuffer;
+  compositeUniform: GPUBuffer;
+  sceneBindGroup: GPUBindGroup;
+  shadowBindGroup: GPUBindGroup;
+  skyBindGroup: GPUBindGroup;
+  kinds: Map<MaterialValue['kind'], MaterialKindImpl>;
+}
+
+let sharedState: SharedRendererState | null = null;
+function ensureSharedRendererState(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+): SharedRendererState {
+  if (sharedState && sharedState.device === device && sharedState.format === format) {
+    return sharedState;
+  }
+  const sceneBindGroupLayout = createSceneBindGroupLayout(device);
+  const sampler = createSharedSampler(device);
+  const shadowSampler = createShadowSampler(device);
+  const shadowTexture = getShadowTexture(device);
+  const sceneUniformBuffer = device.createBuffer({
+    size: 256,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const sceneBindGroup = device.createBindGroup({
+    layout: sceneBindGroupLayout,
+    entries: [
+      { binding: 0, resource: sceneUniformBuffer },
+      { binding: 1, resource: sampler },
+      { binding: 2, resource: shadowTexture },
+      { binding: 3, resource: shadowSampler },
+    ],
+  });
+  const shadowBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    ],
+  });
+  const shadowUniformBuffer = device.createBuffer({
+    size: 64,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const shadowBindGroup = device.createBindGroup({
+    layout: shadowBindGroupLayout,
+    entries: [{ binding: 0, resource: shadowUniformBuffer }],
+  });
+  const shadowPipeline = createShadowPipeline(device, shadowBindGroupLayout);
+  const kinds = new Map<MaterialValue['kind'], MaterialKindImpl>([
+    ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
+    ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
+  ]);
+  const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
+  const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
+  const skyUniformBuffer = device.createBuffer({
+    size: 80,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const skyBindGroup = device.createBindGroup({
+    layout: skyPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: skyUniformBuffer }],
+  });
+  const singleInputLayout = createSingleInputLayout(device);
+  const compositeLayout = createCompositeLayout(device);
+  const brightPassPipeline = createPostProcessPipeline(
+    device, singleInputLayout, brightPassShaderCode, HDR_FORMAT,
+  );
+  const downsamplePipeline = createPostProcessPipeline(
+    device, singleInputLayout, bloomDownsampleShaderCode, HDR_FORMAT,
+  );
+  const upsamplePipeline = createPostProcessPipeline(
+    device, singleInputLayout, bloomUpsampleShaderCode, HDR_FORMAT,
+    { additive: true },
+  );
+  const compositePipeline = createPostProcessPipeline(
+    device, compositeLayout, compositeShaderCode, format,
+  );
+  const postSampler = getSampler(device, {
+    magFilter: 'linear',
+    minFilter: 'linear',
+    addressModeU: 'clamp-to-edge',
+    addressModeV: 'clamp-to-edge',
+  });
+  const brightPassUniform = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const compositeUniform = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  sharedState = {
+    device, format,
+    sceneBindGroupLayout, shadowBindGroupLayout, singleInputLayout, compositeLayout,
+    sampler, shadowSampler, postSampler, shadowTexture,
+    shadowPipeline, skyPipeline, flatBackgroundPipeline,
+    brightPassPipeline, downsamplePipeline, upsamplePipeline, compositePipeline,
+    sceneUniformBuffer, shadowUniformBuffer, skyUniformBuffer,
+    brightPassUniform, compositeUniform,
+    sceneBindGroup, shadowBindGroup, skyBindGroup,
+    kinds,
+  };
+  return sharedState;
+}
+
+interface SizeIntermediates {
+  width: number;
+  height: number;
+  depthTexture: GPUTexture;
+  hdrColor: GPUTexture;
+  hdrColorView: GPUTextureView | GPUTexture;
+  bloomMips: GPUTexture[];
+  bloomMipViews: (GPUTextureView | GPUTexture)[];
+  bloomMipParamBuffers: GPUBuffer[];
+  pyramidBindGroups: GPUBindGroup[];
+  brightPassBindGroup: GPUBindGroup;
+  compositeBindGroup: GPUBindGroup;
+}
+
+const intermediatesByKey = new Map<string, SizeIntermediates>();
+function ensureIntermediates(
+  shared: SharedRendererState,
+  width: number,
+  height: number,
+): SizeIntermediates {
+  const key = `${width}x${height}`;
+  const existing = intermediatesByKey.get(key);
+  if (existing) return existing;
+  const { device } = shared;
+  const depthTexture = device.createTexture({
+    size: [width, height],
+    format: 'depth32float',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+  const hdrColor = device.createTexture({
+    size: [width, height],
+    format: HDR_FORMAT,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+  });
+  const hdrColorView = hdrColor;
+  const bloomMips: GPUTexture[] = [];
+  const bloomMipViews: (GPUTextureView | GPUTexture)[] = [];
+  const bloomMipParamBuffers: GPUBuffer[] = [];
+  for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
+    const scale = 1 << (i + 1);
+    const w = Math.max(1, Math.floor(width / scale));
+    const h = Math.max(1, Math.floor(height / scale));
+    const tex = device.createTexture({
+      size: [w, h],
+      format: HDR_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    bloomMips.push(tex);
+    bloomMipViews.push(tex);
+    const buf = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(
+      buf, 0,
+      new Float32Array([1 / w, 1 / h, 0, 0]) as BufferSource,
+    );
+    bloomMipParamBuffers.push(buf);
+  }
+  const pyramidBindGroups: GPUBindGroup[] = [];
+  for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
+    pyramidBindGroups.push(device.createBindGroup({
+      layout: shared.singleInputLayout,
+      entries: [
+        { binding: 0, resource: bloomMipViews[i]! },
+        { binding: 1, resource: shared.postSampler },
+        { binding: 2, resource: bloomMipParamBuffers[i]! },
+      ],
+    }));
+  }
+  const brightPassBindGroup = device.createBindGroup({
+    layout: shared.singleInputLayout,
+    entries: [
+      { binding: 0, resource: hdrColorView },
+      { binding: 1, resource: shared.postSampler },
+      { binding: 2, resource: shared.brightPassUniform },
+    ],
+  });
+  const compositeBindGroup = device.createBindGroup({
+    layout: shared.compositeLayout,
+    entries: [
+      { binding: 0, resource: hdrColorView },
+      { binding: 1, resource: bloomMipViews[0]! },
+      { binding: 2, resource: shared.postSampler },
+      { binding: 3, resource: shared.compositeUniform },
+    ],
+  });
+  const built: SizeIntermediates = {
+    width, height,
+    depthTexture, hdrColor, hdrColorView,
+    bloomMips, bloomMipViews, bloomMipParamBuffers,
+    pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
+  };
+  intermediatesByKey.set(key, built);
+  return built;
+}
+
+// Per-batch instance buffer pool. Reuses across renderer remounts AND
+// across renderers that happen to draw the same (geometry, material,
+// instance count) batch. writeBuffer serialization on the queue means
+// each consumer's render() sees the data IT wrote, even if another
+// consumer writes the same buffer in between setScene calls — the
+// renders happen synchronously inside a single render() call, queued
+// atomically.
+const instanceBufferPool = new Map<string, GPUBuffer>();
+function getInstanceBuffer(
+  device: GPUDevice,
+  key: string,
+  byteLength: number,
+): GPUBuffer {
+  const existing = instanceBufferPool.get(key);
+  if (existing) {
+    // Size-bound: if the byteLength matches, reuse; if it doesn't
+    // (instance count changed for this batch key — shouldn't happen
+    // because instance count is part of the key, but defensive),
+    // destroy + reallocate.
+    if (existing.size === byteLength) return existing;
+    try { existing.destroy(); } catch { /* */ }
+  }
+  const fresh = device.createBuffer({
+    size: byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  });
+  instanceBufferPool.set(key, fresh);
+  return fresh;
+}
+
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
 const INSTANCE_FLOATS = 20;
 
@@ -274,257 +551,20 @@ export function createSceneRenderer(
   device: GPUDevice,
   format: GPUTextureFormat,
 ): SceneRenderer {
-  // Shared resources used by every material kind.
-  const sceneBindGroupLayout = createSceneBindGroupLayout(device);
-  const sampler = createSharedSampler(device);
-  const shadowSampler = createShadowSampler(device);
-
-  // Shadow map texture — depth-only, written by the shadow pass, sampled
-  // by every kind's color shader. Per-device cached so SceneRenderer
-  // rebuilds (one per scene change) don't churn 2048² depth textures.
-  const shadowTexture = getShadowTexture(device);
-
-  // 256 bytes: three mat4x4f (modelView, projection, lightViewProj) +
-  // three vec3-with-padding lighting blocks (lightDirWorld, lightColor,
-  // ambient) + one vec4 fog. lightViewProj is shared with the shadow
-  // pass; rather than reading the same matrix from two buffers we keep
-  // separate copies (64 bytes duplicated, negligible).
-  const sceneUniformBuffer = device.createBuffer({
-    size: 256,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
+  // All format-stable shared resources (pipelines, layouts, samplers,
+  // uniform buffers, bind groups, kind registry) come from module-
+  // scoped storage. The first createSceneRenderer call builds them;
+  // every subsequent call reuses. The renderer instance itself
+  // contributes only `batches` (per-call mutable state for the
+  // currently-set scene).
+  const shared = ensureSharedRendererState(device, format);
+  // Scratch arrays — module-scope-stable would be fine too, but
+  // they're cheap (small Float32Arrays). Keeping per-renderer to
+  // avoid any cross-renderer aliasing if render() ever became async.
   const lightingScratch = new Float32Array(16);
-
-  // Single scene bind group, set once per pass — shared across every kind's
-  // pipeline because the scene bind-group layout is shared.
-  const sceneBindGroup = device.createBindGroup({
-    layout: sceneBindGroupLayout,
-    entries: [
-      { binding: 0, resource: sceneUniformBuffer },
-      { binding: 1, resource: sampler },
-      { binding: 2, resource: shadowTexture },
-      { binding: 3, resource: shadowSampler },
-    ],
-  });
-
-  // Shadow pass owns its own pipeline + bind group + small uniform buffer.
-  // The shadow vertex shader only needs lightViewProj; sharing the 256-byte
-  // scene buffer here would force the shadow shader to declare padding for
-  // bytes 0..127, which is uglier than just duplicating one mat4.
-  const shadowBindGroupLayout = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.VERTEX,
-        buffer: { type: 'uniform' },
-      },
-    ],
-  });
-  const shadowUniformBuffer = device.createBuffer({
-    size: 64, // single mat4x4f
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  const shadowBindGroup = device.createBindGroup({
-    layout: shadowBindGroupLayout,
-    entries: [{ binding: 0, resource: shadowUniformBuffer }],
-  });
-  const shadowPipeline = createShadowPipeline(device, shadowBindGroupLayout);
-
-  // Material-kind registry. Each kind owns its shader, pipeline, and a
-  // function that builds a @group(1) bind group from its material variant.
-  // Kinds target the HDR scene texture, NOT the swapchain — the composite
-  // pass downstream is where pixels finally land in the swapchain.
-  const kinds = new Map<MaterialValue['kind'], MaterialKindImpl>([
-    ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
-    ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
-  ]);
-
-  // Sky stays its own private pipeline — it isn't a material kind, it's a
-  // pre-pass step before scene geometry. Also targets HDR now.
-  //
-  // Sky uniform layout (80 bytes, 5 × vec4f):
-  //   cameraRight.xyz | tan(fov_y/2)
-  //   cameraUp.xyz    | aspect (w/h)
-  //   cameraForward   | sun_intensity (HDR scalar)
-  //   sunDir.xyz      | (pad)
-  //   fogColor.xyz    | (pad)
-  // Camera basis is the rows of the modelView rotation block, derived
-  // each frame so the atmosphere reacts to user rotation. Sun direction
-  // and intensity are duplicated from lighting because the sky has its
-  // own bind group; the cost is 80 bytes and one extra writeBuffer.
-  // fogColor is also duplicated so the sky can blend toward it near
-  // the horizon — matches the PBR shader's fog so scene + sky meet at
-  // a consistent color at distance.
-  const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
-  const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
-  const skyUniformBuffer = device.createBuffer({
-    size: 80,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  const skyBindGroup = device.createBindGroup({
-    layout: skyPipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: skyUniformBuffer }],
-  });
   const skyScratch = new Float32Array(20);
-
-  // Sun intensity (linear HDR) — controls both the disc brightness and
-  // the overall scattering brightness. ~22 makes daytime sky and lit
-  // surfaces roughly match what users author for sRGB display, while
-  // keeping the sun disc bright enough to bloom strongly.
-  const SUN_INTENSITY = 22;
-
-  // Post-process: bright-pass + bloom pyramid + composite. Bright-pass,
-  // downsample, and upsample share the same "single input texture +
-  // sampler + uniform" bind-group layout. Composite has its own
-  // (two-input) layout. Only the upsample pipeline uses additive blend.
-  const singleInputLayout = createSingleInputLayout(device);
-  const compositeLayout = createCompositeLayout(device);
-  const brightPassPipeline = createPostProcessPipeline(
-    device, singleInputLayout, brightPassShaderCode, HDR_FORMAT,
-  );
-  const downsamplePipeline = createPostProcessPipeline(
-    device, singleInputLayout, bloomDownsampleShaderCode, HDR_FORMAT,
-  );
-  const upsamplePipeline = createPostProcessPipeline(
-    device, singleInputLayout, bloomUpsampleShaderCode, HDR_FORMAT,
-    { additive: true },
-  );
-  const compositePipeline = createPostProcessPipeline(
-    device, compositeLayout, compositeShaderCode, format,
-  );
-
-  // Bloom samples with clamp-to-edge so the kernel doesn't smear in
-  // pixels from the opposite edge of the texture. Routed through the
-  // gpu-cache so renderer rebuilds (per scene change) reuse the same
-  // sampler.
-  const postSampler = getSampler(device, {
-    magFilter: 'linear',
-    minFilter: 'linear',
-    addressModeU: 'clamp-to-edge',
-    addressModeV: 'clamp-to-edge',
-  });
-
-  // Bloom uniforms are written per-frame from lighting now (threshold +
-  // soft knee for bright-pass, intensity for composite). 16-byte
-  // padding because that's the minimum UBO size in WebGPU.
-  const brightPassUniform = device.createBuffer({
-    size: 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  const compositeUniform = device.createBuffer({
-    size: 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
   const bloomScratch = new Float32Array(4);
-
-  // Per-frame intermediates, (re)allocated when size changes:
-  //   depthTexture  — main pass depth attachment
-  //   hdrColor      — scene HDR target (sampled by bright-pass + composite)
-  //   bloomMips[i]  — bloom pyramid level i (0 = half res, 5 = 1/64)
-  //   bloomMipParamBuffers[i] — uniform with src_texel for that level
-  let depthTexture: GPUTexture | null = null;
-  let hdrColor: GPUTexture | null = null;
-  let hdrColorView: GPUTextureView | null = null;
-  let bloomMips: GPUTexture[] = [];
-  let bloomMipViews: GPUTextureView[] = [];
-  // Each mip i needs a (1/w, 1/h) uniform used by both downsample (when
-  // it's the SOURCE) and upsample (when it's the SOURCE again). One
-  // buffer per mip is enough.
-  let bloomMipParamBuffers: GPUBuffer[] = [];
-  // Bright-pass reads hdrColor → mip[0]. Downsample reads mip[i] → mip[i+1].
-  // Upsample reads mip[i+1] → mip[i] additively. One bind group per
-  // (source mip + uniform) pair.
-  let brightPassBindGroup: GPUBindGroup | null = null;
-  let pyramidBindGroups: GPUBindGroup[] = []; // index i: source = mip[i]
-  let compositeBindGroup: GPUBindGroup | null = null;
-  let lastWidth = 0;
-  let lastHeight = 0;
-
-  function rebuildIntermediates(width: number, height: number) {
-    depthTexture?.destroy();
-    hdrColor?.destroy();
-    for (const t of bloomMips) t.destroy();
-    bloomMips = [];
-    bloomMipViews = [];
-    bloomMipParamBuffers = [];
-    pyramidBindGroups = [];
-
-    depthTexture = device.createTexture({
-      size: [width, height],
-      format: 'depth32float',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    hdrColor = device.createTexture({
-      size: [width, height],
-      format: HDR_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    hdrColorView = hdrColor.createView();
-
-    // Build the mip chain. mip i is at 1/(2^(i+1)) of canvas resolution,
-    // so mip 0 is half, mip (count-1) is the smallest.
-    for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
-      const scale = 1 << (i + 1);
-      const w = Math.max(1, Math.floor(width / scale));
-      const h = Math.max(1, Math.floor(height / scale));
-      const tex = device.createTexture({
-        size: [w, h],
-        format: HDR_FORMAT,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      });
-      bloomMips.push(tex);
-      bloomMipViews.push(tex.createView());
-      const buf = device.createBuffer({
-        size: 16,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      device.queue.writeBuffer(
-        buf, 0,
-        new Float32Array([1 / w, 1 / h, 0, 0]) as BufferSource,
-      );
-      bloomMipParamBuffers.push(buf);
-    }
-
-    // Bind groups: one per source-mip, used both by downsample (when
-    // sampling mip i to write mip i+1) and upsample (when sampling mip
-    // i to write mip i-1 additively).
-    for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
-      pyramidBindGroups.push(device.createBindGroup({
-        layout: singleInputLayout,
-        entries: [
-          { binding: 0, resource: bloomMipViews[i]! },
-          { binding: 1, resource: postSampler },
-          { binding: 2, resource: { buffer: bloomMipParamBuffers[i]! } },
-        ],
-      }));
-    }
-
-    // Bright pass: reads hdrColor, writes mip 0. The uniform here is
-    // the bright-pass threshold (NOT a texel-step), so reuse the static
-    // brightPassUniform buffer.
-    brightPassBindGroup = device.createBindGroup({
-      layout: singleInputLayout,
-      entries: [
-        { binding: 0, resource: hdrColorView },
-        { binding: 1, resource: postSampler },
-        { binding: 2, resource: brightPassUniform },
-      ],
-    });
-
-    // Composite: reads hdrColor + mip 0 (the accumulated bloom).
-    compositeBindGroup = device.createBindGroup({
-      layout: compositeLayout,
-      entries: [
-        { binding: 0, resource: hdrColorView },
-        { binding: 1, resource: bloomMipViews[0]! },
-        { binding: 2, resource: postSampler },
-        { binding: 3, resource: compositeUniform },
-      ],
-    });
-
-    lastWidth = width;
-    lastHeight = height;
-  }
+  const SUN_INTENSITY = 22;
 
   // Per-scene state. Empty until setScene is first called — render()
   // is a no-op for the scene pass in that case (sky/composite still
@@ -544,7 +584,7 @@ export function createSceneRenderer(
   //     instanceCount) matches. Same matching produces zero buffer
   //     alloc and a single writeBuffer; mismatches destroy + realloc.
   let batches: Batch[] = [];
-  const materialCache = new Map<string, CachedMaterial>();
+  const materialCache = materialCacheGlobal;
 
   function setScene(scene: SceneValue): void {
     // Group entities by (kind, geometry, material) reference equality.
@@ -595,7 +635,7 @@ export function createSceneRenderer(
     const usedMaterialKeys = new Set<string>();
 
     for (const [kindId, byGeometry] of groupsByKind) {
-      const kind = kinds.get(kindId);
+      const kind = shared.kinds.get(kindId);
       if (!kind) {
         throw new Error(`unknown material kind: ${kindId}`);
       }
@@ -631,9 +671,13 @@ export function createSceneRenderer(
             materialCache.set(cacheKey, cached);
           }
 
-          // Instance side: try to reuse the buffer from the previous
-          // batch that had the same (geometry, structuralKey,
-          // instanceCount). Same-shape batches reuse without alloc.
+          // Instance side: the buffer comes from the module-level pool
+          // keyed by (positionBuffer id, structuralKey, instance count).
+          // Different consumers drawing the same batch shape share the
+          // buffer; the writeBuffer-then-submit sequence is atomic per
+          // render() call (synchronous JS) so render order is the only
+          // thing that matters, and that's preserved by the device
+          // queue.
           const instanceCount = entities.length;
           const instanceData = new Float32Array(instanceCount * INSTANCE_FLOATS);
           for (let i = 0; i < instanceCount; i++) {
@@ -642,17 +686,11 @@ export function createSceneRenderer(
             instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
           }
           const instanceKey = `${gpuObjectId(geometry.positionBuffer as object)}|${structuralKey}|${instanceCount}`;
-          const prevBatch = prevBatchByKey.get(instanceKey);
-          let instanceBuffer: GPUBuffer;
-          if (prevBatch) {
-            instanceBuffer = prevBatch.instanceBuffer;
-            prevBatchByKey.delete(instanceKey);
-          } else {
-            instanceBuffer = device.createBuffer({
-              size: instanceData.byteLength,
-              usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-            });
-          }
+          const instanceBuffer = getInstanceBuffer(
+            device,
+            instanceKey,
+            instanceData.byteLength,
+          );
           device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
 
           next.push({
@@ -668,62 +706,23 @@ export function createSceneRenderer(
       }
     }
 
-    // Destroy unclaimed prev-batch instance buffers.
-    for (const b of prevBatchByKey.values()) {
-      try { b.instanceBuffer.destroy(); } catch { /* */ }
-    }
-    // Destroy material cache entries for materials no longer in the
-    // scene. (Keep the rest — they may be hit again next setScene.)
-    for (const [key, cached] of materialCache) {
-      if (!usedMaterialKeys.has(key)) {
-        try { cached.paramBuffer.destroy(); } catch { /* */ }
-        materialCache.delete(key);
-      }
-    }
+    // Module-level pool owns instance buffers. Nothing to destroy
+    // here — entries that match the same key on the next setScene
+    // get reused; mismatches grow the pool (bounded by distinct
+    // batch shapes seen during the session).
+    void prevBatchByKey;
+    void usedMaterialKeys;
 
     batches = next;
   }
 
   function destroy(): void {
-    // Size-bound intermediates.
-    depthTexture?.destroy();
-    hdrColor?.destroy();
-    for (const t of bloomMips) t.destroy();
-    // Bloom mip per-level (1/w, 1/h) uniform buffers allocated alongside
-    // the mip chain in rebuildIntermediates.
-    for (const buf of bloomMipParamBuffers) {
-      try { buf.destroy(); } catch { /* double-destroy guard */ }
-    }
-    // The renderer's own uniform buffers — created once at construction
-    // and live for the renderer's full lifetime. Without these destroys
-    // the per-PreviewTile renderer leaks 5 small uniform buffers every
-    // time the tile unmounts.
-    try { sceneUniformBuffer.destroy(); } catch { /* */ }
-    try { shadowUniformBuffer.destroy(); } catch { /* */ }
-    try { skyUniformBuffer.destroy(); } catch { /* */ }
-    try { brightPassUniform.destroy(); } catch { /* */ }
-    try { compositeUniform.destroy(); } catch { /* */ }
-    // Per-batch instance buffers and per-material paramBuffers held
-    // in the material cache.
-    for (const b of batches) {
-      try { b.instanceBuffer.destroy(); } catch { /* */ }
-    }
-    for (const cached of materialCache.values()) {
-      try { cached.paramBuffer.destroy(); } catch { /* */ }
-    }
-    materialCache.clear();
-    depthTexture = null;
-    hdrColor = null;
-    hdrColorView = null;
-    bloomMips = [];
-    bloomMipViews = [];
-    bloomMipParamBuffers = [];
-    pyramidBindGroups = [];
-    brightPassBindGroup = null;
-    compositeBindGroup = null;
+    // Everything the renderer drew with is in module-scoped pools and
+    // caches that other renderers (current or future) may still want.
+    // The renderer instance itself owns no GPU resources; the only
+    // per-renderer state was `batches`, which is just JS references
+    // to module-pooled buffers + cached bind groups.
     batches = [];
-    lastWidth = 0;
-    lastHeight = 0;
   }
 
   return {
@@ -731,9 +730,19 @@ export function createSceneRenderer(
     destroy,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false }) {
       const [width, height] = size;
-      if (width !== lastWidth || height !== lastHeight) {
-        rebuildIntermediates(width, height);
-      }
+      const intermediates = ensureIntermediates(shared, width, height);
+      const {
+        depthTexture, hdrColorView, bloomMips,
+        pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
+      } = intermediates;
+      const {
+        sceneUniformBuffer, shadowUniformBuffer, skyUniformBuffer,
+        brightPassUniform, compositeUniform,
+        sceneBindGroup, shadowBindGroup, skyBindGroup,
+        shadowTexture, shadowPipeline,
+        skyPipeline, flatBackgroundPipeline,
+        brightPassPipeline, downsamplePipeline, upsamplePipeline, compositePipeline,
+      } = shared;
 
       // Light view+projection. Eye sits along the light direction from the
       // camera target so the shadow box tracks the user. lookAt with up=+Y
@@ -900,7 +909,7 @@ export function createSceneRenderer(
       pass.setBindGroup(0, sceneBindGroup);
       let activePipeline: GPURenderPipeline | null = null;
       for (const b of batches) {
-        const kind = kinds.get(b.kindId)!;
+        const kind = shared.kinds.get(b.kindId)!;
         const pipelineForBatch =
           flatPreview && kind.pipelineBlended
             ? kind.pipelineBlended
