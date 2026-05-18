@@ -19,6 +19,24 @@ import { useEditorStore } from './store.js';
 // On Load we bump syncCounter via setGraph; each canvas's existing
 // sync effect picks up the new graph and re-renders its RF state.
 
+// Stamp live positions from the editor store's `nodePositions` slice
+// back onto each node's `position` field, producing a save-ready copy
+// of the graph. The slice is the runtime source of truth; the field
+// on GraphNode is the save-format carrier.
+function withPositions<G extends { nodes: { id: string; position?: { x: number; y: number } }[] }>(
+  graph: G,
+  positions: Record<string, { x: number; y: number }> | undefined,
+): G {
+  if (!positions) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) => {
+      const p = positions[n.id];
+      return p ? { ...n, position: p } : n;
+    }),
+  };
+}
+
 export function saveProject(): void {
   const state = useEditorStore.getState();
   // Pans / zooms / orbit gestures during this session go to the layout
@@ -60,9 +78,12 @@ export function saveProject(): void {
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
     project: {
-      graph: state.mainGraph,
+      graph: withPositions(state.mainGraph, state.nodePositions.main),
       rootNodeId: state.mainRootNodeId,
-      subgraphs: state.subgraphs,
+      subgraphs: state.subgraphs.map((sg) => ({
+        ...sg,
+        graph: withPositions(sg.graph, state.nodePositions[sg.id]),
+      })),
       ...(state.folders.length > 0 ? { folders: state.folders } : {}),
       ...(Object.keys(cameras).length > 0 ? { cameras } : {}),
       ...(Object.keys(viewports).length > 0 ? { viewports } : {}),

@@ -30,11 +30,18 @@ export function edgeColor(
   return out ? typeColor(out.type) : '#888';
 }
 
-export function graphToRfNodes(graph: Graph): Node[] {
+export function graphToRfNodes(
+  graph: Graph,
+  positions: Record<string, { x: number; y: number }> | undefined,
+): Node[] {
   return graph.nodes.map((n, i) => ({
     id: n.id,
     type: 'sedon',
-    position: n.position ?? { x: i * 240, y: i * 80 },
+    // Live positions from the editor store win; fall back to the
+    // graph-node carrier (used for initial seeding from demos/save
+    // files) and finally to a deterministic per-index layout for
+    // freshly-added nodes that haven't been positioned yet.
+    position: positions?.[n.id] ?? n.position ?? { x: i * 240, y: i * 80 },
     data: { kind: n.kind },
   }));
 }

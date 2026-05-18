@@ -92,6 +92,21 @@ export interface EditorState {
    * store — mutations happen on the inner Map.
    */
   evalCache: EvalCache;
+  /**
+   * Live node positions, keyed by editing-context id (`'main'` or a
+   * subgraph id) and then by node id. The source of truth for where
+   * each node sits on its canvas.
+   *
+   * Lives here, separate from `graph.nodes[i].position`, because
+   * dragging a node is purely a UI concern — it must not change the
+   * `graph` / `subgraphs` references, otherwise every consumer
+   * (registry rebuild, preview panes, asset thumbnails, node-canvas
+   * eval) re-runs even though no node's fingerprint has changed. The
+   * `position` field on GraphNode is kept as a save-format carrier:
+   * positions get lifted into this slice when a graph enters the
+   * store and re-snapshotted onto graph nodes on save.
+   */
+  nodePositions: Record<string, Record<string, { x: number; y: number }>>;
 
   // Undo/redo stacks. Each entry is a Command that captures enough state to
   // both apply and reverse it.
@@ -329,7 +344,41 @@ export interface EditorState {
   redo: () => void;
 }
 
+// Walk a graph's nodes and lift any `position` fields into a flat
+// nodeId → {x,y} map. Used at the boundaries where a graph enters the
+// store (initial load, demo load, save-file load, snapshot replay,
+// addNode) to seed the live position slice without depending on
+// `graph.nodes[i].position` at runtime.
+function extractPositions(graph: Graph): Record<string, { x: number; y: number }> {
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const n of graph.nodes) {
+    if (n.position) out[n.id] = n.position;
+  }
+  return out;
+}
+
+// Reconcile the live position map for one editing context against the
+// post-dispatch graph state. Existing entries win (the drag-commit
+// path writes live positions and never touches `graph.nodes[i].position`,
+// so we don't want a stale carrier to clobber them); new nodes pick
+// up whatever the command brought along; removed nodes are dropped.
+function mergeNodePositions(
+  prev: Record<string, { x: number; y: number }> | undefined,
+  graph: Graph,
+): Record<string, { x: number; y: number }> {
+  const next: Record<string, { x: number; y: number }> = {};
+  for (const n of graph.nodes) {
+    const existing = prev?.[n.id];
+    if (existing) next[n.id] = existing;
+    else if (n.position) next[n.id] = n.position;
+  }
+  return next;
+}
+
 const initial = createInitialGraph();
+const initialNodePositions: EditorState['nodePositions'] = {
+  main: extractPositions(initial.graph),
+};
 
 export const useEditorStore = create<EditorState>((set, get) => {
   // Compute the routing-back state — when a mutation produces a new graph,
@@ -393,9 +442,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
       return { ...s, version: (prev.version ?? 0) + 1 };
     });
     const bumped: ProjectSnapshot = { ...after, subgraphs: bumpedSubgraphs };
+    // Reconcile the live position map against every graph in the
+    // snapshot. Existing live positions win (so any pending drag isn't
+    // clobbered by a save-format carrier); new nodes pick up their
+    // position from `graph.nodes[i].position`; deletions drop entries.
+    const prevPositions = get().nodePositions;
+    const nodePositions: EditorState['nodePositions'] = {
+      main: mergeNodePositions(prevPositions.main, bumped.mainGraph),
+    };
+    for (const sg of bumped.subgraphs) {
+      nodePositions[sg.id] = mergeNodePositions(prevPositions[sg.id], sg.graph);
+    }
     const cmd: Command = { kind: 'replaceProject', before, after: bumped };
     set({
       ...bumped,
+      nodePositions,
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
       dirty: true,
@@ -430,6 +491,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       ) {
         const merged: Command = { ...last, after: cmd.after };
         const next = applyForward(state, cmd);
+        // setInputValue doesn't change the node set; nodePositions is
+        // already in sync, no need to reconcile here.
         set({
           graph: next.graph,
           rootNodeId: next.rootNodeId,
@@ -444,10 +507,22 @@ export const useEditorStore = create<EditorState>((set, get) => {
     }
 
     const next = applyForward(state, cmd);
+    // Reconcile this editing context's live position map against the
+    // new graph. Most commands (setInputValue, connect, removeEdges)
+    // leave the node set unchanged so this is effectively a copy;
+    // addNode/removeNodes/replaceGraph are why we need it.
+    const { currentEditingId } = get();
+    const prevPositions = get().nodePositions;
+    const reconciled = mergeNodePositions(prevPositions[currentEditingId], next.graph);
+    const nodePositions =
+      reconciled === prevPositions[currentEditingId]
+        ? prevPositions
+        : { ...prevPositions, [currentEditingId]: reconciled };
     set({
       graph: next.graph,
       rootNodeId: next.rootNodeId,
       ...routeBack(next.graph, next.rootNodeId),
+      ...(nodePositions !== prevPositions ? { nodePositions } : {}),
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
       dirty: true,
@@ -466,6 +541,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     cameras: {},
     viewports: {},
     evalCache: createEvalCache(),
+    nodePositions: initialNodePositions,
     device: null,
     undoStack: [],
     redoStack: [],
@@ -478,6 +554,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // both undo and redo stacks. Always returns to editing the main graph
     // — switching demos shouldn't drop you inside an old subgraph.
     setGraph: (graph, rootNodeId, subgraphs, cameras, viewports, folders) => {
+      // Seed positions from every graph entering the store: main + each
+      // subgraph. Each editing context gets its own nodeId→position map.
+      const nodePositions: EditorState['nodePositions'] = { main: extractPositions(graph) };
+      for (const sg of subgraphs ?? []) {
+        nodePositions[sg.id] = extractPositions(sg.graph);
+      }
       set({
         graph,
         rootNodeId,
@@ -494,6 +576,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         // start empty and let NodeCanvas's fitView fill in on first
         // navigation.
         viewports: viewports ?? {},
+        nodePositions,
         undoStack: [],
         redoStack: [],
         dirty: false,
@@ -828,26 +911,25 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     commitActivePositions: (positionsById) => {
+      // Position commits write ONLY to the live `nodePositions` slice
+      // — they never produce a new `graph`/`subgraphs`/`mainGraph`
+      // reference. That decoupling is the whole point of this slice:
+      // dragging a node mustn't invalidate any selector that consumers
+      // (registry useMemo, Preview/AssetThumbnail/NodeCanvas useEffects,
+      // eval-cache fingerprints) read from. Every consumer that doesn't
+      // explicitly subscribe to `nodePositions` sees no change.
       const state = get();
-      const graph = state.graph;
-      const updated: Graph = {
-        ...graph,
-        nodes: graph.nodes.map((n) => {
-          const p = positionsById.get(n.id);
-          return p ? { ...n, position: p } : n;
-        }),
-      };
+      const editingId = state.currentEditingId;
+      const prevForGraph = state.nodePositions[editingId] ?? {};
+      const nextForGraph: Record<string, { x: number; y: number }> = { ...prevForGraph };
+      for (const [id, p] of positionsById) nextForGraph[id] = p;
       set({
-        graph: updated,
-        ...routeBack(updated, state.rootNodeId),
-        // Bump syncCounter so OTHER canvas panels viewing this graph
-        // re-merge their RF state and pick up the new positions. The
-        // committing canvas's RF state already matches what we just
-        // wrote, so mergeRfNodes returns existing nodes unchanged for it
-        // — no flicker, no fight against the drag that just finished.
-        syncCounter: get().syncCounter + 1,
-        // Position-only changes don't dirty: dragging is the same as before
-        // this method existed, just newly persisted into the store.
+        nodePositions: { ...state.nodePositions, [editingId]: nextForGraph },
+        // syncCounter is unchanged: NodeCanvas subscribes to
+        // `nodePositions[editingId]` directly for its merge, so we
+        // don't need the heavyweight resync that syncCounter triggers.
+        // Position-only changes don't dirty either: same rationale as
+        // before — dragging persists position but isn't a model edit.
       });
     },
 
@@ -1259,8 +1341,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // Project-scoped commands swap the entire snapshot; graph-scoped
       // ones route through applyBackward as before.
       if (cmd.kind === 'replaceProject') {
+        const prevPositions = get().nodePositions;
+        const nodePositions: EditorState['nodePositions'] = {
+          main: mergeNodePositions(prevPositions.main, cmd.before.mainGraph),
+        };
+        for (const sg of cmd.before.subgraphs) {
+          nodePositions[sg.id] = mergeNodePositions(prevPositions[sg.id], sg.graph);
+        }
         set({
           ...cmd.before,
+          nodePositions,
           undoStack: stack.slice(0, -1),
           redoStack: [...get().redoStack, cmd],
           syncCounter: get().syncCounter + 1,
@@ -1269,10 +1359,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
       const state = { graph: get().graph, rootNodeId: get().rootNodeId };
       const next = applyBackward(state, cmd);
+      const { currentEditingId } = get();
+      const prevPositions = get().nodePositions;
+      const reconciled = mergeNodePositions(prevPositions[currentEditingId], next.graph);
+      const nodePositions =
+        reconciled === prevPositions[currentEditingId]
+          ? prevPositions
+          : { ...prevPositions, [currentEditingId]: reconciled };
       set({
         graph: next.graph,
         rootNodeId: next.rootNodeId,
         ...routeBack(next.graph, next.rootNodeId),
+        ...(nodePositions !== prevPositions ? { nodePositions } : {}),
         undoStack: stack.slice(0, -1),
         redoStack: [...get().redoStack, cmd],
         syncCounter: get().syncCounter + 1,
@@ -1284,8 +1382,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (stack.length === 0) return;
       const cmd = stack[stack.length - 1]!;
       if (cmd.kind === 'replaceProject') {
+        const prevPositions = get().nodePositions;
+        const nodePositions: EditorState['nodePositions'] = {
+          main: mergeNodePositions(prevPositions.main, cmd.after.mainGraph),
+        };
+        for (const sg of cmd.after.subgraphs) {
+          nodePositions[sg.id] = mergeNodePositions(prevPositions[sg.id], sg.graph);
+        }
         set({
           ...cmd.after,
+          nodePositions,
           undoStack: [...get().undoStack, cmd],
           redoStack: stack.slice(0, -1),
           syncCounter: get().syncCounter + 1,
@@ -1294,10 +1400,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
       const state = { graph: get().graph, rootNodeId: get().rootNodeId };
       const next = applyForward(state, cmd);
+      const { currentEditingId } = get();
+      const prevPositions = get().nodePositions;
+      const reconciled = mergeNodePositions(prevPositions[currentEditingId], next.graph);
+      const nodePositions =
+        reconciled === prevPositions[currentEditingId]
+          ? prevPositions
+          : { ...prevPositions, [currentEditingId]: reconciled };
       set({
         graph: next.graph,
         rootNodeId: next.rootNodeId,
         ...routeBack(next.graph, next.rootNodeId),
+        ...(nodePositions !== prevPositions ? { nodePositions } : {}),
         undoStack: [...get().undoStack, cmd],
         redoStack: stack.slice(0, -1),
         syncCounter: get().syncCounter + 1,

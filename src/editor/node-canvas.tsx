@@ -93,7 +93,16 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     }),
   );
 
-  const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(graphToRfNodes(panelGraph));
+  // Live positions for the graph THIS canvas is showing. Subscribed
+  // separately from `panelGraph` so a drag-stop on another canvas
+  // editing the same graph doesn't force this canvas to re-merge
+  // through the heavy graph-reference path — only the positions
+  // selector fires, and mergeRfNodes can produce an updated RF node
+  // list cheaply.
+  const panelPositions = useEditorStore((s) => s.nodePositions[effectiveGraphId]);
+  const [rfNodes, setRfNodes, onRfNodesChange] = useNodesState(
+    graphToRfNodes(panelGraph, panelPositions),
+  );
   const [rfEdges, setRfEdges, onRfEdgesChange] = useEdgesState(graphToRfEdges(panelGraph, seedRegistry));
 
   const rf = useReactFlow();
@@ -269,7 +278,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       // nodes already have measured handles; any new handle on an
       // existing node can be measured synchronously since its node
       // element is in the DOM.
-      setRfNodes((current) => mergeRfNodes(current, panelGraph));
+      setRfNodes((current) => mergeRfNodes(current, panelGraph, panelPositions));
       const { domNode, updateNodeInternals } = rfStore.getState();
       const updates = new Map<string, { id: string; nodeElement: HTMLDivElement; force: boolean }>();
       for (const node of panelGraph.nodes) {
@@ -289,9 +298,24 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
 
     // Swap: clear edges, write new nodes, defer edge re-set to Effect 2.
     setRfEdges([]);
-    setRfNodes((current) => mergeRfNodes(current, panelGraph));
+    setRfNodes((current) => mergeRfNodes(current, panelGraph, panelPositions));
     setPendingEdgeSync({ panelGraph, registry });
-  }, [panelGraph, registry, setRfNodes, setRfEdges, rfStore]);
+  }, [panelGraph, registry, setRfNodes, setRfEdges, rfStore, panelPositions]);
+
+  // Position-only sync. Drag commits write to the `nodePositions`
+  // slice without producing a new `panelGraph` reference, so the
+  // graph-driven effect above doesn't fire. This cheaper effect
+  // catches the position change, pushes the new coordinates into RF,
+  // and mergeRfNodes' "existing.position === livePos" short-circuit
+  // makes it a no-op on the canvas that just finished the drag.
+  useEffect(() => {
+    setRfNodes((current) => mergeRfNodes(current, panelGraph, panelPositions));
+    // panelGraph is intentionally NOT in deps: this effect is for the
+    // position-only path. Graph-structural changes are handled by the
+    // effect above. The closure's captured panelGraph is fine — when
+    // it changes, that other effect will re-run with the fresh graph.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelPositions, setRfNodes]);
 
   // Effect 2: fires after Effect 1's commit when a swap has been
   // initiated. At this point the new nodes' DOM exists and their
@@ -640,34 +664,41 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
 // Reconcile React Flow's current node list against the graph's nodes,
 // preserving position/dimensions/selection for nodes that survive while
 // adding new nodes (from undo/redo restore or load) at their saved position.
-function mergeRfNodes(current: Node[], graph: Graph): Node[] {
+function mergeRfNodes(
+  current: Node[],
+  graph: Graph,
+  positions: Record<string, { x: number; y: number }> | undefined,
+): Node[] {
   const currentById = new Map(current.map((n) => [n.id, n]));
   return graph.nodes.map((g, i) => {
+    // Resolve the authoritative position for this node: live slice
+    // first (drag commits write there), then the graph-node carrier
+    // (for nodes just added by a command that brought a position
+    // along), then a deterministic fallback.
+    const livePos = positions?.[g.id] ?? g.position;
     const existing = currentById.get(g.id);
     if (existing) {
       // Keep RF's measured dimensions / selection / etc., but reconcile
-      // the few graph-authored fields that can drift between canvases:
+      // the few authored fields that can drift between canvases:
       //   • `kind` (rarely changes, but a wrapper swap could)
-      //   • `position` — when another canvas commits a drag through the
-      //     store, the resulting graph carries the new position and
-      //     other canvases must pick it up. The dragging canvas's RF
+      //   • `position` — when another canvas commits a drag, this
+      //     canvas's RF needs to pick it up. The dragging canvas's RF
       //     position already matches, so this is a no-op for it.
       const existingKind = (existing.data as { kind?: string }).kind;
       const sameKind = existingKind === g.kind;
-      const gpos = g.position;
       const samePos =
-        !gpos ||
-        (existing.position.x === gpos.x && existing.position.y === gpos.y);
+        !livePos ||
+        (existing.position.x === livePos.x && existing.position.y === livePos.y);
       if (sameKind && samePos) return existing;
       const next: Node = { ...existing };
       if (!sameKind) next.data = { ...existing.data, kind: g.kind };
-      if (!samePos && gpos) next.position = gpos;
+      if (!samePos && livePos) next.position = livePos;
       return next;
     }
     return {
       id: g.id,
       type: 'sedon',
-      position: g.position ?? { x: i * 240, y: i * 80 },
+      position: livePos ?? { x: i * 240, y: i * 80 },
       data: { kind: g.kind },
     };
   });
