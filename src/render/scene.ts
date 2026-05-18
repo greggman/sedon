@@ -15,6 +15,7 @@ import {
 } from './material-kind.js';
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
+import { debug } from '../core/debug.js';
 import { getSampler, gpuObjectId } from './gpu-cache.js';
 import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
 import bloomUpsampleShaderCode from './bloom-upsample.wgsl';
@@ -198,6 +199,7 @@ function acquireMaterial(
 ): CachedMaterial {
   let entry = materialCacheGlobal.get(key);
   if (!entry) {
+    debug('[pool MATERIAL BUILD]', key);
     entry = { value: build(), refs: 0 };
     materialCacheGlobal.set(key, entry);
   }
@@ -366,6 +368,7 @@ function acquireIntermediates(
   const key = `${width}x${height}`;
   let entry = intermediatesByKey.get(key);
   if (!entry) {
+    debug('[pool INTERMEDIATES BUILD]', key);
     entry = { value: buildIntermediates(shared, width, height), refs: 0 };
     intermediatesByKey.set(key, entry);
   }
@@ -480,6 +483,7 @@ function acquireInstanceBuffer(
     entry = undefined;
   }
   if (!entry) {
+    debug('[pool INSTANCE BUILD]', key, byteLength);
     entry = {
       value: device.createBuffer({
         size: byteLength,
@@ -515,18 +519,21 @@ function releaseInstanceBuffer(key: string): void {
 export function flushUnusedPools(): void {
   for (const [key, entry] of materialCacheGlobal) {
     if (entry.refs <= 0) {
+      debug('[pool EVICTED MATERIAL]', key);
       try { entry.value.paramBuffer.destroy(); } catch { /* */ }
       materialCacheGlobal.delete(key);
     }
   }
   for (const [key, entry] of instanceBufferPool) {
     if (entry.refs <= 0) {
+      debug('[pool EVICTED INSTANCE]', key);
       try { entry.value.destroy(); } catch { /* */ }
       instanceBufferPool.delete(key);
     }
   }
   for (const [key, entry] of intermediatesByKey) {
     if (entry.refs <= 0) {
+      debug('[pool EVICTED INTERMEDIATES]', key);
       try { entry.value.depthTexture.destroy(); } catch { /* */ }
       try { entry.value.hdrColor.destroy(); } catch { /* */ }
       for (const t of entry.value.bloomMips) {

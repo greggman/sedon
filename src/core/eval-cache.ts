@@ -14,6 +14,7 @@
 // which evicts every other entry and destroys any GPU resources owned by
 // the evicted entries that aren't still referenced by surviving entries.
 
+import { debug } from './debug.js';
 import { walkGpuResources } from './resources.js';
 
 export interface EvalCache {
@@ -32,10 +33,23 @@ export interface EvalCache {
    * dangling references to evicted outputs.
    */
   lastFingerprintByNodeId: Map<string, string>;
+  /**
+   * In-flight evaluations keyed by fingerprint. When parallel
+   * evaluateGraph calls (Preview + AssetThumbnail + NodeCanvas) reach
+   * the same fingerprint at roughly the same time, the first to start
+   * writes its in-progress Promise here. Subsequent evaluators find
+   * the pending entry and await the same Promise instead of starting a
+   * second evaluate() — which would allocate duplicate GPU resources
+   * AND cause the cache to point at whichever evaluator finished last,
+   * orphaning the others' outputs (their textures stay alive but are
+   * unreachable through lastFingerprintByNodeId). Cleared as each
+   * Promise resolves and writes its result into `entries`.
+   */
+  pending: Map<string, Promise<unknown>>;
 }
 
 export function createEvalCache(): EvalCache {
-  return { entries: new Map(), lastFingerprintByNodeId: new Map() };
+  return { entries: new Map(), lastFingerprintByNodeId: new Map(), pending: new Map() };
 }
 
 /**
@@ -170,6 +184,7 @@ export function sweepCache(cache: EvalCache, touched: Set<string>): void {
     if (touched.has(fp)) continue;
     walkGpuResources(outputs, (r) => {
       if (!live.has(r)) {
+        debug('[sweepCache DESTROY]', fp);
         try {
           r.destroy();
         } catch {

@@ -19,6 +19,7 @@
     "@types/react-dom": "^19.2.3",
     "@webgpu/types": "^0.1.40",
     "esbuild": "^0.20.0",
+    "puppeteer": "^25.0.2",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"
   },

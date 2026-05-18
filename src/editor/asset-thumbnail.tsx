@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type SceneValue } from '../core/resources.js';
+import { gpuObjectId } from '../render/gpu-cache.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { ScenePreview } from './scene-preview.js';
 import { synthesizeTiles } from './preview-synth.js';
@@ -111,6 +113,19 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
       // scenes (unwired outputs) become a checkerboard, which is just
       // noise for a tiny tile.
       const next = tiles.find((t) => t.scene.entities.length > 0)?.scene;
+      debug(() => {
+        const label = target.kind === 'main' ? 'main' : target.subgraphId;
+        const chosenTile = next ? tiles.find((t) => t.scene === next) : undefined;
+        const ent0 = next?.entities[0];
+        const ent0Mat = ent0?.material;
+        const baseTex =
+          ent0Mat && ent0Mat.kind === 'pbr' && ent0Mat.basecolor
+            ? `tex#${gpuObjectId(ent0Mat.basecolor.texture as unknown as object)}`
+            : 'n/a';
+        return [
+          `[AssetThumbnail commit] ${label} tiles=${tiles.map((t) => `${t.name}(${t.scene.entities.length}e)`).join(',')} chose=${chosenTile?.name ?? 'null'} ent0.basecolor=${baseTex}`,
+        ].join(' ');
+      });
       setScene(next ?? null);
     })();
     return () => {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { debug } from '../core/debug.js';
 import { defaultLighting, type SceneValue } from '../core/resources.js';
 import { frameScene } from '../render/frame-scene.js';
 import {
@@ -8,6 +9,7 @@ import {
   rotationY,
   translation,
 } from '../render/mat4.js';
+import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
 import type { CameraState } from './store.js';
 
@@ -83,15 +85,30 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
   useEffect(() => {
     const format = formatRef.current;
     if (!format) return;
+    debug('[ScenePreview RENDERER CREATED]');
     const renderer = createSceneRenderer(device, format);
     rendererRef.current = renderer;
     return () => {
+      debug('[ScenePreview RENDERER DESTROYED]');
       renderer.destroy();
       if (rendererRef.current === renderer) rendererRef.current = null;
     };
   }, [device]);
 
   useEffect(() => {
+    debug(() => {
+      const ent0 = scene.entities[0];
+      const firstMaterial = ent0?.material;
+      const matKind = firstMaterial?.kind;
+      const matTextureId =
+        firstMaterial && firstMaterial.kind === 'pbr' && firstMaterial.basecolor
+          ? `tex#${gpuObjectId(firstMaterial.basecolor.texture as unknown as object)}`
+          : 'n/a';
+      return [
+        '[ScenePreview setScene]',
+        { entities: scene.entities.length, matKind, matTextureId },
+      ].join(' ');
+    });
     rendererRef.current?.setScene(scene);
   }, [device, scene]);
 

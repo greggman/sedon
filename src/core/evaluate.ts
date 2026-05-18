@@ -1,3 +1,4 @@
+import { debug } from './debug.js';
 import type { EvalCache } from './eval-cache.js';
 import { nodeFingerprint } from './eval-cache.js';
 import type { Graph, GraphEdge } from './graph.js';
@@ -239,6 +240,28 @@ export async function evaluateGraph(
       continue;
     }
 
+    // In-flight coalescing. Parallel consumers (Preview pane + asset
+    // thumbnails + node-canvas) can all reach the same fingerprint
+    // before any of them finishes evaluate(). Without this gate, every
+    // one of them would run evaluate(), each allocating fresh GPU
+    // resources, and the cache would only hold the last writer's
+    // output — orphaning everyone else's textures (still referenced by
+    // their local `outputs` Maps, but unreachable through
+    // lastFingerprintByNodeId on the next round, so subsequent evals
+    // would silently pick up the surviving entry's handle and the
+    // structural keys of every consumer's downstream materials flip
+    // across the change).
+    if (cache && cache.pending.has(fp)) {
+      try {
+        const result = (await cache.pending.get(fp)) as NodeOutputs;
+        outputs.set(nodeId, result);
+        cache.lastFingerprintByNodeId.set(trackerKey, fp);
+        continue;
+      } catch {
+        // First evaluator threw — fall through and try ourselves.
+      }
+    }
+
     // Inject this node's upstream fingerprints into the context for the
     // duration of its evaluate() call. The subgraph wrapper reads this and
     // forwards it as `subgraphInputFingerprints` into the inner eval.
@@ -256,11 +279,33 @@ export async function evaluateGraph(
         const prev = cache.entries.get(prevFp);
         if (prev !== undefined) callCtx.previousOutput = prev as NodeOutputs;
       }
+      // Surface previousOutput resolution per cache-miss eval so we
+      // can see when nodes from different consumer contexts end up
+      // sharing trackerKey slots — that's the failure mode where a
+      // standalone bark-texture thumbnail picks up the wrapper-
+      // context texture handle. Texture handle ids come from the
+      // separate `[reusableTexture ALLOC]` / `[AssetThumbnail
+      // commit]` logs; here we just need the trackerKey/fp pairing
+      // to spot collisions.
+      debug(() => {
+        const hasPrev = callCtx.previousOutput !== undefined;
+        return `[eval ${def.id}] tracker=${trackerKey} fp=${fp} prevFp=${prevFp ?? 'none'} hasPrev=${hasPrev}`;
+      });
+    }
+    // Wrap def.evaluate in a Promise registered in cache.pending so
+    // concurrent evaluators that arrive at this fp while we're awaiting
+    // will join us at the gate above instead of running evaluate again.
+    let pendingPromise: Promise<NodeOutputs> | undefined;
+    if (cache) {
+      pendingPromise = Promise.resolve(def.evaluate(callCtx, inputs)) as Promise<NodeOutputs>;
+      cache.pending.set(fp, pendingPromise);
     }
     try {
       // Sync nodes return outputs directly; async nodes return a Promise.
       // Awaiting both shapes works without runtime branching.
-      const result = await def.evaluate(callCtx, inputs);
+      const result = pendingPromise !== undefined
+        ? await pendingPromise
+        : await def.evaluate(callCtx, inputs);
       outputs.set(nodeId, result);
       if (cache) {
         cache.entries.set(fp, result);
@@ -268,6 +313,13 @@ export async function evaluateGraph(
       }
     } catch (e) {
       console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
+    } finally {
+      // Remove the pending entry once we're past it — entries.has(fp)
+      // now serves the same role for any future evaluator. Guard against
+      // a later eval round having replaced our promise with its own.
+      if (cache && pendingPromise !== undefined && cache.pending.get(fp) === pendingPromise) {
+        cache.pending.delete(fp);
+      }
     }
   }
 

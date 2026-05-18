@@ -147,6 +147,58 @@ test('cache hit skips evaluate() entirely on a second pass with same inputs', as
   assert.equal(counts.get('test/double'), 1, 'double evaluated once, hit cache on pass 2');
 });
 
+test('parallel evaluateGraph calls with the same fingerprint coalesce to one evaluate()', async () => {
+  // Regression for a race that caused the bark-texture asset thumbnail's
+  // basecolor to silently flip between initial paint and the first
+  // octaves change. Two evaluateGraph calls (preview pane + asset
+  // thumbnail) both reach the same fingerprint, both miss cache.entries
+  // before either has finished, both run evaluate() and overwrite each
+  // other's cache entry — orphaning the losing consumer's GPU
+  // resources and causing subsequent re-evals to silently switch
+  // texture handles.
+  //
+  // Fix: cache.pending coalesces in-flight evals by fp. Second
+  // evaluator joins the first's promise instead of re-running evaluate.
+  const counts = new Map<string, number>();
+  const registry = buildRegistry(counts);
+  // A node whose evaluate yields a microtask before returning, so we
+  // can deterministically interleave two parallel evaluateGraph calls.
+  registry.register({
+    id: 'test/async-double',
+    category: 'Test',
+    inputs: [{ name: 'in', type: 'Float' }],
+    outputs: [{ name: 'out', type: 'Float' }],
+    async evaluate(_ctx, inputs) {
+      counts.set('test/async-double', (counts.get('test/async-double') ?? 0) + 1);
+      // Yield once so a sibling evaluator gets to run its cache check.
+      await Promise.resolve();
+      return { out: (inputs.in as number) * 2 };
+    },
+  });
+  const cache = createEvalCache();
+
+  const g = createGraph();
+  const c = addNode(g, 'test/const', { inputValues: { value: 5 } });
+  const d = addNode(g, 'test/async-double');
+  addEdge(g, { node: c.id, socket: 'out' }, { node: d.id, socket: 'in' });
+
+  const [r1, r2] = await Promise.all([
+    evaluateGraph(g, registry, { rootNodeId: d.id, cache, touched: new Set() }),
+    evaluateGraph(g, registry, { rootNodeId: d.id, cache, touched: new Set() }),
+  ]);
+
+  assert.equal(
+    counts.get('test/async-double'),
+    1,
+    'async-double evaluated exactly once — the second call joined the first via cache.pending',
+  );
+  // Both consumers see the same output identity (the literal result
+  // object returned by the single evaluate() call).
+  assert.equal(r1.outputs.out, r2.outputs.out);
+  // After both finish, pending is cleared so future evals start fresh.
+  assert.equal(cache.pending.size, 0);
+});
+
 test('changing an inputValue invalidates only the downstream chain', async () => {
   const counts = new Map<string, number>();
   const registry = buildRegistry(counts);

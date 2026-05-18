@@ -1,3 +1,5 @@
+import { debug } from './debug.js';
+
 // Value types that flow on GPU-bearing sockets. These are the runtime shape of
 // values for `Texture2D`, `Geometry`, and `Material`.
 //
@@ -383,6 +385,9 @@ export function reusableTexture(
       height: desired.height,
     };
   }
+  debug(() => `[reusableTexture ALLOC] ${desired.width}x${desired.height} ${desired.format} ${
+    prev === undefined ? 'no-prev' : !prev.texture ? 'no-prev-texture' : `dim-mismatch(${prev.width}x${prev.height}/${prev.format})`}`,
+  );
   const texture = device.createTexture({
     size: [desired.width, desired.height],
     format: desired.format,

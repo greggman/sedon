@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { debug } from '../core/debug.js';
 import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
@@ -405,6 +406,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
   // Push `cmd` onto the undo stack and apply it forward. Returns nothing —
   // updates state directly.
   function dispatch(cmd: Command, opts: { bumpSync?: boolean } = {}) {
+    debug(() => {
+      const detail =
+        cmd.kind === 'setInputValue'
+          ? ` ${cmd.nodeId}.${cmd.name}=${JSON.stringify(cmd.after)}`
+          : '';
+      return [`%c=== dispatch ${cmd.kind}${detail} ===`, 'color:#0a0;font-weight:bold'];
+    });
     const state = { graph: get().graph, rootNodeId: get().rootNodeId };
 
     // Coalesce consecutive setInputValue on the same socket. Drag-to-edit
@@ -1074,6 +1082,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setActiveEditing: (id) => {
       const state = get();
       if (state.currentEditingId === id) return;
+      debug(`%c=== setActiveEditing ${state.currentEditingId} -> ${id} ===`, 'color:#0a0;font-weight:bold');
       // Strip graph-scoped entries from the undo/redo stacks — they're
       // tied to the previous context's active graph and would target the
       // wrong graph if replayed after the switch. Project-scoped entries
