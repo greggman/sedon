@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { debug } from '../core/debug.js';
 import type { LightingValue, SceneValue } from '../core/resources.js';
 import { configureCanvas, type GpuDevice } from '../render/device.js';
+import { gpuObjectId } from '../render/gpu-cache.js';
 import {
   multiply,
   perspective,
@@ -95,8 +97,18 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   // batches (per-entity instance buffers + per-material bind groups);
   // everything else in the renderer stays alive between calls.
   useEffect(() => {
+    debug(() => {
+      const summary = scene.entities.map((e, i) => {
+        const g = e.geometry as { positionBuffer?: object; indexCount: number };
+        const posId = g.positionBuffer ? gpuObjectId(g.positionBuffer) : '?';
+        const mat = e.material as { kind: string; basecolor?: { texture: object } };
+        const baseId = mat.basecolor ? gpuObjectId(mat.basecolor.texture) : '?';
+        return `[${i}] pos#${posId} idx=${g.indexCount} base#${baseId}`;
+      }).join(' ');
+      return `[PreviewTile setScene] label="${label}" entities=${scene.entities.length} ${summary}`;
+    });
     rendererRef.current?.setScene(scene);
-  }, [gpu, scene]);
+  }, [gpu, scene, label]);
 
   // Render-on-demand. The render closure captures current scene / lighting
   // / flatPreview by being recreated whenever those change; that recreated
@@ -140,6 +152,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         renderer = next;
       }
       const cam = cameraRef.current;
+      debug(() => `[PreviewTile draw] label="${label}" yaw=${cam.yaw.toFixed(3)} pitch=${cam.pitch.toFixed(3)} dist=${cam.distance.toFixed(3)} target=[${cam.target.map((v) => v.toFixed(2)).join(',')}]`);
       const aspect = canvas.width / canvas.height;
       const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
       // modelView = trans(0,0,-distance) * rotX(pitch) * rotY(yaw) * trans(-target)

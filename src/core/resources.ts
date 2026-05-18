@@ -336,12 +336,21 @@ export function reusableBuffer(
   data: BufferSource,
   usage: GPUBufferUsageFlags,
 ): GPUBuffer {
-  if (previous !== undefined && previous.size === data.byteLength) {
-    device.queue.writeBuffer(previous, 0, data);
+  // WebGPU forbids `createBuffer({size: 0})` — it's a validation error
+  // that leaves the returned buffer invalid, and any subsequent submit
+  // referencing it fails the whole queue. Upstreams hit this when
+  // their data dries up (zero-point scatters, empty merges, freshly-
+  // added but unwired sources). Clamp to a tiny placeholder size so
+  // the pipeline always has a bindable handle. Callers' indexCount /
+  // vertex counts will also be 0 in that case, so the draw is a no-op
+  // and the placeholder's contents never get read.
+  const size = Math.max(data.byteLength, 4);
+  if (previous !== undefined && previous.size === size) {
+    if (data.byteLength > 0) device.queue.writeBuffer(previous, 0, data);
     return previous;
   }
-  const buffer = device.createBuffer({ size: data.byteLength, usage });
-  device.queue.writeBuffer(buffer, 0, data);
+  const buffer = device.createBuffer({ size, usage });
+  if (data.byteLength > 0) device.queue.writeBuffer(buffer, 0, data);
   return buffer;
 }
 
@@ -423,8 +432,16 @@ interface Destroyable {
 export function walkGpuResources(
   value: unknown,
   visit: (r: Destroyable) => void,
+  seen: WeakSet<object> = new WeakSet(),
+  _depth = 0,
 ): void {
   if (!value || typeof value !== 'object') return;
+  // Cycle / DAG-revisit guard. Shared references (one GPUTexture
+  // referenced by multiple materials in a scene, or BranchGraphValue
+  // typed-array buffers reachable through several routes) only need
+  // to be walked once anyway; a cycle would crash without this.
+  if (seen.has(value as object)) return;
+  seen.add(value as object);
   const v = value as Record<string, unknown>;
 
   // Texture2DValue: { texture, format, width, height }
@@ -451,8 +468,8 @@ export function walkGpuResources(
   // SceneValue: { entities: [{ geometry, material, transform, tint }, ...] }
   if (Array.isArray(v.entities)) {
     for (const ent of v.entities as Array<Record<string, unknown>>) {
-      walkGpuResources(ent.geometry, visit);
-      walkGpuResources(ent.material, visit);
+      walkGpuResources(ent.geometry, visit, seen, _depth + 1);
+      walkGpuResources(ent.material, visit, seen, _depth + 1);
     }
     return;
   }
@@ -461,25 +478,25 @@ export function walkGpuResources(
   // fields nested inside. Recurse on those.
   if (typeof v.kind === 'string') {
     if (v.kind === 'pbr') {
-      walkGpuResources(v.basecolor, visit);
-      walkGpuResources(v.normal, visit);
-      walkGpuResources(v.detailBasecolor, visit);
-      walkGpuResources(v.detailNormal, visit);
+      walkGpuResources(v.basecolor, visit, seen, _depth + 1);
+      walkGpuResources(v.normal, visit, seen, _depth + 1);
+      walkGpuResources(v.detailBasecolor, visit, seen, _depth + 1);
+      walkGpuResources(v.detailNormal, visit, seen, _depth + 1);
       return;
     }
     if (v.kind === 'terrain-splat') {
-      walkGpuResources(v.layerA, visit);
-      walkGpuResources(v.layerB, visit);
-      walkGpuResources(v.mask, visit);
-      walkGpuResources(v.normalA, visit);
-      walkGpuResources(v.normalB, visit);
+      walkGpuResources(v.layerA, visit, seen, _depth + 1);
+      walkGpuResources(v.layerB, visit, seen, _depth + 1);
+      walkGpuResources(v.mask, visit, seen, _depth + 1);
+      walkGpuResources(v.normalA, visit, seen, _depth + 1);
+      walkGpuResources(v.normalB, visit, seen, _depth + 1);
       return;
     }
   }
 
   // HeightfieldValue: { texture: Texture2DValue, worldSize, heightRange }
   if ('texture' in v && 'worldSize' in v && 'heightRange' in v) {
-    walkGpuResources(v.texture, visit);
+    walkGpuResources(v.texture, visit, seen, _depth + 1);
     return;
   }
 
@@ -490,6 +507,6 @@ export function walkGpuResources(
   // Top-level recursion: try each property.
   for (const key of Object.keys(v)) {
     const child = v[key];
-    if (child && typeof child === 'object') walkGpuResources(child, visit);
+    if (child && typeof child === 'object') walkGpuResources(child, visit, seen, _depth + 1);
   }
 }

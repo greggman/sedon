@@ -501,7 +501,17 @@ function releaseInstanceBuffer(key: string): void {
   const entry = instanceBufferPool.get(key);
   if (!entry) return;
   entry.refs--;
-  // Eviction deferred to flushUnusedPools — see releaseMaterial.
+  // Instance-buffer pool keys include the renderer id, so when refs
+  // hit 0 NO other renderer can ever match this key. Destroy it
+  // immediately rather than waiting for flushUnusedPools — avoids
+  // accumulating stale entries across renderer create/destroy
+  // cycles. (Materials/intermediates differ: they're keyed by
+  // structural content, so a future renderer can legitimately
+  // re-acquire them; their eviction stays deferred.)
+  if (entry.refs <= 0) {
+    try { entry.value.destroy(); } catch { /* */ }
+    instanceBufferPool.delete(key);
+  }
 }
 
 /**
@@ -667,10 +677,24 @@ function createPostProcessPipeline(
   });
 }
 
+// Monotonic per-process counter used to namespace each SceneRenderer's
+// instance-buffer pool keys. Material bind groups can be shared across
+// renderers because their contents are structural (texture handles +
+// scalar params written every frame). Instance buffers CANNOT be
+// shared: they hold the scene's per-entity transforms + tints, which
+// differ between consumers. Two renderers showing the same (geometry,
+// material, instanceCount) batch but DIFFERENT scenes (e.g. the
+// "Branch Palm" subgraph preview vs the main Tree & Bush scene where
+// the palm has been scattered to some other world position) would
+// otherwise fight over the buffer's contents — last setScene wins,
+// and the loser draws its trunk at the winner's coordinates.
+let nextRendererId = 0;
+
 export function createSceneRenderer(
   device: GPUDevice,
   format: GPUTextureFormat,
 ): SceneRenderer {
+  const rendererId = nextRendererId++;
   // All format-stable shared resources (pipelines, layouts, samplers,
   // uniform buffers, bind groups, kind registry) come from module-
   // scoped storage. The first createSceneRenderer call builds them;
@@ -810,7 +834,10 @@ export function createSceneRenderer(
             instanceData.set(e.transform, i * INSTANCE_FLOATS);
             instanceData.set(e.tint, i * INSTANCE_FLOATS + 16);
           }
-          const instanceKey = `${gpuObjectId(geometry.positionBuffer as object)}|${structuralKey}|${instanceCount}`;
+          // Renderer-scoped key. See `nextRendererId` declaration for
+          // why instance buffers can't be shared across renderers like
+          // material bind groups are.
+          const instanceKey = `r${rendererId}|${gpuObjectId(geometry.positionBuffer as object)}|${structuralKey}|${instanceCount}`;
           const instanceBuffer = acquireInstanceBuffer(
             device,
             instanceKey,
@@ -847,6 +874,12 @@ export function createSceneRenderer(
     void prevBatchByKey;
 
     batches = next;
+    debug(() => {
+      const summary = batches.map((b) =>
+        `[${b.kindId} pos#${gpuObjectId(b.geometry.positionBuffer as object)} idx=${b.geometry.indexCount} inst=${b.instanceCount}]`,
+      ).join(' ');
+      return `[SceneRenderer setScene] batches=${batches.length} ${summary}`;
+    });
   }
 
   function destroy(): void {
@@ -1002,6 +1035,18 @@ export function createSceneRenderer(
       shadowPass.setPipeline(shadowPipeline);
       shadowPass.setBindGroup(0, shadowBindGroup);
       for (const b of batches) {
+        // Skip empty geometries. An upstream node with zero output (a
+        // scatter that filtered everything out, an empty merge, an
+        // unwired source) produces a GeometryValue with indexCount=0
+        // and placeholder vertex/index buffers. Binding those for a
+        // no-op drawIndexed(0, …) is technically a spec-legal no-op,
+        // but stricter drivers (some real Chrome WebGPU backends)
+        // refuse the setVertexBuffer call because the placeholder
+        // buffer is smaller than the pipeline's required stride —
+        // and once any command in the pass is invalid, the whole
+        // submit fails, taking down OTHER entities (e.g. the palm
+        // trunk) along with the empty one.
+        if (b.geometry.indexCount === 0) continue;
         shadowPass.setVertexBuffer(0, b.geometry.positionBuffer);
         shadowPass.setVertexBuffer(1, b.geometry.normalBuffer);
         shadowPass.setVertexBuffer(2, b.geometry.uvBuffer);
@@ -1056,6 +1101,9 @@ export function createSceneRenderer(
       pass.setBindGroup(0, sceneBindGroup);
       let activePipeline: GPURenderPipeline | null = null;
       for (const b of batches) {
+        // Same empty-geometry skip as the shadow pass — see the
+        // longer comment there for rationale.
+        if (b.geometry.indexCount === 0) continue;
         const kind = shared.kinds.get(b.kindId)!;
         const pipelineForBatch =
           flatPreview && kind.pipelineBlended

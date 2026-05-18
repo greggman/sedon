@@ -16,6 +16,15 @@ if (!root) {
 if (new URLSearchParams(window.location.search).get('debug') === '1') {
   (window as unknown as { __sedonStore__: typeof useEditorStore }).__sedonStore__ = useEditorStore;
   (window as unknown as { __sedonDemos__: typeof DEMOS }).__sedonDemos__ = DEMOS;
+  // The navigation helpers that the Asset view's double-click and
+  // "Open in Preview" buttons call. Exposed so headless repros can
+  // exercise the exact same code path as a user click — including
+  // panel pinning, which the per-panel preview/canvas selectors
+  // listen to.
+  void import('./editor/open-graph.js').then((m) => {
+    (window as unknown as { __sedonOpenGraphInCanvas__: typeof m.openGraphInCanvas }).__sedonOpenGraphInCanvas__ = m.openGraphInCanvas;
+    (window as unknown as { __sedonOpenGraphInPreview__: typeof m.openGraphInPreview }).__sedonOpenGraphInPreview__ = m.openGraphInPreview;
+  });
 }
 
 createRoot(root).render(<App />);

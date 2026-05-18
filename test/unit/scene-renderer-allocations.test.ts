@@ -131,17 +131,24 @@ test('SceneRenderer: setScene called repeatedly with new materials neither leaks
   //   • Allocates 1 fresh paramBuffer in the module-level material
   //     cache (new structural key — different texture handle per
   //     iteration since `makePbr` builds a fresh externalTexture).
-  //   • Allocates 1 fresh instance buffer in the module-level instance
-  //     buffer pool (structural key differs ⇒ new pool key).
-  //
-  // Eviction is deferred to `flushUnusedPools`, which the renderer
-  // doesn't call automatically — entries with refs=0 stay alive
-  // until the app or test explicitly flushes. So inside the loop
-  // nothing's destroyed.
+  //     Material entries' eviction stays DEFERRED to flushUnusedPools
+  //     because materials are content-keyed and can legitimately be
+  //     re-acquired by another renderer that happens to use the same
+  //     texture handles.
+  //   • Allocates 1 fresh instance buffer in the per-renderer-namespaced
+  //     instance buffer pool (structural key differs ⇒ new pool key).
+  //     Instance entries' eviction is IMMEDIATE because the key is
+  //     renderer-scoped — once refs drop to 0, no other renderer can
+  //     ever match it, so we don't have to wait for flushUnusedPools.
+  //     That immediate destroy is what keeps slider scrubs from
+  //     leaking arbitrarily many stale per-renderer entries.
   const created = after.createdBuffers - base.createdBuffers;
   const destroyed = after.destroyedBuffers - base.destroyedBuffers;
   assert.equal(created, 40, `expected 40 buffer allocations across 20 iterations (got ${created})`);
-  assert.equal(destroyed, 0, `release defers eviction — no destroys expected during scrub (got ${destroyed})`);
+  // Instance buffers self-destroy on release: iteration N releases
+  // N-1's, so we see 20 destroys across the loop. Material
+  // paramBuffers stay live (deferred eviction).
+  assert.equal(destroyed, 20, `each iteration's previous instance buffer self-destroys immediately on release (got ${destroyed})`);
 });
 
 test('SceneRenderer.destroy: repeated create/destroy cycles do not leak GPU resources', () => {
@@ -351,26 +358,32 @@ test('SceneRenderer: changing only the texture handle rebuilds the bind group bu
   const after = snap(device);
 
   // Each iteration produces a new structural key (new texture handle).
-  // The module-level material cache + instance buffer pool each pick up
-  // a new entry (1 paramBuffer + 1 instance buffer + 1 bind group per
-  // iteration). Old entries persist (pools never evict) — bounded
-  // growth, the design tradeoff for cross-renderer reuse + zero-alloc
-  // remounts.
+  // Material cache picks up a new paramBuffer + bind group (deferred
+  // eviction — kept around for cross-renderer reuse). Instance buffer
+  // pool picks up a new entry but immediately destroys the previous
+  // one on release (per-renderer-namespaced keys mean no cross-
+  // renderer reuse to wait for).
   const buffersCreated = after.createdBuffers - base.createdBuffers;
   const buffersDestroyed = after.destroyedBuffers - base.destroyedBuffers;
   assert.equal(buffersCreated, 5 * 2, `expected 10 buffer allocs across 5 texture swaps (got ${buffersCreated})`);
-  assert.equal(buffersDestroyed, 0, `module-level pools should never destroy buffers (got ${buffersDestroyed})`);
+  assert.equal(
+    buffersDestroyed,
+    5,
+    `instance buffers self-destroy on release; material paramBuffers stay live (got ${buffersDestroyed})`,
+  );
   assert.ok(
     after.createdBindGroups - base.createdBindGroups >= 5,
     'each new texture handle should produce a new bind group',
   );
 });
 
-test('flushUnusedPools: a mesh-segments-style slider scrub (changing positionBuffer per tick) gets cleaned up', () => {
+test('slider-scrub style geometry churn cleans up instance buffers immediately on release', () => {
   // Simulates a "sphere segments" slider drag: each tick generates a
   // new geometry (new positionBuffer handle) → new instance buffer
-  // pool key. With refcounted deferred eviction, old keys sit at
-  // refs=0 in the pool. flushUnusedPools must reclaim them.
+  // pool key. Because instance-buffer keys are renderer-namespaced,
+  // releasing them when setScene's diff swaps them out destroys the
+  // buffer immediately — no need to wait for flushUnusedPools, which
+  // means a long scrub doesn't accumulate stale per-renderer entries.
   const device = createMockDevice();
   const renderer = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
   const tex = externalTexture(device);
@@ -387,51 +400,32 @@ test('flushUnusedPools: a mesh-segments-style slider scrub (changing positionBuf
       entities: [{ geometry: geom, material: pbr, transform: identity(), tint: identityTint() }],
     };
   }
-  // First tick — establishes a single live entry.
   renderer.setScene(makeScene(makeFreshGeometry()));
   const base = snap(device);
 
-  // 10 more ticks, each with a brand-new geometry. Pool grows to 11
-  // total entries (the first one + 10 here). 10 of them are at refs=0
-  // (released as setScene swapped them out), 1 is at refs=1 (current).
+  // 10 more ticks, each with a brand-new geometry. Each tick swaps
+  // in a new instance buffer and releases the previous one —
+  // releaseInstanceBuffer destroys it on the spot, so the running
+  // count of live instance buffers stays at exactly 1 throughout.
   for (let i = 0; i < 10; i++) {
     renderer.setScene(makeScene(makeFreshGeometry()));
   }
-  const beforeFlush = snap(device);
-  // 10 new geometries × 4 buffers each + 10 new instance buffers = 50
-  // buffer creates (we don't audit the geometry creates here — they're
-  // owned by the test scaffolding — just verify zero destroys).
+  const afterScrub = snap(device);
   assert.equal(
-    beforeFlush.destroyedBuffers - base.destroyedBuffers,
-    0,
-    'release defers eviction — nothing destroyed during the scrub',
-  );
-
-  // Flush. The 10 instance buffers from old ticks (refs=0) should be
-  // destroyed. The 1 current instance buffer (refs=1) stays.
-  flushUnusedPools();
-  const afterFlush = snap(device);
-  assert.equal(
-    afterFlush.destroyedBuffers - beforeFlush.destroyedBuffers,
+    afterScrub.destroyedBuffers - base.destroyedBuffers,
     10,
-    `flushUnusedPools should destroy the 10 stale instance buffers (got ${afterFlush.destroyedBuffers - beforeFlush.destroyedBuffers})`,
+    `expected 10 instance buffers destroyed across the scrub (got ${afterScrub.destroyedBuffers - base.destroyedBuffers})`,
   );
 
-  // A subsequent setScene with a never-before-seen geometry should
-  // allocate ONE fresh instance buffer (no zero-ref entry to reclaim).
-  // The current entry's refs goes from 1 to 0 as it's swapped out.
-  const beforeFinal = snap(device);
-  renderer.setScene(makeScene(makeFreshGeometry()));
-  const afterFinal = snap(device);
-  assert.equal(
-    afterFinal.createdBuffers - beforeFinal.createdBuffers,
-    1 + 4, // 1 instance buffer + 4 external geometry buffers
-    'one new geometry + one new instance buffer after flush',
-  );
+  // The follow-up flush should be a no-op for instance buffers (all
+  // already gone). Materials may have their own refs=0 entries that
+  // flush picks up; the assertion below is just that we don't blow
+  // up.
+  flushUnusedPools();
   renderer.destroy();
 });
 
-test('flushUnusedPools: after renderer destroy, calling flush destroys the held entries', () => {
+test('renderer.destroy() reclaims its instance buffer immediately; material entries wait for flushUnusedPools', () => {
   const device = createMockDevice();
   const geom = externalGeometry(device);
   const pbr = makePbr(device, 0.5);
@@ -440,18 +434,22 @@ test('flushUnusedPools: after renderer destroy, calling flush destroys the held 
   renderer.setScene(scene);
   const liveBuffersBefore = device.stats.liveBuffers.size;
   renderer.destroy();
-  // destroy() released refs to 0 but didn't physically destroy.
+  // destroy() releases the renderer's instance buffer key; because
+  // instance-buffer keys are renderer-namespaced, releaseInstanceBuffer
+  // destroys the buffer on the spot. The paramBuffer behind the
+  // shared material cache is content-keyed and stays alive for a
+  // future renderer to re-acquire.
   assert.equal(
-    device.stats.liveBuffers.size,
-    liveBuffersBefore,
-    'renderer.destroy() should not destroy pool entries by itself',
+    liveBuffersBefore - device.stats.liveBuffers.size,
+    1,
+    'destroy() reclaims the renderer-private instance buffer immediately',
   );
+  const afterDestroy = device.stats.liveBuffers.size;
   flushUnusedPools();
-  // Now the previously-held buffers (1 paramBuffer + 1 instance) are
-  // gone. Any subsequent renderer would have to re-allocate them.
+  // flushUnusedPools picks up the now-orphaned material paramBuffer.
   assert.ok(
-    device.stats.liveBuffers.size < liveBuffersBefore,
-    'flushUnusedPools after destroy should reclaim the renderer\'s former entries',
+    device.stats.liveBuffers.size < afterDestroy,
+    'flushUnusedPools after destroy reclaims the material paramBuffer',
   );
 });
 
@@ -509,10 +507,18 @@ test('SceneRenderer: a fresh renderer on the same device reuses cached materials
   const newBindGroups = device.stats.createdBindGroups - baseline.bindGroups;
   const newTextures = device.stats.createdTextures - baseline.textures;
 
+  // The fresh renderer reuses the shared material bind group + the
+  // shared depth/HDR/bloom intermediates. The one thing it CANNOT
+  // share is the instance buffer — those are renderer-namespaced
+  // because their contents (per-entity transforms/tints) are scene-
+  // specific and would be corrupted by another consumer writing the
+  // same key with a different scene's data. So we expect exactly one
+  // new buffer (the instance buffer) and zero new bind groups /
+  // textures.
   assert.equal(
     newBuffers,
-    0,
-    `fresh renderer + setScene with already-cached scene should allocate ZERO buffers, allocated ${newBuffers}`,
+    1,
+    `fresh renderer + setScene allocates only the renderer-private instance buffer (got ${newBuffers})`,
   );
   assert.equal(
     newBindGroups,
@@ -594,4 +600,66 @@ test('SceneRenderer: render() allocates per-canvas intermediates once per size',
     0,
     'returning to a previously-seen size should reuse cached intermediates',
   );
+});
+
+test('two SceneRenderers with the same (geometry, material) batch do NOT share an instance buffer', () => {
+  // Regression for the "palm disappears" bug. Reproducer:
+  //   1. Open Tree & Bush — main preview is rendering the full scene
+  //      (a palm trunk at some scattered world position).
+  //   2. Pin a second preview pane to the Branch Palm subgraph —
+  //      that preview renders the palm at identity.
+  //   3. Edit any param in the subgraph that forces both consumers
+  //      to re-eval and re-setScene.
+  //
+  // Both renderers' setScene runs against the same shared module-
+  // level pool. They share the same (positionBuffer id, material
+  // structural key, instanceCount) because the trunk's geometry +
+  // material are cached. With an un-namespaced pool key the second
+  // setScene writes its own per-entity transforms over the first's
+  // — the first renderer then draws its palm at the wrong world
+  // position (off-screen for a tight subgraph preview camera) and
+  // the user sees "the tree disappeared."
+  //
+  // The fix: include each renderer's id in the instance-buffer pool
+  // key. Test invariant: setScene on a second renderer with a scene
+  // that's structurally compatible with the first MUST allocate a
+  // fresh instance buffer rather than reusing the first's.
+  const device = createMockDevice();
+  const geom = externalGeometry(device);
+  const pbr = makePbr(device, 0.5);
+
+  const r1 = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  const sceneA = {
+    entities: [
+      { geometry: geom, material: pbr, transform: identity(), tint: identityTint() },
+    ],
+  };
+  r1.setScene(sceneA);
+
+  const baseline = device.stats.createdBuffers;
+  const r2 = createSceneRenderer(device as unknown as GPUDevice, 'rgba8unorm');
+  // sceneB shares the same geometry + material as sceneA but uses a
+  // translated transform — exactly the conflict that was silently
+  // corrupting palm positions before the fix.
+  const transformB = identity();
+  transformB[12] = 100; // translate x = 100
+  const sceneB = {
+    entities: [
+      { geometry: geom, material: pbr, transform: transformB, tint: identityTint() },
+    ],
+  };
+  r2.setScene(sceneB);
+
+  const newBuffers = device.stats.createdBuffers - baseline;
+  // r2's setScene must allocate its own instance buffer (1 new
+  // buffer). Materials are shared (they're content-keyed), so no
+  // new bind group / paramBuffer. Geometry is external. → exactly 1.
+  assert.equal(
+    newBuffers,
+    1,
+    `r2 must allocate its own instance buffer (got ${newBuffers}); cross-renderer sharing here would corrupt r1's per-entity transform`,
+  );
+
+  r1.destroy();
+  r2.destroy();
 });
