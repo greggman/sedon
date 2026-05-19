@@ -27,6 +27,7 @@ import { heightfieldNode } from './heightfield.js';
 import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
 import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
 import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
+import { leafMeshNode } from './leaf-mesh.js';
 import { leafSkeletonNode } from './leaf-skeleton.js';
 import { levelsNode } from './levels.js';
 import { mapRangeNode } from './map-range.js';
@@ -38,7 +39,9 @@ import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
+import { phyllotaxisPointsNode } from './phyllotaxis-points.js';
 import { planeNode } from './plane.js';
+import { radialPointsNode } from './radial-points.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
 import { ridgedNoiseNode } from './ridged-noise.js';
@@ -47,6 +50,7 @@ import { sceneMergeNode } from './scene-merge.js';
 import { slopeFromHeightNode } from './slope-from-height.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
+import { stemPointsNode } from './stem-points.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { transformNode } from './transform.js';
 import { uvTransformNode } from './uv-transform.js';
@@ -94,11 +98,15 @@ export const CORE_NODES = [
   branchSpaceColonizationNode,
   branchWhorledPineNode,
   singlePointNode,
+  radialPointsNode,
+  phyllotaxisPointsNode,
+  stemPointsNode,
   distanceTransformNode,
   warpNode,
   colorizeNode,
   levelsNode,
   leafSkeletonNode,
+  leafMeshNode,
   normalFromHeightNode,
   slopeFromHeightNode,
   materialNode,
@@ -143,6 +151,7 @@ export {
   heightfieldToMeshNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
+  leafMeshNode,
   leafSkeletonNode,
   levelsNode,
   mapRangeNode,
@@ -154,7 +163,9 @@ export {
   normalFromHeightNode,
   outputNode,
   perlinNode,
+  phyllotaxisPointsNode,
   planeNode,
+  radialPointsNode,
   randomFloatCloudNode,
   randomVec3CloudNode,
   ridgedNoiseNode,
@@ -163,6 +174,7 @@ export {
   slopeFromHeightNode,
   solidColorNode,
   sphereNode,
+  stemPointsNode,
   terrainMaterialNode,
   transformNode,
   uvTransformNode,

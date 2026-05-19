@@ -23,6 +23,8 @@ struct Params {
   sub_branch_count: f32,        // ladder ribs per primary
   sub_branch_curve_start: f32,  // forward bias of the FIRST sub-rib (near primary's base) — 0 = perpendicular
   sub_branch_curve_growth: f32, // additional forward bias by the LAST sub-rib (near primary's tip) — total = start + growth
+  lobe_count: f32,              // pinnate lobe pairs (0 = smooth profile, 4 ≈ oak, 6 ≈ pin-oak)
+  lobe_depth: f32,              // 0..1, how deep the sinuses cut into the half-width
   seed: f32,                    // unused in V1, reserved for jitter
 };
 
@@ -56,6 +58,9 @@ fn from_leaf_y(y_norm: f32) -> f32 {
 
 // Leaf half-width as a UV fraction at vertical position y_norm. Beta-
 // like profile y^a × (1-y)^b, rescaled so its peak equals width_scale.
+// `lobe_count` + `lobe_depth` modulate the profile multiplicatively to
+// produce pinnate lobes (oak / sweetgum / pin-oak). lobe_count=0 keeps
+// the original smooth profile.
 fn half_width(y_norm: f32) -> f32 {
   if (y_norm <= 0.0 || y_norm >= 1.0) { return 0.0; }
   let a = max(params.base_curvature, 0.05);
@@ -63,7 +68,18 @@ fn half_width(y_norm: f32) -> f32 {
   let profile = pow(y_norm, a) * pow(1.0 - y_norm, b);
   let peak_y = a / (a + b);
   let peak_val = pow(peak_y, a) * pow(1.0 - peak_y, b);
-  return params.width_scale * profile / max(peak_val, 0.0001);
+  var hw = params.width_scale * profile / max(peak_val, 0.0001);
+  // Multiplicative lobing: cosine wave along y_norm carves sinuses
+  // between lobes. Factor sits in [1 − depth, 1]; the leaf widens at
+  // lobe peaks (cos = -1) and narrows at sinuses (cos = +1).
+  let count = max(params.lobe_count, 0.0);
+  let depth = clamp(params.lobe_depth, 0.0, 1.0);
+  if (count > 0.5 && depth > 0.0) {
+    let cos_term = cos(2.0 * 3.14159265 * count * y_norm);
+    let lobe_factor = 1.0 - 0.5 * depth * (1.0 + cos_term);
+    hw = hw * lobe_factor;
+  }
+  return hw;
 }
 
 fn leaf_sdf(uv: vec2f) -> f32 {

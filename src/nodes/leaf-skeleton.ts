@@ -97,6 +97,20 @@ export const leafSkeletonNode: NodeDef = {
       default: 0.35,
       description: 'additional forward bias by the LAST sub-rib. Last rib total = start + growth',
     },
+    {
+      name: 'lobeCount',
+      type: 'Int',
+      default: 0,
+      description:
+        'pinnate lobe pairs along the leaf. 0 = smooth profile (default ovate). Real-world references: oak ≈ 4, pin-oak ≈ 6, sweetgum ≈ 5. For palmate (maple) we don\'t have a primitive yet — use 3 here for a rough approximation',
+    },
+    {
+      name: 'lobeDepth',
+      type: 'Float',
+      default: 0.6,
+      description:
+        '0..1, how deep the sinuses cut between lobes. 0 = no effect regardless of lobeCount; 1 = sinuses reach the midrib (deeply lobed, like pin-oak). Around 0.5 is a typical oak',
+    },
     { name: 'seed', type: 'Float', default: 0 },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
@@ -143,9 +157,10 @@ export const leafSkeletonNode: NodeDef = {
       usage,
     });
 
-    // 12 f32 = 48 bytes, 16-byte aligned. Matches the WGSL `Params`
-    // struct field-for-field.
-    const uniformData = new Float32Array(12);
+    // 16 f32 = 64 bytes, 16-byte aligned. Matches the WGSL `Params`
+    // struct field-for-field. (Was 12 before lobe_count/lobe_depth
+    // landed; the trailing seed entry stayed last for stability.)
+    const uniformData = new Float32Array(16);
     uniformData[0] = inputs.length as number;
     uniformData[1] = inputs.width as number;
     uniformData[2] = inputs.tipPointedness as number;
@@ -157,7 +172,13 @@ export const leafSkeletonNode: NodeDef = {
     uniformData[8] = inputs.subBranchCount as number;
     uniformData[9] = inputs.subBranchCurveStart as number;
     uniformData[10] = inputs.subBranchCurveGrowth as number;
-    uniformData[11] = inputs.seed as number;
+    uniformData[11] = inputs.lobeCount as number;
+    uniformData[12] = inputs.lobeDepth as number;
+    uniformData[13] = inputs.seed as number;
+    // Indices 14, 15 are tail padding to keep the buffer at the next
+    // 16-byte multiple. WGSL doesn't require it for a uniform of this
+    // shape, but reusableBuffer + same-size reuse is cleaner if we
+    // round to vec4 boundaries.
 
     const uniformBuffer = reusableBuffer(
       device,
