@@ -1,6 +1,11 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
+import {
+  buildFernSubgraph,
+  buildFlowerSubgraph,
+  buildSunflowerDiscSubgraph,
+} from './flower-fern-subgraphs.js';
 import { buildOakLeafSubgraph } from './leaf-subgraphs.js';
 import { buildBarkTextureSubgraph } from './texture-subgraphs.js';
 import {
@@ -38,6 +43,15 @@ export function createTreeBushDemo(): {
   const pine = buildBranchPineSubgraph();
   const palm = buildBranchPalmSubgraph();
   const canopy = buildBranchCanopyTreeSubgraph();
+  // Three new small-plant examples — each is the smallest interesting
+  // demo of one of the new point-distribution nodes:
+  //   • Flower         — core/radial-points (petal fan)
+  //   • Fern           — core/stem-points   (alternate/opposite/whorled)
+  //   • Sunflower disc — core/phyllotaxis-points (golden-angle spiral)
+  // Authored in `flower-fern-subgraphs.ts`.
+  const flower = buildFlowerSubgraph();
+  const fern = buildFernSubgraph();
+  const sunflower = buildSunflowerDiscSubgraph();
 
   const g = createGraph();
   const COL = 280;
@@ -50,13 +64,17 @@ export function createTreeBushDemo(): {
   }
 
   // World positions chosen by trial-and-error so the species don't visually
-  // collide despite their different canopy widths.
+  // collide despite their different canopy widths. The three small plants
+  // are tucked between the big species along the front row.
   const species: SpeciesEntry[] = [
     { id: bush.id, x: -16, rowIdx: 0 },
     { id: tree.id, x: -9, rowIdx: 1 },
     { id: canopy.id, x: 0, rowIdx: 2 },
     { id: pine.id, x: 10, rowIdx: 3 },
     { id: palm.id, x: 18, rowIdx: 4 },
+    { id: flower.id, x: -5, rowIdx: 5 },
+    { id: fern.id, x: -2, rowIdx: 6 },
+    { id: sunflower.id, x: 4, rowIdx: 7 },
   ];
 
   const speciesOutputs: { id: string; socket: string }[] = [];
@@ -110,12 +128,15 @@ export function createTreeBushDemo(): {
     'branch-canopy': { yaw: 0.4, pitch: 0.2, distance: 22, target: [0, 6, 0] },
     'bark-texture': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
     'oak-leaf': { yaw: 0, pitch: 0.6, distance: 3, target: [0, 0, 0] },
+    flower: { yaw: 0.45, pitch: 0.35, distance: 2.5, target: [0, 0.7, 0] },
+    fern: { yaw: 0.45, pitch: 0.3, distance: 3.5, target: [0, 0.8, 0] },
+    'sunflower-disc': { yaw: 0.45, pitch: 0.25, distance: 3.5, target: [0, 1.1, 0] },
   };
 
   return {
     graph: g,
     rootNodeId: output.id,
-    subgraphs: [bark, oakLeaf, tree, bush, pine, palm, canopy],
+    subgraphs: [bark, oakLeaf, tree, bush, pine, palm, canopy, flower, fern, sunflower],
     cameras,
   };
 }
