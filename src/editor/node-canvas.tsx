@@ -484,10 +484,17 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         const fromDef = fromNode ? registry.get(fromNode.kind) : undefined;
         const fromOut = fromDef?.outputs.find((o) => o.name === params.sourceHandle);
         if (!fromOut) return;
-        addSubgraphSocketWithEdge(boundary.subgraphId, 'output', fromOut.type, {
-          node: params.source,
-          socket: params.sourceHandle,
-        });
+        // Use the source socket's label (or name) as the preferred
+        // label for the new boundary output so wiring `worley.cells`
+        // lands as "cells" rather than "untitled".
+        const preferredLabel = fromOut.label ?? fromOut.name;
+        addSubgraphSocketWithEdge(
+          boundary.subgraphId,
+          'output',
+          fromOut.type,
+          { node: params.source, socket: params.sourceHandle },
+          { preferredLabel },
+        );
         return;
       }
       if (params.sourceHandle === ADD_INPUT_HANDLE_ID) {
@@ -500,10 +507,33 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           toDef?.inputs.find((i) => i.name === params.targetHandle) ??
           toNode?.extraInputs?.find((i) => i.name === params.targetHandle);
         if (!toIn) return;
-        addSubgraphSocketWithEdge(boundary.subgraphId, 'input', toIn.type, {
-          node: params.target,
-          socket: params.targetHandle,
-        });
+        // Capture whatever value `toIn` was effectively resolving to
+        // BEFORE the wire takes over. Priority: explicit per-instance
+        // override first, then the node def's declared default. We
+        // hand that to the store so the new boundary input's
+        // `default` becomes the same value — that way the subgraph
+        // looks identical standalone AND any wrapper instance that
+        // doesn't wire the new input falls back to the same value
+        // instead of the system white/0 fallback.
+        const capturedDefault =
+          toNode?.inputValues?.[params.targetHandle] !== undefined
+            ? toNode.inputValues[params.targetHandle]
+            : toIn.default;
+        // Use the target socket's label (or name) as the preferred
+        // boundary-input label so wiring `colorize.low` → boundary
+        // lands as "low" rather than "untitled". The store dedupes
+        // against existing labels by appending `-2`, `-3`, …
+        const preferredLabel = toIn.label ?? toIn.name;
+        addSubgraphSocketWithEdge(
+          boundary.subgraphId,
+          'input',
+          toIn.type,
+          { node: params.target, socket: params.targetHandle },
+          {
+            ...(capturedDefault !== undefined ? { capturedDefault } : {}),
+            preferredLabel,
+          },
+        );
         return;
       }
 

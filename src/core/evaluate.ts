@@ -1,6 +1,6 @@
 import { debug } from './debug.js';
 import type { EvalCache } from './eval-cache.js';
-import { nodeFingerprint } from './eval-cache.js';
+import { canonicalJson, nodeFingerprint } from './eval-cache.js';
 import type { Graph, GraphEdge } from './graph.js';
 import type { NodeContext, NodeOutputs, NodeRegistry } from './node-def.js';
 
@@ -182,7 +182,17 @@ export async function evaluateGraph(
         const upFp = fingerprints.get(upstream.node);
         if (upFp !== undefined) upstreamFingerprints[input.name] = upFp;
       } else if (node.inputValues !== undefined && input.name in node.inputValues) {
-        inputs[input.name] = node.inputValues[input.name];
+        const val = node.inputValues[input.name];
+        inputs[input.name] = val;
+        // Hash inputValue-only inputs into upstreamFingerprints so
+        // downstream consumers' fingerprints react to per-instance
+        // overrides. Critically: this is what makes a subgraph
+        // wrapper's child (the boundary-input node) re-evaluate when
+        // the wrapper's inputValue changes — without this hop, the
+        // wrapper's own fp moves (it includes inputValues) but the
+        // boundary's fp inside the inner eval doesn't, and the
+        // boundary cache-hits on a stale outputs map.
+        upstreamFingerprints[input.name] = `iv:${canonicalJson(val)}`;
       } else if (input.default !== undefined) {
         inputs[input.name] = input.default;
       } else if (input.optional) {

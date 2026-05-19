@@ -127,7 +127,7 @@ export function nodeFingerprint(params: {
  * via their string representation (Float32Array([1,2,3]) → "1,2,3");
  * we don't currently fingerprint typed-array inputs but it's defensive.
  */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === null || value === undefined) return 'null';
   if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'string') return JSON.stringify(value);

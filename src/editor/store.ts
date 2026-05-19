@@ -4,6 +4,7 @@ import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
 import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
+import type { InputDef } from '../core/node-def.js';
 import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
 import {
   cloneFolderSubtree,
@@ -303,6 +304,22 @@ export interface EditorState {
     side: 'input' | 'output',
     type: string,
     edgeEnd: { node: string; socket: string },
+    /**
+     * Optional hints captured from the caller's UI context:
+     *   • `capturedDefault` — effective value of `edgeEnd`'s socket
+     *     BEFORE the new edge is created, used as the new boundary
+     *     input's `default`. Without this, any downstream consumer
+     *     of the subgraph that doesn't wire the new input would
+     *     silently fall back to the system default for the input's
+     *     type. Used only when `side === 'input'`.
+     *   • `preferredLabel` — what the user sees as the new socket's
+     *     name. Conventionally the source socket's label (e.g. wiring
+     *     `colorize.low` → boundary defaults to "low"). Falls back to
+     *     "untitled" if no preference is supplied, and the store
+     *     dedupes against existing labels in the same direction
+     *     (`label-2`, `label-3`, …).
+     */
+    options?: { capturedDefault?: unknown; preferredLabel?: string },
   ) => void;
 
   /**
@@ -1061,7 +1078,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
     },
 
-    addSubgraphSocketWithEdge: (subgraphId, side, type, edgeEnd) => {
+    addSubgraphSocketWithEdge: (subgraphId, side, type, edgeEnd, options) => {
       const state = get();
       const target = state.subgraphs.find((s) => s.id === subgraphId);
       if (!target) return;
@@ -1071,17 +1088,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // so drag-creating several sockets in a row produces a sensible
       // column of labels rather than a wall of "untitled"s.
       const name = crypto.randomUUID();
-      let label = 'untitled';
+      // Label preference: whatever the caller suggested (typically the
+      // source socket's label so wiring `colorize.low` → boundary lands
+      // as "low"), falling back to "untitled" for callers that don't
+      // supply one (e.g. the "+ Add" button path). Either way dedupe
+      // against existing labels by appending `-2`, `-3`, …
+      const baseLabel = options?.preferredLabel?.trim() || 'untitled';
+      let label = baseLabel;
       if (list.some((x) => (x.label ?? x.name) === label)) {
         for (let i = 2; ; i++) {
-          const candidate = `untitled-${i}`;
+          const candidate = `${baseLabel}-${i}`;
           if (!list.some((x) => (x.label ?? x.name) === candidate)) {
             label = candidate;
             break;
           }
         }
       }
-      const newEntry = { name, type, label };
+      // Carry `default` only on the input side — output sockets don't
+      // have one (the boundary-output's inputs are connection points
+      // from the inner graph, not parametric).
+      const captured = options?.capturedDefault;
+      const newEntry: InputDef =
+        side === 'input' && captured !== undefined
+          ? { name, type, label, default: captured }
+          : { name, type, label };
       // For 'output' side, the new socket is an INPUT on the output
       // boundary, and the edge runs inner-node-output → boundary.
       // For 'input' side, the new socket is an OUTPUT on the input

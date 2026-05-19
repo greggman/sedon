@@ -165,6 +165,17 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       ...(i.description !== undefined ? { description: i.description } : {}),
       ...(i.label !== undefined ? { label: i.label } : {}),
     })),
+    // Carry the subgraph's version so the boundary's eval-cache
+    // fingerprint changes when the subgraph's input list does. Without
+    // this, adding a new input is invisible to the fingerprint
+    // (boundary-input has no graph inputs / no upstreams to fingerprint
+    // through) — the cache hits the stale entry from before the input
+    // existed, returns its old outputs map (which is missing the new
+    // socket name), and consumers reading the new input get
+    // `undefined`. Concretely: wire `colorize.low` to a fresh
+    // boundary input → next eval round, colorize.low resolves to
+    // `undefined` and Float32Array.set crashes.
+    version: def.version ?? 0,
     evaluate(ctx) {
       return ctx.subgraphInputs ?? standaloneDefaults;
     },
@@ -195,6 +206,10 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       ...(o.description !== undefined ? { description: o.description } : {}),
       ...(o.label !== undefined ? { label: o.label } : {}),
     })),
+    // Same rationale as inputBoundary: when the subgraph's output list
+    // changes the boundary's fp must change too, or the cache returns
+    // a stale outputs map.
+    version: def.version ?? 0,
     evaluate(_ctx, inputs) {
       return inputs;
     },
