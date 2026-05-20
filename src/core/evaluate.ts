@@ -143,6 +143,8 @@ export async function evaluateGraph(
 
   const outputs = new Map<string, NodeOutputs>();
   const fingerprints = new Map<string, string>();
+  const roundStart = cache ? performance.now() : 0;
+  if (cache) cache.stats.rounds++;
 
   // Index incoming edges by (toNode, toSocket) for O(1) lookup.
   const incomingBySocket = new Map<string, { node: string; socket: string }>();
@@ -210,9 +212,15 @@ export async function evaluateGraph(
     // this, the boundary would have a constant fingerprint and inner nodes
     // downstream of it would cache-hit across wrapper invocations with
     // different inputs — silent wrong-result bug.
-    const boundaryExtra = def.id.startsWith('subgraph-input/')
-      ? JSON.stringify(sharedCtx.subgraphInputFingerprints ?? {})
-      : undefined;
+    const extraParts: string[] = [];
+    if (def.id.startsWith('subgraph-input/')) {
+      extraParts.push(JSON.stringify(sharedCtx.subgraphInputFingerprints ?? {}));
+    }
+    // def.fingerprintExtra is used by subgraph boundaries to fingerprint
+    // their interface shape without piggy-backing on the subgraph's
+    // coarse version counter (which would cascade-invalidate every
+    // inner node on any inner edit — drag-a-colour-picker == 5fps).
+    if (def.fingerprintExtra !== undefined) extraParts.push(def.fingerprintExtra);
     const filteredInputValues = filterInputValues(node.inputValues, effectiveInputs);
     const fpParams: Parameters<typeof nodeFingerprint>[0] = {
       nodeId,
@@ -225,7 +233,7 @@ export async function evaluateGraph(
       extraInputs: node.extraInputs ?? [],
     };
     if (def.version !== undefined) fpParams.version = def.version;
-    if (boundaryExtra !== undefined) fpParams.extra = boundaryExtra;
+    if (extraParts.length > 0) fpParams.extra = extraParts.join('|');
     const fp = nodeFingerprint(fpParams);
     fingerprints.set(nodeId, fp);
     if (touched) touched.add(fp);
@@ -247,6 +255,8 @@ export async function evaluateGraph(
       // output we just hit, and the node can opt to reuse its
       // resources.
       cache.lastFingerprintByNodeId.set(trackerKey, fp);
+      cache.stats.nodeEvals++;
+      cache.stats.cacheHits++;
       continue;
     }
 
@@ -266,6 +276,8 @@ export async function evaluateGraph(
         const result = (await cache.pending.get(fp)) as NodeOutputs;
         outputs.set(nodeId, result);
         cache.lastFingerprintByNodeId.set(trackerKey, fp);
+        cache.stats.nodeEvals++;
+        cache.stats.pendingHits++;
         continue;
       } catch {
         // First evaluator threw — fall through and try ourselves.
@@ -309,6 +321,8 @@ export async function evaluateGraph(
     if (cache) {
       pendingPromise = Promise.resolve(def.evaluate(callCtx, inputs)) as Promise<NodeOutputs>;
       cache.pending.set(fp, pendingPromise);
+      cache.stats.nodeEvals++;
+      cache.stats.cacheMisses++;
     }
     try {
       // Sync nodes return outputs directly; async nodes return a Promise.
@@ -338,6 +352,7 @@ export async function evaluateGraph(
   // return empty outputs gracefully instead of throwing. The caller decides
   // whether an empty scene is an error or just "nothing to render yet."
   const rootOutputs = outputs.get(options.rootNodeId) ?? {};
+  if (cache) cache.stats.evalDurationMs += performance.now() - roundStart;
   return { outputs: rootOutputs, order, allOutputs: outputs, fingerprints };
 }
 

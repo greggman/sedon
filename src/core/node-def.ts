@@ -132,6 +132,20 @@ export interface NodeDef {
    * cached output.
    */
   version?: string | number;
+  /**
+   * Optional string mixed into the per-node fingerprint's `extra` field.
+   * Used by subgraph boundary NodeDefs to fingerprint their interface
+   * shape (input/output names + types) without coupling to the
+   * subgraph's coarse version counter — that way, edits inside a
+   * subgraph that don't change the boundary's interface (e.g. tweaking
+   * a colour inside `oak-leaf`) don't move the boundary's fingerprint
+   * and don't cascade-invalidate every inner node downstream of it.
+   * Adding or removing a boundary input DOES change this string, so
+   * the "stale outputs map" cache-hit bug from before still can't
+   * recur. The evaluator concatenates this with any built-in `extra`
+   * (currently the subgraph-input boundary's `subgraphInputFingerprints`).
+   */
+  fingerprintExtra?: string;
   // Nodes may evaluate synchronously (most: pure CPU work + GPU command
   // submission, both fire-and-forget) or asynchronously (anything that needs
   // a fence, mapAsync, fetch, etc. — e.g. heightfield-to-mesh reading back a

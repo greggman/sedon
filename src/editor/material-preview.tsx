@@ -6,6 +6,7 @@ import { identity, multiply, perspective, rotationX, rotationY, translation } fr
 import { destroyGeometry, uploadMeshToGpu } from '../render/mesh.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
 import { generateSphere } from '../render/sphere.js';
+import { subscribeRender } from './render-bus.js';
 
 // MaterialPreview wraps (mesh + material) into a single-entity Scene with an
 // identity transform, to feed the Scene-based renderer.
@@ -130,6 +131,14 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       renderRef.current = () => {};
     };
   }, [device, material, shape]);
+
+  // Repaint on render-bus ticks. Same reason as ScenePreview /
+  // TexturePreview: nodes deeper in the graph can mutate the GPU
+  // textures backing this material in place. The wrapping
+  // MaterialValue prop may stay reference-equal across those edits
+  // (cache hit at the root), so the effect above doesn't refire —
+  // the bus is what wakes us up.
+  useEffect(() => subscribeRender(() => renderRef.current()), []);
 
   // Wire orbit camera input on the canvas.
   useEffect(() => {

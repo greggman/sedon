@@ -34,6 +34,7 @@ import {
   subgraphIdFromBoundaryKind,
 } from './custom-node.js';
 import { useLayoutStore } from './layout-store.js';
+import { requestRender } from './render-bus.js';
 import { buildRegistry, useRegistry } from './registry.js';
 import { edgeColor, graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
 import { registerCanvasRf, unregisterCanvasRf } from './rf-registry.js';
@@ -171,6 +172,16 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const evalCache = useEditorStore((s) => s.evalCache);
   const reportWorking = useCacheConsumer();
   const [canvasAllOutputs, setCanvasAllOutputs] = useState<Map<string, NodeOutputs> | null>(null);
+  // Same ref pattern as AssetThumbnail: hold registry + evalCache in
+  // refs so the eval effect doesn't re-fire when the registry rebuilds
+  // for an UNRELATED subgraph edit. This canvas only re-evals when
+  // ITS pinned panelGraph changes — which is exactly the right
+  // invalidation key. (Without this, dragging a colour inside `oak-leaf`
+  // re-ran every canvas's eval every drag tick → ~5fps.)
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
+  const evalCacheRef = useRef(evalCache);
+  evalCacheRef.current = evalCache;
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -178,16 +189,24 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     void (async () => {
       const touched = new Set<string>();
       try {
-        const result = await evaluateGraph(panelGraph, registry, {
+        const result = await evaluateGraph(panelGraph, registryRef.current, {
           rootNodeId: panelRootNodeId,
           context: { device },
-          cache: evalCache,
+          cache: evalCacheRef.current,
           touched,
           scope: 'all',
         });
         if (cancelled) return;
         reportWorking(touched);
         setCanvasAllOutputs(result.allOutputs);
+        // The eval may have mutated GPU textures in place (colorize,
+        // worley, perlin, etc. all re-render into their previousOutput
+        // texture). Tell every render-bus subscriber (PreviewTile,
+        // ScenePreview, …) to repaint — without this, other consumers
+        // that don't re-eval on this change (their `resolved`/`graph`
+        // didn't change, so their effects don't fire under the ref-
+        // pattern fix) would still show the pre-edit pixels.
+        requestRender();
       } catch (e) {
         // Eval errors are common in mid-edit graphs (missing required
         // input, type mismatch). Log but keep the canvas usable —
@@ -201,7 +220,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     return () => {
       cancelled = true;
     };
-  }, [device, panelGraph, panelRootNodeId, registry, evalCache, reportWorking]);
+    // registry + evalCache deliberately omitted; held via refs above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device, panelGraph, panelRootNodeId, reportWorking]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-

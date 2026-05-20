@@ -451,6 +451,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // consumer in the same round — we'd accumulate touched fingerprints
   // across all consumers before sweeping, but the structure here is
   // already correct for one consumer.
+  // Hold registry + evalCache via refs so the eval effect doesn't
+  // re-fire when the registry rebuilds for an UNRELATED subgraph edit.
+  // Same pattern as AssetThumbnail / node-canvas — see those files
+  // for the full rationale.
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
+  const evalCacheRef = useRef(evalCache);
+  evalCacheRef.current = evalCache;
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
@@ -466,10 +474,10 @@ export function Preview({ panelId }: PreviewProps = {}) {
       const touched = new Set<string>();
       let result;
       try {
-        result = await evaluateGraph(graph, registry, {
+        result = await evaluateGraph(graph, registryRef.current, {
           rootNodeId,
           context: { device: gpu.device },
-          cache: evalCache,
+          cache: evalCacheRef.current,
           touched,
         });
       } catch (e) {
@@ -506,10 +514,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
     return () => {
       cancelled = true;
     };
-    // `subgraphs` is in deps even though `registry` already changes
-    // when subgraphs changes — extra reference comparison is cheap and
-    // makes the eval-refire dependency obvious to future readers.
-  }, [gpu, graph, rootNodeId, rootDef, registry, subgraphs, evalCache, reportWorking]);
+    // registry + evalCache + subgraphs deliberately omitted: registry
+    // is held via ref so an unrelated subgraph edit (any setInputValue
+    // anywhere) doesn't re-fire this preview's eval. The Preview's
+    // `graph` reference IS its true invalidation key — when the
+    // currently-pinned subgraph changes, `graph` becomes a new ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpu, graph, rootNodeId, rootDef, reportWorking]);
 
   return (
     <div

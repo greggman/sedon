@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Texture2DValue } from '../core/resources.js';
 import blitShader from './blit.wgsl';
+import { subscribeRender } from './render-bus.js';
 
 interface BlitCache {
   pipeline: GPURenderPipeline;
@@ -67,8 +68,13 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     };
   }, [device]);
 
-  // Blit whenever the source texture changes.
-  useEffect(() => {
+  // Stable draw via ref. Used by both the value-change effect (initial
+  // paint, texture-handle swap) and the render-bus subscription (so a
+  // colorize/blend node mutating its output GPUTexture in place pokes
+  // every in-node TexturePreview to re-blit even when the wrapping
+  // `value` prop is unchanged).
+  const drawRef = useRef<() => void>(() => {});
+  drawRef.current = () => {
     const ctx = ctxRef.current;
     const format = formatRef.current;
     if (!ctx || !format) return;
@@ -103,7 +109,13 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     pass.draw(3);
     pass.end();
     device.queue.submit([encoder.finish()]);
+  };
+
+  useEffect(() => {
+    drawRef.current();
   }, [device, value]);
+
+  useEffect(() => subscribeRender(() => drawRef.current()), []);
 
   const dpr = window.devicePixelRatio || 1;
   return (

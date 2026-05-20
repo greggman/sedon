@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
@@ -78,6 +78,23 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
 
   const [scene, setScene] = useState<SceneValue | null>(null);
 
+  // Hold the registry + evalCache via refs so the eval effect doesn't
+  // re-fire when the registry rebuilds for an UNRELATED subgraph edit
+  // (e.g. user drags a colour inside `oak-leaf` → every subgraph's
+  // SubgraphDef.version bumps in the registry rebuild path → without
+  // this, every thumbnail's effect re-fires, producing one redundant
+  // evaluateGraph round per thumbnail per drag tick — measured at
+  // ~16 rounds per setInputValue in the Tree-and-Bush scene, ~5fps
+  // drag responsiveness). With refs, this thumbnail only re-evals
+  // when ITS subgraph's `resolved` actually changes. GPU textures
+  // mutate in place, so other thumbnails that show indirect users of
+  // the changed subgraph still display the new colour via the live
+  // render loop without needing fresh eval.
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
+  const evalCacheRef = useRef(evalCache);
+  evalCacheRef.current = evalCache;
+
   useEffect(() => {
     if (!device || !resolved) {
       setScene(null);
@@ -92,10 +109,10 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
     void (async () => {
       let result;
       try {
-        result = await evaluateGraph(resolved.graph, registry, {
+        result = await evaluateGraph(resolved.graph, registryRef.current, {
           rootNodeId: resolved.rootNodeId,
           context: { device },
-          cache: evalCache,
+          cache: evalCacheRef.current,
           touched,
         });
       } catch {
@@ -107,7 +124,7 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
       if (cancelled) return;
       reportWorking(touched);
       const rootNode = resolved.graph.nodes.find((n) => n.id === resolved.rootNodeId);
-      const rootDef = rootNode ? registry.get(rootNode.kind) : undefined;
+      const rootDef = rootNode ? registryRef.current.get(rootNode.kind) : undefined;
       const tiles = synthesizeTiles(device, rootDef, result.outputs, defaultLighting());
       // Pick the first tile that has any geometry to show — empty
       // scenes (unwired outputs) become a checkerboard, which is just
@@ -131,7 +148,10 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
     return () => {
       cancelled = true;
     };
-  }, [device, resolved, registry, evalCache, reportWorking]);
+    // registry + evalCache deliberately omitted — see the ref pattern
+    // above. reportWorking is useCallback-stable so it's a no-op dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device, resolved, reportWorking]);
 
   if (!device || !scene) {
     return <>{fallback}</>;

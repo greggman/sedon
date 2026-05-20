@@ -46,10 +46,30 @@ export interface EvalCache {
    * Promise resolves and writes its result into `entries`.
    */
   pending: Map<string, Promise<unknown>>;
+  /**
+   * Diagnostic counters. Bumped by `evaluateGraph` per call. Used by
+   * the puppeteer drag-perf repro (and any future profiler) to measure
+   * where eval time goes during interactive drags. Plain numbers so a
+   * reader can grab a snapshot before/after a UI interaction and diff.
+   * Not used for correctness — safe to leave in production.
+   */
+  stats: {
+    rounds: number;
+    nodeEvals: number;
+    cacheHits: number;
+    cacheMisses: number;
+    pendingHits: number;
+    evalDurationMs: number;
+  };
 }
 
 export function createEvalCache(): EvalCache {
-  return { entries: new Map(), lastFingerprintByNodeId: new Map(), pending: new Map() };
+  return {
+    entries: new Map(),
+    lastFingerprintByNodeId: new Map(),
+    pending: new Map(),
+    stats: { rounds: 0, nodeEvals: 0, cacheHits: 0, cacheMisses: 0, pendingHits: 0, evalDurationMs: 0 },
+  };
 }
 
 /**

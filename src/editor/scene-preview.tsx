@@ -11,6 +11,7 @@ import {
 } from '../render/mat4.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
@@ -112,44 +113,61 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
     rendererRef.current?.setScene(scene);
   }, [device, scene]);
 
-  // Single render on mount and whenever the scene / camera changes.
-  // Deliberately NOT subscribed to the global render bus: thumbnails
-  // have a fixed camera (no interactive controls), so the main pane's
-  // pointer/WASD frames don't need to redraw them. Mirrors how
-  // TexturePreview / MaterialPreview only redraw on their own input
-  // changes.
+  // Stable draw function via ref. Used by both:
+  //   • the scene/camera-change effect (initial paint + auto-frame
+  //     refit), and
+  //   • the render-bus subscription (so other consumers that mutate
+  //     GPU textures in place can poke us to repaint without changing
+  //     our `scene` reference).
+  const drawRef = useRef<() => void>(() => {});
+  drawRef.current = () => {
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    const renderer = rendererRef.current;
+    if (!canvas || !ctx || !renderer || canvas.width === 0 || canvas.height === 0) {
+      return;
+    }
+    const cam = cameraRef.current;
+    const aspect = canvas.width / canvas.height;
+    const projection = perspective(PREVIEW_FOV_Y, aspect, 0.1, Math.max(200, cam.distance * 4));
+    const modelView = multiply(
+      multiply(
+        multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+        rotationY(cam.yaw),
+      ),
+      translation(-cam.target[0], -cam.target[1], -cam.target[2]),
+    );
+    const encoder = device.createCommandEncoder();
+    renderer.render({
+      encoder,
+      colorView: ctx.getCurrentTexture(),
+      size: [canvas.width, canvas.height],
+      modelView,
+      projection,
+      cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
+      lighting: defaultLighting(),
+    });
+    device.queue.submit([encoder.finish()]);
+  };
+
+  // Repaint on scene / camera changes — the existing fast-path.
   useEffect(() => {
-    const draw = () => {
-      const canvas = canvasRef.current;
-      const ctx = ctxRef.current;
-      const renderer = rendererRef.current;
-      if (!canvas || !ctx || !renderer || canvas.width === 0 || canvas.height === 0) {
-        return;
-      }
-      const cam = cameraRef.current;
-      const aspect = canvas.width / canvas.height;
-      const projection = perspective(PREVIEW_FOV_Y, aspect, 0.1, Math.max(200, cam.distance * 4));
-      const modelView = multiply(
-        multiply(
-          multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
-          rotationY(cam.yaw),
-        ),
-        translation(-cam.target[0], -cam.target[1], -cam.target[2]),
-      );
-      const encoder = device.createCommandEncoder();
-      renderer.render({
-        encoder,
-        colorView: ctx.getCurrentTexture(),
-        size: [canvas.width, canvas.height],
-        modelView,
-        projection,
-        cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
-        lighting: defaultLighting(),
-      });
-      device.queue.submit([encoder.finish()]);
-    };
-    draw();
+    drawRef.current();
   }, [device, scene, framedCamera]);
+
+  // Repaint on render-bus ticks. The bus fires when ANY canvas eval
+  // finishes (see node-canvas.tsx) or when the Preview pane's eval
+  // commits. That covers the case where a colorize/blend/normal-map
+  // node deep inside `oak-leaf` mutated its output texture in place:
+  // this ScenePreview's `scene` reference is unchanged (cache hit at
+  // the root output node, or we're a passive consumer that didn't
+  // re-eval) so the scene-change effect won't fire, but the GPU
+  // resources visible through `scene` now hold new pixels. Drawing
+  // is cheap when nothing changed — it submits the same render with
+  // the same textures.
+  useEffect(() => {
+    return subscribeRender(() => drawRef.current());
+  }, []);
 
   const dpr = window.devicePixelRatio || 1;
   return (

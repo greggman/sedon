@@ -1,3 +1,4 @@
+import { canonicalJson } from './eval-cache.js';
 import { evaluateGraph } from './evaluate.js';
 import { addNode, createGraph, type Graph } from './graph.js';
 import type { InputDef, NodeDef, NodeRegistry, OutputDef } from './node-def.js';
@@ -155,6 +156,25 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       if (sys !== undefined) standaloneDefaults[i.name] = sys;
     }
   }
+  // Shape hash for the boundary-input's fingerprint. Captures only the
+  // interface shape (input names + types + defaults) — NOT the
+  // subgraph's coarse version counter. The earlier approach of carrying
+  // `version: def.version ?? 0` worked but was way too coarse: any
+  // inner-graph edit bumped the subgraph version, which bumped the
+  // boundary's fp, which cascaded through every inner node that
+  // referenced the boundary as an upstream — so dragging a colour
+  // picker inside `oak-leaf` re-evaluated `leaf-skeleton` (expensive
+  // shader), `distance-transform` (multi-pass JFA), and everything
+  // downstream of them, in every consumer (preview pane, asset
+  // thumbnails, node previews), for every drag tick. With this shape
+  // hash, only edits that actually change the boundary's interface
+  // (add/rename/retype an input, change a default) bump the fp.
+  // Adding/removing a boundary input still invalidates correctly,
+  // which keeps the original "stale outputs map" cache-hit bug from
+  // recurring — see `subgraph-input-default.test.ts`.
+  const inputShape = canonicalJson(
+    def.inputs.map((i) => ({ name: i.name, type: i.type, default: i.default ?? null })),
+  );
   const inputBoundary: NodeDef = {
     id: inputKind,
     category: '__internal__',
@@ -165,17 +185,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       ...(i.description !== undefined ? { description: i.description } : {}),
       ...(i.label !== undefined ? { label: i.label } : {}),
     })),
-    // Carry the subgraph's version so the boundary's eval-cache
-    // fingerprint changes when the subgraph's input list does. Without
-    // this, adding a new input is invisible to the fingerprint
-    // (boundary-input has no graph inputs / no upstreams to fingerprint
-    // through) — the cache hits the stale entry from before the input
-    // existed, returns its old outputs map (which is missing the new
-    // socket name), and consumers reading the new input get
-    // `undefined`. Concretely: wire `colorize.low` to a fresh
-    // boundary input → next eval round, colorize.low resolves to
-    // `undefined` and Float32Array.set crashes.
-    version: def.version ?? 0,
+    fingerprintExtra: inputShape,
     evaluate(ctx) {
       return ctx.subgraphInputs ?? standaloneDefaults;
     },
@@ -206,10 +216,12 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       ...(o.description !== undefined ? { description: o.description } : {}),
       ...(o.label !== undefined ? { label: o.label } : {}),
     })),
-    // Same rationale as inputBoundary: when the subgraph's output list
-    // changes the boundary's fp must change too, or the cache returns
-    // a stale outputs map.
-    version: def.version ?? 0,
+    // Same rationale as inputBoundary's `fingerprintExtra`: hash only
+    // the boundary's interface (output names + types) so the fp
+    // doesn't move on unrelated inner-graph edits.
+    fingerprintExtra: canonicalJson(
+      def.outputs.map((o) => ({ name: o.name, type: o.type })),
+    ),
     evaluate(_ctx, inputs) {
       return inputs;
     },
