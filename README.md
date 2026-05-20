@@ -1,8 +1,15 @@
 # Sedon
 
-Procedural 3D content generator built around a node graph.
+Procedural 3D content generator built around a node graph. (super alpha)
 
 (sedon = nodes spelled backward - need a better name!)
+
+[Live](https://greggman.github.io/sedon)
+
+Warning: Anything you make is not really saveable and the format
+is likely to change. Though, if you make something good looking
+and performant, send a PR or issue with the json and maybe I can
+included it.
 
 Note: No idea how far I'll take this. The entire point was I wanted to
 see big content from small data since IMO that's one of the biggest
