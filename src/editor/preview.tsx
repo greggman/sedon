@@ -406,16 +406,23 @@ export function Preview({ panelId }: PreviewProps = {}) {
   const recentPreviewCameras = useLayoutStore((s) => s.recentPreviewCameras);
   const prevContextRef = useRef<string | null>(null);
   const prevPanelCamerasRef = useRef<typeof panelCameras | null>(null);
+  // The previously-resolved fallback camera for this pane's effective
+  // graph. We need this because `projectCameras` (and
+  // `recentPreviewCameras`) can change ASYNCHRONOUSLY of any pin/edit —
+  // notably during a demo-load: setGraph populates `cameras` with the
+  // demo's per-graph framings AFTER this Preview component has already
+  // mounted and snapshotted DEFAULT_CAMERA. Without tracking the
+  // resolved stored value, the effect early-returns (idChanged=false,
+  // panelCamerasChanged=false) and the Preview keeps DEFAULT_CAMERA —
+  // user sees an empty sky because they're standing inside the
+  // terrain. (Forest's main camera lives at distance=95.)
+  const prevStoredRef = useRef<CameraState | undefined>(undefined);
   useEffect(() => {
     effectiveGraphIdRef.current = effectiveGraphId;
     const prevId = prevContextRef.current;
     const prevPanelCameras = prevPanelCamerasRef.current;
     const idChanged = prevId !== effectiveGraphId;
     const panelCamerasChanged = prevPanelCameras !== panelCameras;
-    if (!idChanged && !panelCamerasChanged) return;
-    if (idChanged && prevId !== null) {
-      commitCamera(prevId, cameraRef.current);
-    }
     // Lookup chain when this preview hasn't recorded its own camera
     // for the new graph yet:
     //   1. recentPreviewCameras[graphId] — LRU across all previews this
@@ -427,9 +434,22 @@ export function Preview({ panelId }: PreviewProps = {}) {
       panelCameras?.[effectiveGraphId] ??
       recentPreviewCameras[effectiveGraphId] ??
       projectCameras[effectiveGraphId];
+    const prevStored = prevStoredRef.current;
+    const storedChanged = prevStored !== stored;
+    // Early-return if nothing actionable changed. We deliberately
+    // include `storedChanged` so a late-arriving fallback (demo
+    // load → projectCameras populated) still takes effect even
+    // though effectiveGraphId hasn't changed. Without it, the
+    // Preview would stay on DEFAULT_CAMERA after every demo load
+    // — exactly the "forest doesn't render" symptom.
+    if (!idChanged && !panelCamerasChanged && !storedChanged) return;
+    if (idChanged && prevId !== null) {
+      commitCamera(prevId, cameraRef.current);
+    }
     cameraRef.current = stored ? cloneCamera(stored) : cloneCamera(DEFAULT_CAMERA);
     prevContextRef.current = effectiveGraphId;
     prevPanelCamerasRef.current = panelCameras;
+    prevStoredRef.current = stored;
     // The camera ref was mutated outside React; request a render so tiles
     // pick up the new viewpoint without waiting for the next input event.
     requestRender();

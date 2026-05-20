@@ -374,6 +374,82 @@ test('editing a wrapper instance\'s inputValue override propagates through the b
   );
 });
 
+test('boundary-input fp is stable across unrelated inner-graph edits (5fps drag regression)', async () => {
+  // Reproduction of the 5fps drag bug: opening `oak-leaf`, dragging a
+  // colorize colour picker.
+  //
+  // Previously the boundary NodeDefs carried `version: def.version ?? 0`
+  // so the subgraph's coarse version counter (bumped on ANY inner
+  // edit) participated in the boundary's fingerprint. Every drag tick
+  // moved the boundary's fp, which cascade-invalidated every inner
+  // node downstream of it — `leaf-skeleton` (expensive shader),
+  // `distance-transform` (multi-pass JFA), `levels`,
+  // `normal-from-height`, `colorize`, both masks — in every consumer
+  // (preview pane, asset thumbnails, in-node previews). ~5fps.
+  //
+  // Fix: replace the version stamp with a shape hash (input/output
+  // names + types + defaults) mixed into the boundary's
+  // `fingerprintExtra`. Now only edits that change the boundary's
+  // INTERFACE bump its fp; edits to the inner graph that leave the
+  // interface alone leave the boundary's fp untouched, so downstream
+  // inner nodes cache-hit through the boundary.
+  const { createEvalCache } = await import('../../src/core/eval-cache.js');
+
+  function makeSg(version: number): SubgraphDef {
+    const g = createGraph();
+    addNode(g, 'subgraph-input/stable-bnd', { id: 'bi', position: { x: 0, y: 0 } });
+    addNode(g, 'subgraph-output/stable-bnd', { id: 'bo', position: { x: 200, y: 0 } });
+    addEdge(g, { node: 'bi', socket: 'color' }, { node: 'bo', socket: 'color' });
+    return {
+      id: 'stable-bnd',
+      label: 'stable bnd',
+      category: 'test',
+      inputs: [{ name: 'color', type: 'Color', default: [1, 1, 1, 1] }],
+      outputs: [{ name: 'color', type: 'Color' }],
+      graph: g,
+      inputNodeId: 'bi',
+      outputNodeId: 'bo',
+      version,
+    };
+  }
+
+  const cache = createEvalCache();
+
+  // v0: register subgraph, evaluate via wrapper. Boundary-input gets
+  // a fingerprint recorded in cache.lastFingerprintByNodeId under its
+  // trackerKey (nodeId | subgraphInputFingerprints).
+  const sgV0 = makeSg(0);
+  const registry0 = createNodeRegistry();
+  for (const def of defineSubgraph(sgV0, registry0)) registry0.register(def);
+  const parent = createGraph();
+  const wrapper = addNode(parent, 'subgraph/stable-bnd', {
+    position: { x: 0, y: 0 },
+    inputValues: { color: [0.5, 0.5, 0.5, 1] },
+  });
+  await evaluateGraph(parent, registry0, { rootNodeId: wrapper.id, cache });
+
+  const bndKeysBefore = [...cache.lastFingerprintByNodeId.keys()].filter((k) =>
+    k.startsWith('bi|'),
+  );
+  assert.equal(bndKeysBefore.length, 1, 'boundary-input has one tracker entry after v0');
+  const fpBefore = cache.lastFingerprintByNodeId.get(bndKeysBefore[0]!)!;
+
+  // v1: bump the subgraph version (any inner-graph mutation does
+  // this) but leave the boundary's interface alone. Re-register and
+  // re-evaluate against the SAME cache. Boundary fp must be stable.
+  const sgV1 = makeSg(1);
+  const registry1 = createNodeRegistry();
+  for (const def of defineSubgraph(sgV1, registry1)) registry1.register(def);
+  await evaluateGraph(parent, registry1, { rootNodeId: wrapper.id, cache });
+
+  const fpAfter = cache.lastFingerprintByNodeId.get(bndKeysBefore[0]!)!;
+  assert.equal(
+    fpAfter,
+    fpBefore,
+    'boundary-input fp must NOT move when only the subgraph version changes — otherwise every inner node downstream cascade-invalidates on every inner edit (5fps drag bug)',
+  );
+});
+
 test('full flow: store.addSubgraphSocketWithEdge with capturedDefault → wrapper in parent graph evaluates without wiring the new input', async () => {
   // Build a minimal subgraph (no inputs initially) whose only inner
   // node is the boundary-output: we'll wire boundary-input → boundary-
