@@ -21,6 +21,7 @@ import {
   type ProjectSnapshot,
 } from './command.js';
 import { createInitialGraph } from './initial-graph.js';
+import { useLayoutStore } from './layout-store.js';
 
 // Orbit camera state. `target` is the world-space point the camera orbits
 // around; yaw/pitch/distance describe its position relative to that point.
@@ -571,6 +572,20 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // both undo and redo stacks. Always returns to editing the main graph
     // — switching demos shouldn't drop you inside an old subgraph.
     setGraph: (graph, rootNodeId, subgraphs, cameras, viewports, folders) => {
+      // setGraph is the canonical "load a new project" entry point —
+      // called from the demos menu, save-file load, and tests. It
+      // ALWAYS resets the per-graph session state in the layout store,
+      // because that state (pinnedGraphIds, canvas/preview viewports +
+      // cameras, recent* LRUs) is keyed by graph id from the OUTGOING
+      // project. Even when ids collide (every project has 'main') the
+      // saved framings are meaningless across projects with wildly
+      // different scales — forest's main lives at distance=95m, tree-
+      // bush's at ~44m. Coupling the reset INTO setGraph makes the
+      // wrong way impossible: any new caller of setGraph gets the
+      // reset for free. file-ops's loadProject still works because
+      // its `setState` call AFTER setGraph restores the saved layout
+      // on top of this reset — same net effect as the prior code.
+      useLayoutStore.getState().resetForNewProject();
       // Seed positions from every graph entering the store: main + each
       // subgraph. Each editing context gets its own nodeId→position map.
       const nodePositions: EditorState['nodePositions'] = { main: extractPositions(graph) };

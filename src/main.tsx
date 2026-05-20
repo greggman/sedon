@@ -16,6 +16,12 @@ if (!root) {
 if (new URLSearchParams(window.location.search).get('debug') === '1') {
   (window as unknown as { __sedonStore__: typeof useEditorStore }).__sedonStore__ = useEditorStore;
   (window as unknown as { __sedonDemos__: typeof DEMOS }).__sedonDemos__ = DEMOS;
+  // Layout store exposed so headless repros that simulate the
+  // demos-menu / file-load flow can run `resetForNewProject` between
+  // setGraph calls. Production UI invokes this through the menu itself.
+  void import('./editor/layout-store.js').then((m) => {
+    (window as unknown as { __sedonLayoutStore__: typeof m.useLayoutStore }).__sedonLayoutStore__ = m.useLayoutStore;
+  });
   // The navigation helpers that the Asset view's double-click and
   // "Open in Preview" buttons call. Exposed so headless repros can
   // exercise the exact same code path as a user click — including

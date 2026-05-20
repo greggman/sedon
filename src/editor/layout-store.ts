@@ -94,6 +94,20 @@ export interface LayoutState {
 
   setLastActiveCanvasPanelId: (panelId: string | null) => void;
   setLastActivePreviewPanelId: (panelId: string | null) => void;
+
+  /**
+   * Clear the per-session, per-graph camera + viewport state.
+   * Project-level state (DockView layout, panel pins) is preserved —
+   * the user keeps the same workspace shape across project switches.
+   * Called by the demos menu and save-file load before swapping the
+   * project in. Without this, a user who dragged the camera around
+   * in one project (committing entries into `previewCameras` /
+   * `recentPreviewCameras`) sees the new project's Preview pane
+   * still on the old camera, because the saved per-panel camera
+   * outranks the new project's per-graph framing in the lookup
+   * chain. Same story for `canvasViewports` / `recentCanvasViewports`.
+   */
+  resetForNewProject: () => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -164,4 +178,21 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   setLastActiveCanvasPanelId: (panelId) => set({ lastActiveCanvasPanelId: panelId }),
   setLastActivePreviewPanelId: (panelId) => set({ lastActivePreviewPanelId: panelId }),
+
+  resetForNewProject: () =>
+    set({
+      // Per-graph pins, viewports, and cameras all tie to graph ids
+      // from the OUTGOING project. Loading a new project may share
+      // graph ids by accident (every project has 'main') but the
+      // saved view is meaningless across projects — different scales,
+      // different framings, different scene content. Clearing forces
+      // the Preview / NodeCanvas auto-pin effects to re-seed from
+      // the incoming project's `projectCameras` on next render.
+      pinnedGraphIds: {},
+      canvasGraphIds: {},
+      canvasViewports: {},
+      recentCanvasViewports: {},
+      previewCameras: {},
+      recentPreviewCameras: {},
+    }),
 }));

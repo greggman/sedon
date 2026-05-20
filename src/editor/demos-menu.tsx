@@ -22,7 +22,9 @@ export function DemosMenu() {
     // state from the new store graph + rebuilt registry. Each canvas's
     // own viewport effect handles fitView when no per-panel viewport
     // exists yet — we don't fitView from here because there's no
-    // longer a single canvas to target.
+    // longer a single canvas to target. setGraph also resets the
+    // layout-store's per-graph session state internally, so we don't
+    // have to remember to do it here.
     setGraph(graph, rootNodeId, subgraphs, cameras);
     setOpen(false);
   };
