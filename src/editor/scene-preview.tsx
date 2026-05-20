@@ -138,9 +138,11 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
       translation(-cam.target[0], -cam.target[1], -cam.target[2]),
     );
     const encoder = device.createCommandEncoder();
+    const colorTex = ctx.getCurrentTexture();
+    colorTex.label = 'ScenePreview canvas';
     renderer.render({
       encoder,
-      colorView: ctx.getCurrentTexture(),
+      colorView: colorTex,
       size: [canvas.width, canvas.height],
       modelView,
       projection,

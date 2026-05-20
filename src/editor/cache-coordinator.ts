@@ -119,6 +119,33 @@ function scheduleSweep(): void {
 }
 
 function doSweepNow(): void {
+  // Re-check activeEvals at firing time, not just at scheduling time.
+  // The original guard in `doSweep` only checks BEFORE scheduling the
+  // rAF — but a new eval can call `beginCacheEval` between the
+  // scheduleSweep call and the rAF firing. Concretely the demo-switch
+  // path:
+  //   1. User clicks Forest. React unmounts tree-bush asset thumbs.
+  //   2. unregisterConsumer → doSweep. activeEvals=0 → scheduleSweep.
+  //   3. New canvas / preview / thumbnail effects fire post-commit.
+  //      Each beginCacheEval → activeEvals > 0. Forest's evals start.
+  //   4. Forest's eval allocates a fresh texture, stores it in
+  //      cache.entries, then awaits an async node (heightfield-to-mesh's
+  //      mapAsync — a real task-boundary await).
+  //   5. RAF from step 2 fires. doSweepNow runs. The new forest
+  //      entries aren't in any consumer's primary yet (reportWorking
+  //      only happens at the END of the eval), so live-set excludes
+  //      them → the just-allocated texture gets DESTROYED.
+  //   6. Forest's eval resumes, downstream nodes read the destroyed
+  //      texture from `outputs`, build bind groups against it → next
+  //      submit fails with "Destroyed texture used in submit".
+  // The re-check turns the rAF into a "try again later if anyone
+  // started evaluating in the meantime" — endCacheEval flushes the
+  // pendingSweep when activeEvals drops back to zero, so we don't
+  // strand cleanup forever.
+  if (activeEvals > 0) {
+    pendingSweep = true;
+    return;
+  }
   const cache = useEditorStore.getState().evalCache;
   const live = new Set<string>();
   for (const s of consumers.values()) {

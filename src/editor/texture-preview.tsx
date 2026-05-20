@@ -94,10 +94,12 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
       bindGroupRef.current = bindGroup;
     }
     const encoder = device.createCommandEncoder();
+    const colorTex = ctx.getCurrentTexture();
+    colorTex.label = 'TexturePreview canvas';
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: ctx.getCurrentTexture(),
+          view: colorTex,
           clearValue: [0, 0, 0, 1],
           loadOp: 'clear',
           storeOp: 'store',

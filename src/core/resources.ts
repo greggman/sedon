@@ -377,6 +377,14 @@ export function reusableTexture(
     height: number;
     format: GPUTextureFormat;
     usage: GPUTextureUsageFlags;
+    /**
+     * Optional human-readable label. Stamped on the underlying
+     * GPUTexture so WebGPU validation errors (e.g. "Destroyed
+     * texture used in submit") name the producing node directly
+     * — "perlin-octaves" beats "unlabeled 512x512 px" when you're
+     * trying to find which subgraph's eval is the source.
+     */
+    label?: string;
   },
 ): Texture2DValue {
   const prev = previous as Partial<Texture2DValue> | undefined;
@@ -401,6 +409,7 @@ export function reusableTexture(
     size: [desired.width, desired.height],
     format: desired.format,
     usage: desired.usage,
+    ...(desired.label !== undefined ? { label: desired.label } : {}),
   });
   return {
     texture,

@@ -113,9 +113,11 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       const previewLighting = defaultLighting();
 
       const encoder = device.createCommandEncoder();
+      const colorTex = ctx.getCurrentTexture();
+      colorTex.label = 'MaterialPreview canvas';
       renderer.render({
         encoder,
-        colorView: ctx.getCurrentTexture(),
+        colorView: colorTex,
         size: [canvas.width, canvas.height],
         modelView,
         projection,
