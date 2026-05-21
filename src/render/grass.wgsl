@@ -1,9 +1,12 @@
 // Grass render pass. drawIndexedIndirect over the cross-quad card mesh;
 // each instance reads its placement (written by grass-cull.wgsl) from
 // the `instances` storage buffer via @builtin(instance_index). Group 0
-// is the shared scene bind group (camera matrices, lighting, fog) — the
-// same layout every material kind uses — so grass reuses the scene's
-// view/projection and day/night-faded light without its own copy.
+// is the shared scene bind group (camera matrices, lighting, fog, AND
+// the shadow map) — same layout every material kind uses — so grass
+// reuses the scene's view/projection, day/night-faded light, and the
+// shadow pass's depth map. shadow-pcf.wgsl is concatenated ahead of
+// this at module build (see grass.ts), supplying `sample_shadow`; it
+// references the `uniforms`, `shadow_map`, `shadow_samp` declared here.
 
 struct SceneU {
   modelView: mat4x4f,
@@ -12,9 +15,11 @@ struct SceneU {
   lightDirWorld: vec3f,
   lightColor: vec3f,
   ambient: vec3f,
-  fog: vec4f,         // rgb = fog colour, w = density
+  fog: vec4f,         // rgb = fog colour (sRGB), w = density
 };
-@group(0) @binding(0) var<uniform> scene: SceneU;
+@group(0) @binding(0) var<uniform> uniforms: SceneU;
+@group(0) @binding(2) var shadow_map: texture_depth_2d;
+@group(0) @binding(3) var shadow_samp: sampler_comparison;
 
 struct GrassU {
   viewProj: mat4x4f,
@@ -48,8 +53,32 @@ struct VsOut {
   @location(1) typeIndex: f32,
   @location(2) color: vec3f,
   @location(3) fade: f32,
-  @location(4) viewPos: vec3f,
+  @location(4) view_pos: vec3f,
+  @location(5) world_pos: vec3f,
 };
+
+fn srgb_to_linear(color: vec3f) -> vec3f {
+  return pow(color, vec3f(2.2));
+}
+
+// 4×4 Bayer ordered-dither threshold in [0,1) from the pixel coord.
+// Used for the distance fade: as `fade` drops toward the draw-distance
+// ring, progressively more pixels fail `fade < threshold` and discard,
+// dissolving blades out smoothly instead of popping at a hard alpha
+// cut. Ordered (not random) so it's temporally stable — no shimmer as
+// the camera moves, which a per-pixel hash would cause without TAA.
+fn bayer4x4(p: vec2f) -> f32 {
+  let x = u32(p.x) & 3u;
+  let y = u32(p.y) & 3u;
+  let idx = y * 4u + x;
+  var m = array<f32, 16>(
+    0.0,  8.0,  2.0, 10.0,
+    12.0, 4.0, 14.0,  6.0,
+    3.0, 11.0,  1.0,  9.0,
+    15.0, 7.0, 13.0,  5.0,
+  );
+  return (m[idx] + 0.5) / 16.0;
+}
 
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
@@ -57,26 +86,21 @@ fn vs_main(in: VsIn) -> VsOut {
   let pos = blade.posScale.xyz;
   let scale = blade.posScale.w;
   let yaw = blade.data.x;
-  // position.y is the mesh's 0(base)..1(tip) height fraction.
-  let heightFrac = in.position.y;
+  let heightFrac = in.position.y;  // 0 base .. 1 tip
 
-  // Scale the unit card to the field's blade size (× per-blade scale).
   var local = vec3f(
     in.position.x * u.blade.x * scale,
     in.position.y * u.blade.y * scale,
     in.position.z * u.blade.x * scale,
   );
 
-  // Wind: only the tip sways (heightFrac²), phase offset by world XZ so
-  // neighbouring blades aren't in lockstep. Static when time is frozen
-  // (animation paused) since u.cameraPos.w stops advancing.
+  // Wind: only the tip sways (heightFrac²), phase offset by world XZ.
   let t = u.cameraPos.w;
   let phase = pos.x * 0.35 + pos.z * 0.35;
   let sway = sin(t * u.blade.w + phase) * u.blade.z * heightFrac * heightFrac;
   local.x += sway;
   local.z += sway * 0.5;
 
-  // Yaw-rotate about +Y, then translate to the blade's world position.
   let cy = cos(yaw);
   let sy = sin(yaw);
   let rx = local.x * cy + local.z * sy;
@@ -84,12 +108,12 @@ fn vs_main(in: VsIn) -> VsOut {
   let world = vec3f(pos.x + rx, pos.y + local.y, pos.z + rz);
 
   var out: VsOut;
-  let viewPos4 = scene.modelView * vec4f(world, 1.0);
-  out.viewPos = viewPos4.xyz;
-  out.clip = scene.projection * viewPos4;
+  let viewPos4 = uniforms.modelView * vec4f(world, 1.0);
+  out.view_pos = viewPos4.xyz;
+  out.clip = uniforms.projection * viewPos4;
+  out.world_pos = world;
   out.uv = in.uv;
   out.typeIndex = blade.data.y;
-  // Base→tip colour gradient, jittered per blade by colorRand.
   let tint = mix(u.baseColor.rgb, u.tipColor.rgb, heightFrac);
   let cr = (blade.data.w - 0.5) * u.baseColor.w; // colorVariation = baseColor.w
   out.color = tint * (1.0 + cr);
@@ -100,18 +124,25 @@ fn vs_main(in: VsIn) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let tex = textureSample(cards, samp, in.uv, i32(in.typeIndex));
-  // Alpha-cut, scaled by the distance fade so blades thin out toward
-  // the draw-distance ring rather than popping at a hard edge.
-  let a = tex.a * in.fade;
-  if (a < 0.5) { discard; }
-  // Soft, even lighting off a sky-up normal (see grass-card.ts): sun
-  // term + ambient, sharing the scene's day/night-faded light values.
-  let ndl = max(dot(normalize(scene.lightDirWorld), vec3f(0.0, 1.0, 0.0)), 0.0);
-  let lit = tex.rgb * in.color * (scene.ambient + scene.lightColor * ndl);
-  // Match the scene's exponential fog so grass recedes into the same
-  // haze the terrain does.
-  let dist = length(in.viewPos);
-  let fogF = clamp(1.0 - exp(-dist * scene.fog.w), 0.0, 1.0);
-  let col = mix(lit, scene.fog.rgb, fogF);
+  // Blade silhouette: hard alpha-cut on the card's authored alpha.
+  if (tex.a < 0.5) { discard; }
+  // Distance fade: dissolve via ordered dither (no hard ring pop).
+  if (in.fade < bayer4x4(in.clip.xy)) { discard; }
+
+  // Match the scene's colour pipeline: authored colours are sRGB,
+  // linearize before lighting; write linear HDR (composite tone-maps).
+  let albedo = srgb_to_linear(tex.rgb * in.color);
+  let n = vec3f(0.0, 1.0, 0.0);                       // soft sky-up normal
+  let l = normalize(uniforms.lightDirWorld);
+  let n_dot_l = max(dot(n, l), 0.0);
+  let shadow = sample_shadow(in.world_pos);            // trees shadow the grass
+  let light_color = srgb_to_linear(uniforms.lightColor);
+  let ambient = srgb_to_linear(uniforms.ambient);
+  // Lambert diffuse + ambient, same structure as pbr's diffuse term
+  // (k_d≈1, no specular — grass isn't shiny).
+  let lit = albedo / 3.14159265 * light_color * n_dot_l * shadow + albedo * ambient;
+  // Fog matches pbr.apply_fog: exp falloff in view-z, sRGB fog colour.
+  let visibility = exp(-uniforms.fog.w * abs(in.view_pos.z));
+  let col = mix(srgb_to_linear(uniforms.fog.rgb), lit, visibility);
   return vec4f(col, 1.0);
 }

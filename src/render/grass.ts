@@ -5,6 +5,7 @@ import { generateGrassCard } from './grass-card.js';
 import { getSampler } from './gpu-cache.js';
 import grassCullCode from './grass-cull.wgsl';
 import grassCode from './grass.wgsl';
+import shadowPcfCode from './shadow-pcf.wgsl';
 
 // Camera-relative GPU-driven grass. The node graph produces a
 // GrassFieldValue (maps + tuning); this subsystem turns it into blades
@@ -170,7 +171,11 @@ function buildShared(
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     ],
   });
-  const renderModule = device.createShaderModule({ code: grassCode });
+  // Concatenate the shared shadow PCF ahead of the grass shader (WGSL
+  // has no #include) so grass can call sample_shadow() against the same
+  // shadow map the rest of the scene uses — see pbr-kind.ts for the
+  // same pattern.
+  const renderModule = device.createShaderModule({ code: `${shadowPcfCode}\n${grassCode}` });
   const renderPipeline = device.createRenderPipeline({
     layout: device.createPipelineLayout({
       bindGroupLayouts: [sceneBindGroupLayout, renderGroupLayout],
