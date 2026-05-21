@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CleanupButton } from './cleanup-button.js';
 import { CommandPalette } from './command-palette.js';
 import { DemosMenu } from './demos-menu.js';
+import { GithubLink } from './github-link.js';
 import { setDockviewApi } from './dockview-handle.js';
 import { FileMenu } from './file-menu.js';
 import { GraphSwitcher } from './graph-switcher.js';
@@ -17,7 +18,6 @@ import { NewSubgraphButton } from './new-subgraph-button.js';
 import { PANEL_COMPONENTS } from './panels.js';
 import { bumpPopoutGeneration } from './popout-bus.js';
 import { useLayoutStore } from './layout-store.js';
-import octocat from '../assets/images/octocat-icon.svg';
 
 // App shell:
 //
@@ -163,7 +163,7 @@ export function App() {
         <NewSubgraphButton />
         <CleanupButton />
         <FileMenu />
-        <div><a href="https://greggman.github.io/sedon"><img src={octocat} /></a></div>
+        <GithubLink />
       </div>
       <div className="sedon-dockview-container">
         <DockviewReact

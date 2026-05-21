@@ -35,6 +35,15 @@ const options = {
   entryPoints: ['src/main.tsx'],
   bundle: true,
   outdir: 'dist',
+  // The `file` loader emits assets into outdir (dist/) and rewrites the
+  // import to a URL. Without publicPath that URL is relative to the
+  // OUTPUT FILE, so it comes back as "./icon-XXXX.svg" — which the
+  // browser resolves against index.html (served at "/"), fetching
+  // "/icon-XXXX.svg" and 404ing because the file is really at
+  // "/dist/icon-XXXX.svg". publicPath prefixes the emitted URLs so they
+  // point at where the files actually land. index.html loads
+  // ./dist/main.js, so dist is served at /dist.
+  publicPath: '/dist',
   format: 'esm',
   target: 'es2022',
   sourcemap: true,
