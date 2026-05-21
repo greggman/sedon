@@ -12,18 +12,35 @@
 
 --- new ---
 
+- [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
+terrain renderer that tessellates the terrain
+based on distance from the camera. 
+- [ ] frame selected
+- [ ] add github link
+- [ ] copy/copy/paste nodes
+- [ ] forest nodes are black
+- [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
+- [ ] need to be able to set default on subgraph-input
+- [ ] highlight selected node
+- [ ] show names on nodes (editable)
+- [ ] leaf/skeleton needs better preview
+- [*] drag node re-renders. Why?
+- [ ] future nodes
+- [ ] edit button on node - need right click "open in new/other canvas"?
+- [ ] add UI tests
+- [ ] isTexture2D and related seems brittle
 - [*] What is the (Active) thing? - Seems not needed
 - [*] Need to save last active view for both graphs (viewport) and preview (camera) (ask LLM)
-- [ ] Asset view needs multiple select (move/cut/copy/paste)
+- [*] Asset view needs multiple select (move/cut/copy/paste)
 - [*] selecting a graph in the asset view should not change the canvas view nor the preview
 - [*] double clicking a graph should "open the graph" in the current/last active canvas or right click "open in canvas" or makes new one if none exist
 - [*] right click asset and pick "open in preview" push in current/last preview or makes new one if none exist
 - [ ] left/skeleton needs to start from bottom center?
 - [*] subscene needs preview
-- [ ] too many previews
+- [ ] too many previews?
 - [*] add Ctrl-Shift-P
-- [ ] cut/copy/paste
-- [ ] duplicate
+- [*] cut/copy/paste
+- [*] duplicate
 - [*] subscene needs edit button
 - [*] frame subscenes
 - [*] nodes need icons?
