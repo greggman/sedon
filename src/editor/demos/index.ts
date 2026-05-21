@@ -4,6 +4,7 @@ import { createInitialGraph } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createForestDemo } from './forest.js';
+import { createGrassTestDemo } from './grass-test.js';
 import { createLeafDemo } from './leaf.js';
 import { createTreeBushDemo } from './tree-bush.js';
 
@@ -30,4 +31,5 @@ export const DEMOS: Demo[] = [
   { id: 'city', label: 'City', build: createCityDemo },
   { id: 'leaf', label: 'Leaf', build: createLeafDemo },
   { id: 'tree-bush', label: 'Tree & Bush', build: createTreeBushDemo },
+  { id: 'grass-test', label: 'Grass Test', build: createGrassTestDemo },
 ];

@@ -9,8 +9,27 @@ import { useLayoutStore } from './layout-store.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
-import { requestRender } from './render-bus.js';
+import { isAnimating, requestRender, setAnimating, subscribeAnimating } from './render-bus.js';
 import { useEditorStore, type CameraState } from './store.js';
+
+// Play/pause for time-driven effects (grass wind). Off by default so
+// idle previews stay render-on-demand; turning it on starts the
+// render-bus's continuous rAF loop and advances the animation clock.
+// Global (not per-pane): one clock drives every preview canvas.
+function AnimateToggle() {
+  const [playing, setPlaying] = useState(isAnimating());
+  useEffect(() => subscribeAnimating(setPlaying), []);
+  return (
+    <button
+      type="button"
+      className="sedon-toolbar-button sedon-animate-toggle"
+      title={playing ? 'Pause animation (wind)' : 'Play animation (wind)'}
+      onClick={() => setAnimating(!playing)}
+    >
+      {playing ? '⏸ Pause' : '▶ Play'}
+    </button>
+  );
+}
 
 // Camera math: orbit around `target` at `distance`, oriented by yaw/pitch.
 // Drag rotates yaw/pitch. Cmd/Ctrl-drag pans target along the camera's
@@ -548,13 +567,16 @@ export function Preview({ panelId }: PreviewProps = {}) {
       ref={wrapperRef}
       tabIndex={0}
     >
-      {panelId && (
-        <PreviewPinDropdown
-          panelId={panelId}
-          subgraphs={subgraphs}
-          pinnedGraphId={pinnedGraphId}
-        />
-      )}
+      <div className="sedon-preview-header">
+        {panelId && (
+          <PreviewPinDropdown
+            panelId={panelId}
+            subgraphs={subgraphs}
+            pinnedGraphId={pinnedGraphId}
+          />
+        )}
+        <AnimateToggle />
+      </div>
       <div className="sedon-preview-grid">
         {gpu &&
           tiles.map((t) => (

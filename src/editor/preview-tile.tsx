@@ -11,7 +11,7 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { requestRender, subscribeRender } from './render-bus.js';
+import { animationTime, requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 interface PreviewTileProps {
@@ -175,6 +175,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
         lighting,
         flatPreview,
+        time: animationTime(),
       });
       gpu.device.queue.submit([encoder.finish()]);
     };

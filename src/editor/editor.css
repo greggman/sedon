@@ -909,6 +909,21 @@
   color: #e6a23c;
 }
 
+/* Header is layout-transparent (display:contents) so the pin stays
+ * top-left and the animate toggle floats top-right, both over the
+ * preview canvas. */
+.sedon-preview-header {
+  display: contents;
+}
+.sedon-animate-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 /* ============================================================
  * Main preview pane (right side)
  * ============================================================ */

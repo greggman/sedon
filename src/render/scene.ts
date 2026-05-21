@@ -1,10 +1,12 @@
 import type {
   GeometryValue,
+  GrassFieldValue,
   LightingValue,
   MaterialValue,
   SceneEntity,
   SceneValue,
 } from '../core/resources.js';
+import { createGrassSystem, type GrassSystem } from './grass.js';
 import { lookAt, multiply, orthographic, type Mat4 } from './mat4.js';
 import {
   createSceneBindGroupLayout,
@@ -114,6 +116,12 @@ export interface SceneRenderer {
      * Defaults to false; normal scenes get sky + tonemap as before.
      */
     flatPreview?: boolean;
+    /**
+     * Elapsed seconds, fed into the grass wind animation. Advances
+     * only while the user has animation playing; frozen (constant)
+     * otherwise, so paused previews show static grass. Defaults to 0.
+     */
+    time?: number;
   }): void;
   /**
    * Free the renderer's owned GPU resources (depth + HDR + bloom mip
@@ -728,6 +736,24 @@ export function createSceneRenderer(
   //     instanceCount) matches. Same matching produces zero buffer
   //     alloc and a single writeBuffer; mismatches destroy + realloc.
   let batches: Batch[] = [];
+  // Camera-relative grass. Created LAZILY on the first scene that
+  // actually has a grass field — most renderers (in-node previews,
+  // texture thumbnails, grass-less scenes) never build the compute /
+  // indirect pipelines at all. Lazy creation also keeps the mock-GPU
+  // unit tests working: they render grass-less scenes, so they never
+  // hit `device.createComputePipeline`. Placement is per-view, so the
+  // slot buffers live on the renderer; the pipelines are device-shared.
+  let grassSystem: GrassSystem | null = null;
+  let grassFields: GrassFieldValue[] = [];
+  function ensureGrass(): GrassSystem {
+    if (!grassSystem) {
+      // HDR format matches the color pass target (grass draws into
+      // hdrColor, not the swapchain); depth matches the shared
+      // depth32float intermediate.
+      grassSystem = createGrassSystem(device, shared.sceneBindGroupLayout, HDR_FORMAT, 'depth32float');
+    }
+    return grassSystem;
+  }
   // Per-renderer ref tracking. Each setScene call updates these to the
   // CURRENT set of pool keys this renderer is holding refs on. The diff
   // against the previous round tells us which pool entries to release
@@ -874,11 +900,14 @@ export function createSceneRenderer(
     void prevBatchByKey;
 
     batches = next;
+    // Grass fields are render-time recipes, not batched entities — just
+    // hold the list; the per-frame compute/draw in render() consumes it.
+    grassFields = scene.grass ?? [];
     debug(() => {
       const summary = batches.map((b) =>
         `[${b.kindId} pos#${gpuObjectId(b.geometry.positionBuffer as object)} idx=${b.geometry.indexCount} inst=${b.instanceCount}]`,
       ).join(' ');
-      return `[SceneRenderer setScene] batches=${batches.length} ${summary}`;
+      return `[SceneRenderer setScene] batches=${batches.length} grass=${grassFields.length} ${summary}`;
     });
   }
 
@@ -889,6 +918,7 @@ export function createSceneRenderer(
     for (const k of currentMaterialKeys) releaseMaterial(k);
     for (const k of currentInstanceKeys) releaseInstanceBuffer(k);
     if (currentSizeKey !== null) releaseIntermediates(currentSizeKey);
+    grassSystem?.destroy();
     currentMaterialKeys = new Set();
     currentInstanceKeys = new Set();
     currentSizeKey = null;
@@ -898,7 +928,7 @@ export function createSceneRenderer(
   return {
     setScene,
     destroy,
-    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false }) {
+    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, time = 0 }) {
       const [width, height] = size;
       // Acquire intermediates for THIS size. If we previously held a
       // different size's ref, release it first so a canvas resize
@@ -1056,6 +1086,14 @@ export function createSceneRenderer(
       }
       shadowPass.end();
 
+      // Grass cull/populate compute — must run before the color pass
+      // (which reads the instance buffer it fills) and outside any
+      // render pass. Skipped in flat-preview (asset texture tiles have
+      // no terrain to plant on). No-op when the scene has no grass.
+      if (!flatPreview && grassFields.length > 0) {
+        ensureGrass().compute(encoder, grassFields, { modelView, projection, time });
+      }
+
       // Main color pass — writes linear-HDR into hdrColor.
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -1122,6 +1160,14 @@ export function createSceneRenderer(
         pass.setVertexBuffer(3, b.instanceBuffer);
         pass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
         pass.drawIndexed(b.geometry.indexCount, b.instanceCount);
+      }
+
+      // Grass: drawIndexedIndirect the blades the compute pass placed,
+      // after opaque geometry so they depth-test against the terrain.
+      // Scene bind group (group 0) is already set above. Reverse-Z
+      // depth-writing pipeline, so grass self-occludes correctly.
+      if (!flatPreview && grassFields.length > 0) {
+        ensureGrass().draw(pass, grassFields);
       }
       pass.end();
 

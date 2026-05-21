@@ -11,7 +11,7 @@ import {
 } from '../render/mat4.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { subscribeRender } from './render-bus.js';
+import { animationTime, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
@@ -148,6 +148,7 @@ export function ScenePreview({ device, scene, camera, size = 128 }: ScenePreview
       projection,
       cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
       lighting: defaultLighting(),
+      time: animationTime(),
     });
     device.queue.submit([encoder.finish()]);
   };

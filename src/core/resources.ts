@@ -144,8 +144,85 @@ export interface SceneEntity {
   tint: Float32Array;
 }
 
+// A camera-relative grass field. Unlike SceneEntity (a static, baked
+// transform), grass is NOT placed at eval time — the node graph only
+// produces the *inputs* (density map, the terrain to plant on, the
+// blade card art, tuning). The renderer's grass subsystem generates
+// the actual blade instances every frame in a region around the
+// camera: a compute pass samples `density` + `heightfield` over a
+// camera-centered candidate grid, frustum/distance-culls, and
+// atomic-appends survivors into an instance buffer that a
+// drawIndexedIndirect renders. So this value is a *recipe*, evaluated
+// at draw time against the live camera — that's what makes it scale
+// to AAA blade counts without baking millions of static entities.
+export interface GrassFieldValue {
+  /**
+   * Blade card art, one per grass TYPE. RGB = blade colour, A =
+   * silhouette (alpha-cut in the grass shader). A single card may hold
+   * several blades; the mesh is a cross-quad so it reads 3D from any
+   * orbit angle. All cards MUST share the same resolution + format —
+   * the renderer assembles them into one texture-2d-array (one layer
+   * per type) so the shader can pick a blade's card by its per-blade
+   * `typeIndex` without per-type draw calls. `typeMap` selects which
+   * layer each blade uses.
+   */
+  cards: Texture2DValue[];
+  /**
+   * Optional per-area type selector. The R channel, scaled to
+   * `[0, cards.length)`, picks which card a blade at that world XZ
+   * uses. Absent ⇒ every blade is type 0. Sampled at the same world
+   * XZ→UV mapping as `density`.
+   */
+  typeMap?: Texture2DValue;
+  /**
+   * Per-area density in the R channel, 0..1. Sampled at each
+   * candidate's world XZ (mapped through the heightfield's worldSize).
+   * A blade survives a stochastic keep-test against this value ×
+   * the global `densityScale` — so painting density to 0 (roads,
+   * paths, water) leaves those areas bare, and a gradient thins grass
+   * out naturally.
+   */
+  density: Texture2DValue;
+  /**
+   * The terrain the grass grows on. Gives the compute pass the world
+   * Y (R-channel height remapped through heightRange) and the surface
+   * slope at each candidate, plus the worldSize that maps world XZ ↔
+   * density/height UVs. Grass is skipped where slope exceeds `maxSlope`.
+   */
+  heightfield: HeightfieldValue;
+  /** Max draw distance from the camera, metres. Beyond it blades are culled; alpha fades toward it. */
+  maxDistance: number;
+  /** Candidate-grid spacing, metres. Smaller = denser (and more compute threads). */
+  spacing: number;
+  /** Blade card size [width, height], metres. */
+  bladeSize: [number, number];
+  /** Global multiplier on the density-map keep probability. */
+  densityScale: number;
+  /** Surface-normal·up below this (0..1) is too steep for grass — culled. */
+  maxSlope: number;
+  /** Wind sway amplitude (metres of tip displacement). */
+  windStrength: number;
+  /** Wind oscillation speed (radians/second). Driven by the renderer's time uniform; static when animation is paused. */
+  windSpeed: number;
+  /** Linear-RGB tint multiplied at the blade base and tip; blended up the blade height. */
+  baseColor: [number, number, number];
+  tipColor: [number, number, number];
+  /** Per-blade hue/value jitter, 0..1, to break up uniformity. */
+  colorVariation: number;
+  /** Placement hash seed — same seed ⇒ same blade layout for a given camera cell. */
+  seed: number;
+}
+
 export interface SceneValue {
   entities: SceneEntity[];
+  /**
+   * Optional camera-relative grass fields. Kept separate from
+   * `entities` because grass isn't a baked transform — it's a
+   * render-time recipe (see {@link GrassFieldValue}). Undefined/empty
+   * for scenes without grass, so every existing `{ entities }`
+   * constructor stays valid.
+   */
+  grass?: GrassFieldValue[];
 }
 
 export interface PointCloudValue {
@@ -474,11 +551,27 @@ export function walkGpuResources(
     return;
   }
 
-  // SceneValue: { entities: [{ geometry, material, transform, tint }, ...] }
+  // SceneValue: { entities: [{ geometry, material, transform, tint }, ...],
+  //               grass?: [{ card, density, heightfield, ... }, ...] }
   if (Array.isArray(v.entities)) {
     for (const ent of v.entities as Array<Record<string, unknown>>) {
       walkGpuResources(ent.geometry, visit, seen, _depth + 1);
       walkGpuResources(ent.material, visit, seen, _depth + 1);
+    }
+    // Grass fields hold Texture2D / Heightfield references produced by
+    // upstream texture nodes. They must be walked so sweepCache keeps
+    // them alive while the grass field is in a live cache entry —
+    // otherwise the density/card/height textures get destroyed out
+    // from under the per-frame grass compute pass.
+    if (Array.isArray(v.grass)) {
+      for (const field of v.grass as Array<Record<string, unknown>>) {
+        if (Array.isArray(field.cards)) {
+          for (const card of field.cards) walkGpuResources(card, visit, seen, _depth + 1);
+        }
+        walkGpuResources(field.typeMap, visit, seen, _depth + 1);
+        walkGpuResources(field.density, visit, seen, _depth + 1);
+        walkGpuResources(field.heightfield, visit, seen, _depth + 1);
+      }
     }
     return;
   }

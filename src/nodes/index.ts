@@ -44,6 +44,8 @@ import { planeNode } from './plane.js';
 import { radialPointsNode } from './radial-points.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
+import { grassNode } from './grass.js';
+import { grassBladesNode } from './grass-blades.js';
 import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
@@ -114,6 +116,8 @@ export const CORE_NODES = [
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
+  grassBladesNode,
+  grassNode,
   outputNode,
 ];
 
@@ -141,6 +145,8 @@ export {
   cloudSlopeNode,
   cloudStepNode,
   colorizeNode,
+  grassBladesNode,
+  grassNode,
   coneNode,
   cubeNode,
   cylinderNode,
