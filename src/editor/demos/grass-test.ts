@@ -1,16 +1,17 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { CameraState } from '../store.js';
 
-// Minimal showcase for the camera-relative GPU grass system. A small
-// hilly heightfield, a flat green terrain material, and a single grass
-// field covering it. The grass blades are placed every frame by the
-// renderer's compute pass around the camera (see src/render/grass.ts),
-// not baked here — this graph only produces the maps + tuning.
-//
-// v1 card art note: the blade card is a plain solid-colour texture
-// (fully opaque), so blades render as solid green cross-quads. Real
-// alpha-silhouette blade art is a follow-up; this demo exists to
-// exercise + verify the compute/indirect placement, wind, and culling.
+// Showcase for the camera-relative GPU grass system. A small hilly
+// heightfield with a single grass field demonstrating the full
+// authoring workflow:
+//   • density map (perlin) → patchy coverage, not a uniform lawn
+//   • type map (low-freq perlin) → two grass TYPES selected per area
+//     (lush green in some patches, dry golden in others), proving the
+//     multi-card texture-2d-array path
+//   • maxSlope → grass thins on the steeper hillsides
+// Blades are placed every frame by the renderer's compute pass around
+// the camera (src/render/grass.ts); this graph only produces the maps
+// + tuning. Blade art comes from core/grass-blades (alpha silhouette).
 export function createGrassTestDemo(): {
   graph: Graph;
   rootNodeId: string;
@@ -54,34 +55,50 @@ export function createGrassTestDemo(): {
     inputValues: { scale: [4, 4], octaves: 3, lacunarity: 2, gain: 0.6, seed: 0.2, resolution: 256 },
   });
 
-  // Blade card: procedural alpha-silhouette blades. Colour lives in the
-  // card; the grass node's tint is left near-white so it doesn't
-  // double-tint (colorVariation still jitters per blade).
-  const card = addNode(g, 'core/grass-blades', {
+  // Type map: a LOW-frequency perlin so each type covers broad patches.
+  // R channel → floor(r * numTypes) picks the card. With 2 cards: r<0.5
+  // → green (type 0), r≥0.5 → golden (type 1).
+  const typeNoise = addNode(g, 'core/perlin', {
+    position: { x: 0, y: ROW * 4 },
+    inputValues: { scale: [1.5, 1.5], octaves: 2, lacunarity: 2, gain: 0.5, seed: 0.9, resolution: 256 },
+  });
+
+  // Two blade cards (alpha silhouette). Colour lives in the card; the
+  // grass node's tint stays near-white so it doesn't double-tint.
+  const cardGreen = addNode(g, 'core/grass-blades', {
     position: { x: COL, y: ROW * 3 },
     inputValues: {
       bladeCount: 5,
       baseColor: [0.13, 0.3, 0.08, 1],
       tipColor: [0.55, 0.8, 0.32, 1],
-      width: 1,
-      lean: 0.18,
-      seed: 3,
-      resolution: 256,
+      width: 1, lean: 0.18, seed: 3, resolution: 256,
+    },
+  });
+  const cardGold = addNode(g, 'core/grass-blades', {
+    position: { x: COL, y: ROW * 5 },
+    inputValues: {
+      bladeCount: 4,
+      baseColor: [0.32, 0.26, 0.06, 1],
+      tipColor: [0.78, 0.66, 0.22, 1],
+      width: 1.1, lean: 0.28, seed: 8, resolution: 256,
     },
   });
 
   const grass = addNode(g, 'core/grass', {
     position: { x: COL * 3, y: ROW * 2 },
+    // card_1 is a per-instance extra socket (matches the node's
+    // extraInputsSpec namePrefix 'card'); card_0 is the static input.
+    extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
       maxDistance: 35,
       spacing: 0.3,
       bladeWidth: 0.22,
       bladeHeight: 0.75,
       densityScale: 1.2,
-      maxSlope: 0.7,
+      maxSlope: 0.6,
       windStrength: 0.12,
       windSpeed: 2.5,
-      // Near-white so the card's authored colours show through; the
+      // Near-white so the cards' authored colours show through; the
       // tiny base→tip warm bias + colorVariation add subtle variation.
       baseColor: [0.85, 0.9, 0.8, 1],
       tipColor: [1, 1, 0.95, 1],
@@ -113,7 +130,9 @@ export function createGrassTestDemo(): {
   // Grass wiring.
   addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: grass.id, socket: 'heightfield' });
   addEdge(g, { node: densityNoise.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
-  addEdge(g, { node: card.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
+  addEdge(g, { node: typeNoise.id, socket: 'texture' }, { node: grass.id, socket: 'typeMap' });
+  addEdge(g, { node: cardGreen.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
+  addEdge(g, { node: cardGold.id, socket: 'texture' }, { node: grass.id, socket: 'card_1' });
 
   // Merge terrain + grass → output.
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
