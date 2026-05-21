@@ -38,7 +38,14 @@ const options = {
   format: 'esm',
   target: 'es2022',
   sourcemap: true,
-  loader: { '.wgsl': 'text' },
+  loader: {
+    '.wgsl': 'text',
+    '.png': 'file',
+    '.jpg': 'file',
+    '.svg': 'file',
+    '.mp4': 'file',
+    '.mp3': 'file',
+  },
   logLevel: 'info',
   define: {
     'process.env.NODE_ENV': prod ? '"production"' : '"development"',

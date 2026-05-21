@@ -17,6 +17,7 @@ import { NewSubgraphButton } from './new-subgraph-button.js';
 import { PANEL_COMPONENTS } from './panels.js';
 import { bumpPopoutGeneration } from './popout-bus.js';
 import { useLayoutStore } from './layout-store.js';
+import octocat from '../assets/images/octocat-icon.svg';
 
 // App shell:
 //
@@ -162,6 +163,7 @@ export function App() {
         <NewSubgraphButton />
         <CleanupButton />
         <FileMenu />
+        <div><a href="https://greggman.github.io/sedon"><img src={octocat} /></a></div>
       </div>
       <div className="sedon-dockview-container">
         <DockviewReact
