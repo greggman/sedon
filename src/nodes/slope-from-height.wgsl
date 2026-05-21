@@ -4,6 +4,7 @@
 
 struct Params {
   strength: f32,
+  invert: f32,   // >0.5 → output flatness (1 - slope) instead of slope
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -41,5 +42,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let dy = (d - u) * params.strength;
 
   let slope = clamp(sqrt(dx * dx + dy * dy), 0.0, 1.0);
-  return vec4f(slope, slope, slope, 1.0);
+  // invert → "flatness" (white on flats), handy as a grass-density mask
+  // where you want dense grass on level ground, none on cliffs.
+  let s = mix(slope, 1.0 - slope, step(0.5, params.invert));
+  return vec4f(s, s, s, 1.0);
 }

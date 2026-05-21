@@ -180,9 +180,50 @@ export function createForestDemo(): {
     position: { x: COL * 10, y: ROW * 1.6 },
     extraInputs: SM2,
   });
+  // Three sockets here: terrain + vegetation + grass.
   const mergeAll = addNode(g, 'core/scene-merge', {
     position: { x: COL * 11, y: ROW * 1.8 },
-    extraInputs: SM2,
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+      { name: 'scene_2', type: 'Scene', optional: true },
+    ],
+  });
+
+  // === Grass (camera-relative GPU) =======================================
+  // Density = flatness (inverted slope, so grass fills level ground and
+  // thins on the steep rock faces, matching the splat) × a winding trail
+  // carved bare. The grass node's maxSlope adds a hard cutoff on top.
+  // Type is altitude-correlated (perlin R → lush green low, dry golden
+  // high), echoing the oak/pine altitude banding.
+  const grassFlatness = addNode(g, 'core/slope-from-height', {
+    position: { x: COL * 2, y: ROW * 5.2 },
+    inputValues: { strength: 6, invert: true, resolution: 256 },
+  });
+  const trail = addNode(g, 'core/path-mask', {
+    position: { x: COL * 2, y: ROW * 6 },
+    inputValues: { angle: 35, offset: 0.45, width: 0.05, waviness: 0.14, waveScale: 1.5, resolution: 256 },
+  });
+  const grassDensity = addNode(g, 'core/blend', {
+    position: { x: COL * 3, y: ROW * 5.6 },
+    inputValues: { mode: 2, factor: 1, resolution: 256 },
+  });
+  const grassCardLush = addNode(g, 'core/grass-blades', {
+    position: { x: COL * 2, y: ROW * 6.8 },
+    inputValues: { bladeCount: 5, baseColor: [0.1, 0.28, 0.06, 1], tipColor: [0.5, 0.74, 0.28, 1], width: 1, lean: 0.2, seed: 4, resolution: 256 },
+  });
+  const grassCardDry = addNode(g, 'core/grass-blades', {
+    position: { x: COL * 2, y: ROW * 7.6 },
+    inputValues: { bladeCount: 4, baseColor: [0.34, 0.28, 0.08, 1], tipColor: [0.74, 0.62, 0.24, 1], width: 1.1, lean: 0.3, seed: 11, resolution: 256 },
+  });
+  const forestGrass = addNode(g, 'core/grass', {
+    position: { x: COL * 4, y: ROW * 6 },
+    extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
+    inputValues: {
+      maxDistance: 45, spacing: 0.4, bladeWidth: 0.2, bladeHeight: 0.6,
+      densityScale: 1.3, maxSlope: 0.5, windStrength: 0.1, windSpeed: 2.2,
+      baseColor: [0.9, 0.95, 0.85, 1], tipColor: [1, 1, 0.95, 1], colorVariation: 0.3, seed: 5,
+    },
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 12, y: ROW * 1.8 },
@@ -255,6 +296,18 @@ export function createForestDemo(): {
   addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'scene_1' });
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
   addEdge(g, { node: mergeVeg.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
+
+  // Grass: density = flatness × trail; type by altitude; two blade cards.
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: grassFlatness.id, socket: 'height' });
+  addEdge(g, { node: grassFlatness.id, socket: 'texture' }, { node: grassDensity.id, socket: 'a' });
+  addEdge(g, { node: trail.id, socket: 'texture' }, { node: grassDensity.id, socket: 'b' });
+  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: forestGrass.id, socket: 'heightfield' });
+  addEdge(g, { node: grassDensity.id, socket: 'texture' }, { node: forestGrass.id, socket: 'density' });
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: forestGrass.id, socket: 'typeMap' });
+  addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_0' });
+  addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_1' });
+  addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_2' });
+
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Per-graph initial framings. With the world scaled to meters, the

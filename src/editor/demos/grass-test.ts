@@ -49,10 +49,21 @@ export function createGrassTestDemo(): {
   });
 
   // Density: a perlin field so grass grows in patches rather than a
-  // uniform lawn (R channel 0..1 directly drives the keep probability).
+  // uniform lawn (R channel 0..1 drives the keep probability)…
   const densityNoise = addNode(g, 'core/perlin', {
     position: { x: 0, y: ROW * 2 },
     inputValues: { scale: [4, 4], octaves: 3, lacunarity: 2, gain: 0.6, seed: 0.2, resolution: 256 },
+  });
+  // …with a meandering path carved bare. path-mask defaults to white
+  // OFF the path, so multiplying it into the density zeroes coverage on
+  // the road. (multiply = blend mode 2, factor 1.)
+  const path = addNode(g, 'core/path-mask', {
+    position: { x: 0, y: ROW * 2.8 },
+    inputValues: { angle: 18, offset: 0.5, width: 0.06, waviness: 0.12, waveScale: 1.5, resolution: 256 },
+  });
+  const density = addNode(g, 'core/blend', {
+    position: { x: COL, y: ROW * 2.4 },
+    inputValues: { mode: 2, factor: 1, resolution: 256 },
   });
 
   // Type map: a LOW-frequency perlin so each type covers broad patches.
@@ -127,9 +138,13 @@ export function createGrassTestDemo(): {
   addEdge(g, { node: soil.id, socket: 'texture' }, { node: terrainMat.id, socket: 'basecolor' });
   addEdge(g, { node: terrainMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
 
+  // Density = patchy noise × path-mask (path carved bare).
+  addEdge(g, { node: densityNoise.id, socket: 'texture' }, { node: density.id, socket: 'a' });
+  addEdge(g, { node: path.id, socket: 'texture' }, { node: density.id, socket: 'b' });
+
   // Grass wiring.
   addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: grass.id, socket: 'heightfield' });
-  addEdge(g, { node: densityNoise.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
+  addEdge(g, { node: density.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
   addEdge(g, { node: typeNoise.id, socket: 'texture' }, { node: grass.id, socket: 'typeMap' });
   addEdge(g, { node: cardGreen.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
   addEdge(g, { node: cardGold.id, socket: 'texture' }, { node: grass.id, socket: 'card_1' });

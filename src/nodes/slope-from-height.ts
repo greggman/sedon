@@ -27,6 +27,12 @@ export const slopeFromHeightNode: NodeDef = {
       default: 4,
       description: 'gradient multiplier; larger → more area reads as steep',
     },
+    {
+      name: 'invert',
+      type: 'Bool',
+      default: false,
+      description: 'output flatness (white on flats) instead of slope — e.g. as a grass-density mask',
+    },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
@@ -38,6 +44,7 @@ export const slopeFromHeightNode: NodeDef = {
     const device = requireDevice(ctx);
     const height = inputs.height as Texture2DValue;
     const strength = inputs.strength as number;
+    const invert = inputs.invert as boolean;
     const resolution = inputs.resolution as number;
 
     const prev = ctx.previousOutput as {
@@ -57,6 +64,7 @@ export const slopeFromHeightNode: NodeDef = {
 
     const uniformData = new Float32Array(4);
     uniformData[0] = strength;
+    uniformData[1] = invert ? 1 : 0;
 
     const uniformBuffer = reusableBuffer(
       device,

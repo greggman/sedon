@@ -46,6 +46,7 @@ import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
 import { grassNode } from './grass.js';
 import { grassBladesNode } from './grass-blades.js';
+import { pathMaskNode } from './path-mask.js';
 import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
@@ -118,6 +119,7 @@ export const CORE_NODES = [
   mergeSceneEntitiesNode,
   grassBladesNode,
   grassNode,
+  pathMaskNode,
   outputNode,
 ];
 
@@ -168,6 +170,7 @@ export {
   multiplyNode,
   normalFromHeightNode,
   outputNode,
+  pathMaskNode,
   perlinNode,
   phyllotaxisPointsNode,
   planeNode,

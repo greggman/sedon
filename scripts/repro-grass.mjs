@@ -54,14 +54,16 @@ await page.evaluate(() => {
 
 await page.evaluate(() => { globalThis.__DEBUG_SCENE_PREVIEW__ = true; });
 
-// Load the grass demo.
-await page.evaluate(() => {
-  const demo = window.__sedonDemos__.find((d) => d.id === 'grass-test');
-  if (!demo) throw new Error('grass-test demo not registered');
+// Load the grass demo (default grass-test; pass a demo id as argv[2]).
+const demoId = process.argv[2] || 'grass-test';
+console.log('demo:', demoId);
+await page.evaluate((id) => {
+  const demo = window.__sedonDemos__.find((d) => d.id === id);
+  if (!demo) throw new Error(`${id} demo not registered`);
   const { graph, rootNodeId, subgraphs, cameras } = demo.build();
   window.__sedonStore__.getState().setGraph(graph, rootNodeId, subgraphs, cameras);
-});
-await new Promise((r) => setTimeout(r, 5000));
+}, demoId);
+await new Promise((r) => setTimeout(r, 6000));
 
 const gpuErrors = await page.evaluate(() => globalThis.__gpuErrors__ ?? []);
 await page.screenshot({ path: '/tmp/grass-test.png' });
