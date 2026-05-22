@@ -12,6 +12,8 @@
 
 --- new ---
 
+- [ ] grass blades should be made with leaf nodes
+- [ ] ask about setting ambient higher
 - [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
 terrain renderer that tessellates the terrain
 based on distance from the camera. 
