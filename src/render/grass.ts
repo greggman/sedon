@@ -22,6 +22,15 @@ import shadowPcfCode from './shadow-pcf.wgsl';
 // cache, so the sweep/destroy lifecycle that governs node outputs
 // doesn't touch them.
 
+// Number of card-array (re)blits since startup. A diagnostic so headless
+// tests can assert that a card-content edit actually re-copies the array
+// (see blitCards). Read via getGrassBlitCount(); exposed on window under
+// ?debug=1.
+let grassBlitCount = 0;
+export function getGrassBlitCount(): number {
+  return grassBlitCount;
+}
+
 const MAX_GRID = 1024; // candidateCount capped at 1024² ≈ 1.05M
 const MAX_INSTANCES_CAP = 262144; // drawn-blade ceiling → 8 MB instance buffer
 const INSTANCE_BYTES = 32; // 2× vec4f: posScale + data
@@ -49,20 +58,41 @@ interface FieldSlot {
   instanceCapacity: number;
   indirectBuffer: GPUBuffer;
   cardArray: GPUTexture | null;
+  /** Per-layer attachment views into cardArray, reused on every re-blit. */
+  cardLayerViews: GPUTextureView[];
+  /** Per-layer source→array blit bind groups, reused on every re-blit. */
+  blitBindGroups: GPUBindGroup[];
   computeBindGroup: GPUBindGroup | null;
   renderBindGroup: GPUBindGroup | null;
-  // Identity of the inputs the bind groups + card array were built
-  // against. When any changes we rebuild — same idea as the material
-  // cache's structural key.
-  key: string;
+  // GPU-OBJECT identity of the wired inputs. Changes only when something
+  // is (re)allocated — a resolution/format change, a card added, or a
+  // texture swapped — i.e. when the card array + bind groups must be
+  // rebuilt from scratch.
+  structKey: string;
+  // VALUE-WRAPPER identity of the card inputs. A producing node that
+  // re-evaluates returns a fresh Texture2DValue wrapper even when it
+  // re-renders into the SAME GPUTexture (reusableTexture). Since the
+  // card array is a one-time COPY of that content, a changed content key
+  // means we must re-blit (editing grass-blades colours hits this).
+  cardContentKey: string;
 }
 
-function fieldKey(f: GrassFieldValue): string {
+// GPU-object identities: stable across a node re-render that reuses its
+// texture; changes only on (re)allocation. Drives card-array + bind-group
+// (re)creation.
+function structKey(f: GrassFieldValue): string {
   const cards = f.cards.map((c) => gpuId(c.texture)).join(',');
   const type = f.typeMap ? gpuId(f.typeMap.texture) : 'none';
   const density = gpuId(f.density.texture);
   const height = gpuId(f.heightfield.texture.texture);
   return `${cards}|${type}|${density}|${height}|${f.cards.length}`;
+}
+
+// Value-wrapper identities of just the cards: a fresh wrapper means the
+// producing node re-evaluated (possibly with new pixels), so the array
+// copy is stale. Drives the in-place re-blit.
+function cardContentKey(f: GrassFieldValue): string {
+  return f.cards.map((c) => gpuId(c)).join(',');
 }
 
 // Local stable-id table (the render gpu-cache one is fine too, but keep
@@ -257,47 +287,72 @@ export function createGrassSystem(
   const uu = new Uint32Array(uniformScratch);
   const indirectScratch = new Uint32Array(5);
 
-  function assembleCardArray(field: GrassFieldValue): GPUTexture {
+  // Allocate the texture-2d-array plus the per-layer attachment views and
+  // source→layer blit bind groups. These are stable while the card GPU
+  // textures (and dims/format/layer count) are unchanged, so we keep them
+  // on the slot and reuse them for every re-blit — no per-frame allocation.
+  function createCardArray(field: GrassFieldValue): {
+    cardArray: GPUTexture;
+    cardLayerViews: GPUTextureView[];
+    blitBindGroups: GPUBindGroup[];
+  } {
     const w = field.cards[0]!.width;
     const h = field.cards[0]!.height;
     const layers = field.cards.length;
     const format = field.cards[0]!.format;
-    const arr = device.createTexture({
+    const cardArray = device.createTexture({
       label: 'grass card array',
       size: [w, h, layers],
       format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
     });
+    const cardLayerViews: GPUTextureView[] = [];
+    const blitBindGroups: GPUBindGroup[] = [];
+    for (let i = 0; i < layers; i++) {
+      cardLayerViews.push(
+        cardArray.createView({ dimension: '2d', baseArrayLayer: i, arrayLayerCount: 1 }),
+      );
+      blitBindGroups.push(
+        device.createBindGroup({
+          layout: blitGroupLayout,
+          entries: [
+            { binding: 0, resource: field.cards[i]!.texture.createView() },
+            { binding: 1, resource: sampler },
+          ],
+        }),
+      );
+    }
+    return { cardArray, cardLayerViews, blitBindGroups };
+  }
+
+  // Copy each card's current pixels into its array layer. Cheap to re-run
+  // (reuses the cached views + bind groups), so we call it whenever a card
+  // node re-rendered new content into its reused texture.
+  function blitCards(field: GrassFieldValue, slot: FieldSlot): void {
+    // Diagnostic: count card-array copies so headless tests can assert a
+    // colour edit actually re-blits (a WebGPU canvas can't be pixel-diffed
+    // via toDataURL — the swap chain isn't preserved). One int increment
+    // on an already-rare path; harmless in prod.
+    grassBlitCount++;
+    const format = field.cards[0]!.format;
     const pipeline = blitPipelineFor(format);
     const encoder = device.createCommandEncoder();
-    for (let i = 0; i < layers; i++) {
-      const layerView = arr.createView({
-        dimension: '2d',
-        baseArrayLayer: i,
-        arrayLayerCount: 1,
-      });
-      const bg = device.createBindGroup({
-        layout: blitGroupLayout,
-        entries: [
-          { binding: 0, resource: field.cards[i]!.texture.createView() },
-          { binding: 1, resource: sampler },
+    for (let i = 0; i < field.cards.length; i++) {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          { view: slot.cardLayerViews[i]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
         ],
       });
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: layerView, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' }],
-      });
       pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bg);
+      pass.setBindGroup(0, slot.blitBindGroups[i]!);
       pass.draw(3);
       pass.end();
     }
     device.queue.submit([encoder.finish()]);
-    return arr;
   }
 
   function ensureSlot(i: number, field: GrassFieldValue, instanceCapacity: number): FieldSlot {
     let slot = slots[i];
-    const key = fieldKey(field);
     if (!slot) {
       slot = {
         uniformBuffer: device.createBuffer({
@@ -314,13 +369,22 @@ export function createGrassSystem(
           usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         }),
         cardArray: null,
+        cardLayerViews: [],
+        blitBindGroups: [],
         computeBindGroup: null,
         renderBindGroup: null,
-        key: '',
+        structKey: '',
+        cardContentKey: '',
       };
       slots[i] = slot;
     }
-    // Grow the instance buffer if the budget went up.
+    // Bind groups go stale (must be rebuilt) whenever a resource they
+    // reference is reallocated: the instance buffer below, or the card
+    // array further down.
+    let bindGroupsStale = !slot.computeBindGroup || !slot.renderBindGroup;
+
+    // Grow the instance buffer if the budget went up (e.g. spacing
+    // lowered). Both bind groups reference it, so they must be rebuilt.
     if (instanceCapacity > slot.instanceCapacity) {
       slot.instanceBuffer.destroy();
       slot.instanceBuffer = device.createBuffer({
@@ -328,13 +392,33 @@ export function createGrassSystem(
         usage: GPUBufferUsage.STORAGE,
       });
       slot.instanceCapacity = instanceCapacity;
-      slot.computeBindGroup = null; // references the instance buffer
-      slot.renderBindGroup = null;
+      bindGroupsStale = true;
     }
-    // Rebuild card array + bind groups when inputs change.
-    if (slot.key !== key || !slot.cardArray) {
+
+    // (Re)allocate the card array + its views/blit groups only when the
+    // GPU-object wiring changes; then blit. Otherwise, if a card node
+    // re-rendered new pixels into its reused texture, re-blit into the
+    // existing array (no allocation).
+    const sk = structKey(field);
+    if (sk !== slot.structKey || !slot.cardArray) {
       slot.cardArray?.destroy();
-      slot.cardArray = assembleCardArray(field);
+      const built = createCardArray(field);
+      slot.cardArray = built.cardArray;
+      slot.cardLayerViews = built.cardLayerViews;
+      slot.blitBindGroups = built.blitBindGroups;
+      blitCards(field, slot);
+      slot.structKey = sk;
+      slot.cardContentKey = cardContentKey(field);
+      bindGroupsStale = true; // render bind group references the new array
+    } else {
+      const ck = cardContentKey(field);
+      if (ck !== slot.cardContentKey) {
+        blitCards(field, slot);
+        slot.cardContentKey = ck;
+      }
+    }
+
+    if (bindGroupsStale) {
       slot.computeBindGroup = device.createBindGroup({
         layout: computeGroupLayout,
         entries: [
@@ -352,11 +436,10 @@ export function createGrassSystem(
         entries: [
           { binding: 0, resource: slot.uniformBuffer },
           { binding: 1, resource: slot.instanceBuffer },
-          { binding: 2, resource: slot.cardArray.createView({ dimension: '2d-array' }) },
+          { binding: 2, resource: slot.cardArray!.createView({ dimension: '2d-array' }) },
           { binding: 3, resource: sampler },
         ],
       });
-      slot.key = key;
     }
     return slot;
   }
