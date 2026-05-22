@@ -60,6 +60,8 @@ export interface EvalCache {
     cacheMisses: number;
     pendingHits: number;
     evalDurationMs: number;
+    sweepMs: number;
+    sweeps: number;
   };
 }
 
@@ -68,7 +70,7 @@ export function createEvalCache(): EvalCache {
     entries: new Map(),
     lastFingerprintByNodeId: new Map(),
     pending: new Map(),
-    stats: { rounds: 0, nodeEvals: 0, cacheHits: 0, cacheMisses: 0, pendingHits: 0, evalDurationMs: 0 },
+    stats: { rounds: 0, nodeEvals: 0, cacheHits: 0, cacheMisses: 0, pendingHits: 0, evalDurationMs: 0, sweepMs: 0, sweeps: 0 },
   };
 }
 
@@ -194,6 +196,7 @@ function hash(s: string): string {
  * only destroying a resource if it isn't in that live set.
  */
 export function sweepCache(cache: EvalCache, touched: Set<string>): void {
+  const _sw = performance.now();
   const live = new Set<GpuResource>();
   for (const [fp, outputs] of cache.entries) {
     if (touched.has(fp)) {
@@ -225,6 +228,8 @@ export function sweepCache(cache: EvalCache, touched: Set<string>): void {
   for (const [nodeId, fp] of cache.lastFingerprintByNodeId) {
     if (!cache.entries.has(fp)) cache.lastFingerprintByNodeId.delete(nodeId);
   }
+  cache.stats.sweepMs += performance.now() - _sw;
+  cache.stats.sweeps++;
 }
 
 /** Anything we own a .destroy() handle on — currently GPUTexture and GPUBuffer. */

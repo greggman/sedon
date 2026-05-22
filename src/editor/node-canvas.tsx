@@ -22,10 +22,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
 import { findNode, type Graph } from '../core/graph.js';
-import type { NodeOutputs } from '../core/node-def.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { CanvasPanelContext } from './canvas-panel-context.js';
+import { clearCanvasData, setCanvasGraph, setCanvasOutputs } from './canvas-data.js';
 import {
   ADD_EXTRA_INPUT_HANDLE_ID,
   ADD_INPUT_HANDLE_ID,
@@ -171,7 +171,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const device = useEditorStore((s) => s.device);
   const evalCache = useEditorStore((s) => s.evalCache);
   const reportWorking = useCacheConsumer();
-  const [canvasAllOutputs, setCanvasAllOutputs] = useState<Map<string, NodeOutputs> | null>(null);
   // Same ref pattern as AssetThumbnail: hold registry + evalCache in
   // refs so the eval effect doesn't re-fire when the registry rebuilds
   // for an UNRELATED subgraph edit. This canvas only re-evals when
@@ -198,7 +197,10 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         });
         if (cancelled) return;
         reportWorking(touched);
-        setCanvasAllOutputs(result.allOutputs);
+        // Publish per-node outputs to the canvas-data store. CustomNodes
+        // subscribe per-node, so unchanged nodes (cache-hit, same output
+        // reference) don't re-render — only the edited node does.
+        setCanvasOutputs(panelId, result.allOutputs);
         // The eval may have mutated GPU textures in place (colorize,
         // worley, perlin, etc. all re-render into their previousOutput
         // texture). Tell every render-bus subscriber (PreviewTile,
@@ -273,6 +275,13 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     panelGraph: Graph;
     registry: typeof seedRegistry;
   } | null>(null);
+  // Last structure synced to ReactFlow. Lets the sync effect below
+  // short-circuit when only inputValues changed (the common case during
+  // a slider/colour drag) — RF's node/handle/edge layout is unchanged,
+  // so re-running setRfNodes/updateNodeInternals/setRfEdges would just
+  // re-render every node for nothing.
+  const lastStructRef = useRef<string | null>(null);
+  const lastSyncRegistryRef = useRef<typeof seedRegistry | null>(null);
 
   // Re-sync trigger: only the `panelGraph` reference. When this canvas's
   // graph changes (open-in-canvas, edit to THIS graph in another pane,
@@ -289,12 +298,28 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     // project load, demo switch). We use node-set overlap rather than
     // graphId change because load-project keeps the same graphId
     // ('main') but replaces the whole node list.
+    // Did anything ReactFlow cares about (node set, handles, edges)
+    // actually change? An inputValue-only edit leaves the structure
+    // identical — skip the whole RF re-sync so we don't re-render every
+    // node component each drag tick. Always refresh the refs so the
+    // next real structural edit is detected.
+    const structKey = graphStructureKey(panelGraph);
+    const structUnchanged =
+      structKey === lastStructRef.current && registry === lastSyncRegistryRef.current;
+    lastStructRef.current = structKey;
+    lastSyncRegistryRef.current = registry;
+
     const currentRfNodes = rfStore.getState().nodes;
     const newIds = new Set(panelGraph.nodes.map((n) => n.id));
     const hasOverlap = currentRfNodes.some((n) => newIds.has(n.id));
     const isSwap = currentRfNodes.length > 0 && !hasOverlap;
 
     if (!isSwap) {
+      // Pure inputValue (or position) edit → RF layout unchanged. The
+      // edited value reaches CustomNode via the canvas-data store, and
+      // positions via the position-only effect, so there's nothing to
+      // do here.
+      if (structUnchanged) return;
       // Incremental case: same graph, edits applied to it. Existing RF
       // nodes already have measured handles; any new handle on an
       // existing node can be measured synchronously since its node
@@ -672,14 +697,20 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     }
   }, [effectiveGraphId]);
 
-  // Memoize so context consumers don't tear down on every render.
-  // (CustomNode reads `graph` to look itself up — the rendered identity
-  // of every CustomNode in this canvas depends on it staying stable
-  // across renders that don't change the graph.)
-  const canvasPanelInfo = useMemo(
-    () => ({ panelId, graph: panelGraph, allOutputs: canvasAllOutputs }),
-    [panelId, panelGraph, canvasAllOutputs],
-  );
+  // Publish this canvas's graph to the per-node data store so CustomNodes
+  // can subscribe to their own slice. setCanvasGraph rebuilds per-node
+  // views, reusing the stable view object for any node whose data didn't
+  // change — that's what keeps unchanged CustomNodes from re-rendering on
+  // an edit elsewhere in the graph. Cleared on unmount.
+  useEffect(() => {
+    setCanvasGraph(panelId, panelGraph);
+  }, [panelId, panelGraph]);
+  useEffect(() => () => clearCanvasData(panelId), [panelId]);
+
+  // Context now carries ONLY the (stable) panelId — never changes for
+  // this panel, so it triggers no re-renders. Per-node data flows
+  // through the canvas-data store instead.
+  const canvasPanelInfo = useMemo(() => ({ panelId }), [panelId]);
 
   return (
     <CanvasPanelContext.Provider value={canvasPanelInfo}>
@@ -715,6 +746,29 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
 // Reconcile React Flow's current node list against the graph's nodes,
 // preserving position/dimensions/selection for nodes that survive while
 // adding new nodes (from undo/redo restore or load) at their saved position.
+// Structural signature of a graph for the RF-sync effect: what
+// ReactFlow actually cares about — the node set, each node's kind +
+// variadic socket names (handles), and the edge list. Deliberately
+// EXCLUDES inputValues and positions. So an inputValue-only edit (drag
+// a colour/uniform) yields the same key, letting the sync effect skip
+// the expensive setRfNodes / updateNodeInternals / setRfEdges churn
+// that otherwise re-renders every node component each tick. Positions
+// are handled by the separate position-only effect; inputValue data
+// flows through the canvas-data store, not RF.
+function graphStructureKey(graph: Graph): string {
+  let s = '';
+  for (const n of graph.nodes) {
+    s += n.id + ':' + n.kind;
+    if (n.extraInputs) for (const e of n.extraInputs) s += ',' + e.name;
+    s += ';';
+  }
+  s += '|';
+  for (const e of graph.edges) {
+    s += e.from.node + '/' + e.from.socket + '>' + e.to.node + '/' + e.to.socket + ';';
+  }
+  return s;
+}
+
 function mergeRfNodes(
   current: Node[],
   graph: Graph,

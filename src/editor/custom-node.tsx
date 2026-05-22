@@ -9,11 +9,8 @@ import type {
 } from '../core/resources.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
-import {
-  useCanvasAllOutputs,
-  useCanvasGraph,
-  useCanvasPanelId,
-} from './canvas-panel-context.js';
+import { useCanvasPanelId } from './canvas-panel-context.js';
+import { useCanvasNode, useCanvasNodeOutput } from './canvas-data.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
 import { EnumInput } from './inputs/enum-input.js';
@@ -432,25 +429,22 @@ export function CustomNode({ id, data }: NodeProps) {
   // miss this node entirely on any canvas not currently the active edit
   // target, leaving us with empty extraInputs / inputValues / sockets
   // and triggering "scene_0 handle not found" / error 008.
-  const canvasGraph = useCanvasGraph();
-  const myNode = useMemo(
-    () => canvasGraph?.nodes.find((n) => n.id === id),
-    [canvasGraph, id],
-  );
+  // panelId of the canvas this node renders inside (stable context).
+  const canvasPanelId = useCanvasPanelId();
+  // This node's data (GraphNode + connected input sockets), subscribed
+  // PER-NODE from the canvas-data store — so an edit elsewhere in the
+  // graph doesn't re-render this CustomNode. The view object is
+  // reference-stable across edits that don't touch this node.
+  const view = useCanvasNode(canvasPanelId, id);
+  const myNode = view?.node;
   const inputValues = myNode?.inputValues;
-  const connectedSockets = useMemo(() => {
-    if (!canvasGraph) return [];
-    return canvasGraph.edges.filter((e) => e.to.node === id).map((e) => e.to.socket);
-  }, [canvasGraph, id]);
+  const connectedSockets = view?.connectedSockets ?? [];
   const extraInputs = myNode?.extraInputs ?? [];
   const setInputValue = useEditorStore((s) => s.setInputValue);
-  // Outputs come from THIS canvas's eval (NodeCanvas runs its own
-  // evaluateGraph and publishes allOutputs via CanvasPanelContext).
-  // No global fallback: CustomNode is always rendered inside a
-  // NodeCanvas in the live app; rendering it without one is a
-  // test-harness scenario where the lack of outputs is fine.
-  const canvasAllOutputs = useCanvasAllOutputs();
-  const myOutputs = canvasAllOutputs?.get(id);
+  // This node's eval output — also a per-node subscription. On a cache
+  // hit the output object is reference-identical across evals, so a
+  // re-eval that doesn't change THIS node's output is a no-op here.
+  const myOutputs = useCanvasNodeOutput(canvasPanelId, id);
   const device = useEditorStore((s) => s.device);
   const addSubgraphSocket = useEditorStore((s) => s.addSubgraphSocket);
   const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
@@ -458,10 +452,6 @@ export function CustomNode({ id, data }: NodeProps) {
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
   const addNodeExtraInput = useEditorStore((s) => s.addNodeExtraInput);
   const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
-  // panelId of the canvas this node renders inside. Provided by
-  // NodeCanvas via CanvasPanelContext. Null for harnesses without a
-  // canvas wrapper — Edit button falls back to setActiveEditing only.
-  const canvasPanelId = useCanvasPanelId();
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for

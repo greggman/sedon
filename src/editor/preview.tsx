@@ -140,16 +140,20 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // this, an unpinned Preview falls back to `currentEditingId`, so the
   // moment something else flips that global (e.g. asset-view "Open in
   // Canvas" → setActiveEditing) every unpinned Preview swaps too.
-  // Pinning at mount captures the user's intent: this pane shows X
-  // until they explicitly retarget it.
+  // Pinning captures the user's intent: this pane shows X until they
+  // explicitly retarget it.
+  //
+  // We depend on `pinnedGraphId` (not just panelId) so this also re-pins
+  // after `resetForNewProject` clears all pins on a demo/project load —
+  // otherwise the pane is left unpinned and silently follows
+  // currentEditingId again.
   useEffect(() => {
     if (!panelId) return;
-    const layout = useLayoutStore.getState();
-    if (layout.pinnedGraphIds[panelId] === undefined) {
+    if (pinnedGraphId === undefined) {
       const initial = useEditorStore.getState().currentEditingId;
-      layout.setPanelPinnedGraph(panelId, initial);
+      useLayoutStore.getState().setPanelPinnedGraph(panelId, initial);
     }
-  }, [panelId]);
+  }, [panelId, pinnedGraphId]);
 
   // The (graph, rootNodeId) pair the eval runs against. For pinned
   // previews this is a non-active subgraph (or main); the eval still
