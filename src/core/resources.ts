@@ -142,6 +142,53 @@ export interface SceneEntity {
    * with different tints still draw in one instanced call.
    */
   tint: Float32Array;
+  /**
+   * Back-pointer to the graph location that produced this entity. Used by
+   * GPU picking to map "the pixel under the cursor" back to a node +
+   * subgraph chain + (if scattered) a specific placement, so the editor
+   * can offer "Frame Selected" and "View in Canvas → …" against the
+   * right thing. Optional because hand-built entities in tests and
+   * default fallbacks don't need it.
+   */
+  provenance?: SceneEntityProvenance;
+}
+
+/**
+ * One step in a chain of subgraph wrapper instances. Each entry names the
+ * SPECIFIC wrapper node in its parent graph (so two instances of the same
+ * subgraph stay distinguishable) plus the subgraph's definition id (for
+ * displaying the subgraph's user-facing name).
+ */
+export interface SubgraphPathEntry {
+  /** Wrapper node's id in the PARENT graph (unique per wrapper instance). */
+  wrapperNodeId: string;
+  /** Subgraph definition id, e.g. "oak-tree" — what `View in Canvas →` shows. */
+  subgraphId: string;
+}
+
+/**
+ * One step in a chain of distribute/scatter operations. A leaf-level
+ * geometry placed by `instance-scene-on-points` records one of these per
+ * encounter; nested distributes append, so the deepest entry is the
+ * innermost (most-recent) placement. `pointTransform` is the per-point
+ * world transform BEFORE composition with the source entity's transform
+ * — this is what frames "this specific tree", independent of whether
+ * the tree happens to author trunk-vs-leaf offsets in its local space.
+ */
+export interface PlacementEntry {
+  distributeNodeId: string;
+  pointIndex: number;
+  /** Column-major 4x4. Length 16. */
+  pointTransform: Float32Array;
+}
+
+export interface SceneEntityProvenance {
+  /** The node whose evaluate() emitted this entity (scene-entity, distribute, merge). */
+  originNodeId: string;
+  /** Subgraph wrapper chain from outermost (root) to innermost. Empty at top-level. */
+  subgraphPath: SubgraphPathEntry[];
+  /** Distribute/scatter placements, outermost first. Empty for non-scattered entities. */
+  placements: PlacementEntry[];
 }
 
 // A camera-relative grass field. Unlike SceneEntity (a static, baked

@@ -1,8 +1,10 @@
 import type { NodeDef } from '../core/node-def.js';
 import type {
   FloatCloudValue,
+  PlacementEntry,
   PointCloudValue,
   SceneEntity,
+  SceneEntityProvenance,
   SceneValue,
   Vec3CloudValue,
 } from '../core/resources.js';
@@ -144,7 +146,7 @@ export const instanceSceneOnPointsNode: NodeDef = {
     { name: 'seed', type: 'Float', default: 0 },
   ],
   outputs: [{ name: 'scene', type: 'Scene' }],
-  evaluate(_ctx, inputs): { scene: SceneValue } {
+  evaluate(ctx, inputs): { scene: SceneValue } {
     const points = inputs.points as PointCloudValue;
     const instance = inputs.instance as SceneValue;
     const baseScale = inputs.scale as number;
@@ -242,6 +244,18 @@ export const instanceSceneOnPointsNode: NodeDef = {
         ptB = perPointTint.values[p * 3 + 2]!;
       }
 
+      // Record this distribute's placement so GPU picking can frame the
+      // specific instance ("tree #47") rather than the leaf-mesh-as-type.
+      // The pointTransform stored is the per-point world matrix BEFORE
+      // composition with the source's transform — that's the per-tree
+      // pivot the framing math wants, independent of any trunk/leaf
+      // offsets the source subgraph baked in.
+      const placement: PlacementEntry = {
+        distributeNodeId: ctx.nodeId ?? '<unknown>',
+        pointIndex: p,
+        pointTransform: pointMat,
+      };
+
       for (const sourceEntity of instance.entities) {
         // Output transform = pointMat * sourceEntity.transform, so a tree
         // subgraph that positions trunk vs leaves at different local Y still
@@ -251,11 +265,29 @@ export const instanceSceneOnPointsNode: NodeDef = {
         const finalTint = perPointTint
           ? new Float32Array([st[0]! * ptR, st[1]! * ptG, st[2]! * ptB, st[3]!])
           : st;
+        // Preserve the source's chain (it already encodes which subgraph
+        // built the trunk/leaf) and append this placement. originNodeId
+        // stays as the source's producer so "frame leaf" would still
+        // route to the leaf node — but the deepest placement is what
+        // P2's framing UI uses by default.
+        const srcProv = sourceEntity.provenance;
+        const provenance: SceneEntityProvenance | undefined = srcProv
+          ? {
+              originNodeId: srcProv.originNodeId,
+              subgraphPath: srcProv.subgraphPath,
+              placements: [...srcProv.placements, placement],
+            }
+          : {
+              originNodeId: ctx.nodeId ?? '<unknown>',
+              subgraphPath: (ctx.subgraphPath ?? []).slice(),
+              placements: [placement],
+            };
         out.push({
           geometry: sourceEntity.geometry,
           material: sourceEntity.material,
           transform: finalT,
           tint: finalTint,
+          provenance,
         });
       }
     }

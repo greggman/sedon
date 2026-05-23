@@ -249,11 +249,21 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       // boundary-input node fingerprint itself based on what's piped in —
       // without it, two wrapper instances with different inputs would
       // collide on boundary cache entries and produce wrong inner state.
+      // Push this wrapper instance onto the subgraph chain so producer
+      // nodes inside the inner graph stamp the right path on emitted
+      // entities (used by GPU picking → "View in Canvas →" / "Frame").
+      // `ctx.nodeId` is the wrapper's id in the PARENT graph, set by
+      // the evaluator on the call into evaluate(); it uniquely
+      // identifies which instance of this subgraph we're recursing into.
       const innerCtx = {
         ...ctx,
         subgraphInputs: inputs,
         subgraphInputFingerprints: ctx.inputFingerprints ?? {},
         subgraphDepth: depth,
+        subgraphPath: [
+          ...(ctx.subgraphPath ?? []),
+          { wrapperNodeId: ctx.nodeId ?? '<unknown>', subgraphId: def.id },
+        ],
       };
       // exactOptionalPropertyTypes: only forward cache/touched when set.
       const innerOptions: Parameters<typeof evaluateGraph>[2] = {

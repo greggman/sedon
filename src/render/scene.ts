@@ -27,6 +27,8 @@ import compositeShaderCode from './composite.wgsl';
 import flatBackgroundShaderCode from './flat-background.wgsl';
 import shadowShaderCode from './shadow.wgsl';
 import skyShaderCode from './sky.wgsl';
+import pickShaderCode from './pick.wgsl';
+import { pickProjection as buildPickProjection } from './mat4.js';
 
 // Shadow pass constants. A fixed ortho extent that comfortably covers the
 // forest demo's 100×100m terrain plus tree heights. Smaller previews use
@@ -131,6 +133,33 @@ export interface SceneRenderer {
    * pipelines, etc.) survive because they're shared.
    */
   destroy(): void;
+  /**
+   * GPU picking. Renders ONLY the pixel at (`x`, `y`) (in the same
+   * viewport-pixel space as the colour render) into a 1×1 R32Uint
+   * target and reads back the id. Resolves to the pickId at that
+   * pixel — `0` for "miss" (no geometry; sky / clear). The off-centre
+   * `pickProjection` constructed from the click pixel reduces this to a
+   * normal-cost vertex pass with the same model-view as colour
+   * rendering; CPU/GPU culling against this 1×1 frustum drops most
+   * geometry before vertex work. Pair the result with `getPickInfo`.
+   */
+  pickAt(params: {
+    x: number;
+    y: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    modelView: Mat4;
+    fovYRadians: number;
+    aspect: number;
+    zNear: number;
+    zFar: number;
+  }): Promise<number>;
+  /**
+   * Resolve a pickId from `pickAt` back to its source entity's
+   * provenance + world transform, or `null` if the id is unknown
+   * (miss, or the scene changed since the click was issued).
+   */
+  getPickInfo(id: number): { provenance: NonNullable<SceneEntity['provenance']> | undefined; transform: Float32Array } | null;
 }
 
 interface Batch {
@@ -147,6 +176,27 @@ interface Batch {
    * gestures that don't change the entity layout.
    */
   structuralKey: string;
+  /**
+   * First pickId reserved for this batch — the i-th instance's pickId is
+   * `pickBaseId + i`, matching the `batch.baseId + @builtin(instance_index)`
+   * the pick shader emits. Allocated by setScene as a flat counter across
+   * batches; the renderer-owned `pickTable` resolves each id back to a
+   * `SceneEntity`'s provenance + transform.
+   */
+  pickBaseId: number;
+  /**
+   * Source entities in instance-buffer order. Kept on the batch so the
+   * pick path can populate `pickTable` lazily and so we can recover the
+   * per-instance world transform (instance index → entity → transform)
+   * for the framing math without re-deriving it from the GPU buffer.
+   */
+  entities: SceneEntity[];
+}
+
+/** What a pickId resolves to — used by GPU-picking → "frame this". */
+interface PickTableEntry {
+  provenance: SceneEntity['provenance'];
+  transform: Float32Array;
 }
 
 interface CachedMaterial {
@@ -255,6 +305,18 @@ interface SharedRendererState {
   shadowBindGroup: GPUBindGroup;
   skyBindGroup: GPUBindGroup;
   kinds: Map<MaterialValue['kind'], MaterialKindImpl>;
+  // GPU picking: one pipeline serves every material kind (we only need
+  // positions + the per-instance matrix to project; everything else —
+  // normals, uvs, tints, lighting, shadows, fog — is irrelevant for an
+  // id-only pass). pickSceneLayout binds the per-frame uniform
+  // (modelView + pickProjection); pickBatchLayout's binding 0 uses a
+  // DYNAMIC OFFSET so a single buffer can hold every batch's baseId
+  // with the offset picked per draw.
+  pickSceneLayout: GPUBindGroupLayout;
+  pickBatchLayout: GPUBindGroupLayout;
+  pickPipeline: GPURenderPipeline;
+  /** WebGPU's min uniform-buffer offset alignment (typically 256). */
+  pickBatchStride: number;
 }
 
 let sharedState: SharedRendererState | null = null;
@@ -342,6 +404,55 @@ function ensureSharedRendererState(
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  // Pick (GPU-id) pipeline — see pick.wgsl. Same vertex layout as the
+  // colour PBR pipeline for position + instance, but ignores normals,
+  // uvs, materials, lighting. Reverse-Z depth32float so the closest-on-
+  // screen instance wins on overlap, matching the colour pass's depth.
+  const pickSceneLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    ],
+  });
+  const pickBatchLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform', hasDynamicOffset: true },
+      },
+    ],
+  });
+  const pickModule = device.createShaderModule({ code: pickShaderCode });
+  const pickPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [pickSceneLayout, pickBatchLayout] }),
+    vertex: {
+      module: pickModule,
+      entryPoint: 'vs_main',
+      // Same per-slot layout the colour pipelines use (positions /
+      // normals / uvs / per-instance matrix + tint). The pick shader
+      // only references @location(0) and @locations(3..6), so declaring
+      // the extra attributes is harmless — but declaring empty
+      // attribute arrays on slots 1/2 trips WebGPU's draw-time
+      // validation in some implementations.
+      buffers: instanceVertexBuffers(),
+    },
+    fragment: {
+      module: pickModule,
+      entryPoint: 'fs_main',
+      targets: [{ format: 'r32uint' }],
+    },
+    primitive: { topology: 'triangle-list', cullMode: 'back' },
+    depthStencil: {
+      format: 'depth32float',
+      depthWriteEnabled: true,
+      depthCompare: 'greater', // reverse-Z, same as the colour pipeline
+    },
+  });
+  // Match the device's required alignment so dynamic-offset binds are
+  // legal. Each batch only stores a u32 baseId so 16 bytes would be
+  // enough payload, but the alignment is typically 256.
+  const pickBatchStride = Math.max(16, device.limits.minUniformBufferOffsetAlignment);
+
   sharedState = {
     device, format,
     sceneBindGroupLayout, shadowBindGroupLayout, singleInputLayout, compositeLayout,
@@ -352,6 +463,7 @@ function ensureSharedRendererState(
     brightPassUniform, compositeUniform,
     sceneBindGroup, shadowBindGroup, skyBindGroup,
     kinds,
+    pickSceneLayout, pickBatchLayout, pickPipeline, pickBatchStride,
   };
   return sharedState;
 }
@@ -771,6 +883,96 @@ export function createSceneRenderer(
   let currentInstanceKeys = new Set<string>();
   let currentSizeKey: string | null = null;
 
+  // -----------------------------------------------------------------
+  // GPU picking — per-renderer state, all LAZILY built.
+  // -----------------------------------------------------------------
+  // Renderers that never get clicked (texture-thumbnail tiles, headless
+  // unit tests that don't touch picking) allocate nothing here, so the
+  // existing "fresh renderer allocates exactly N resources" assertions
+  // stay accurate. Resources are created on first pickAt and reused
+  // forever after.
+  interface PickResources {
+    colorTex: GPUTexture;
+    depthTex: GPUTexture;
+    readback: GPUBuffer;
+    sceneBuffer: GPUBuffer;
+    sceneBindGroup: GPUBindGroup;
+    batchBuffer: GPUBuffer;
+    batchBindGroup: GPUBindGroup;
+    batchCapacity: number;
+  }
+  let pickResources: PickResources | null = null;
+  // pickTable[id] resolves a fragment id back to its source entity.
+  // Index 0 is reserved for "miss" (the clear value), so the first
+  // real entity gets id 1. Populated in setScene regardless of whether
+  // picking has fired yet — it's just a JS array (~24B/entry).
+  let pickTable: (PickTableEntry | undefined)[] = [];
+
+  function ensurePickResources(batchCount: number): PickResources {
+    if (!pickResources) {
+      const sceneBuffer = device.createBuffer({
+        label: 'pick scene uniform',
+        size: 128, // mat4 modelView + mat4 pickProjection
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const sceneBindGroup = device.createBindGroup({
+        layout: shared.pickSceneLayout,
+        entries: [{ binding: 0, resource: sceneBuffer }],
+      });
+      const colorTex = device.createTexture({
+        label: 'pick id (1x1 r32uint)',
+        size: [1, 1],
+        format: 'r32uint',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const depthTex = device.createTexture({
+        label: 'pick depth (1x1)',
+        size: [1, 1],
+        format: 'depth32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      const readback = device.createBuffer({
+        label: 'pick readback',
+        size: 256, // copyTextureToBuffer rows are 256-aligned
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const cap = Math.max(16, batchCount);
+      const batchBuffer = device.createBuffer({
+        label: 'pick batch uniforms',
+        size: cap * shared.pickBatchStride,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const batchBindGroup = device.createBindGroup({
+        layout: shared.pickBatchLayout,
+        entries: [
+          { binding: 0, resource: { buffer: batchBuffer, size: 16 } },
+        ],
+      });
+      pickResources = {
+        colorTex, depthTex, readback,
+        sceneBuffer, sceneBindGroup,
+        batchBuffer, batchBindGroup, batchCapacity: cap,
+      };
+      return pickResources;
+    }
+    // Already built — grow the per-batch buffer if more batches now fit.
+    if (batchCount > pickResources.batchCapacity) {
+      pickResources.batchBuffer.destroy();
+      const cap = Math.max(pickResources.batchCapacity * 2, batchCount);
+      pickResources.batchBuffer = device.createBuffer({
+        label: 'pick batch uniforms',
+        size: cap * shared.pickBatchStride,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      pickResources.batchBindGroup = device.createBindGroup({
+        layout: shared.pickBatchLayout,
+        entries: [{ binding: 0, resource: { buffer: pickResources.batchBuffer, size: 16 } }],
+      });
+      pickResources.batchCapacity = cap;
+    }
+    return pickResources;
+  }
+
   function setScene(scene: SceneValue): void {
     // Group entities by (kind, geometry, material) reference equality.
     // Sorting by kind first means we minimize pipeline switches in the
@@ -888,6 +1090,10 @@ export function createSceneRenderer(
             instanceBuffer,
             instanceCount,
             structuralKey,
+            // pickBaseId is assigned below once the full batch list is
+            // built — we want one flat id space across batches.
+            pickBaseId: 0,
+            entities,
           });
         }
       }
@@ -911,6 +1117,27 @@ export function createSceneRenderer(
     // Grass fields are render-time recipes, not batched entities — just
     // hold the list; the per-frame compute/draw in render() consumes it.
     grassFields = scene.grass ?? [];
+
+    // ----------------------------------------------------------------
+    // GPU-picking bookkeeping: assign a contiguous id range to each
+    // batch and populate the lookup table. Id 0 = miss (clear value),
+    // so the first real instance gets id 1.
+    // ----------------------------------------------------------------
+    let nextPickId = 1;
+    let totalInstances = 0;
+    for (const b of batches) totalInstances += b.instanceCount;
+    pickTable = new Array(1 + totalInstances);
+    for (const b of batches) {
+      b.pickBaseId = nextPickId;
+      for (let i = 0; i < b.entities.length; i++) {
+        const e = b.entities[i]!;
+        pickTable[nextPickId + i] = { provenance: e.provenance, transform: e.transform };
+      }
+      nextPickId += b.instanceCount;
+    }
+    // (pickResources are lazily allocated on first pickAt — see
+    // ensurePickResources. setScene only refreshes the JS-side
+    // pickTable above; nothing GPU here.)
     debug(() => {
       const summary = batches.map((b) =>
         `[${b.kindId} pos#${gpuObjectId(b.geometry.positionBuffer as object)} idx=${b.geometry.indexCount} inst=${b.instanceCount}]`,
@@ -927,15 +1154,122 @@ export function createSceneRenderer(
     for (const k of currentInstanceKeys) releaseInstanceBuffer(k);
     if (currentSizeKey !== null) releaseIntermediates(currentSizeKey);
     grassSystem?.destroy();
+    if (pickResources) {
+      pickResources.colorTex.destroy();
+      pickResources.depthTex.destroy();
+      pickResources.readback.destroy();
+      pickResources.sceneBuffer.destroy();
+      pickResources.batchBuffer.destroy();
+      pickResources = null;
+    }
+    pickTable = [];
     currentMaterialKeys = new Set();
     currentInstanceKeys = new Set();
     currentSizeKey = null;
     batches = [];
   }
 
+  // Track an in-flight pick: WebGPU's mapAsync errors hard if the
+  // buffer is already mapped, and we don't want to start a second
+  // pick before the first's readback finishes. Resolves to 0 (miss)
+  // for the concurrent caller — frame-on-double-click is rare enough
+  // that "drop the second click" is a fine UX trade.
+  let pickInFlight: Promise<number> | null = null;
+
+  async function pickAt(params: {
+    x: number; y: number;
+    viewportWidth: number; viewportHeight: number;
+    modelView: Mat4;
+    fovYRadians: number; aspect: number; zNear: number; zFar: number;
+  }): Promise<number> {
+    if (pickInFlight) return pickInFlight;
+    if (batches.length === 0) return 0;
+    const pr = ensurePickResources(batches.length);
+
+    const proj = buildPickProjection(
+      params.fovYRadians, params.aspect, params.zNear, params.zFar,
+      params.x, params.y, params.viewportWidth, params.viewportHeight,
+    );
+    // Write modelView + pickProjection into the scene uniform.
+    const sceneScratch = new Float32Array(32);
+    sceneScratch.set(params.modelView, 0);
+    sceneScratch.set(proj, 16);
+    device.queue.writeBuffer(pr.sceneBuffer, 0, sceneScratch as BufferSource);
+
+    // Pack every batch's baseId into the dynamic-offset uniform. Only
+    // the first 16 bytes of each `pickBatchStride`-byte slot carry
+    // payload (the rest is alignment padding).
+    const batchScratch = new ArrayBuffer(batches.length * shared.pickBatchStride);
+    const batchU32 = new Uint32Array(batchScratch);
+    const slotU32Stride = shared.pickBatchStride / 4;
+    for (let i = 0; i < batches.length; i++) {
+      batchU32[i * slotU32Stride] = batches[i]!.pickBaseId;
+    }
+    device.queue.writeBuffer(pr.batchBuffer, 0, batchScratch);
+
+    const encoder = device.createCommandEncoder({ label: 'pick' });
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: pr.colorTex.createView(),
+          // clearValue exposes 0 as "miss" — sky / nothing under the
+          // pixel resolves to id 0 → null PickTableEntry.
+          clearValue: [0, 0, 0, 0],
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+      depthStencilAttachment: {
+        view: pr.depthTex.createView(),
+        depthClearValue: 0, // reverse-Z
+        depthLoadOp: 'clear',
+        depthStoreOp: 'discard',
+      },
+    });
+    pass.setPipeline(shared.pickPipeline);
+    pass.setBindGroup(0, pr.sceneBindGroup);
+    for (let i = 0; i < batches.length; i++) {
+      const b = batches[i]!;
+      if (b.geometry.indexCount === 0) continue;
+      pass.setBindGroup(1, pr.batchBindGroup, [i * shared.pickBatchStride]);
+      pass.setVertexBuffer(0, b.geometry.positionBuffer);
+      pass.setVertexBuffer(1, b.geometry.normalBuffer);
+      pass.setVertexBuffer(2, b.geometry.uvBuffer);
+      pass.setVertexBuffer(3, b.instanceBuffer);
+      pass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
+      pass.drawIndexed(b.geometry.indexCount, b.instanceCount);
+    }
+    pass.end();
+    encoder.copyTextureToBuffer(
+      { texture: pr.colorTex },
+      { buffer: pr.readback, bytesPerRow: 256 },
+      [1, 1, 1],
+    );
+    device.queue.submit([encoder.finish()]);
+
+    pickInFlight = (async () => {
+      try {
+        await pr.readback.mapAsync(GPUMapMode.READ);
+        const id = new Uint32Array(pr.readback.getMappedRange())[0] ?? 0;
+        pr.readback.unmap();
+        return id;
+      } finally {
+        pickInFlight = null;
+      }
+    })();
+    return pickInFlight;
+  }
+
+  function getPickInfo(id: number): { provenance: SceneEntity['provenance']; transform: Float32Array } | null {
+    if (id === 0) return null;
+    return pickTable[id] ?? null;
+  }
+
   return {
     setScene,
     destroy,
+    pickAt,
+    getPickInfo,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, time = 0 }) {
       const [width, height] = size;
       // Acquire intermediates for THIS size. If we previously held a

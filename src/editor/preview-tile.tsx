@@ -24,6 +24,14 @@ interface PreviewTileProps {
   label: string;
   /** Asset-inspection mode: checkerboard backdrop, no tonemap. */
   flatPreview: boolean;
+  /**
+   * Optional registration for GPU picking. Called once with this tile's
+   * canvas + SceneRenderer when the tile mounts (or when either changes
+   * across a popout / device swap), and once with `null` on unmount.
+   * The parent Preview's "F = frame" key handler looks at which tile
+   * the cursor is over and drives pickAt against its renderer.
+   */
+  onTileReady?: (info: { canvas: HTMLCanvasElement; renderer: SceneRenderer } | null) => void;
 }
 
 // One renderable preview. Owns its own canvas, GPU context, depth texture
@@ -31,7 +39,7 @@ interface PreviewTileProps {
 // any tile (or moving via WASD) updates every tile uniformly. All input
 // handling lives in the parent Preview's wrapper div — tile canvases are
 // pure render targets.
-export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPreview }: PreviewTileProps) {
+export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPreview, onTileReady }: PreviewTileProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
@@ -87,11 +95,18 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   useEffect(() => {
     const renderer = createSceneRenderer(gpu.device, gpu.format);
     rendererRef.current = renderer;
+    // Hand the renderer to the parent so the F-key/right-click pick
+    // path can call `pickAt` against this specific tile. Canvas ref is
+    // populated by the JSX further down on first commit, so this
+    // effect runs after both refs are live.
+    const canvas = canvasRef.current;
+    if (onTileReady && canvas) onTileReady({ canvas, renderer });
     return () => {
+      if (onTileReady) onTileReady(null);
       renderer.destroy();
       if (rendererRef.current === renderer) rendererRef.current = null;
     };
-  }, [gpu]);
+  }, [gpu, onTileReady]);
 
   // Push the latest synthesized scene into the renderer. Just rebuilds
   // batches (per-entity instance buffers + per-material bind groups);

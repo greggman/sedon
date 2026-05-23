@@ -38,6 +38,68 @@ export function perspective(fovYRadians: number, aspect: number, zNear: number, 
   return m;
 }
 
+/**
+ * Reverse-Z perspective with an OFF-CENTRE (a.k.a. `glFrustum`-style)
+ * near-plane window — used by GPU picking to project only the click
+ * pixel's tangent footprint onto the full 1×1 NDC, so a normal-sized
+ * scene reduces to a 1×1 render target. Matches the standard
+ * `perspective` function's z-mapping exactly so depth still compares
+ * correctly against the rest of the engine's reverse-Z setup.
+ *
+ * left/right/bottom/top are in tangent units at the near plane (i.e.
+ * `right - left = 2 * near * tan(fov_y/2) * aspect` for a centred
+ * window). Caller computes those from the click pixel.
+ */
+export function perspectiveOffCenter(
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  zNear: number,
+  zFar: number,
+): Mat4 {
+  const m = new Float32Array(16);
+  const rl = right - left;
+  const tb = top - bottom;
+  m[0]  = (2 * zNear) / rl;
+  m[5]  = (2 * zNear) / tb;
+  m[8]  = (right + left) / rl;
+  m[9]  = (top + bottom) / tb;
+  m[10] = zNear / (zFar - zNear);
+  m[11] = -1;
+  m[14] = (zNear * zFar) / (zFar - zNear);
+  return m;
+}
+
+/**
+ * Build a pick-pixel projection given the original perspective's vertical
+ * FOV / aspect and the click pixel within the viewport. The returned
+ * projection is the off-centre frustum whose only on-screen pixel is
+ * (px, py) — geometry outside it is clipped at the vertex stage, and
+ * CPU/GPU frustum cullers further upstream see this narrower view too.
+ */
+export function pickProjection(
+  fovYRadians: number,
+  aspect: number,
+  zNear: number,
+  zFar: number,
+  px: number,
+  py: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): Mat4 {
+  const tanHalf = Math.tan(fovYRadians / 2);
+  const right = zNear * tanHalf * aspect;
+  const top = zNear * tanHalf;
+  // NDC X grows right (px=0 → -1, px=w → +1). NDC Y grows UP so screen
+  // py=0 (top) is +1 in NDC and py=h (bottom) is -1.
+  const xLo = (2 * px / viewportWidth - 1) * right;
+  const xHi = (2 * (px + 1) / viewportWidth - 1) * right;
+  const yHi = (1 - 2 * py / viewportHeight) * top;
+  const yLo = (1 - 2 * (py + 1) / viewportHeight) * top;
+  return perspectiveOffCenter(xLo, xHi, yLo, yHi, zNear, zFar);
+}
+
 export function translation(x: number, y: number, z: number): Mat4 {
   const m = identity();
   m[12] = x; m[13] = y; m[14] = z;

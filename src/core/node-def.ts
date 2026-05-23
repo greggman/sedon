@@ -99,6 +99,22 @@ export interface NodeContext {
    * identical to the old "always allocate fresh" path.
    */
   previousOutput?: NodeOutputs;
+  /**
+   * This node's id in its containing graph (or its subgraph's inner
+   * graph). Set by the evaluator. Producer nodes stamp this onto
+   * SceneEntity.provenance.originNodeId so GPU picking can route back
+   * to the right node.
+   */
+  nodeId?: string;
+  /**
+   * Chain of subgraph wrapper instances from outermost to innermost,
+   * representing where in the project this evaluation is happening.
+   * Empty at the top level. The subgraph wrapper appends one entry
+   * before recursing into the inner graph. Producer nodes copy this
+   * (verbatim) into SceneEntity.provenance.subgraphPath so the editor's
+   * "View in Canvas →" menu can show the full nesting.
+   */
+  subgraphPath?: import('./resources.js').SubgraphPathEntry[];
 }
 
 export type NodeInputs = Record<string, unknown>;

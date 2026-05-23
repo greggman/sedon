@@ -3,7 +3,7 @@ import type { Graph } from '../core/graph.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
-import { multiply, rotationX, rotationY } from '../render/mat4.js';
+import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { useLayoutStore } from './layout-store.js';
 import { PreviewTile } from './preview-tile.js';
@@ -47,7 +47,10 @@ function AnimateToggle() {
 type OrbitCamera = CameraState;
 
 const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
-const HANDLED_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift']);
+// 'f' is a one-shot Frame Selected: not held, not a movement key, but
+// it still needs to live in HANDLED_KEYS so the wrapper's keydown
+// handler swallows it (matches Blender/Maya/Unity expectation).
+const HANDLED_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', 'shift', 'f']);
 
 const DEFAULT_CAMERA: OrbitCamera = {
   yaw: 0,
@@ -83,6 +86,32 @@ export function Preview({ panelId }: PreviewProps = {}) {
 
   const cameraRef = useRef<OrbitCamera>(cloneCamera(DEFAULT_CAMERA));
   const keysRef = useRef<Set<string>>(new Set());
+  // Tiles register their canvas + renderer here when they mount, and
+  // deregister on unmount. The F-key handler walks this to find the
+  // tile under the cursor and runs pickAt against THAT tile's renderer.
+  const tilesRef = useRef<Map<string, { canvas: HTMLCanvasElement; renderer: import('../render/scene.js').SceneRenderer }>>(new Map());
+  // Last cursor position (clientX/Y, in CSS px). Updated on pointermove
+  // even outside drag so F-on-hover knows where to pick.
+  const lastCursorRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // PreviewTile takes `onTileReady` as a dependency — a fresh callback
+  // every Preview render would force it to tear down + rebuild the
+  // SceneRenderer (and its batches) on every state change, which makes
+  // pickAt see an empty `batches` array more often than not. Cache one
+  // STABLE registrar per tile name so the dep is referentially stable
+  // for the tile's whole lifetime.
+  const tileRegistrarsRef = useRef<Map<string, (info: { canvas: HTMLCanvasElement; renderer: import('../render/scene.js').SceneRenderer } | null) => void>>(new Map());
+  const tileRegistrarFor = useCallback((name: string) => {
+    const cache = tileRegistrarsRef.current;
+    const existing = cache.get(name);
+    if (existing) return existing;
+    const fn = (info: { canvas: HTMLCanvasElement; renderer: import('../render/scene.js').SceneRenderer } | null) => {
+      const tilesMap = tilesRef.current;
+      if (info) tilesMap.set(name, info);
+      else tilesMap.delete(name);
+    };
+    cache.set(name, fn);
+    return fn;
+  }, []);
   // Kicked by keydown to start the WASD motion rAF when it isn't already
   // running. Filled in by the motion-loop effect below; default no-op so
   // pre-mount keydown is a no-op rather than a crash.
@@ -264,6 +293,11 @@ export function Preview({ panelId }: PreviewProps = {}) {
       }
     };
     const onPointerMove = (e: PointerEvent) => {
+      // Track latest cursor pos for the F-key Frame Selected — fires
+      // for hover and drag alike, regardless of whether the pointer
+      // is captured. The drag/pinch logic below only acts on captured
+      // pointers (`prev` lookup).
+      lastCursorRef.current = { clientX: e.clientX, clientY: e.clientY };
       const prev = pointers.get(e.pointerId);
       if (!prev) return;
       const cam = cameraRef.current;
@@ -342,10 +376,92 @@ export function Preview({ panelId }: PreviewProps = {}) {
       requestRender();
     };
 
+    // PreviewTile uses these projection params for its colour render —
+    // pickAt must match exactly so the off-centre pick frustum lines up
+    // pixel-for-pixel with what the user sees. If you change them in
+    // preview-tile.tsx, change them here.
+    const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
+    const PREVIEW_NEAR = 0.1;
+    const PREVIEW_FAR = 100;
+
+    // Walk the registered tiles and return the one whose canvas
+    // contains `clientX, clientY`. Returns the canvas rect + entry so
+    // the caller can convert to backing-buffer pixel coords.
+    function tileUnderCursor(clientX: number, clientY: number) {
+      for (const entry of tilesRef.current.values()) {
+        const r = entry.canvas.getBoundingClientRect();
+        if (clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom) {
+          return { entry, rect: r };
+        }
+      }
+      return null;
+    }
+
+    async function pickAndFrame() {
+      const cur = lastCursorRef.current;
+      if (!cur) return;
+      const hit = tileUnderCursor(cur.clientX, cur.clientY);
+      if (!hit) return;
+      const { entry, rect } = hit;
+      // Cursor → backing-buffer pixel. CSS rect.width/height may differ
+      // from canvas.width/height (DPR scaling); use the ratio.
+      const canvas = entry.canvas;
+      const px = Math.floor((cur.clientX - rect.left) / rect.width * canvas.width);
+      const py = Math.floor((cur.clientY - rect.top) / rect.height * canvas.height);
+      const cam = cameraRef.current;
+      const modelView = multiply(
+        multiply(
+          multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+          rotationY(cam.yaw),
+        ),
+        translation(-cam.target[0], -cam.target[1], -cam.target[2]),
+      );
+      const aspect = canvas.width / canvas.height;
+      const id = await entry.renderer.pickAt({
+        x: px, y: py,
+        viewportWidth: canvas.width, viewportHeight: canvas.height,
+        modelView,
+        fovYRadians: PREVIEW_FOV_Y, aspect,
+        zNear: PREVIEW_NEAR, zFar: PREVIEW_FAR,
+      });
+      if (id === 0) return; // sky / miss — nothing to frame
+      const info = entry.renderer.getPickInfo(id);
+      if (!info) return;
+      // Default Frame: deepest distribute placement's pointTransform —
+      // that frames "this specific tree", which is what the user
+      // intuits when they click on a forest. With no placements (a
+      // single-mesh terrain, say), fall back to the entity's own
+      // transform. P2.1 will add a right-click menu to choose other
+      // levels (the leaf, the whole forest, etc.).
+      const placements = info.provenance?.placements;
+      const t = placements && placements.length > 0
+        ? placements[placements.length - 1]!.pointTransform
+        : info.transform;
+      const sX = Math.hypot(t[0]!, t[1]!, t[2]!);
+      const sY = Math.hypot(t[4]!, t[5]!, t[6]!);
+      const sZ = Math.hypot(t[8]!, t[9]!, t[10]!);
+      const scale = Math.max(sX, sY, sZ);
+      cam.target[0] = t[12]!;
+      cam.target[1] = t[13]!;
+      cam.target[2] = t[14]!;
+      // Heuristic distance: 5× the placement's max axis (the local
+      // mesh is unit-sized in the canonical case; non-unit scales for
+      // trees/bushes give a proportionally larger framing). Floor at
+      // 2m so a tiny pebble doesn't push the camera through its centre.
+      cam.distance = Math.max(2, Math.min(250, scale * 5));
+      commitCamera(effectiveGraphIdRef.current, cam);
+      requestRender();
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       if (!HANDLED_KEYS.has(k)) return;
       e.preventDefault();
+      // F is one-shot: fire on keydown, no key-held state to track.
+      if (k === 'f') {
+        void pickAndFrame();
+        return;
+      }
       keysRef.current.add(k);
       if (MOVEMENT_KEYS.has(k)) motionStartRef.current();
     };
@@ -638,6 +754,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
               cameraRef={cameraRef}
               label={t.name}
               flatPreview={t.flatPreview}
+              onTileReady={tileRegistrarFor(t.name)}
             />
           ))}
       </div>

@@ -104,11 +104,21 @@ export const mergeSceneEntitiesNode: NodeDef = {
         merged = mergeMeshes(merged, group.meshes[i]!);
       }
       const geometry: GeometryValue = uploadMeshToGpu(device, merged);
+      // Merge throws away per-source identity — the output is one mesh
+      // per (material, tint), so picking it routes to this merge node
+      // rather than any of the originals. Placements are dropped for
+      // the same reason: a single merged mesh has no per-instance
+      // discriminator.
       out.push({
         geometry,
         material: group.material,
         transform: identity(),
         tint: group.tint,
+        provenance: {
+          originNodeId: ctx.nodeId ?? '<unknown>',
+          subgraphPath: (ctx.subgraphPath ?? []).slice(),
+          placements: [],
+        },
       });
     }
 

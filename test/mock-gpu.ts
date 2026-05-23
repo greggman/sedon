@@ -223,6 +223,14 @@ export class MockGPUQueue {
 export class MockGPUDevice {
   stats: MockGpuStats = freshStats();
   queue = new MockGPUQueue(this);
+  // 256 is the WebGPU spec's MAXIMUM value any adapter can require for
+  // these alignments, so it's the safe-everywhere mock default. Real
+  // adapters report this (often a smaller number, but spec-conformant
+  // code aligns to whatever the adapter advertises).
+  limits = {
+    minUniformBufferOffsetAlignment: 256,
+    minStorageBufferOffsetAlignment: 256,
+  };
   createTexture(desc: { size: number[] | { width: number; height?: number }; format: string }): MockGPUTexture {
     this.stats.createdTextures++;
     return new MockGPUTexture(desc, this);

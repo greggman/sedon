@@ -14,7 +14,7 @@ export const sceneEntityNode: NodeDef = {
     { name: 'material', type: 'Material' },
   ],
   outputs: [{ name: 'scene', type: 'Scene' }],
-  evaluate(_ctx, inputs): { scene: SceneValue } {
+  evaluate(ctx, inputs): { scene: SceneValue } {
     return {
       scene: {
         entities: [
@@ -23,6 +23,14 @@ export const sceneEntityNode: NodeDef = {
             material: inputs.material as MaterialValue,
             transform: identity(),
             tint: identityTint(),
+            // Provenance for GPU picking. Top-level scene-entity is the
+            // canonical "leaf" producer — placements get prepended as
+            // distribute ops scatter this entity downstream.
+            provenance: {
+              originNodeId: ctx.nodeId ?? '<unknown>',
+              subgraphPath: (ctx.subgraphPath ?? []).slice(),
+              placements: [],
+            },
           },
         ],
       },

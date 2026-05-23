@@ -294,7 +294,15 @@ export async function evaluateGraph(
     // this to re-render into the existing GPUTexture instead of
     // allocating a fresh one every time a non-dimension parameter
     // changes.
-    const callCtx: NodeContext = { ...sharedCtx, inputFingerprints: upstreamFingerprints };
+    // `nodeId` lets producer nodes stamp provenance onto the entities
+    // they emit (see resources.ts → SceneEntityProvenance). `subgraphPath`
+    // is forwarded from sharedCtx — the subgraph wrapper pushes a new
+    // entry there before recursing into the inner graph.
+    const callCtx: NodeContext = {
+      ...sharedCtx,
+      inputFingerprints: upstreamFingerprints,
+      nodeId,
+    };
     if (cache) {
       const prevFp = cache.lastFingerprintByNodeId.get(trackerKey);
       if (prevFp !== undefined) {
