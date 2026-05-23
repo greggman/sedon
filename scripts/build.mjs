@@ -43,7 +43,7 @@ const options = {
   // "/dist/icon-XXXX.svg". publicPath prefixes the emitted URLs so they
   // point at where the files actually land. index.html loads
   // ./dist/main.js, so dist is served at /dist.
-  publicPath: '/dist',
+  publicPath: 'dist',
   format: 'esm',
   target: 'es2022',
   sourcemap: true,

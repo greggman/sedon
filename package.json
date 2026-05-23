@@ -8,7 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node scripts/build.mjs --serve",
+    "dev": "node scripts/build.mjs --serve --prod",
+    "devd": "node scripts/build.mjs --serve",
     "build": "node scripts/build.mjs",
     "test": "node --import tsx --import ./scripts/test-bootstrap.mjs --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
