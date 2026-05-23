@@ -13,9 +13,11 @@ struct SceneU {
   projection: mat4x4f,
   lightViewProj: mat4x4f,
   lightDirWorld: vec3f,
-  lightColor: vec3f,
-  ambient: vec3f,
-  fog: vec4f,         // rgb = fog colour (sRGB), w = density
+  lightColor: vec3f,        // linear HDR (atmospheric sun)
+  skyColor: vec3f,          // linear HDR (hemisphere up)
+  ambientIntensity: f32,    // scales whole hemisphere term (packed with skyColor)
+  groundColor: vec3f,       // linear HDR (hemisphere down)
+  fog: vec4f,               // rgb = fog colour (sRGB), w = density
 };
 @group(0) @binding(0) var<uniform> uniforms: SceneU;
 @group(0) @binding(2) var shadow_map: texture_depth_2d;
@@ -136,11 +138,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let l = normalize(uniforms.lightDirWorld);
   let n_dot_l = max(dot(n, l), 0.0);
   let shadow = sample_shadow(in.world_pos);            // trees shadow the grass
-  let light_color = srgb_to_linear(uniforms.lightColor);
-  let ambient = srgb_to_linear(uniforms.ambient);
-  // Lambert diffuse + ambient, same structure as pbr's diffuse term
-  // (k_d≈1, no specular — grass isn't shiny).
-  let lit = albedo / 3.14159265 * light_color * n_dot_l * shadow + albedo * ambient;
+  // Hemisphere ambient — grass uses a sky-up normal, so it reads mostly
+  // sky tint with a touch of ground bounce, matching the PBR path.
+  let hemi_t = n.y * 0.5 + 0.5;
+  let ambient_color = mix(uniforms.groundColor, uniforms.skyColor, hemi_t) * uniforms.ambientIntensity;
+  // Lambert diffuse + hemisphere ambient. lightColor / sky / ground are
+  // already linear HDR — no srgb conversion needed.
+  let lit = albedo / 3.14159265 * uniforms.lightColor * n_dot_l * shadow + albedo * ambient_color;
   // Fog matches pbr.apply_fog: exp falloff in view-z, sRGB fog colour.
   let visibility = exp(-uniforms.fog.w * abs(in.view_pos.z));
   let col = mix(srgb_to_linear(uniforms.fog.rgb), lit, visibility);

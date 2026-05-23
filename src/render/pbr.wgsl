@@ -28,8 +28,16 @@ struct Uniforms {
   projection: mat4x4f,
   lightViewProj: mat4x4f,
   lightDirWorld: vec3f,
+  // Sun colour — linear HDR, already includes atmospheric transmittance
+  // along the sun ray (set by output.ts via deriveLighting). No
+  // srgb-linearization in the shader anymore.
   lightColor: vec3f,
-  ambient: vec3f,
+  // Hemisphere ambient — both linear HDR, derived from the same
+  // atmosphere model that draws the sky. ambientIntensity scales the
+  // whole hemisphere term (packed in skyColor.w).
+  skyColor: vec3f,
+  ambientIntensity: f32,
+  groundColor: vec3f,
   fog: vec4f,
 };
 
@@ -176,8 +184,9 @@ fn detail_albedo_factor(uv: vec2f) -> f32 {
   return 1.0 + (sample - 0.5) * 2.0 * material.detailStrength;
 }
 
-// Takes already-linearized albedo. light_color and ambient are sRGB on
-// the uniform side, linearized here.
+// Takes already-linearized albedo. lightColor / skyColor / groundColor on
+// the uniform side are LINEAR HDR (derived from the atmosphere model by
+// output.ts) — no srgb conversion here.
 fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
@@ -188,8 +197,6 @@ fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, meta
   );
   let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
-  let light_color = srgb_to_linear(uniforms.lightColor);
-  let ambient = srgb_to_linear(uniforms.ambient);
 
   let n_dot_v = max(dot(n, v), 0.0);
   let n_dot_l = max(dot(n, l), 0.0);
@@ -205,11 +212,20 @@ fn apply_lighting(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, meta
   let k_s = f;
   let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
+  // Hemisphere ambient — surfaces facing up read the sky colour, surfaces
+  // facing down read the ground bounce, with a smooth Lambert-cosine-ish
+  // blend in between. Needs the WORLD-space normal (the sky is in world
+  // space); n is view-space, so multiply by the transpose of view_rot
+  // (orthonormal → transpose = inverse).
+  let n_world = transpose(view_rot) * n;
+  let hemi_t = n_world.y * 0.5 + 0.5;
+  let ambient_color = mix(uniforms.groundColor, uniforms.skyColor, hemi_t) * uniforms.ambientIntensity;
+
   // Shadow attenuates direct light only. Ambient stays full — physically
   // wrong but visually right: a fully-shadowed surface still receives sky
   // bounce light and would otherwise read as pure black.
-  let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l * shadow;
-  let ambient_term = albedo * ambient;
+  let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l * shadow;
+  let ambient_term = albedo * ambient_color;
   return direct + ambient_term;
 }
 

@@ -64,7 +64,7 @@ await page.evaluate(async (outputId, ticks) => {
   const setIV = window.__sedonStore__.getState().setInputValue;
   for (let i = 0; i < ticks; i++) {
     const a = 0.1 + 0.3 * (i / ticks);
-    setIV(outputId, 'ambient', [a, a, a, 1]);
+    setIV(outputId, 'ambient_intensity', 0.5 + 2 * (a / 0.4));
     await new Promise((r) => setTimeout(r, 16));
   }
   await new Promise((r) => setTimeout(r, 300));

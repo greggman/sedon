@@ -16,8 +16,10 @@ struct Uniforms {
   projection: mat4x4f,
   lightViewProj: mat4x4f,
   lightDirWorld: vec3f,
-  lightColor: vec3f,
-  ambient: vec3f,
+  lightColor: vec3f,        // linear HDR
+  skyColor: vec3f,          // linear HDR (hemisphere up)
+  ambientIntensity: f32,    // packed with skyColor
+  groundColor: vec3f,       // linear HDR (hemisphere down)
   fog: vec4f,
 };
 
@@ -118,8 +120,9 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
 // — that's important: blending after lighting (rather than blending albedos
 // then lighting once) makes the per-layer roughness contribute to the
 // specular response rather than averaging out.
-// Takes already-linearized albedo. light_color / ambient are sRGB on
-// the uniform side, linearized here so lighting math is in linear-light.
+// Takes already-linearized albedo. lightColor / skyColor / groundColor are
+// LINEAR HDR on the uniform side (derived from the atmosphere model by
+// output.ts), so no srgb conversion here.
 fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32, shadow: f32) -> vec3f {
   let v = normalize(-view_pos);
   let l_world = normalize(uniforms.lightDirWorld);
@@ -130,8 +133,6 @@ fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32
   );
   let l = normalize(view_rot * l_world);
   let h = normalize(v + l);
-  let light_color = srgb_to_linear(uniforms.lightColor);
-  let ambient = srgb_to_linear(uniforms.ambient);
 
   let n_dot_v = max(dot(n, v), 0.0);
   let n_dot_l = max(dot(n, l), 0.0);
@@ -147,8 +148,14 @@ fn shade(albedo: vec3f, view_pos: vec3f, n: vec3f, roughness: f32, metallic: f32
   let k_s = f;
   let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
-  let direct = (k_d * albedo / PI + specular) * light_color * n_dot_l * shadow;
-  let ambient_term = albedo * ambient;
+  // Hemisphere ambient — world-space normal (transpose of view_rot, which
+  // is orthonormal, applied to view-space n).
+  let n_world = transpose(view_rot) * n;
+  let hemi_t = n_world.y * 0.5 + 0.5;
+  let ambient_color = mix(uniforms.groundColor, uniforms.skyColor, hemi_t) * uniforms.ambientIntensity;
+
+  let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l * shadow;
+  let ambient_term = albedo * ambient_color;
   return direct + ambient_term;
 }
 

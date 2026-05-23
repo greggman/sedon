@@ -115,7 +115,8 @@ export function createTreeBushDemo(): {
 
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: ROW * 1.5 },
-    inputValues: { fog_density: 0, ambient: [0.25, 0.25, 0.28, 1] },
+    // Hemisphere ambient is now sky-derived; no explicit ambient knob.
+    inputValues: { fog_density: 0 },
   });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 

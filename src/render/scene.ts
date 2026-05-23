@@ -7,6 +7,7 @@ import type {
   SceneValue,
 } from '../core/resources.js';
 import { createGrassSystem, type GrassSystem } from './grass.js';
+import { ATMOSPHERIC_SUN_INTENSITY } from './sky-sample.js';
 import { lookAt, multiply, orthographic, type Mat4 } from './mat4.js';
 import {
   createSceneBindGroupLayout,
@@ -269,7 +270,10 @@ function ensureSharedRendererState(
   const shadowSampler = createShadowSampler(device);
   const shadowTexture = getShadowTexture(device);
   const sceneUniformBuffer = device.createBuffer({
-    size: 256,
+    // 192 (3 mat4) + 80 (lighting block: lightDir/lightColor/skyColor+
+    // ambientIntensity/groundColor/fog) = 272. Layout matches the
+    // `Uniforms` struct in pbr.wgsl / grass.wgsl / terrain-splat.wgsl.
+    size: 272,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const sceneBindGroup = device.createBindGroup({
@@ -713,10 +717,14 @@ export function createSceneRenderer(
   // Scratch arrays — module-scope-stable would be fine too, but
   // they're cheap (small Float32Arrays). Keeping per-renderer to
   // avoid any cross-renderer aliasing if render() ever became async.
-  const lightingScratch = new Float32Array(16);
+  // 20 floats = 80 bytes: lightDir.xyz+pad, lightColor.xyz+pad,
+  // skyColor.xyz+ambientIntensity, groundColor.xyz+pad, fog (rgb+density).
+  const lightingScratch = new Float32Array(20);
   const skyScratch = new Float32Array(20);
   const bloomScratch = new Float32Array(4);
-  const SUN_INTENSITY = 22;
+  // Single source of truth — also used by sky-sample.ts so deriveLighting
+  // samples the atmosphere at the same brightness the rendered sky uses.
+  const SUN_INTENSITY = ATMOSPHERIC_SUN_INTENSITY;
 
   // Per-scene state. Empty until setScene is first called — render()
   // is a no-op for the scene pass in that case (sky/composite still
@@ -975,7 +983,10 @@ export function createSceneRenderer(
       // floor leaves the scene daylit while the sky goes dark.
       const dayT = Math.max(0, Math.min(1, (sdy + 0.05) / 0.15));
       const dayFactor = dayT * dayT * (3 - 2 * dayT);
-      const ambFactor = 0.1 + 0.9 * dayFactor;
+      // (No separate ambient day-factor anymore: skyColor/groundColor are
+      // already linear HDR sampled from the atmosphere model, which
+      // returns ~0 once the sun is below the horizon — they fade with the
+      // sun naturally.)
 
       const eye: [number, number, number] = [
         cameraTarget[0] + sdx * SHADOW_EYE_DISTANCE,
@@ -999,13 +1010,19 @@ export function createSceneRenderer(
       lightingScratch[4]  = lighting.color[0] * dayFactor;
       lightingScratch[5]  = lighting.color[1] * dayFactor;
       lightingScratch[6]  = lighting.color[2] * dayFactor;
-      lightingScratch[8]  = lighting.ambient[0] * ambFactor;
-      lightingScratch[9]  = lighting.ambient[1] * ambFactor;
-      lightingScratch[10] = lighting.ambient[2] * ambFactor;
-      lightingScratch[12] = lighting.fogColor[0] * dayFactor;
-      lightingScratch[13] = lighting.fogColor[1] * dayFactor;
-      lightingScratch[14] = lighting.fogColor[2] * dayFactor;
-      lightingScratch[15] = lighting.fogDensity;
+      // skyColor (linear HDR, already derived from atmosphere — zeros at
+      // night naturally) packed in xyz, ambientIntensity in w.
+      lightingScratch[8]  = lighting.skyColor[0];
+      lightingScratch[9]  = lighting.skyColor[1];
+      lightingScratch[10] = lighting.skyColor[2];
+      lightingScratch[11] = lighting.ambientIntensity;
+      lightingScratch[12] = lighting.groundColor[0];
+      lightingScratch[13] = lighting.groundColor[1];
+      lightingScratch[14] = lighting.groundColor[2];
+      lightingScratch[16] = lighting.fogColor[0] * dayFactor;
+      lightingScratch[17] = lighting.fogColor[1] * dayFactor;
+      lightingScratch[18] = lighting.fogColor[2] * dayFactor;
+      lightingScratch[19] = lighting.fogDensity;
       device.queue.writeBuffer(sceneUniformBuffer, 192, lightingScratch as BufferSource);
 
       device.queue.writeBuffer(shadowUniformBuffer, 0, lightViewProj as BufferSource);

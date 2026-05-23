@@ -14,13 +14,20 @@
 
 - [ ] grass blades should be made with leaf nodes
 - [ ] ask about setting ambient higher
+- [ ] pinch to zoom
+- [ ] the direction setting should not be an open vector?
+  * numbers should go 0->1->0->-1->0 right?
+  * an arc transparent ball you can drag with a cone arrow inside?
+- [ ] change WASD to be time based, not event based
+  issue is if keys come in at 10 fps then you get 10fps movement.
+  Instead. use W down to start forward movement every frame
+  and W up to stop forward movement. Then you get 60fps movement
 - [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
 terrain renderer that tessellates the terrain
 based on distance from the camera. 
 - [ ] frame selected
 - [ ] add github link
 - [ ] copy/copy/paste nodes
-- [ ] forest nodes are black
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
 - [ ] need to be able to set default on subgraph-input
 - [ ] highlight selected node

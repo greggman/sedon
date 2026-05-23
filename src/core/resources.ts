@@ -273,10 +273,27 @@ export interface HeightfieldValue {
 export interface LightingValue {
   /** Direction toward the sun in world space. Will be normalized in the shader. */
   direction: [number, number, number];
-  /** RGB sun color premultiplied by intensity. e.g. [3, 3, 3] = white at intensity 3. */
+  /**
+   * LINEAR HDR sun colour reaching the scene = user sun colour × intensity
+   * × atmospheric transmittance along the sun ray (so sunsets warm
+   * automatically). Note: everything in this struct is linear now — the
+   * shaders no longer srgb-linearize the lighting uniforms.
+   */
   color: [number, number, number];
-  /** RGB ambient fill multiplier on albedo. Replaces the previous hardcoded 0.15. */
-  ambient: [number, number, number];
+  /**
+   * LINEAR HDR sky colour at the zenith, sampled from the same atmospheric
+   * model as sky.wgsl. Surfaces facing up read this through the hemisphere
+   * ambient blend.
+   */
+  skyColor: [number, number, number];
+  /**
+   * LINEAR HDR ground colour — sky-at-horizon × terrain tint × bounce
+   * factor, standing in for sky light that hit terrain and bounced. Surfaces
+   * facing down read this through the hemisphere ambient blend.
+   */
+  groundColor: [number, number, number];
+  /** Scalar multiplier on the whole hemisphere term. 1.0 = derived as-is. */
+  ambientIntensity: number;
   /**
    * RGB color distant geometry fades into. The sky also blends toward
    * this near the horizon so distant geometry and sky meet at the same
@@ -309,15 +326,23 @@ export interface LightingValue {
 }
 
 /**
- * Default lighting: white sun at intensity 3 from (0.4, 0.8, 0.6) with
- * 0.15 grey ambient. Sky color is derived from sun direction by the
- * atmosphere shader; only fog params remain explicit here.
+ * Defaults match the previously hardcoded values: white sun × intensity 3
+ * from (0.4, 0.8, 0.6). Sky/ground colours are derived from the sun
+ * direction by `output.ts` via the atmospheric model; this default is the
+ * "no graph wired" fallback for things like preview-synth.
  */
 export function defaultLighting(): LightingValue {
   return {
     direction: [0.4, 0.8, 0.6],
-    color: [3, 3, 3],
-    ambient: [0.15, 0.15, 0.15],
+    // Values approximate what deriveLighting returns for a noon sun with
+    // white × intensity 3 and an olive terrain tint — hand-picked here to
+    // avoid pulling in the atmosphere model from every defaultLighting
+    // call site (this fallback is only used by preview-synth tiles and
+    // tests that don't run through core/output).
+    color: [10.5, 9.7, 8.8],
+    skyColor: [0.12, 0.21, 0.31],
+    groundColor: [0.03, 0.03, 0.02],
+    ambientIntensity: 1.0,
     fogColor: [0.78, 0.82, 0.78],
     fogDensity: 0,
     bloomIntensity: 0.15,
