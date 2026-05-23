@@ -734,6 +734,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           proOptions={{ hideAttribution: true }}
           selectionMode={SelectionMode.Partial}
           minZoom={0.1}
+          colorMode="dark"
         >
           <Background />
           <Controls />
