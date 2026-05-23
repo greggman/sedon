@@ -227,27 +227,66 @@ export function Preview({ panelId }: PreviewProps = {}) {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    let dragging = false;
-    let panning = false;
-    let lastX = 0;
-    let lastY = 0;
+    // Active pointers, keyed by pointerId. One entry → rotate/pan drag;
+    // two → pinch-to-dolly (touch screens). Tracking by id (instead of a
+    // single dragging bool) is what lets two-finger gestures work without
+    // the second touch being treated as a new click.
+    const pointers = new Map<number, { x: number; y: number }>();
+    let mode: 'idle' | 'drag' | 'pinch' = 'idle';
+    let panning = false;       // ctrl/meta-modified drag (single-pointer)
+    let pinchDist = 0;          // last frame's finger separation (pixels)
+
+    const fingerDistance = (): number => {
+      const [a, b] = [...pointers.values()];
+      if (!a || !b) return 0;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    };
 
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      // Touch pointers report button=-1; pen/mouse use 0 for primary. We
+      // accept both — touch wouldn't pinch otherwise.
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
       wrapper.focus();
-      dragging = true;
-      panning = e.metaKey || e.ctrlKey;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      wrapper.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { wrapper.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+
+      if (pointers.size === 1) {
+        mode = 'drag';
+        panning = e.metaKey || e.ctrlKey;
+      } else if (pointers.size === 2) {
+        // Second finger arrived — enter pinch. Seed the running distance
+        // from the current finger separation so the first move tick
+        // doesn't snap.
+        mode = 'pinch';
+        panning = false;
+        pinchDist = fingerDistance();
+      }
     };
     const onPointerMove = (e: PointerEvent) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      lastX = e.clientX;
-      lastY = e.clientY;
+      const prev = pointers.get(e.pointerId);
+      if (!prev) return;
       const cam = cameraRef.current;
+
+      if (mode === 'pinch') {
+        // Update this finger, then dolly by the ratio of new/prev finger
+        // separation. Same exponential feel as the wheel handler so a
+        // pinch and a scroll behave the same way.
+        prev.x = e.clientX; prev.y = e.clientY;
+        const dist = fingerDistance();
+        if (pinchDist > 0 && dist > 0) {
+          const ratio = dist / pinchDist;
+          cam.distance = Math.max(0.5, Math.min(250, cam.distance / ratio));
+        }
+        pinchDist = dist;
+        requestRender();
+        return;
+      }
+      if (mode !== 'drag') return;
+
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      prev.x = e.clientX; prev.y = e.clientY;
       if (panning) {
         // Rows of the rotation matrix are the camera basis in world
         // space (R⁻¹ = Rᵀ for an orthonormal rotation).
@@ -271,14 +310,21 @@ export function Preview({ panelId }: PreviewProps = {}) {
       requestRender();
     };
     const onPointerUp = (e: PointerEvent) => {
-      if (!dragging) return;
-      dragging = false;
-      panning = false;
-      try {
-        wrapper.releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore — already released
+      if (!pointers.has(e.pointerId)) return;
+      pointers.delete(e.pointerId);
+      try { wrapper.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+
+      if (pointers.size === 1 && mode === 'pinch') {
+        // One finger lifted mid-pinch; fall back to a single-pointer
+        // drag using the remaining finger so the gesture flows naturally
+        // (no jump from the lifted finger's old position).
+        mode = 'drag';
+        panning = false;
+        return;
       }
+      if (pointers.size > 0) return;
+      mode = 'idle';
+      panning = false;
       // Save under the panel's effective graph id, NOT the global
       // currentEditingId — so a pinned Forest preview saves to
       // cameras['main'] even while the user is editing a leaf subgraph
