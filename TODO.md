@@ -13,20 +13,29 @@
 --- new ---
 
 - [ ] grass blades should be made with leaf nodes
-- [ ] ask about setting ambient higher
-- [ ] pinch to zoom
+- [*] ask about setting ambient higher - added hemisphere lighting
+- [ ] add SSAO
+- [*] fix colors of canvas controls
+- [*] pinch to zoom
+- [ ] 'f' frame needs to work in canvas
+- [ ] list of nodes is too long, when canvas is shorter than screen you can not
+  scroll though canvas.
+- [ ] move asset under canvas
 - [ ] the direction setting should not be an open vector?
   * numbers should go 0->1->0->-1->0 right?
   * an arc transparent ball you can drag with a cone arrow inside?
 - [ ] change WASD to be time based, not event based
   issue is if keys come in at 10 fps then you get 10fps movement.
   Instead. use W down to start forward movement every frame
-  and W up to stop forward movement. Then you get 60fps movement
+  and W up to stop forward movement. Then you get 60fps movement.
+  OTOH, if it's running slow (5fps) and you press W you'd get more movement
+  per press making it harder to navigate.
 - [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
 terrain renderer that tessellates the terrain
 based on distance from the camera. 
-- [ ] frame selected
-- [ ] add github link
+- [*] frame selected
+- [*] add github link
+- [ ] double click frames?
 - [ ] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
 - [ ] need to be able to set default on subgraph-input
