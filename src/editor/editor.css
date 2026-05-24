@@ -103,7 +103,8 @@
 }
 .sedon-assets-body {
   display: grid;
-  grid-template-columns: minmax(140px, 25%) 1fr;
+  /* grid-template-columns is set inline from layout-store.assetsTreeWidth
+   * (driven by the draggable divider between the tree and contents). */
   flex: 1;
   min-height: 0;
 }
@@ -111,6 +112,28 @@
   border-right: 1px solid #2a2a2f;
   overflow-y: auto;
   padding: 4px 0;
+}
+
+/* Draggable column resizer between the folder tree and the contents
+ * list. Sits in its own narrow grid column (4 px). Cursor flips to
+ * col-resize on hover and the strip lights up slightly so the
+ * affordance is discoverable; otherwise it's nearly invisible. */
+.sedon-assets-divider {
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid #2a2a2f;
+  user-select: none;
+  /* The strip itself is 4 px, but extend the hit-target a couple of
+   * pixels on either side (negative margins) so users don't have to
+   * be pixel-perfect to grab it. */
+  margin: 0 -2px;
+  position: relative;
+  z-index: 1;
+}
+.sedon-assets-divider:hover,
+.sedon-assets-divider:active {
+  background: #3a3a48;
+  border-left-color: #555;
 }
 .sedon-assets-folder-row {
   display: flex;

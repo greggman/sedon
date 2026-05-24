@@ -96,6 +96,17 @@ export interface LayoutState {
   setLastActivePreviewPanelId: (panelId: string | null) => void;
 
   /**
+   * Width (in CSS pixels) of the Assets-panel folder tree, controlled
+   * by a draggable divider between the tree and the contents list.
+   * Project-wide setting — all Assets panels share the same split so
+   * a user who likes a wider folder column gets it everywhere. Default
+   * is 200 px (close to the old `minmax(140, 25%)` resting value on
+   * typical pane widths).
+   */
+  assetsTreeWidth: number;
+  setAssetsTreeWidth: (px: number) => void;
+
+  /**
    * Clear the per-session, per-graph camera + viewport state.
    * Project-level state (DockView layout, panel pins) is preserved —
    * the user keeps the same workspace shape across project switches.
@@ -117,6 +128,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   recentCanvasViewports: {},
   previewCameras: {},
   recentPreviewCameras: {},
+  assetsTreeWidth: 200,
   lastActiveCanvasPanelId: null,
   lastActivePreviewPanelId: null,
 
@@ -178,6 +190,15 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   setLastActiveCanvasPanelId: (panelId) => set({ lastActiveCanvasPanelId: panelId }),
   setLastActivePreviewPanelId: (panelId) => set({ lastActivePreviewPanelId: panelId }),
+
+  setAssetsTreeWidth: (px) => {
+    // Clamp to a sensible range — too narrow and folder labels clip
+    // entirely; too wide and the contents list can't show anything.
+    // The contents pane keeps a minimum 120 px via the parent grid's
+    // 1fr behaviour as long as the body isn't itself extremely narrow.
+    const clamped = Math.max(80, Math.min(600, Math.round(px)));
+    set({ assetsTreeWidth: clamped });
+  },
 
   resetForNewProject: () =>
     set({

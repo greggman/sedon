@@ -14,6 +14,7 @@ import {
 } from './asset-clipboard.js';
 import type { AssetSelection } from './asset-ops.js';
 import { AssetThumbnail } from './asset-thumbnail.js';
+import { useLayoutStore } from './layout-store.js';
 import { openGraphInCanvas, openGraphInPreview } from './open-graph.js';
 import { useEditorStore } from './store.js';
 
@@ -116,6 +117,37 @@ export function AssetsPanel() {
   const setCut = useAssetClipboardStore((s) => s.setCut);
   const setCopy = useAssetClipboardStore((s) => s.setCopy);
   const clearClipboard = useAssetClipboardStore((s) => s.clear);
+
+  // Folder-tree / contents divider drag. The tree's width is stored
+  // globally (project-wide) in layout-store; the divider's pointer
+  // handler captures the pointer and writes the new width on every
+  // move. `bodyRef` lets us convert clientX into a pane-local width
+  // without measuring during the gesture (one read on pointerdown,
+  // delta-from-event-x to width on each move).
+  const treeWidth = useLayoutStore((s) => s.assetsTreeWidth);
+  const setTreeWidth = useLayoutStore((s) => s.setAssetsTreeWidth);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    e.preventDefault();
+    const bodyLeft = body.getBoundingClientRect().left;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const onMove = (mv: PointerEvent) => {
+      setTreeWidth(mv.clientX - bodyLeft);
+    };
+    const onUp = (up: PointerEvent) => {
+      try { handle.releasePointerCapture(up.pointerId); } catch { /* already released */ }
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  }, [setTreeWidth]);
 
   // ----- UI state -----
   // Tree expansion. Auto-expands ancestors of the selected folder so the
@@ -770,7 +802,17 @@ export function AssetsPanel() {
           </button>
         </div>
       </div>
-      <div className="sedon-assets-body">
+      <div
+        className="sedon-assets-body"
+        ref={bodyRef}
+        // Three-column grid: tree | divider | contents. The first
+        // column's width is user-controlled via the divider; the
+        // contents take the rest. Setting it inline (instead of via
+        // a CSS variable) keeps the rule readable and means the
+        // browser doesn't have to look up a custom property per
+        // layout tick during the drag.
+        style={{ gridTemplateColumns: `${treeWidth}px 4px 1fr` }}
+      >
         <div
           className="sedon-assets-tree"
           // Drop on tree background = root.
@@ -824,6 +866,13 @@ export function AssetsPanel() {
               onCancelRename: () => setRenaming(null),
             })}
         </div>
+        <div
+          className="sedon-assets-divider"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize folder tree"
+          onPointerDown={onDividerPointerDown}
+        />
         <div
           ref={contentsRef}
           className="sedon-assets-contents"
