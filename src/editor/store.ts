@@ -214,6 +214,13 @@ export interface EditorState {
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
   setInputValue: (nodeId: string, name: string, value: unknown) => void;
+  /**
+   * Set or clear the cosmetic name of a node (shown in the node header).
+   * An empty / whitespace-only string clears the name back to the kind
+   * default. Dispatched as a `replaceGraph` so it's one undo step per
+   * commit (Enter / blur), not per keystroke.
+   */
+  renameNode: (nodeId: string, name: string) => void;
 
   /**
    * Append a new per-instance dynamic input socket on a variadic node.
@@ -1293,6 +1300,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const before = node.inputValues?.[name];
       if (before === value) return;
       dispatch({ kind: 'setInputValue', nodeId, name, before, after: value });
+    },
+
+    renameNode: (nodeId, name) => {
+      const state = get();
+      const node = state.graph.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const trimmed = name.trim();
+      const next = trimmed.length > 0 ? trimmed : undefined;
+      if ((node.name ?? undefined) === next) return;
+      // Build a new node with name set/cleared. exactOptionalPropertyTypes
+      // is strict about `name: undefined` vs name-absent, so delete the
+      // key when clearing instead of assigning undefined.
+      const updatedNode: GraphNode = { ...node };
+      if (next !== undefined) updatedNode.name = next;
+      else delete updatedNode.name;
+      const before = { graph: state.graph, rootNodeId: state.rootNodeId };
+      const after = {
+        graph: {
+          ...state.graph,
+          nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
+        },
+        rootNodeId: state.rootNodeId,
+      };
+      dispatch({ kind: 'replaceGraph', before, after });
     },
 
     addNodeExtraInput: (nodeId, socketType, namePrefix, baseInputCount) => {

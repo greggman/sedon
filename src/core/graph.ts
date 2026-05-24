@@ -6,6 +6,13 @@ export const GRAPH_VERSION = 1;
 export interface GraphNode {
   id: string;
   kind: string;
+  /**
+   * Optional user-given annotation. Shown as the node header label in the
+   * canvas, above (or instead of) the kind. Purely cosmetic — NOT part of
+   * the fingerprint, so renaming doesn't invalidate the eval cache and
+   * touching the name never re-runs the graph.
+   */
+  name?: string;
   position?: { x: number; y: number };
   inputValues?: Record<string, unknown>;
   /**

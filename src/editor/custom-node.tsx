@@ -25,7 +25,12 @@ import { TexturePreview } from './texture-preview.js';
 
 const types = createCoreTypeRegistry();
 
-const HEADER_HEIGHT = 28;
+// Two-line stacked title (user name on top, kind label below). Fixed so
+// the inputsTop math stays simple regardless of whether the user has
+// named this node — an unnamed node centres its kind label vertically
+// in the same height. Slightly taller than the old single-line layout,
+// but consistent across the whole graph.
+const HEADER_HEIGHT = 40;
 const ROW_HEIGHT = 28;
 const HANDLE_SIZE = 10;
 const PREVIEW_SIZE = 128;
@@ -354,6 +359,89 @@ export const ADD_INPUT_HANDLE_ID = '__add_input__';
 // shape as the subgraph boundary's phantom — different routing.
 export const ADD_EXTRA_INPUT_HANDLE_ID = '__add_extra_input__';
 
+// Inline-editable node title shown in the header. Two concepts:
+//   • name      — the user's chosen identifier; undefined until they
+//                 set one. Renaming to "" clears it back to undefined.
+//   • defaultName — what to show in italic when `name` is undefined.
+//                   For a regular node this equals `type`; for a
+//                   subgraph wrapper it's the SubgraphDef's friendly
+//                   label (e.g. "Branch Bush").
+//   • type      — the structural kind, shown as the bottom-row
+//                 subtitle when the user has named the node. Stays
+//                 constant ("subgraph" for wrappers, the node kind
+//                 for everything else) regardless of name.
+// Double-click swaps to a text input that commits on Enter/blur
+// (Escape reverts). An empty commit clears the name back to undefined.
+function EditableNodeName({
+  name,
+  defaultName,
+  type,
+  onCommit,
+}: {
+  name: string | undefined;
+  defaultName: string;
+  type: string;
+  onCommit: (next: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name ?? '');
+  if (!editing) {
+    // Two-line stack when named: bold name on top, dim type subtitle
+    // below. Single dim italic line (the defaultName) when unnamed —
+    // it's a placeholder telegraphing what the node will be called
+    // until the user picks something else. DOUBLE-click to rename
+    // (single-click bubbles to ReactFlow for node selection — matches
+    // Finder / Explorer / Houdini).
+    return (
+      <div
+        className={
+          name !== undefined
+            ? 'sedon-node-title sedon-editable-name'
+            : 'sedon-node-title sedon-node-title--unnamed sedon-editable-name'
+        }
+        title={name !== undefined ? `${type} — double-click to rename` : 'Double-click to name'}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setDraft(name ?? '');
+          setEditing(true);
+        }}
+      >
+        {name !== undefined ? (
+          <>
+            <div className="sedon-node-title-name">{name}</div>
+            <div className="sedon-node-title-kind">{type}</div>
+          </>
+        ) : (
+          <div className="sedon-node-title-kind sedon-node-title-kind--alone">{defaultName}</div>
+        )}
+      </div>
+    );
+  }
+  const commit = () => {
+    onCommit(draft);
+    setEditing(false);
+  };
+  const cancel = () => {
+    setDraft(name ?? '');
+    setEditing(false);
+  };
+  return (
+    <input
+      type="text"
+      className="nodrag nopan sedon-editable-name-input"
+      autoFocus
+      value={draft}
+      placeholder={defaultName}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') cancel();
+      }}
+    />
+  );
+}
+
 // Inline-rename editor for a subgraph boundary socket label. Click
 // swaps the static label for a text input that commits on Enter/blur
 // (and reverts on Escape). The caller passes a list of *other* socket
@@ -452,6 +540,8 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
   const addNodeExtraInput = useEditorStore((s) => s.addNodeExtraInput);
   const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
+  const renameNode = useEditorStore((s) => s.renameNode);
+  const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
@@ -468,10 +558,37 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const subgraphCamera = useEditorStore((s) =>
     subgraphId ? s.cameras[subgraphId] : undefined,
   );
+  // For subgraph wrappers, prefer the SubgraphDef's friendly label
+  // ("Oak Tree") over the kebab-id internal kind ("subgraph/oak-tree-...")
+  // when displaying the "kind" subtitle. Subscribed reactively so a
+  // subgraph rename in another panel updates this header live.
+  const subgraphLabel = useEditorStore((s) =>
+    subgraphId ? s.subgraphs.find((g) => g.id === subgraphId)?.label : undefined,
+  );
 
   if (!def) {
     return <div className={selected ? 'sedon-node sedon-node--unknown sedon-node--selected' : 'sedon-node sedon-node--unknown'}>unknown: {kind ?? '(no kind)'}</div>;
   }
+
+  // Every node has ONE name and ONE type.
+  //
+  // For a SUBGRAPH WRAPPER, the name == the SubgraphDef's `label`
+  // (e.g. "Branch Bush"). Renaming the wrapper here IS renaming the
+  // subgraph — propagates to every wrapper instance and to the Asset
+  // panel, so "Branch Bush" never lingers in one view after being
+  // renamed in another. Wrappers do NOT carry a per-node name; the
+  // identity of the wrapper IS the wrapped subgraph.
+  //
+  // For a REGULAR node, name is per-instance: my graph can hold three
+  // perlins each named whatever the user wants ("base", "ridges", "fbm")
+  // without affecting any other perlin in the project.
+  const isSubgraphWrapper = subgraphId !== null;
+  const typeLabel = isSubgraphWrapper ? 'subgraph' : def.id;
+  // What the editor shows + commits on. For wrappers we always have a
+  // label (SubgraphDef requires one), so wrappers are always "named".
+  // For regular nodes, name is the optional per-node annotation.
+  const headerName = isSubgraphWrapper ? subgraphLabel : myNode?.name;
+  const defaultName = def.id; // only used for the regular-node unnamed placeholder
 
   const previewTarget = previewTargetFor(myOutputs);
   const hasSlot = hasPreviewSlot(def);
@@ -513,7 +630,19 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         }}
       />
       <div className="sedon-node-header" style={{ height: HEADER_HEIGHT }}>
-        <span>{def.id}</span>
+        <EditableNodeName
+          name={headerName}
+          defaultName={defaultName}
+          type={typeLabel}
+          onCommit={(next) => {
+            // Subgraph wrappers route to the def label so renaming
+            // here updates EVERY view of that subgraph at once (the
+            // Asset panel, every other wrapper instance). Regular
+            // nodes get a per-instance name.
+            if (isSubgraphWrapper && subgraphId) renameSubgraph(subgraphId, next);
+            else renameNode(id, next);
+          }}
+        />
         {subgraphId && (
           <button
             type="button"

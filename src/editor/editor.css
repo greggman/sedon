@@ -578,6 +578,58 @@
   font-weight: 600;
 }
 
+/* Node title shown in the header. When the user hasn't named the node
+ * we fall back to the kind in a slightly dimmed colour so the
+ * "default vs custom" state reads at a glance — a renamed node looks
+ * authored, an unnamed one looks like fresh boilerplate. The cursor +
+ * hover styling already comes from `.sedon-editable-name`. */
+/* Two-line stacked title (user name on top, kind label below). The
+ * outer container is a flex column filling the header's vertical space;
+ * the inner divs sit on the baselines we'd otherwise have set with
+ * line-height. Both lines truncate with ellipsis so a long user name
+ * doesn't overflow the node body. */
+.sedon-node-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+}
+.sedon-node-title--unnamed {
+  /* Single dim italic line; vertical-centred by the flex container. */
+  font-style: italic;
+  font-weight: 500;
+}
+/* Top row: the user-given name. */
+.sedon-node-title-name {
+  font-weight: 600;
+  color: #ddd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Bottom row: the kind subtitle (for subgraphs, their friendly label).
+ * Dim grey, smaller font, normal weight. `pointer-events: none` keeps
+ * the click target as the parent div (clicking either part opens the
+ * rename editor). */
+.sedon-node-title-kind {
+  color: #888;
+  font-size: 10px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* When the node is unnamed there's only ONE line — show the kind at
+ * the full title font-size (not the smaller subtitle size) so the
+ * header doesn't look bottom-heavy. */
+.sedon-node-title-kind--alone {
+  font-size: inherit;
+  color: inherit;
+}
+
 /* Subgraph-wrapper "Edit" button — drills the editor into the wrapper's
  * inner graph. Mirrors the size/feel of small toolbar buttons elsewhere
  * in the app, but stays unobtrusive inside the node header. */

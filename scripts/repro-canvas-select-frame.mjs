@@ -35,12 +35,23 @@ await new Promise((r) => setTimeout(r, 3500));
 
 // Query the first node's position right before each use — ReactFlow's
 // on-load fitView can shift the viewport mid-test, invalidating an
-// earlier getBoundingClientRect.
+// earlier getBoundingClientRect. Target the HEADER (top of the node)
+// rather than the body centre, because the body has many interactive
+// children (number-input drag scrubbers, color pickers, …) that
+// stopPropagation on pointer events and prevent selection.
 const queryNode = () => page.evaluate(() => {
   const node = document.querySelector('.react-flow__node');
   if (!node) return null;
   const r = node.getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+  return {
+    // Click inside the header strip (top ~40px). Centred horizontally,
+    // 18 px down — safely inside the header background and above any
+    // row content.
+    x: r.x + r.width / 2,
+    y: r.y + 18,
+    w: r.width,
+    h: r.height,
+  };
 });
 let nodeInfo = await queryNode();
 if (!nodeInfo) { console.log('FAIL: no canvas node visible'); process.exit(1); }
