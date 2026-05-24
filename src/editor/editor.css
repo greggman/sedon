@@ -630,6 +630,46 @@
   color: inherit;
 }
 
+/* Per-row override indicator. Sits at the left edge of an input row;
+ * appears as a small filled teal dot when the user has explicitly set
+ * an input value (so the row is NOT using the default), and is
+ * invisible otherwise. Clicking the visible dot dispatches
+ * setInputValue(undefined), which removes the key from inputValues
+ * and lets the default flow back through. Teal is deliberately
+ * different from the selection-ring orange so the two concepts don't
+ * get conflated. */
+.sedon-override-dot {
+  /* Override the UA stylesheet's native button chrome. Without
+   * `appearance: none` the button renders with a faint grey
+   * background + min-size even when our background:transparent +
+   * border:none rules apply, so an "empty" dot still shows as a
+   * tiny visible smudge on a fresh node. */
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  margin-right: 6px;
+  background: transparent;
+  /* Hidden state keeps its layout footprint (so the label doesn't
+   * shift left when the user resets) but is non-interactive. */
+  pointer-events: none;
+  cursor: default;
+}
+.sedon-override-dot--set {
+  background: #5cc8c8;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.sedon-override-dot--set:hover {
+  background: #80e0e0;
+}
+
 /* Subgraph-wrapper "Edit" button — drills the editor into the wrapper's
  * inner graph. Mirrors the size/feel of small toolbar buttons elsewhere
  * in the app, but stays unobtrusive inside the node header. */

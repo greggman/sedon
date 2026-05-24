@@ -542,12 +542,22 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
   const renameNode = useEditorStore((s) => s.renameNode);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
+  const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
   // the output-boundary. We render +/× affordances on that side only.
   const boundary = subgraphIdFromBoundaryKind(kind);
   const [adding, setAdding] = useState(false);
+  // For the INPUT boundary: subscribe to the SubgraphDef's inputs list
+  // so each output row can read its `default` value and surface it as
+  // an editable widget. The OutputDef itself doesn't carry `default`,
+  // only the SubgraphDef.inputs[] do.
+  const boundaryInputs = useEditorStore((s) =>
+    boundary && boundary.side === 'input'
+      ? s.subgraphs.find((g) => g.id === boundary.subgraphId)?.inputs
+      : undefined,
+  );
 
   // Subgraph-wrapper handling. A wrapper node (kind = `subgraph/<id>`)
   // shows an Edit button that swaps the editor into that subgraph and
@@ -717,6 +727,17 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
           : null;
         const displayLabel = input.label ?? input.name;
+        // Override-dot is a subgraph-wrapper concept only. Wrappers
+        // have two distinct sources for an input's value — the
+        // SubgraphDef-declared default and an instance-level
+        // override on the wrapper node — so the dot exists to
+        // visualise + reset the override. Regular nodes don't have
+        // that duality (whatever's stored is just the value), so
+        // they get no dot.
+        const overridden =
+          isSubgraphWrapper
+          && !connected
+          && inputValues?.[input.name] !== undefined;
         return (
           <div
             key={`row-in-${input.name}`}
@@ -724,6 +745,19 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             style={{ height: ROW_HEIGHT }}
             title={input.type}
           >
+            {isSubgraphWrapper && (
+              <button
+                type="button"
+                className={
+                  overridden
+                    ? 'nodrag nopan sedon-override-dot sedon-override-dot--set'
+                    : 'nodrag nopan sedon-override-dot'
+                }
+                title={overridden ? 'Custom value — click to reset to default' : ''}
+                onClick={overridden ? () => setInputValue(id, input.name, undefined) : undefined}
+                aria-label={overridden ? 'Reset to default' : ''}
+              />
+            )}
             {editableInputs && boundary ? (
               <EditableSocketLabel
                 label={displayLabel}
@@ -788,6 +822,25 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       ))}
       {def.outputs.map((output) => {
         const displayLabel = output.label ?? output.name;
+        // Input-boundary output rows show an inline editor for the
+        // subgraph input's `default`. The OutputDef itself doesn't
+        // carry a default — it's stored on SubgraphDef.inputs[], so
+        // we look it up there. Drag-to-create captured the initial
+        // default from the drag-source; this editor lets the user
+        // tune it after the fact.
+        const boundaryInputDef = editableOutputs && boundary
+          ? boundaryInputs?.find((i) => i.name === output.name)
+          : undefined;
+        const boundaryDefaultEditor =
+          boundaryInputDef && boundary
+            ? inlineEditor(
+                // Only `type` is read by inlineEditor; name + label
+                // keep the row labelled if anything refs them.
+                { name: output.name, type: output.type, label: displayLabel },
+                boundaryInputDef.default,
+                (v) => setSubgraphInputDefault(boundary.subgraphId, output.name, v),
+              )
+            : null;
         return (
           <div
             key={`row-out-${output.name}`}
@@ -817,6 +870,9 @@ export function CustomNode({ id, data, selected }: NodeProps) {
               />
             ) : (
               displayLabel
+            )}
+            {boundaryDefaultEditor && (
+              <span className="nodrag nopan sedon-node-editor">{boundaryDefaultEditor}</span>
             )}
           </div>
         );

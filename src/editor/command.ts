@@ -92,7 +92,17 @@ export function applyForward(state: GraphState, cmd: Command): GraphState {
     case 'setInputValue': {
       const nodes = graph.nodes.map((n) => {
         if (n.id !== cmd.nodeId) return n;
-        const inputValues = { ...(n.inputValues ?? {}), [cmd.name]: cmd.after };
+        const inputValues = { ...(n.inputValues ?? {}) };
+        // `after === undefined` means "reset to default" — remove the
+        // key entirely rather than storing undefined. That makes
+        // `inputValues[name] !== undefined` the unambiguous
+        // "user-overridden" check the UI uses to show the override
+        // indicator. Symmetric with the backward case below.
+        if (cmd.after === undefined) {
+          delete inputValues[cmd.name];
+        } else {
+          inputValues[cmd.name] = cmd.after;
+        }
         return { ...n, inputValues };
       });
       return { graph: { ...graph, nodes }, rootNodeId };

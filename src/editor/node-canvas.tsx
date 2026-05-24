@@ -21,6 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
+import { canonicalJson } from '../core/eval-cache.js';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
@@ -93,6 +94,29 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       };
     }),
   );
+
+  // When this canvas is drilled into a SUBGRAPH, the user expects the
+  // in-node previews to reflect an ISOLATED-eval view — i.e. driven by
+  // the subgraph's declared input defaults, not by whichever values
+  // the parent forest happens to wire in. The canvas already evals
+  // with no `subgraphInputs` context (= standalone), but editing a
+  // default mutates `SubgraphDef.inputs[].default` without changing
+  // `panelGraph` — so the eval effect doesn't re-fire and the
+  // in-node previews stay stale.
+  //
+  // Track a shape key of the active subgraph's inputs (matching the
+  // boundary's `inputShape` fingerprint extra) and add it to the eval
+  // effect's deps below. Same idea as the boundary's fingerprintExtra:
+  // when name / type / default changes, the standaloneDefaults map
+  // changes, so we must re-evaluate.
+  const subgraphInputsKey = useEditorStore((s) => {
+    if (effectiveGraphId === 'main') return '';
+    const sg = s.subgraphs.find((x) => x.id === effectiveGraphId);
+    if (!sg) return '';
+    return canonicalJson(
+      sg.inputs.map((i) => ({ name: i.name, type: i.type, default: i.default ?? null })),
+    );
+  });
 
   // Live positions for the graph THIS canvas is showing. Subscribed
   // separately from `panelGraph` so a drag-stop on another canvas
@@ -223,8 +247,11 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       cancelled = true;
     };
     // registry + evalCache deliberately omitted; held via refs above.
+    // `subgraphInputsKey` is intentionally a dep: an isolated-eval
+    // canvas must re-run when the subgraph's input defaults change,
+    // even though `panelGraph` (the inner graph) stays the same.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device, panelGraph, panelRootNodeId, reportWorking]);
+  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-
@@ -472,11 +499,27 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.ctrlKey || e.metaKey;
       if (!meta) return;
-      // Ignore when focus is in an editable field — let the field have its
-      // own undo/redo behavior.
+      // Ignore when focus is in a TEXT-typed field — let the field have
+      // its own undo/redo (so e.g. socket-rename inputs and the
+      // command-palette have working text-undo). Non-text inputs
+      // (color picker, range slider, checkbox) don't have a meaningful
+      // browser undo, and they're commonly the LAST thing focused
+      // after committing a graph edit — skipping them was eating
+      // every undo after a colour-picker edit.
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-        return;
+      if (target) {
+        if (target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        if (target.tagName === 'INPUT') {
+          const t = (target as HTMLInputElement).type;
+          // Text-like inputs have their own meaningful undo; bail out.
+          // Everything else (color, range, checkbox, number-with-our-
+          // own-scrub, …) just owns the focus visually — graph undo
+          // should still work.
+          if (t === 'text' || t === 'search' || t === 'url'
+              || t === 'tel' || t === 'email' || t === 'password') {
+            return;
+          }
+        }
       }
       if (e.key === 'z' && !e.shiftKey) {
         e.preventDefault();

@@ -346,6 +346,27 @@ export interface EditorState {
     newLabel: string,
   ) => void;
 
+  /**
+   * Edit the `default` value of a subgraph input from inside the
+   * subgraph itself. The input-boundary surfaces this default as a
+   * row editor — drag-to-create captures the initial default from
+   * whichever upstream value was at the drag-source, and the user
+   * can tune it after the fact through this action.
+   *
+   * Updates `SubgraphDef.inputs[].default`, which feeds:
+   *   • the input boundary's `evaluate(ctx) → ctx.subgraphInputs ?? standaloneDefaults`
+   *     (so a standalone preview of the subgraph honours the new default)
+   *   • the wrapper instance's input row default (when the parent
+   *     hasn't wired that input)
+   *   • the inputShape fingerprint extra (so the cache invalidates).
+   * Undoable as one snapshot.
+   */
+  setSubgraphInputDefault: (
+    subgraphId: string,
+    inputName: string,
+    value: unknown,
+  ) => void;
+
   /** Persist camera state for a given editing context. */
   saveCameraFor: (id: string, camera: CameraState) => void;
 
@@ -1201,6 +1222,34 @@ export const useEditorStore = create<EditorState>((set, get) => {
             ? { ...s, inputs: updatedList }
             : { ...s, outputs: updatedList }
           : s,
+      );
+      dispatchProject({
+        subgraphs,
+        folders: state.folders,
+        mainGraph: state.mainGraph,
+        mainRootNodeId: state.mainRootNodeId,
+        graph: state.graph,
+        rootNodeId: state.rootNodeId,
+        currentEditingId: state.currentEditingId,
+      });
+    },
+
+    setSubgraphInputDefault: (subgraphId, inputName, value) => {
+      const state = get();
+      const target = state.subgraphs.find((s) => s.id === subgraphId);
+      if (!target) return;
+      const entry = target.inputs.find((i) => i.name === inputName);
+      if (!entry) return;
+      // Cheap identity short-circuit: scalars match by ===, identical
+      // array references match too. Different array contents always
+      // produce a new reference from a NumberInput / colour picker
+      // commit, so this won't wrongly suppress real edits.
+      if (entry.default === value) return;
+      const updatedInputs = target.inputs.map((i) =>
+        i.name === inputName ? { ...i, default: value } : i,
+      );
+      const subgraphs = state.subgraphs.map((s) =>
+        s.id === subgraphId ? { ...s, inputs: updatedInputs } : s,
       );
       dispatchProject({
         subgraphs,
