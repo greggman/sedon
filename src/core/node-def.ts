@@ -167,6 +167,26 @@ export interface NodeDef {
   // a fence, mapAsync, fetch, etc. — e.g. heightfield-to-mesh reading back a
   // GPU texture). Returning a Promise is opt-in per node.
   evaluate(ctx: NodeContext, inputs: NodeInputs): NodeOutputs | Promise<NodeOutputs>;
+  /**
+   * Opt-in: the node's output value depends on the calling subgraph
+   * context (specifically `ctx.subgraphPath`), so the evaluator must
+   * include that path in this node's fingerprint to avoid cache
+   * pollution across contexts.
+   *
+   * Set this on any node that stamps provenance into its output:
+   * scene-entity, instance-scene-on-points, merge-scene-entities. The
+   * concrete bug it prevents: an asset-thumbnail evaluation of a
+   * subgraph (with empty subgraphPath) populates the shared eval cache;
+   * the main scene's wrapper invocation of the same subgraph then
+   * cache-hits and reuses the wrong-provenance entities. With this
+   * flag, the two contexts produce different fingerprints → separate
+   * cache slots → correct provenance per context.
+   *
+   * Unset for non-provenance nodes (perlin, sphere, …) so thumbnails
+   * and the main graph still share their (context-independent) cached
+   * geometry and textures.
+   */
+  provenanceDependent?: boolean;
 }
 
 export interface NodeRegistry {

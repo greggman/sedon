@@ -65,6 +65,9 @@ function applyTransformToMesh(mesh: CpuMesh, m: Float32Array): CpuMesh {
 export const mergeSceneEntitiesNode: NodeDef = {
   id: 'core/merge-scene-entities',
   category: 'Scene',
+  // Re-stamps provenance to this merge node + ctx.subgraphPath, so the
+  // cached output depends on context.
+  provenanceDependent: true,
   inputs: [{ name: 'scene', type: 'Scene' }],
   outputs: [{ name: 'scene', type: 'Scene' }],
   evaluate(ctx, inputs): { scene: SceneValue } {

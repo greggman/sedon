@@ -9,6 +9,9 @@ import { identity } from '../render/mat4.js';
 export const sceneEntityNode: NodeDef = {
   id: 'core/scene-entity',
   category: 'Scene',
+  // Stamps subgraphPath into entity provenance — output value depends on
+  // the calling context, so the cache must key on subgraphPath too.
+  provenanceDependent: true,
   inputs: [
     { name: 'geometry', type: 'Geometry' },
     { name: 'material', type: 'Material' },

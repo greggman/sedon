@@ -109,6 +109,9 @@ function pointBasis(
 export const instanceSceneOnPointsNode: NodeDef = {
   id: 'core/instance-scene-on-points',
   category: 'Geometry/Distribution',
+  // Stamps placement provenance referencing this distribute's nodeId
+  // and ctx.subgraphPath — output is context-dependent.
+  provenanceDependent: true,
   inputs: [
     { name: 'points', type: 'PointCloud' },
     { name: 'instance', type: 'Scene' },

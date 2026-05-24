@@ -221,6 +221,14 @@ export async function evaluateGraph(
     // coarse version counter (which would cascade-invalidate every
     // inner node on any inner edit — drag-a-colour-picker == 5fps).
     if (def.fingerprintExtra !== undefined) extraParts.push(def.fingerprintExtra);
+    // Provenance-stamping nodes (scene-entity et al.) write the calling
+    // subgraph path into their output, so two contexts produce
+    // different VALUES even though their inputs match. Mix the path
+    // into the fingerprint so each context gets its own cache slot —
+    // see NodeDef.provenanceDependent for why this matters.
+    if (def.provenanceDependent && sharedCtx.subgraphPath) {
+      extraParts.push(`prov:${JSON.stringify(sharedCtx.subgraphPath)}`);
+    }
     const filteredInputValues = filterInputValues(node.inputValues, effectiveInputs);
     const fpParams: Parameters<typeof nodeFingerprint>[0] = {
       nodeId,

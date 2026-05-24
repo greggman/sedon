@@ -6,6 +6,7 @@ import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { useLayoutStore } from './layout-store.js';
+import { openGraphInCanvas } from './open-graph.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
@@ -112,6 +113,34 @@ export function Preview({ panelId }: PreviewProps = {}) {
     cache.set(name, fn);
     return fn;
   }, []);
+
+  // Right-click pick menu — populated with the chain from a pickAt at the
+  // click position, then rendered as an absolute-positioned div.
+  // `null` = closed; non-null = open at (x, y). Items are pre-resolved
+  // closures so the menu rendering doesn't need to hold renderer refs
+  // (the menu may outlive the user's hover-over-a-tile state).
+  interface ContextMenuItem {
+    label: string;
+    /** Visually-emphasised default (the same target the F key uses). */
+    primary?: boolean;
+    action: () => void;
+  }
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Click-outside dismissal: any mousedown that isn't on the menu itself
+  // (the menu calls e.stopPropagation() on its own mousedown) closes us.
+  // Skipped entirely when the menu isn't open, so we don't pay for an
+  // always-on global listener.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onDown = () => setContextMenu(null);
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [contextMenu]);
   // Kicked by keydown to start the WASD motion rAF when it isn't already
   // running. Filled in by the motion-loop effect below; default no-op so
   // pre-mount keydown is a no-op rather than a crash.
@@ -427,16 +456,25 @@ export function Preview({ panelId }: PreviewProps = {}) {
       if (id === 0) return; // sky / miss — nothing to frame
       const info = entry.renderer.getPickInfo(id);
       if (!info) return;
-      // Default Frame: deepest distribute placement's pointTransform —
-      // that frames "this specific tree", which is what the user
-      // intuits when they click on a forest. With no placements (a
-      // single-mesh terrain, say), fall back to the entity's own
-      // transform. P2.1 will add a right-click menu to choose other
-      // levels (the leaf, the whole forest, etc.).
+      // Default Frame: outermost distribute placement's pointTransform —
+      // that frames the BIGGEST scattered instance (the tree in a simple
+      // forest; the bush in a forest-of-bushes-of-leaves), which is what
+      // the user intuits when they click on a piece of foliage. Fall
+      // back to the entity transform when no placements exist.
       const placements = info.provenance?.placements;
       const t = placements && placements.length > 0
         ? placements[placements.length - 1]!.pointTransform
         : info.transform;
+      frameCameraTo(t);
+    }
+
+    // Apply a world transform as the camera's framing target. Translation
+    // column = world position; max scaled axis × 5 = distance heuristic
+    // (mesh in tree subgraphs is roughly unit-sized in local space, so
+    // a tree placement's scale is "the tree's world size"). Floored at
+    // 2m so a sub-unit instance doesn't push the camera through its centre.
+    function frameCameraTo(t: Float32Array): void {
+      const cam = cameraRef.current;
       const sX = Math.hypot(t[0]!, t[1]!, t[2]!);
       const sY = Math.hypot(t[4]!, t[5]!, t[6]!);
       const sZ = Math.hypot(t[8]!, t[9]!, t[10]!);
@@ -444,17 +482,30 @@ export function Preview({ panelId }: PreviewProps = {}) {
       cam.target[0] = t[12]!;
       cam.target[1] = t[13]!;
       cam.target[2] = t[14]!;
-      // Heuristic distance: 5× the placement's max axis (the local
-      // mesh is unit-sized in the canonical case; non-unit scales for
-      // trees/bushes give a proportionally larger framing). Floor at
-      // 2m so a tiny pebble doesn't push the camera through its centre.
       cam.distance = Math.max(2, Math.min(250, scale * 5));
+      commitCamera(effectiveGraphIdRef.current, cam);
+      requestRender();
+    }
+    // Identity transform for "Frame Scene" — drops target back at the
+    // origin with the default-ish 50m distance (max of the 5×scale
+    // heuristic clamped to 250, so a no-scale identity gives 5m. We
+    // want "scene" to mean "pull back to see everything," so handle
+    // that explicitly rather than running it through frameCameraTo.)
+    function frameSceneDefault(): void {
+      const cam = cameraRef.current;
+      cam.target[0] = 0; cam.target[1] = 0; cam.target[2] = 0;
+      cam.distance = 50;
       commitCamera(effectiveGraphIdRef.current, cam);
       requestRender();
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
+      // Esc closes an open context menu but isn't otherwise a HANDLED key.
+      if (k === 'escape') {
+        setContextMenu(null);
+        return;
+      }
       if (!HANDLED_KEYS.has(k)) return;
       e.preventDefault();
       // F is one-shot: fire on keydown, no key-held state to track.
@@ -464,6 +515,108 @@ export function Preview({ panelId }: PreviewProps = {}) {
       }
       keysRef.current.add(k);
       if (MOVEMENT_KEYS.has(k)) motionStartRef.current();
+    };
+
+    // -----------------------------------------------------------------
+    // Right-click context menu — picks at the cursor and offers Frame /
+    // View in Canvas choices drawn from the entity's provenance chain.
+    // -----------------------------------------------------------------
+    // kebab → Title Case for subgraph ids that are used to label menu
+    // items. "oak-tree" → "Oak Tree". Stable, no store lookup needed.
+    function titleCase(id: string): string {
+      return id
+        .split(/[-_/]/)
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+
+    async function pickForMenu(clientX: number, clientY: number): Promise<void> {
+      const hit = tileUnderCursor(clientX, clientY);
+      if (!hit) return;
+      const { entry, rect } = hit;
+      const canvas = entry.canvas;
+      const px = Math.floor((clientX - rect.left) / rect.width * canvas.width);
+      const py = Math.floor((clientY - rect.top) / rect.height * canvas.height);
+      const cam = cameraRef.current;
+      const modelView = multiply(
+        multiply(
+          multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),
+          rotationY(cam.yaw),
+        ),
+        translation(-cam.target[0], -cam.target[1], -cam.target[2]),
+      );
+      const id = await entry.renderer.pickAt({
+        x: px, y: py,
+        viewportWidth: canvas.width, viewportHeight: canvas.height,
+        modelView,
+        fovYRadians: PREVIEW_FOV_Y, aspect: canvas.width / canvas.height,
+        zNear: PREVIEW_NEAR, zFar: PREVIEW_FAR,
+      });
+      const info = id !== 0 ? entry.renderer.getPickInfo(id) : null;
+
+      const items: ContextMenuItem[] = [];
+      if (info) {
+        const placements = info.provenance?.placements ?? [];
+        const subgraphPath = info.provenance?.subgraphPath ?? [];
+        // Frame items, outermost-placement first (the F-default target).
+        // Each placement corresponds to a subgraph in `subgraphPath` by
+        // the invariant `placement[i] scattered subgraphPath[N-1-i]'s
+        // output` — true for the standard "distribute takes a subgraph
+        // wrapper's output" pattern; fallback label "Instance" when the
+        // mapping doesn't apply (no enclosing subgraph).
+        for (let i = placements.length - 1; i >= 0; i--) {
+          const p = placements[i]!;
+          const sgIdx = subgraphPath.length - 1 - i;
+          const sg = sgIdx >= 0 ? subgraphPath[sgIdx] : undefined;
+          const name = sg ? titleCase(sg.subgraphId) : 'Instance';
+          items.push({
+            label: `Frame ${name} #${p.pointIndex}`,
+            primary: i === placements.length - 1, // outermost = F-default
+            action: () => frameCameraTo(p.pointTransform),
+          });
+        }
+        if (placements.length === 0) {
+          // No scatter — frame the entity's own transform (e.g. terrain
+          // is one big mesh placed by scene-entity, no instance-scatter).
+          items.push({
+            label: 'Frame Selection',
+            primary: true,
+            action: () => frameCameraTo(info.transform),
+          });
+        }
+      }
+      items.push({
+        label: 'Frame Scene',
+        action: () => frameSceneDefault(),
+      });
+      if (info && info.provenance && info.provenance.subgraphPath.length > 0) {
+        // View in Canvas — innermost (deepest) subgraph first since
+        // "I want to edit the leaf" is the most-likely intent when
+        // right-clicking a forest leaf.
+        const sgPath = info.provenance.subgraphPath;
+        for (let i = sgPath.length - 1; i >= 0; i--) {
+          const sg = sgPath[i]!;
+          items.push({
+            label: `View ${titleCase(sg.subgraphId)} in Canvas`,
+            action: () => openGraphInCanvas(sg.subgraphId),
+          });
+        }
+      }
+      items.push({
+        label: 'View Main in Canvas',
+        action: () => openGraphInCanvas('main'),
+      });
+
+      setContextMenu({ x: clientX, y: clientY, items });
+    }
+
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      // Update the cursor ref so the menu picks at the right pixel
+      // (pointermove may not have fired in between).
+      lastCursorRef.current = { clientX: e.clientX, clientY: e.clientY };
+      void pickForMenu(e.clientX, e.clientY);
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
@@ -494,6 +647,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     wrapper.addEventListener('keydown', onKeyDown);
     wrapper.addEventListener('keyup', onKeyUp);
     wrapper.addEventListener('blur', onBlur);
+    wrapper.addEventListener('contextmenu', onContextMenu);
 
     return () => {
       wrapper.removeEventListener('pointerdown', onPointerDown);
@@ -504,6 +658,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       wrapper.removeEventListener('keydown', onKeyDown);
       wrapper.removeEventListener('keyup', onKeyUp);
       wrapper.removeEventListener('blur', onBlur);
+      wrapper.removeEventListener('contextmenu', onContextMenu);
     };
   }, [commitCamera]);
 
@@ -759,6 +914,33 @@ export function Preview({ panelId }: PreviewProps = {}) {
           ))}
       </div>
       {error !== null && <div className="sedon-preview-error">{error}</div>}
+      {contextMenu && (
+        <div
+          className="sedon-assets-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          // Eat mousedown so the global dismissal listener below doesn't
+          // close us before the item's onClick fires.
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="sedon-assets-context-menu-title">Preview</div>
+          {contextMenu.items.map((item, i) => (
+            <button
+              key={`${i}:${item.label}`}
+              type="button"
+              className="sedon-assets-context-menu-item"
+              style={item.primary ? { fontWeight: 600 } : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                item.action();
+                setContextMenu(null);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
