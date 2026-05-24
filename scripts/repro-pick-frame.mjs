@@ -79,36 +79,34 @@ const readCam = () => page.evaluate(() => {
     ?? null;
 });
 
-// Focus the preview wrapper first so keydown is delivered.
+// Click on the sky (clearly above terrain in the authored forest
+// framing) to focus the wrapper + clear any selection so we have a
+// known "nothing selected" starting state.
 const cx = rect.x + rect.w * 0.5;
-const cy = rect.y + rect.h * 0.6; // a bit below centre — should hit terrain or a tree
-await page.mouse.click(cx, cy); // gives the wrapper focus
+const cy = rect.y + rect.h * 0.6; // a bit below centre — should hit a tree
+const skyX = rect.x + rect.w * 0.5;
+const skyY = rect.y + 8;
+await page.mouse.click(skyX, skyY);
 await new Promise((r) => setTimeout(r, 300));
 
-// Read the camera before F. The click above commits a (possibly tiny)
-// camera update via pointerup, so this is the post-click baseline.
 const before = await readCam();
 console.log('camera BEFORE F:', before ? { target: before.target, distance: before.distance.toFixed(2) } : 'null');
 
-// ---- 1. SKY MISS: hover near the top (clearly above terrain in the
-// authored forest framing). Camera must NOT move. ----
-const skyX = rect.x + rect.w * 0.5;
-const skyY = rect.y + 8;
-await page.mouse.move(skyX, skyY);
-await new Promise((r) => setTimeout(r, 100));
+// ---- 1. F WITH NOTHING SELECTED: must be a no-op (the user-supplied
+// rule is "F = view selected", a no-op without a selection). ----
 await page.keyboard.press('f');
 await new Promise((r) => setTimeout(r, 800));
 const afterMiss = await readCam();
-console.log('camera AFTER F (sky miss):  ', afterMiss ? { target: afterMiss.target, distance: afterMiss.distance.toFixed(2) } : 'null');
+console.log('camera AFTER F (no selection):', afterMiss ? { target: afterMiss.target, distance: afterMiss.distance.toFixed(2) } : 'null');
 
-// ---- 2. GEOMETRY HIT: hover lower (where the forest sits). Camera
-// must move to a non-default position. ----
-await page.mouse.move(cx, cy);
-await new Promise((r) => setTimeout(r, 100));
+// ---- 2. CLICK A TREE, THEN F: the click selects without framing, and
+// F frames the selection. Camera must move to a non-default position. ----
+await page.mouse.click(cx, cy);
+await new Promise((r) => setTimeout(r, 500)); // give pick + setSelection a moment
 await page.keyboard.press('f');
-await new Promise((r) => setTimeout(r, 1000));
+await new Promise((r) => setTimeout(r, 1500));
 const afterHit = await readCam();
-console.log('camera AFTER F (geometry):  ', afterHit ? { target: afterHit.target, distance: afterHit.distance.toFixed(2) } : 'null');
+console.log('camera AFTER F (selected):    ', afterHit ? { target: afterHit.target, distance: afterHit.distance.toFixed(2) } : 'null');
 
 await browser.close();
 await server.stop();
@@ -135,8 +133,8 @@ const moved = afterMiss && afterHit && (
     afterHit.target[2] - afterMiss.target[2],
   ) > 0.5 || Math.abs(afterHit.distance - afterMiss.distance) > 0.5
 );
-console.log(`F over sky left camera alone: ${skyUntouched ? 'PASS ✓' : 'FAIL ✗'}`);
-console.log(`F over geometry moved camera: ${moved ? 'PASS ✓' : 'FAIL ✗'}`);
+console.log(`F with no selection is a no-op:   ${skyUntouched ? 'PASS ✓' : 'FAIL ✗'}`);
+console.log(`F frames the click-selected tree: ${moved ? 'PASS ✓' : 'FAIL ✗'}`);
 console.log(`GPU validation/console errors: ${gpuErrors.length === 0 ? 'PASS ✓' : `FAIL ✗ (${gpuErrors.length} errors)`}`);
 if (gpuErrors.length) console.log(gpuErrors.slice(0, 5));
 process.exit(moved && skyUntouched && gpuErrors.length === 0 ? 0 : 1);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Graph } from '../core/graph.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
@@ -107,7 +108,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
     if (existing) return existing;
     const fn = (info: { canvas: HTMLCanvasElement; renderer: import('../render/scene.js').SceneRenderer } | null) => {
       const tilesMap = tilesRef.current;
-      if (info) tilesMap.set(name, info);
+      if (info) {
+        tilesMap.set(name, info);
+        // Push the active selection to the freshly-mounted tile too,
+        // so swapping panels / re-creating renderers doesn't lose the
+        // outline.
+        if (selectionRef.current) info.renderer.setSelection(selectionRef.current);
+      }
       else tilesMap.delete(name);
     };
     cache.set(name, fn);
@@ -131,6 +138,19 @@ export function Preview({ panelId }: PreviewProps = {}) {
     items: ContextMenuItem[];
   }
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // Current selection (rendered as an outline by SceneRenderer). F-key
+  // and right-click Frame items set this; Escape and Frame-Scene clear
+  // it. Selection lives on a ref so we can push it to newly-mounting
+  // tiles too (they register via onTileReady AFTER first render).
+  const selectionRef = useRef<import('../render/scene.js').SceneSelection | null>(null);
+  function applySelection(sel: import('../render/scene.js').SceneSelection | null): void {
+    selectionRef.current = sel;
+    for (const tile of tilesRef.current.values()) {
+      tile.renderer.setSelection(sel);
+    }
+    requestRender();
+  }
   // Click-outside dismissal: any mousedown that isn't on the menu itself
   // (the menu calls e.stopPropagation() on its own mousedown) closes us.
   // Skipped entirely when the menu isn't open, so we don't pay for an
@@ -293,6 +313,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
     let mode: 'idle' | 'drag' | 'pinch' = 'idle';
     let panning = false;       // ctrl/meta-modified drag (single-pointer)
     let pinchDist = 0;          // last frame's finger separation (pixels)
+    // Click-vs-drag discrimination: pointerdown captures the start
+    // position; pointermove past `CLICK_SLOP_PX` knocks `couldBeClick`
+    // false. If pointerup arrives still-clicky, we run a click-to-
+    // select (no framing) at the original pointerdown position.
+    const CLICK_SLOP_PX = 4;
+    let couldBeClick = false;
+    let clickStartX = 0;
+    let clickStartY = 0;
 
     const fingerDistance = (): number => {
       const [a, b] = [...pointers.values()];
@@ -312,6 +340,12 @@ export function Preview({ panelId }: PreviewProps = {}) {
       if (pointers.size === 1) {
         mode = 'drag';
         panning = e.metaKey || e.ctrlKey;
+        // Single-pointer down WITHOUT a modifier could be the start of
+        // a click-to-select. A subsequent pointermove past the slop
+        // threshold cancels it; pointerup before then runs the select.
+        couldBeClick = !panning;
+        clickStartX = e.clientX;
+        clickStartY = e.clientY;
       } else if (pointers.size === 2) {
         // Second finger arrived — enter pinch. Seed the running distance
         // from the current finger separation so the first move tick
@@ -319,6 +353,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
         mode = 'pinch';
         panning = false;
         pinchDist = fingerDistance();
+        couldBeClick = false;
       }
     };
     const onPointerMove = (e: PointerEvent) => {
@@ -327,6 +362,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
       // is captured. The drag/pinch logic below only acts on captured
       // pointers (`prev` lookup).
       lastCursorRef.current = { clientX: e.clientX, clientY: e.clientY };
+      // Cancel click candidacy once the cursor moves past the slop —
+      // user is dragging the camera, not clicking to select.
+      if (couldBeClick) {
+        const ddx = e.clientX - clickStartX;
+        const ddy = e.clientY - clickStartY;
+        if (ddx * ddx + ddy * ddy > CLICK_SLOP_PX * CLICK_SLOP_PX) couldBeClick = false;
+      }
       const prev = pointers.get(e.pointerId);
       if (!prev) return;
       const cam = cameraRef.current;
@@ -386,14 +428,23 @@ export function Preview({ panelId }: PreviewProps = {}) {
         return;
       }
       if (pointers.size > 0) return;
+      const wasClick = couldBeClick;
+      couldBeClick = false;
       mode = 'idle';
       panning = false;
       // Save under the panel's effective graph id, NOT the global
       // currentEditingId — so a pinned Forest preview saves to
       // cameras['main'] even while the user is editing a leaf subgraph
       // in another panel.
-      const id = effectiveGraphIdRef.current;
-      commitCamera(id, cameraRef.current);
+      const gid = effectiveGraphIdRef.current;
+      commitCamera(gid, cameraRef.current);
+      // Click-to-select: never moved past the slop, so this was a tap
+      // and not a camera drag. Pick at the original down-position
+      // (using clientX/Y from THAT event, not pointerup — touch
+      // pointerup can report a position that drifted slightly even
+      // when the user thought it was stationary) and outline the hit.
+      // No camera move — selecting and framing are separate gestures.
+      if (wasClick) void pickAndSelect(clickStartX, clickStartY);
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -426,17 +477,34 @@ export function Preview({ panelId }: PreviewProps = {}) {
       return null;
     }
 
-    async function pickAndFrame() {
-      const cur = lastCursorRef.current;
-      if (!cur) return;
-      const hit = tileUnderCursor(cur.clientX, cur.clientY);
+    // F-key target: frame whatever is currently selected. A no-op if
+    // nothing is selected — matches Blender / Maya / Unity, where F is
+    // "view selected" and a no-op without a selection. The user picks
+    // first (click-to-select or right-click → Frame menu) and then F
+    // re-frames whatever's outlined.
+    function frameSelected(): void {
+      const sel = selectionRef.current;
+      if (!sel) return;
+      // Any registered tile's renderer can answer — selection is
+      // mirrored to every tile via applySelection, so they all carry
+      // the same matched entities + transforms. Use the first one.
+      const tile = tilesRef.current.values().next().value;
+      if (!tile) return;
+      const bounds = tile.renderer.getSelectionBounds(sel);
+      if (bounds) frameCameraToBounds(bounds.center, bounds.radius);
+    }
+
+    // Click-to-select: pick at (clientX, clientY) and outline the hit
+    // without moving the camera. Plain left-click → select. The F-key
+    // and right-click menu route through their own pick paths because
+    // they also need the resolved provenance for framing decisions.
+    async function pickAndSelect(clientX: number, clientY: number): Promise<void> {
+      const hit = tileUnderCursor(clientX, clientY);
       if (!hit) return;
       const { entry, rect } = hit;
-      // Cursor → backing-buffer pixel. CSS rect.width/height may differ
-      // from canvas.width/height (DPR scaling); use the ratio.
       const canvas = entry.canvas;
-      const px = Math.floor((cur.clientX - rect.left) / rect.width * canvas.width);
-      const py = Math.floor((cur.clientY - rect.top) / rect.height * canvas.height);
+      const px = Math.floor((clientX - rect.left) / rect.width * canvas.width);
+      const py = Math.floor((clientY - rect.top) / rect.height * canvas.height);
       const cam = cameraRef.current;
       const modelView = multiply(
         multiply(
@@ -445,35 +513,50 @@ export function Preview({ panelId }: PreviewProps = {}) {
         ),
         translation(-cam.target[0], -cam.target[1], -cam.target[2]),
       );
-      const aspect = canvas.width / canvas.height;
       const id = await entry.renderer.pickAt({
         x: px, y: py,
         viewportWidth: canvas.width, viewportHeight: canvas.height,
         modelView,
-        fovYRadians: PREVIEW_FOV_Y, aspect,
+        fovYRadians: PREVIEW_FOV_Y, aspect: canvas.width / canvas.height,
         zNear: PREVIEW_NEAR, zFar: PREVIEW_FAR,
       });
-      if (id === 0) return; // sky / miss — nothing to frame
+      if (id === 0) {
+        // Click on sky / empty → deselect, matching how every DCC
+        // tool treats a click-in-the-void as "clear my selection".
+        applySelection(null);
+        return;
+      }
       const info = entry.renderer.getPickInfo(id);
       if (!info) return;
-      // Default Frame: outermost distribute placement's pointTransform —
-      // that frames the BIGGEST scattered instance (the tree in a simple
-      // forest; the bush in a forest-of-bushes-of-leaves), which is what
-      // the user intuits when they click on a piece of foliage. Fall
-      // back to the entity transform when no placements exist.
       const placements = info.provenance?.placements;
-      const t = placements && placements.length > 0
-        ? placements[placements.length - 1]!.pointTransform
-        : info.transform;
-      frameCameraTo(t);
+      if (placements && placements.length > 0) {
+        const p = placements[placements.length - 1]!;
+        applySelection({ kind: 'placement', distributeNodeId: p.distributeNodeId, pointIndex: p.pointIndex });
+      } else if (info.provenance) {
+        applySelection({ kind: 'origin', originNodeId: info.provenance.originNodeId });
+      } else {
+        applySelection(null);
+      }
     }
 
-    // Apply a world transform as the camera's framing target. Translation
-    // column = world position; max scaled axis × 5 = distance heuristic
-    // (mesh in tree subgraphs is roughly unit-sized in local space, so
-    // a tree placement's scale is "the tree's world size"). Floored at
-    // 2m so a sub-unit instance doesn't push the camera through its centre.
-    function frameCameraTo(t: Float32Array): void {
+    // Frame the camera onto a (center, radius) bounding sphere — what
+    // the user actually means by "the tree" when they pick a leaf.
+    // distance = radius / sin(fov/2) is the tightest fit; multiply by a
+    // safety factor so the silhouette doesn't kiss the viewport edge.
+    function frameCameraToBounds(center: [number, number, number], radius: number): void {
+      const cam = cameraRef.current;
+      cam.target[0] = center[0];
+      cam.target[1] = center[1];
+      cam.target[2] = center[2];
+      const fit = radius / Math.sin(PREVIEW_FOV_Y / 2);
+      cam.distance = Math.max(2, Math.min(250, fit * 1.4));
+      commitCamera(effectiveGraphIdRef.current, cam);
+      requestRender();
+    }
+    // Legacy fallback when bounds aren't computable (geometry has no
+    // CPU mesh, or selection refers to an entity not in the scene).
+    // Uses the placement's translation + a scale-derived distance.
+    function frameCameraToTransform(t: Float32Array): void {
       const cam = cameraRef.current;
       const sX = Math.hypot(t[0]!, t[1]!, t[2]!);
       const sY = Math.hypot(t[4]!, t[5]!, t[6]!);
@@ -501,16 +584,22 @@ export function Preview({ panelId }: PreviewProps = {}) {
 
     const onKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      // Esc closes an open context menu but isn't otherwise a HANDLED key.
+      // Esc closes an open context menu and clears the selection
+      // outline. (Both behaviours match how every 3D app dismisses
+      // transient UI / deselects.)
       if (k === 'escape') {
         setContextMenu(null);
+        if (selectionRef.current) applySelection(null);
         return;
       }
       if (!HANDLED_KEYS.has(k)) return;
       e.preventDefault();
       // F is one-shot: fire on keydown, no key-held state to track.
+      // No-op when nothing is selected — F is "view selected", not
+      // "pick whatever is under the cursor"; the user selects via
+      // click or the right-click Frame menu and F re-frames it.
       if (k === 'f') {
-        void pickAndFrame();
+        frameSelected();
         return;
       }
       keysRef.current.add(k);
@@ -570,25 +659,47 @@ export function Preview({ panelId }: PreviewProps = {}) {
           const sgIdx = subgraphPath.length - 1 - i;
           const sg = sgIdx >= 0 ? subgraphPath[sgIdx] : undefined;
           const name = sg ? titleCase(sg.subgraphId) : 'Instance';
+          const sel: import('../render/scene.js').SceneSelection = {
+            kind: 'placement', distributeNodeId: p.distributeNodeId, pointIndex: p.pointIndex,
+          };
           items.push({
             label: `Frame ${name} #${p.pointIndex}`,
             primary: i === placements.length - 1, // outermost = F-default
-            action: () => frameCameraTo(p.pointTransform),
+            action: () => {
+              applySelection(sel);
+              const bounds = entry.renderer.getSelectionBounds(sel);
+              if (bounds) frameCameraToBounds(bounds.center, bounds.radius);
+              else frameCameraToTransform(p.pointTransform);
+            },
           });
         }
         if (placements.length === 0) {
-          // No scatter — frame the entity's own transform (e.g. terrain
-          // is one big mesh placed by scene-entity, no instance-scatter).
+          // No scatter — frame the entity's own bounds (e.g. terrain is
+          // one big mesh placed by scene-entity, no instance-scatter).
+          const originNodeId = info.provenance?.originNodeId;
           items.push({
             label: 'Frame Selection',
             primary: true,
-            action: () => frameCameraTo(info.transform),
+            action: () => {
+              if (originNodeId) {
+                const sel: import('../render/scene.js').SceneSelection = { kind: 'origin', originNodeId };
+                applySelection(sel);
+                const bounds = entry.renderer.getSelectionBounds(sel);
+                if (bounds) frameCameraToBounds(bounds.center, bounds.radius);
+                else frameCameraToTransform(info.transform);
+              } else {
+                frameCameraToTransform(info.transform);
+              }
+            },
           });
         }
       }
       items.push({
         label: 'Frame Scene',
-        action: () => frameSceneDefault(),
+        action: () => {
+          frameSceneDefault();
+          applySelection(null);
+        },
       });
       if (info && info.provenance && info.provenance.subgraphPath.length > 0) {
         // View in Canvas — innermost (deepest) subgraph first since
@@ -914,7 +1025,15 @@ export function Preview({ panelId }: PreviewProps = {}) {
           ))}
       </div>
       {error !== null && <div className="sedon-preview-error">{error}</div>}
-      {contextMenu && (
+      {contextMenu && createPortal(
+        // Portal to document.body. DockView wraps each panel in a
+        // `transform: translate3d(0,0,0)` container, which creates a
+        // new containing block — under the wrapper, `position: fixed`
+        // anchors to THAT container instead of the viewport, so the
+        // menu lands at the wrong coordinates (or entirely off-screen
+        // when the panel isn't at (0,0)). Rendering into document.body
+        // escapes the transform context and lets `left/top: clientX/Y`
+        // align with the cursor as intended.
         <div
           className="sedon-assets-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -939,7 +1058,8 @@ export function Preview({ panelId }: PreviewProps = {}) {
               {item.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

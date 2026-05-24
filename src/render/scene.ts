@@ -28,6 +28,7 @@ import flatBackgroundShaderCode from './flat-background.wgsl';
 import shadowShaderCode from './shadow.wgsl';
 import skyShaderCode from './sky.wgsl';
 import pickShaderCode from './pick.wgsl';
+import outlineShaderCode from './outline.wgsl';
 import { pickProjection as buildPickProjection } from './mat4.js';
 
 // Shadow pass constants. A fixed ortho extent that comfortably covers the
@@ -160,7 +161,41 @@ export interface SceneRenderer {
    * (miss, or the scene changed since the click was issued).
    */
   getPickInfo(id: number): { provenance: NonNullable<SceneEntity['provenance']> | undefined; transform: Float32Array } | null;
+  /**
+   * Set the current selection — any subsequent `render()` calls will
+   * draw an outline around every batch instance that matches it.
+   * `null` clears the selection.
+   *
+   * Match rules:
+   *  - `kind: 'placement'` highlights every entity whose deepest
+   *    placement is (`distributeNodeId`, `pointIndex`). That lines up
+   *    with what the F-key and Frame-menu items target — clicking a
+   *    leaf and pressing F outlines the whole tree (trunk + foliage),
+   *    not just the leaf cluster.
+   *  - `kind: 'origin'` highlights every entity whose
+   *    `provenance.originNodeId` matches. Used for non-scattered
+   *    entities (a single-mesh terrain, an authored object).
+   */
+  setSelection(sel: SceneSelection | null): void;
+  /**
+   * World-space bounding sphere of the union of every entity that
+   * matches `sel` — center and radius. Used by Frame Selected to pick
+   * a camera target that's the actual MIDDLE of (say) the whole tree
+   * rather than the placement origin (which is often at the base/foot
+   * of a tree subgraph and would put the camera looking at the ground
+   * with the tree off-screen above). Returns `null` if no entities
+   * match or the selection is null. Entities whose geometry has no
+   * CPU mesh (purely GPU-generated) are skipped — they contribute
+   * no bounds, but a single-mesh terrain returns the terrain's bounds
+   * because its geometry carries its CpuMeshRef.
+   */
+  getSelectionBounds(sel: SceneSelection): { center: [number, number, number]; radius: number } | null;
 }
+
+/** What `setSelection` interprets as "the selection." */
+export type SceneSelection =
+  | { kind: 'placement'; distributeNodeId: string; pointIndex: number }
+  | { kind: 'origin'; originNodeId: string };
 
 interface Batch {
   kindId: MaterialValue['kind'];
@@ -317,6 +352,14 @@ interface SharedRendererState {
   pickPipeline: GPURenderPipeline;
   /** WebGPU's min uniform-buffer offset alignment (typically 256). */
   pickBatchStride: number;
+  // Selection-outline pipelines (see outline.wgsl). Both stable per
+  // (device, format); the per-renderer side holds only the R8Unorm
+  // mask texture + scene/outline uniform buffers, allocated lazily on
+  // the first setSelection that has anything to draw.
+  outlineMaskLayout: GPUBindGroupLayout;
+  outlineMaskPipeline: GPURenderPipeline;
+  outlineCompositeLayout: GPUBindGroupLayout;
+  outlineCompositePipeline: GPURenderPipeline;
 }
 
 let sharedState: SharedRendererState | null = null;
@@ -453,6 +496,65 @@ function ensureSharedRendererState(
   // enough payload, but the alignment is typically 256.
   const pickBatchStride = Math.max(16, device.limits.minUniformBufferOffsetAlignment);
 
+  // ---- Selection-outline pipelines (see outline.wgsl) ----
+  const outlineModule = device.createShaderModule({ code: outlineShaderCode });
+  const outlineMaskLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    ],
+  });
+  const outlineMaskPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [outlineMaskLayout] }),
+    vertex: {
+      module: outlineModule,
+      entryPoint: 'mask_vs',
+      buffers: instanceVertexBuffers(),
+    },
+    fragment: {
+      module: outlineModule,
+      entryPoint: 'mask_fs',
+      targets: [{ format: 'r8unorm' }],
+    },
+    primitive: { topology: 'triangle-list', cullMode: 'back' },
+    depthStencil: {
+      // Format matches the scene depth so we can pass that attachment
+      // through. `depthCompare: 'always'` + write-disabled gives an
+      // x-ray outline: the selection shows through occluders. Sharing
+      // the scene depth and switching to `greater-equal` for true
+      // silhouette tracking is broken in practice — the depths PBR
+      // wrote don't round-trip bit-exact through this minimal vertex
+      // shader, so equality rejects everything. Most DCC tools use
+      // x-ray for selection anyway; revisit with a depth pre-pass +
+      // bias if true silhouette tracking is needed.
+      format: 'depth32float',
+      depthWriteEnabled: false,
+      depthCompare: 'always',
+    },
+  });
+
+  const outlineCompositeLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    ],
+  });
+  const outlineCompositePipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [outlineCompositeLayout] }),
+    vertex: { module: outlineModule, entryPoint: 'composite_vs' },
+    fragment: {
+      module: outlineModule,
+      entryPoint: 'composite_fs',
+      // No blend state. The fragment shader `discard`s everywhere off
+      // the outline ring, so non-outline fragments never write to the
+      // swapchain and the underlying PBR-composited pixels are
+      // preserved verbatim. Outline-ring fragments overwrite the
+      // single-pixel ring with the opaque outline colour.
+      targets: [{ format }],
+    },
+    primitive: { topology: 'triangle-list' },
+  });
+
   sharedState = {
     device, format,
     sceneBindGroupLayout, shadowBindGroupLayout, singleInputLayout, compositeLayout,
@@ -464,6 +566,8 @@ function ensureSharedRendererState(
     sceneBindGroup, shadowBindGroup, skyBindGroup,
     kinds,
     pickSceneLayout, pickBatchLayout, pickPipeline, pickBatchStride,
+    outlineMaskLayout, outlineMaskPipeline,
+    outlineCompositeLayout, outlineCompositePipeline,
   };
   return sharedState;
 }
@@ -908,6 +1012,184 @@ export function createSceneRenderer(
   // picking has fired yet — it's just a JS array (~24B/entry).
   let pickTable: (PickTableEntry | undefined)[] = [];
 
+  // ---- Selection outline (P4) ----
+  // Current selection + the per-batch instance ranges that match. Runs
+  // (`firstInstance` + `instanceCount`) are derived in setSelection /
+  // setScene by walking each batch's entities and grouping consecutive
+  // matching instance indices, so the mask pass uses one drawIndexed
+  // per run rather than one per matched instance.
+  interface SelectedRun {
+    batchIndex: number;
+    firstInstance: number;
+    instanceCount: number;
+  }
+  interface OutlineResources {
+    width: number;
+    height: number;
+    mask: GPUTexture;
+    sceneBuffer: GPUBuffer;       // mat4 modelView + mat4 projection
+    sceneBindGroup: GPUBindGroup;
+    uniformBuffer: GPUBuffer;     // texelSize + outline colour
+    compositeBindGroup: GPUBindGroup;
+  }
+  let selection: SceneSelection | null = null;
+  let selectedRuns: SelectedRun[] = [];
+  let outlineResources: OutlineResources | null = null;
+
+  function rebuildSelectedRuns(): void {
+    selectedRuns = [];
+    if (!selection) return;
+    for (let bi = 0; bi < batches.length; bi++) {
+      const b = batches[bi]!;
+      let runStart = -1;
+      let runLen = 0;
+      for (let i = 0; i < b.entities.length; i++) {
+        const prov = b.entities[i]!.provenance;
+        let match = false;
+        if (prov) {
+          if (selection.kind === 'placement') {
+            const last = prov.placements[prov.placements.length - 1];
+            match = !!last
+              && last.distributeNodeId === selection.distributeNodeId
+              && last.pointIndex === selection.pointIndex;
+          } else {
+            match = prov.originNodeId === selection.originNodeId;
+          }
+        }
+        if (match) {
+          if (runStart === -1) { runStart = i; runLen = 1; }
+          else runLen++;
+        } else if (runStart !== -1) {
+          selectedRuns.push({ batchIndex: bi, firstInstance: runStart, instanceCount: runLen });
+          runStart = -1; runLen = 0;
+        }
+      }
+      if (runStart !== -1) {
+        selectedRuns.push({ batchIndex: bi, firstInstance: runStart, instanceCount: runLen });
+      }
+    }
+  }
+
+  function ensureOutlineResources(width: number, height: number): OutlineResources {
+    if (outlineResources && outlineResources.width === width && outlineResources.height === height) {
+      return outlineResources;
+    }
+    outlineResources?.mask.destroy();
+    outlineResources?.sceneBuffer.destroy();
+    outlineResources?.uniformBuffer.destroy();
+    const mask = device.createTexture({
+      label: 'outline mask',
+      size: [width, height],
+      format: 'r8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const sceneBuffer = device.createBuffer({
+      label: 'outline scene uniform',
+      size: 128, // mat4 modelView + mat4 projection
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const sceneBindGroup = device.createBindGroup({
+      layout: shared.outlineMaskLayout,
+      entries: [{ binding: 0, resource: sceneBuffer }],
+    });
+    const uniformBuffer = device.createBuffer({
+      label: 'outline composite uniform',
+      // texelSize (vec2) + _pad (vec2) + colour (vec4) = 32 bytes
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const compositeBindGroup = device.createBindGroup({
+      layout: shared.outlineCompositeLayout,
+      entries: [
+        { binding: 0, resource: mask.createView() },
+        { binding: 1, resource: shared.sampler },
+        { binding: 2, resource: uniformBuffer },
+      ],
+    });
+    outlineResources = { width, height, mask, sceneBuffer, sceneBindGroup, uniformBuffer, compositeBindGroup };
+    return outlineResources;
+  }
+
+  function setSelection(sel: SceneSelection | null): void {
+    selection = sel;
+    rebuildSelectedRuns();
+  }
+
+  // Local-space AABB of a geometry, cached per GeometryValue. CPU meshes
+  // are large enough (tens of thousands of verts) that we don't want to
+  // re-scan them every Frame call; the WeakMap keys on the geometry
+  // wrapper so it auto-evicts when the geometry's GC'd.
+  const localAabbCache = new WeakMap<GeometryValue, { min: [number, number, number]; max: [number, number, number] } | null>();
+  function geometryLocalAabb(g: GeometryValue): { min: [number, number, number]; max: [number, number, number] } | null {
+    const cached = localAabbCache.get(g);
+    if (cached !== undefined) return cached;
+    const mesh = g.mesh;
+    if (!mesh || mesh.positions.length === 0) {
+      localAabbCache.set(g, null);
+      return null;
+    }
+    const pos = mesh.positions;
+    let mnx = Infinity, mny = Infinity, mnz = Infinity;
+    let mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i]!, y = pos[i + 1]!, z = pos[i + 2]!;
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (y < mny) mny = y; if (y > mxy) mxy = y;
+      if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+    }
+    const aabb = { min: [mnx, mny, mnz] as [number, number, number], max: [mxx, mxy, mxz] as [number, number, number] };
+    localAabbCache.set(g, aabb);
+    return aabb;
+  }
+
+  function entityMatchesSelection(prov: SceneEntity['provenance'], sel: SceneSelection): boolean {
+    if (!prov) return false;
+    if (sel.kind === 'placement') {
+      const last = prov.placements[prov.placements.length - 1];
+      return !!last
+        && last.distributeNodeId === sel.distributeNodeId
+        && last.pointIndex === sel.pointIndex;
+    }
+    return prov.originNodeId === sel.originNodeId;
+  }
+
+  function getSelectionBounds(sel: SceneSelection): { center: [number, number, number]; radius: number } | null {
+    let any = false;
+    let mnx = Infinity, mny = Infinity, mnz = Infinity;
+    let mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+    for (const b of batches) {
+      const local = geometryLocalAabb(b.geometry);
+      if (!local) continue;
+      for (const e of b.entities) {
+        if (!entityMatchesSelection(e.provenance, sel)) continue;
+        const t = e.transform;
+        // Transform all 8 local-AABB corners — needed because the
+        // entity's transform might rotate/scale, so the world-space
+        // AABB isn't simply (transformed min) → (transformed max).
+        for (let c = 0; c < 8; c++) {
+          const lx = (c & 1) ? local.max[0] : local.min[0];
+          const ly = (c & 2) ? local.max[1] : local.min[1];
+          const lz = (c & 4) ? local.max[2] : local.min[2];
+          const wx = t[0]! * lx + t[4]! * ly + t[8]!  * lz + t[12]!;
+          const wy = t[1]! * lx + t[5]! * ly + t[9]!  * lz + t[13]!;
+          const wz = t[2]! * lx + t[6]! * ly + t[10]! * lz + t[14]!;
+          if (wx < mnx) mnx = wx; if (wx > mxx) mxx = wx;
+          if (wy < mny) mny = wy; if (wy > mxy) mxy = wy;
+          if (wz < mnz) mnz = wz; if (wz > mxz) mxz = wz;
+          any = true;
+        }
+      }
+    }
+    if (!any) return null;
+    const cx = (mnx + mxx) * 0.5;
+    const cy = (mny + mxy) * 0.5;
+    const cz = (mnz + mxz) * 0.5;
+    const dx = (mxx - mnx) * 0.5;
+    const dy = (mxy - mny) * 0.5;
+    const dz = (mxz - mnz) * 0.5;
+    return { center: [cx, cy, cz], radius: Math.sqrt(dx * dx + dy * dy + dz * dz) };
+  }
+
   function ensurePickResources(batchCount: number): PickResources {
     if (!pickResources) {
       const sceneBuffer = device.createBuffer({
@@ -1138,6 +1420,11 @@ export function createSceneRenderer(
     // (pickResources are lazily allocated on first pickAt — see
     // ensurePickResources. setScene only refreshes the JS-side
     // pickTable above; nothing GPU here.)
+
+    // Selection-outline: the per-entity matching depends on the new
+    // batch layout, so re-derive the run list against the new batches.
+    // Stays a no-op when nothing's selected.
+    rebuildSelectedRuns();
     debug(() => {
       const summary = batches.map((b) =>
         `[${b.kindId} pos#${gpuObjectId(b.geometry.positionBuffer as object)} idx=${b.geometry.indexCount} inst=${b.instanceCount}]`,
@@ -1162,7 +1449,15 @@ export function createSceneRenderer(
       pickResources.batchBuffer.destroy();
       pickResources = null;
     }
+    if (outlineResources) {
+      outlineResources.mask.destroy();
+      outlineResources.sceneBuffer.destroy();
+      outlineResources.uniformBuffer.destroy();
+      outlineResources = null;
+    }
     pickTable = [];
+    selection = null;
+    selectedRuns = [];
     currentMaterialKeys = new Set();
     currentInstanceKeys = new Set();
     currentSizeKey = null;
@@ -1270,6 +1565,8 @@ export function createSceneRenderer(
     destroy,
     pickAt,
     getPickInfo,
+    setSelection,
+    getSelectionBounds,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, time = 0 }) {
       const [width, height] = size;
       // Acquire intermediates for THIS size. If we previously held a
@@ -1575,6 +1872,78 @@ export function createSceneRenderer(
       composite.setBindGroup(0, compositeBindGroup!);
       composite.draw(3);
       composite.end();
+
+      // ---- Selection outline (P4) ----
+      // Two passes only when something is actually selected; otherwise
+      // we don't even allocate the mask texture. (Asset thumbnails and
+      // grass-less previews never pay the outline cost.)
+      if (selectedRuns.length > 0) {
+        const ol = ensureOutlineResources(width, height);
+        // Mask pass shares the scene's modelView × projection — no
+        // off-centre frustum or anything. NB: the scene depth attachment
+        // was written with `depthStoreOp: 'store'` just above; the mask
+        // pipeline samples it with `greater-equal` so only the visible
+        // silhouette of each selected instance contributes.
+        const oScene = new Float32Array(32);
+        oScene.set(modelView, 0);
+        oScene.set(projection, 16);
+        device.queue.writeBuffer(ol.sceneBuffer, 0, oScene as BufferSource);
+        // Outline-composite uniform: 1/(w,h) + colour. Hard-coded warm
+        // orange — pops against the abyss-themed UI / sky.
+        const oU = new Float32Array(8);
+        oU[0] = 1 / width; oU[1] = 1 / height;
+        oU[2] = 0; oU[3] = 0; // pad
+        oU[4] = 1.0; oU[5] = 0.65; oU[6] = 0.15; oU[7] = 1.0;
+        device.queue.writeBuffer(ol.uniformBuffer, 0, oU as BufferSource);
+
+        const maskPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: ol.mask, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store',
+          }],
+          // Depth attached but read-only-never-fails — see the
+          // outlineMaskPipeline comment for why we don't try silhouette
+          // testing via greater-equal.
+          depthStencilAttachment: {
+            view: depthTexture!,
+            depthLoadOp: 'load',
+            depthStoreOp: 'discard',
+          },
+        });
+        maskPass.setPipeline(shared.outlineMaskPipeline);
+        maskPass.setBindGroup(0, ol.sceneBindGroup);
+        // Bind vertex buffers once per batch (geometry differs by batch),
+        // then iterate the runs in order and dispatch each as an
+        // instance range starting at `firstInstance`.
+        let currentBatchIdx = -1;
+        for (const run of selectedRuns) {
+          if (run.batchIndex !== currentBatchIdx) {
+            const b = batches[run.batchIndex]!;
+            if (b.geometry.indexCount === 0) continue;
+            maskPass.setVertexBuffer(0, b.geometry.positionBuffer);
+            maskPass.setVertexBuffer(1, b.geometry.normalBuffer);
+            maskPass.setVertexBuffer(2, b.geometry.uvBuffer);
+            maskPass.setVertexBuffer(3, b.instanceBuffer);
+            maskPass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
+            currentBatchIdx = run.batchIndex;
+          }
+          const b = batches[run.batchIndex]!;
+          maskPass.drawIndexed(b.geometry.indexCount, run.instanceCount, 0, 0, run.firstInstance);
+        }
+        maskPass.end();
+
+        // Overlay outline on the already-tonemapped swapchain. loadOp
+        // 'load' preserves whatever composite wrote; src-over blend on
+        // the pipeline draws the outline ring on top.
+        const outlinePass = encoder.beginRenderPass({
+          colorAttachments: [
+            { view: colorView, loadOp: 'load', storeOp: 'store' },
+          ],
+        });
+        outlinePass.setPipeline(shared.outlineCompositePipeline);
+        outlinePass.setBindGroup(0, ol.compositeBindGroup);
+        outlinePass.draw(3);
+        outlinePass.end();
+      }
     },
   };
 }
