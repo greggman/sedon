@@ -1,22 +1,12 @@
-# Sedon
+# TODOs
 
---- steps ---
+## --- steps ---
 
-- [ ] grass
-- [*] ridged-noise
-- [*] bloom (too shallow? sun looks harsh like outline)
-- [*] soft shadows
-- [*] save/load
-- [*] tone mapping
-- [*] cleanup
 
---- new ---
+## --- new ---
 
 - [ ] grass blades should be made with leaf nodes
-- [*] ask about setting ambient higher - added hemisphere lighting
 - [ ] add SSAO
-- [*] fix colors of canvas controls
-- [*] pinch to zoom
 - [ ] 'f' frame needs to work in canvas
 - [ ] list of nodes is too long, when canvas is shorter than screen you can not
   scroll though canvas.
@@ -33,8 +23,11 @@
 - [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
 terrain renderer that tessellates the terrain
 based on distance from the camera. 
-- [*] frame selected
-- [*] add github link
+- [ ] better leaf preview
+- [ ] node view (like assets)
+  - [ ] nodes in folders
+  - [ ] list, icon
+  - [ ] drag into graph
 - [ ] double click frames?
 - [ ] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
@@ -42,44 +35,16 @@ based on distance from the camera.
 - [ ] highlight selected node
 - [ ] show names on nodes (editable)
 - [ ] leaf/skeleton needs better preview
-- [*] drag node re-renders. Why?
 - [ ] future nodes
-- [ ] edit button on node - need right click "open in new/other canvas"?
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
-- [*] What is the (Active) thing? - Seems not needed
-- [*] Need to save last active view for both graphs (viewport) and preview (camera) (ask LLM)
-- [*] Asset view needs multiple select (move/cut/copy/paste)
-- [*] selecting a graph in the asset view should not change the canvas view nor the preview
-- [*] double clicking a graph should "open the graph" in the current/last active canvas or right click "open in canvas" or makes new one if none exist
-- [*] right click asset and pick "open in preview" push in current/last preview or makes new one if none exist
 - [ ] left/skeleton needs to start from bottom center?
-- [*] subscene needs preview
 - [ ] too many previews?
-- [*] add Ctrl-Shift-P
-- [*] cut/copy/paste
-- [*] duplicate
-- [*] subscene needs edit button
-- [*] frame subscenes
-- [*] nodes need icons?
 - [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
-- [*] asset list view should be a table, not span
 - [ ] divider between folders and content needs to be slidable
-- [*] show type with name in asset view both icon and list
-- [*] figure out UX for graph selection and scene selection? Not needed, use asset view
+use asset view
 - [ ] design should not be "extra inputs". It should be "array of input name,type"
-- [*] scene merge needs N inputs
-- [*] can not zoom out enough
-- [*] render on demand - not constantly
 - [ ] move the WebGPU parts to a worker
-- [*] make input and output nodes have a "drop here +" spot
-  to auto add an input or output
-- [*] put back the realtime editing
-  currently there's a delay until the system responds.
-- [*] Need to cache subgraphs - the tree subgraph generates a tree. Unless inputs change it doesn't need to be rebuilt.
-- [*] cleanup resources
-- [*] Make github action to publish on gh-pages
-  Might need an import map?
 - [ ] seems like clicking on a node should select it?
 
   currently, to delete a node, you must drag select (hold shift). then
@@ -93,7 +58,6 @@ based on distance from the camera.
 - [ ] is there a list/array entry type
 - [ ] solid-color should just be color (special case or give it 2 outputs)
 - [ ] editable texture? a node with a pixel editor?
-- [*] texture nodes need preview - 
 - [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
 - [ ] having color nodes is gross - solutions
   - [*] color inputs, like numbers, have a color
@@ -125,25 +89,6 @@ based on distance from the camera.
 
   Must handle diagonal drag to submenus.
 
-- [ ] Need an asset hierarchy (folders)
-
-  Like Unity, it should be a tree of folders and subgraphs.
-  They can be listed as names or as icons. User can drag subgraphs
-  from one folder to another as well as drag them into the current graph.
-
-- [ ] Need a window manager?
-
-  Currently we have a vertically split window. Maybe we just need panes
-  like VSCode and you can set each pane to show a graph or a preview or
-  assets
-
-- [ ] Would like multiple windows
-
-  If an webpage creates a window its accessible directly and can share a
-  A WebGPU device so it seems this is not a hard thing to do. For real pro
-  asset creation it's common to have 2 monitors so being able to create
-  multiple windows is probably a must.
-
 - [ ] Probably need an "Inspector"
 
   It would show all the inputs in a node, some with better
@@ -168,6 +113,68 @@ based on distance from the camera.
   - [ ] orbit vs track control (option)
   - [ ] frame
   - [ ] ortho
+
+
+## --- done ---
+
+- [*] grass
+- [*] ridged-noise
+- [*] bloom (too shallow? sun looks harsh like outline)
+- [*] soft shadows
+- [*] save/load
+- [*] tone mapping
+- [*] cleanup
+- [*] fix colors of canvas controls
+- [*] pinch to zoom
+- [*] ask about setting ambient higher - added hemisphere lighting
+- [*] drag node re-renders. (fixed)
+- [*] edit button on node - need right click "open in new/other canvas"?
+- [*] What is the (Active) thing? - Seems not needed
+- [*] Need to save last active view for both graphs (viewport) and preview (camera) (ask LLM)
+- [*] Asset view needs multiple select (move/cut/copy/paste)
+- [*] selecting a graph in the asset view should not change the canvas view nor the preview
+- [*] double clicking a graph should "open the graph" in the current/last active canvas or right click "open in canvas" or makes new one if none exist
+- [*] right click asset and pick "open in preview" push in current/last preview or makes new one if none exist
+- [*] subscene needs preview
+- [*] add Ctrl-Shift-P
+- [*] cut/copy/paste
+- [*] duplicate
+- [*] subscene needs edit button
+- [*] frame subscenes
+- [*] nodes need icons?
+- [*] asset list view should be a table, not span
+- [*] show type with name in asset view both icon and list
+- [*] figure out UX for graph selection and scene selection? Not needed, - [*] scene merge needs N inputs
+- [*] can not zoom out enough
+- [*] render on demand - not constantly
+- [*] make input and output nodes have a "drop here +" spot
+  to auto add an input or output
+- [*] put back the realtime editing
+  currently there's a delay until the system responds.
+- [*] Need to cache subgraphs - the tree subgraph generates a tree. Unless inputs change it doesn't need to be rebuilt.
+- [*] cleanup resources
+- [*] Make github action to publish on gh-pages
+  Might need an import map?
+- [*] texture nodes need preview - 
+- [*] Need an asset hierarchy (folders)
+
+  Like Unity, it should be a tree of folders and subgraphs.
+  They can be listed as names or as icons. User can drag subgraphs
+  from one folder to another as well as drag them into the current graph.
+
+- [*] Need a window manager?
+
+  Currently we have a vertically split window. Maybe we just need panes
+  like VSCode and you can set each pane to show a graph or a preview or
+  assets
+
+- [*] Would like multiple windows
+
+  If an webpage creates a window its accessible directly and can share a
+  A WebGPU device so it seems this is not a hard thing to do. For real pro
+  asset creation it's common to have 2 monitors so being able to create
+  multiple windows is probably a must.
+
 - [*] color the connections?
 - [*] per graph canvas position
 - [*] camera
@@ -194,8 +201,11 @@ based on distance from the camera.
   abc   [-value-]
   defgh [-value-]
   ```
+- [*] frame selected
+- [*] add github link
 
---- old ---
+
+## --- old ---
 
 This is a data definition and library for generating 3d models
 and worlds from mostly procedural data.
