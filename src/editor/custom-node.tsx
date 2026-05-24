@@ -415,7 +415,7 @@ function EditableSocketLabel({
   );
 }
 
-export function CustomNode({ id, data }: NodeProps) {
+export function CustomNode({ id, data, selected }: NodeProps) {
   const kind = typeof data['kind'] === 'string' ? data['kind'] : undefined;
   const registry = useRegistry();
   const def: NodeDef | undefined = useMemo(
@@ -470,7 +470,7 @@ export function CustomNode({ id, data }: NodeProps) {
   );
 
   if (!def) {
-    return <div className="sedon-node sedon-node--unknown">unknown: {kind ?? '(no kind)'}</div>;
+    return <div className={selected ? 'sedon-node sedon-node--unknown sedon-node--selected' : 'sedon-node sedon-node--unknown'}>unknown: {kind ?? '(no kind)'}</div>;
   }
 
   const previewTarget = previewTargetFor(myOutputs);
@@ -502,7 +502,7 @@ export function CustomNode({ id, data }: NodeProps) {
   const editableOutputs = boundary?.side === 'input';
 
   return (
-    <div className="sedon-node">
+    <div className={selected ? 'sedon-node sedon-node--selected' : 'sedon-node'}>
       <div
         className="sedon-node-output-bar"
         style={{

@@ -546,6 +546,18 @@
   padding: 8px;
 }
 
+/* Canvas-node selection highlight. Warm orange ring matches the preview
+ * pane's selection outline, so "selected" reads as the same concept
+ * across canvas and preview at a glance. Inset box-shadow so the ring
+ * sits ON the node rather than expanding the layout box (no shift
+ * when (de)selecting). */
+.sedon-node--selected {
+  border-color: rgba(255, 165, 38, 1);
+  box-shadow:
+    0 0 0 1px rgba(255, 165, 38, 1) inset,
+    0 0 8px 1px rgba(255, 165, 38, 0.45);
+}
+
 /* The output color bar at the top: height comes from JS (OUTPUT_BAR_HEIGHT)
  * and the gradient `background` is set inline because it's data-driven from
  * the node's output types. */

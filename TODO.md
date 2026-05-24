@@ -5,6 +5,7 @@
 
 ## --- new ---
 
+- [ ] Select All (Cmd/Ctrl-A) should select in the view, not HTML
 - [ ] grass blades should be made with leaf nodes
 - [ ] add SSAO
 - [ ] 'f' frame needs to work in canvas
