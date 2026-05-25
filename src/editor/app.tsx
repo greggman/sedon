@@ -79,22 +79,37 @@ export function App() {
       if (l.lastActivePreviewPanelId === panel.id) l.setLastActivePreviewPanelId(null);
       l.clearCanvasGraphId(panel.id);
     });
-    event.api.addPanel({
-      id: 'assets-main',
-      component: 'assets',
-      title: 'Assets',
-    });
+    // Initial layout:
+    //   ┌──────────┬───────────┐
+    //   │  Canvas  │           │
+    //   ├──────────┤  Preview  │
+    //   │  Assets  │           │
+    //   └──────────┴───────────┘
+    // Canvas + Assets share the left column with a horizontal split;
+    // Preview spans full height on the right. The order matters —
+    // preview goes BEFORE assets so it ends up in the right-hand group
+    // (full height) rather than splitting only the canvas column.
     event.api.addPanel({
       id: 'canvas-main',
       component: 'node-canvas',
       title: 'Canvas',
-      position: { referencePanel: 'assets-main', direction: 'right' },
     });
     event.api.addPanel({
       id: 'preview-main',
       component: 'preview',
       title: 'Preview',
       position: { referencePanel: 'canvas-main', direction: 'right' },
+    });
+    event.api.addPanel({
+      id: 'assets-main',
+      component: 'assets',
+      title: 'Assets',
+      position: { referencePanel: 'canvas-main', direction: 'below' },
+      // Assets gets ~25% of the column. DockView sets this as the
+      // panel's pixel height at creation; the user can drag the splitter
+      // afterwards. Falls back to a sensible default if window height
+      // isn't readable (server-side render guard).
+      initialHeight: Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.25),
     });
   }, []);
   useEffect(() => () => setDockviewApi(null), []);
