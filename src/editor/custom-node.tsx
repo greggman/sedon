@@ -37,6 +37,14 @@ const PREVIEW_SIZE = 128;
 const PREVIEW_PADDING = 8;
 const OUTPUT_BAR_HEIGHT = 5;
 const NODE_RADIUS = 4;
+// Handle .top is measured from the .react-flow__node outer edge, but row
+// boxes flow inside .sedon-node's 1px border AND below the header /
+// preview-block bottom borders (also 1px each). Without accounting for
+// these, every handle is rendered 2–3px above its row center — visually
+// "the dot doesn't align with the text". Numbers come from the matching
+// CSS rules in editor.css; if you change a border there, change it here.
+const NODE_BORDER = 1;
+const SECTION_BORDER = 1;
 
 function typeColor(typeId: string): string {
   return types.get(typeId)?.color ?? '#888';
@@ -602,8 +610,9 @@ export function CustomNode({ id, data, selected }: NodeProps) {
 
   const previewTarget = previewTargetFor(myOutputs);
   const hasSlot = hasPreviewSlot(def);
-  const previewBlockHeight = hasSlot ? PREVIEW_SIZE + PREVIEW_PADDING * 2 : 0;
-  const inputsTop = OUTPUT_BAR_HEIGHT + HEADER_HEIGHT + previewBlockHeight;
+  const previewBlockHeight = hasSlot ? PREVIEW_SIZE + PREVIEW_PADDING * 2 + SECTION_BORDER : 0;
+  const inputsTop =
+    NODE_BORDER + OUTPUT_BAR_HEIGHT + HEADER_HEIGHT + SECTION_BORDER + previewBlockHeight;
 
   const onEditSubgraph = () => {
     if (!subgraphId) return;
