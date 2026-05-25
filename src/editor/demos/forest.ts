@@ -53,7 +53,10 @@ export function createForestDemo(): {
   });
   const terrainMesh = addNode(g, 'core/heightfield-to-mesh', {
     position: { x: COL * 2, y: 0 },
-    inputValues: { divisions: [128, 128] },
+    // cpu_access: the terrain mesh feeds core/distribute-on-faces below,
+    // which needs CPU-side mesh data to scatter trees and rocks. Without
+    // it the GPU-only mesh would be unreadable to that node.
+    inputValues: { divisions: [128, 128], cpu_access: true },
   });
   // Density 0.06 per m² over 10000 m² ≈ 600 candidate points. Slope and
   // altitude masks downstream cut this to a few hundred real placements.
