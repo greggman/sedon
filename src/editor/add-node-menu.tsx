@@ -1,7 +1,7 @@
 import { useReactFlow } from '@xyflow/react';
 import { useMemo, useState } from 'react';
 import type { NodeDef } from '../core/node-def.js';
-import { isSubgraphInternalKind } from '../core/subgraph.js';
+import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
 import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
 
@@ -17,14 +17,21 @@ export function AddNodeMenu({ canvasRef }: AddNodeMenuProps) {
   const addNodeToStore = useEditorStore((s) => s.addNode);
   const registry = useRegistry();
 
-  // Group node-defs by category from the runtime registry. Subgraph wrappers
-  // appear under "Subgraphs" automatically (defineSubgraph sets that category).
-  // Internal-only kinds (subgraph-input/*, subgraph-output/*) are filtered out
-  // — they live INSIDE a subgraph and aren't user-addable.
+  // Group node-defs by category from the runtime registry. Two kinds
+  // are filtered out:
+  //   • Internal-only (subgraph-input/*, subgraph-output/*) — they only
+  //     make sense INSIDE a subgraph.
+  //   • Subgraph wrapper instances (subgraph/<id>) — wrappers are
+  //     authored as assets, and the Asset panel (drag-to-canvas drops
+  //     them at the cursor) is the canonical path. Keeping them out of
+  //     this menu means one rule across the whole app: "Add this kind"
+  //     surfaces only the fixed library; project-defined wrappers
+  //     belong to the Asset world.
   const grouped = useMemo(() => {
     const map = new Map<string, NodeDef[]>();
     for (const def of registry.list()) {
       if (isSubgraphInternalKind(def.id)) continue;
+      if (isSubgraphInstanceKind(def.id)) continue;
       const list = map.get(def.category) ?? [];
       list.push(def);
       map.set(def.category, list);

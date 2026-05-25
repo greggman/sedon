@@ -20,10 +20,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Tokenized substring match: split the query on whitespace and
+  // require every token to appear somewhere in the label, in any
+  // order. So "add sphere" matches "Add: core/sphere" (both tokens
+  // present), the way a VSCode-ish palette does it. A plain substring
+  // search would force the user to know our exact label format
+  // ("Add:" vs "Add").
   const filtered = useMemo<PaletteCommand[]>(() => {
     const q = query.toLowerCase().trim();
     if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return commands.filter((c) => {
+      const label = c.label.toLowerCase();
+      return tokens.every((t) => label.includes(t));
+    });
   }, [commands, query]);
 
   // Reset state + focus the input every time the palette opens. Without

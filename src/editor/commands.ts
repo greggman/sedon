@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { isSubgraphInternalKind } from '../core/subgraph.js';
+import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
@@ -324,13 +324,18 @@ export function addNodeAtCanvasCenter(kind: string): void {
 
 // Build a palette command per registered NodeDef. The `Add: ` prefix
 // makes them searchable as a group (typing "add " in the palette shows
-// just these). Subgraph-internal kinds (subgraph-input/*,
-// subgraph-output/*) are excluded — they live INSIDE a subgraph and
-// aren't user-addable.
+// just these). Two kinds are excluded:
+//   • Subgraph-internal (subgraph-input/*, subgraph-output/*) — they
+//     live INSIDE a subgraph and aren't user-addable.
+//   • Subgraph wrapper instances (subgraph/<id>) — wrappers have a
+//     first-class UX in the Asset panel (folders, drag-to-canvas,
+//     thumbnails, rename), and surfacing them here as well drowns the
+//     fixed library out as soon as a project grows a few subgraphs.
 function buildAddNodeCommands(registry: NodeRegistry): PaletteCommand[] {
   const out: PaletteCommand[] = [];
   for (const def of registry.list()) {
     if (isSubgraphInternalKind(def.id)) continue;
+    if (isSubgraphInstanceKind(def.id)) continue;
     out.push({
       id: `add.${def.id}`,
       label: `Add: ${def.id}`,

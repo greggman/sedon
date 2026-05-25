@@ -1,13 +1,18 @@
 // "Add: X" entries in the Cmd-Shift-P palette. Verifies:
-//   1. After loading a graph, the palette contains an entry per
-//      registered NodeDef (e.g. "Add: core/sphere", "Add: leaf/skeleton"),
-//      plus the existing static commands.
-//   2. Subgraph-internal kinds (subgraph-input/*, subgraph-output/*)
-//      do NOT appear — they only make sense INSIDE a subgraph.
-//   3. Subgraph wrappers DO appear ("Add: subgraph/<id>") so users can
-//      drop a wrapper instance from the palette.
-//   4. Filtering by "add core/sphere" lands on the sphere command;
-//      pressing Enter inserts a core/sphere node into the active canvas.
+//   1. After loading a graph, the palette contains one entry per
+//      registered library NodeDef (e.g. "Add: core/sphere",
+//      "Add: leaf/skeleton") plus the existing static commands.
+//   2. Subgraph-internal kinds (subgraph-input/*, subgraph-output/*) do
+//      NOT appear — they only make sense INSIDE a subgraph.
+//   3. Subgraph wrapper instances (subgraph/<id>) also do NOT appear —
+//      wrappers are managed via the Asset panel; surfacing them here
+//      would create a second discovery surface that floods with every
+//      project-defined subgraph.
+//   4. Tokenized search: typing "add sphere" (with a space, no colon)
+//      filters to the sphere command — every whitespace-separated
+//      token must appear somewhere in the label.
+//   5. Pressing Enter inserts the chosen node into the active canvas
+//      and closes the palette.
 
 import puppeteer from 'puppeteer';
 import { startDevServer } from './lib/dev-server.mjs';
@@ -65,7 +70,7 @@ console.log(`add-node labels: ${addLabels.length}`);
 console.log('sample add labels:', addLabels.slice(0, 8));
 
 const hasSphere = addLabels.includes('Add: core/sphere');
-const hasWrapper = addLabels.some((l) => l.startsWith('Add: subgraph/'));
+const noWrappers = !addLabels.some((l) => l.startsWith('Add: subgraph/'));
 const noInternals = !addLabels.some((l) =>
   l.startsWith('Add: subgraph-input/') || l.startsWith('Add: subgraph-output/'),
 );
@@ -76,13 +81,17 @@ const beforeSphereCount = await page.evaluate(() =>
   window.__sedonStore__.getState().graph.nodes.filter((n) => n.kind === 'core/sphere').length,
 );
 
-await page.keyboard.type('core/sphere');
+// Use the "add sphere" form (with space, no colon) — this is the
+// case the user reported as broken before tokenized search.
+await page.keyboard.type('add sphere');
 await new Promise((r) => setTimeout(r, 150));
 const filteredLabels = await page.evaluate(() => {
   return [...document.querySelectorAll('.sedon-palette-label')]
     .map((el) => el.textContent ?? '');
 });
 console.log('filtered to:', filteredLabels);
+const tokenizedFiltersToSphere = filteredLabels.length === 1
+  && filteredLabels[0] === 'Add: core/sphere';
 
 await page.keyboard.press('Enter');
 await new Promise((r) => setTimeout(r, 400));
@@ -103,10 +112,12 @@ const sphereInserted = afterSphereCount === beforeSphereCount + 1
 
 console.log(`palette has many Add: entries:           ${hasSomeAdds ? 'PASS ✓' : 'FAIL ✗'} (${addLabels.length})`);
 console.log(`Add: core/sphere is present:             ${hasSphere ? 'PASS ✓' : 'FAIL ✗'}`);
-console.log(`Add: subgraph/<id> wrappers present:     ${hasWrapper ? 'PASS ✓' : 'FAIL ✗'}`);
+console.log(`Add: subgraph/<id> wrappers excluded:    ${noWrappers ? 'PASS ✓' : 'FAIL ✗'}`);
 console.log(`subgraph-input/output kinds excluded:    ${noInternals ? 'PASS ✓' : 'FAIL ✗'}`);
+console.log(`tokenized "add sphere" → core/sphere:    ${tokenizedFiltersToSphere ? 'PASS ✓' : 'FAIL ✗'} (got ${filteredLabels.length} matches)`);
 console.log(`Enter on filtered match inserts sphere:  ${sphereInserted ? 'PASS ✓' : 'FAIL ✗'} (before=${beforeSphereCount}, after=${afterSphereCount})`);
 console.log(`palette closes after Enter:              ${paletteClosed ? 'PASS ✓' : 'FAIL ✗'}`);
 
-const ok = hasSomeAdds && hasSphere && hasWrapper && noInternals && sphereInserted && paletteClosed;
+const ok = hasSomeAdds && hasSphere && noWrappers && noInternals
+  && tokenizedFiltersToSphere && sphereInserted && paletteClosed;
 process.exit(ok ? 0 : 1);

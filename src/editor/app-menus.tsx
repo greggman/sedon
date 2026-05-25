@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { isSubgraphInternalKind } from '../core/subgraph.js';
+import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
 import {
   addNodeAtCanvasCenter,
   cleanupActiveGraph,
@@ -68,14 +68,19 @@ export function useAppMenus(): TopMenu[] {
     };
 
     // ── Add ──────────────────────────────────────────────
-    // Group registered NodeDefs by category, exclude subgraph-internal
-    // kinds (subgraph-input/*, subgraph-output/*) — they only make
-    // sense inside a subgraph, not as a top-level "add this node".
+    // Group registered NodeDefs by category. Two kinds are excluded:
+    //   • subgraph-internal (subgraph-input/*, subgraph-output/*) —
+    //     only meaningful inside a subgraph, not a top-level "add".
+    //   • subgraph wrapper instances (subgraph/<id>) — the Asset panel
+    //     is the canonical place for those, with folders, drag-to-
+    //     canvas, and thumbnails. Listing them here too creates a
+    //     second discovery surface that fills up with every wrapper.
     // Each leaf inserts a node into the active canvas via the same
     // path the right-click Add-Node menu uses.
     const grouped = new Map<string, { id: string; label: string }[]>();
     for (const def of registry.list()) {
       if (isSubgraphInternalKind(def.id)) continue;
+      if (isSubgraphInstanceKind(def.id)) continue;
       const list = grouped.get(def.category) ?? [];
       list.push({ id: def.id, label: def.id });
       grouped.set(def.category, list);
