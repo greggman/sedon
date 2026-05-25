@@ -104,7 +104,7 @@ const sample = await page.evaluate(async (b64) => {
   const data = ctx.getImageData(0, 0, w, h).data;
   const targets = {
     bg:    [0x1a, 0x1a, 0x1f],
-    shape: [0xe8, 0xe8, 0xe8],
+    shape: [0x7c, 0x7c, 0x7c],
     vein:  [0xff, 0xa5, 0x26],
   };
   const dist = (r, g, b, t) => Math.hypot(r - t[0], g - t[1], b - t[2]);
@@ -115,9 +115,11 @@ const sample = await page.evaluate(async (b64) => {
     const dBg = dist(r, g, b, targets.bg);
     const dShape = dist(r, g, b, targets.shape);
     const dVein = dist(r, g, b, targets.vein);
+    // Assign each pixel to the nearest target color. No "other" bucket
+    // — the mid-grey shape is close in distance to the dark bg, so a
+    // strict cutoff loses too many AA pixels along the leaf edge.
     const min = Math.min(dBg, dShape, dVein);
-    if (min > 60) counts.other++;
-    else if (min === dBg) counts.bg++;
+    if (min === dBg) counts.bg++;
     else if (min === dShape) counts.shape++;
     else counts.vein++;
   }

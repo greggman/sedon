@@ -8,14 +8,16 @@ import {
 } from 'dockview';
 import { useCallback, useEffect, useState } from 'react';
 import { useAppMenus } from './app-menus.js';
+import { getActiveAssetPanel } from './asset-clipboard.js';
 import { CommandPalette } from './command-palette.js';
 import { GithubLink } from './github-link.js';
-import { setDockviewApi } from './dockview-handle.js';
+import { getDockviewApi, setDockviewApi } from './dockview-handle.js';
 import { GraphSwitcher } from './graph-switcher.js';
 import { MenuBar } from './menubar.js';
 import { PANEL_COMPONENTS } from './panels.js';
 import { bumpPopoutGeneration } from './popout-bus.js';
 import { useLayoutStore } from './layout-store.js';
+import { getCanvasRf } from './rf-registry.js';
 
 // App shell:
 //
@@ -132,6 +134,61 @@ export function App() {
       }
       e.preventDefault();
       setPaletteOpen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Cmd/Ctrl+A: select-all in the active DockView panel rather than
+  // letting the browser select the page's DOM text. Routes by panel
+  // kind:
+  //   • node-canvas → mark every RF node selected in *that* canvas.
+  //   • assets      → call the active AssetsPanel's performSelectAll
+  //                   (its own listener also handles this when focus
+  //                   is inside the panel; performSelectAll is
+  //                   idempotent, so a double-call is harmless).
+  //   • preview     → preventDefault no-op (we have no select-all
+  //                   semantics there yet, but blocking the browser's
+  //                   page-wide highlight is still better than
+  //                   nothing).
+  // Skipped entirely when focus is in a text-typed input so users can
+  // still select-all inside rename / search / palette fields.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.shiftKey || e.altKey) return;
+      if (e.key !== 'a' && e.key !== 'A') return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        if (t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+        if (t.tagName === 'INPUT') {
+          const tt = (t as HTMLInputElement).type;
+          if (
+            tt === 'text' || tt === 'search' || tt === 'url'
+            || tt === 'tel' || tt === 'email' || tt === 'password'
+          ) {
+            return;
+          }
+        }
+      }
+      const api = getDockviewApi();
+      const active = api?.activePanel;
+      if (!active) return;
+      const kind = active.view.contentComponent;
+      if (kind === 'node-canvas') {
+        const rf = getCanvasRf(active.id);
+        if (!rf) return;
+        e.preventDefault();
+        rf.setNodes((nds) => nds.map((n) => (n.selected ? n : { ...n, selected: true })));
+      } else if (kind === 'assets') {
+        e.preventDefault();
+        getActiveAssetPanel()?.performSelectAll();
+      } else if (kind === 'preview') {
+        // Suppress the browser's "select all text on page" — Preview
+        // has no select-all of its own yet, but the page-wide highlight
+        // is worse than nothing.
+        e.preventDefault();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
