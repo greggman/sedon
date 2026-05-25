@@ -63,6 +63,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'BranchGraph', color: '#8d6e63', description: 'tree/plant branch skeleton: graph of branch curves with per-vertex radius' },
   { id: 'Heightfield', color: '#827717', description: '2D scalar field with world bounds + height range' },
   { id: 'Lighting', color: '#fff176', description: 'scene-level sun + ambient lighting params' },
+  { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

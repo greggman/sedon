@@ -17,6 +17,7 @@ import {
   type MaterialKindImpl,
 } from './material-kind.js';
 import { createPbrKind } from './materials/pbr-kind.js';
+import { createTerrainMultiLayerKind } from './materials/terrain-multi-layer-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
 import { debug } from '../core/debug.js';
 import { getSampler, gpuObjectId } from './gpu-cache.js';
@@ -407,6 +408,7 @@ function ensureSharedRendererState(
   const kinds = new Map<MaterialValue['kind'], MaterialKindImpl>([
     ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
+    ['terrain-multi-layer', createTerrainMultiLayerKind(device, HDR_FORMAT, sceneBindGroupLayout)],
   ]);
   const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
   const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);

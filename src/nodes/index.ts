@@ -54,7 +54,9 @@ import { slopeFromHeightNode } from './slope-from-height.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { stemPointsNode } from './stem-points.js';
+import { terrainLayerNode } from './terrain-layer.js';
 import { terrainMaterialNode } from './terrain-material.js';
+import { terrainMultiLayerMaterialNode } from './terrain-multi-layer-material.js';
 import { transformNode } from './transform.js';
 import { uvTransformNode } from './uv-transform.js';
 import { warpNode } from './warp.js';
@@ -114,6 +116,8 @@ export const CORE_NODES = [
   slopeFromHeightNode,
   materialNode,
   terrainMaterialNode,
+  terrainLayerNode,
+  terrainMultiLayerMaterialNode,
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
@@ -184,7 +188,9 @@ export {
   solidColorNode,
   sphereNode,
   stemPointsNode,
+  terrainLayerNode,
   terrainMaterialNode,
+  terrainMultiLayerMaterialNode,
   transformNode,
   uvTransformNode,
   warpNode,

@@ -42,7 +42,7 @@ export interface CpuMeshRef {
 // kind module, and a new node that produces it. The rest of the engine
 // (scene graph, instance buffer, lighting/fog uniforms, sampler) stays
 // untouched.
-export type MaterialValue = PbrMaterial | TerrainSplatMaterial;
+export type MaterialValue = PbrMaterial | TerrainSplatMaterial | TerrainMultiLayerMaterial;
 
 /**
  * Standard PBR Cook-Torrance (the only kind until we shipped this refactor).
@@ -115,6 +115,57 @@ export interface TerrainSplatMaterial {
    */
   normalA?: Texture2DValue;
   normalB?: Texture2DValue;
+}
+
+/**
+ * One layer in a multi-layer terrain material. Every layer carries at least
+ * a basecolor; the other channels (normal, height, roughness) are optional
+ * and the renderer fills missing slots with neutral defaults (flat normal,
+ * mid-height 0.5, mid-roughness 0.6) so a layer wired with just albedo
+ * still renders sensibly. The height channel feeds the height-weighted
+ * blend in the shader — when one layer's local height beats its neighbors
+ * the blend snaps to that layer rather than cross-fading, which is what
+ * makes layered terrain look painted rather than dissolved.
+ */
+export interface TerrainLayerValue {
+  albedo: Texture2DValue;
+  normal?: Texture2DValue;
+  height?: Texture2DValue;
+  roughness?: Texture2DValue;
+}
+
+/**
+ * Multi-layer terrain material. Up to 4 layers in v1, weighted per pixel by
+ * an RGBA splat texture (R = layer 0 weight, G = layer 1, B = layer 2, A =
+ * layer 3). Chained splat textures for N > 4 are a planned extension; the
+ * shader already unrolls 4 samples so the wider variant just needs another
+ * splat input and the bind-group layout to take it.
+ *
+ * The renderer assembles each layer's textures into texture-2d-arrays at
+ * bind-group build time. All input textures for a given channel must share
+ * width/height/format; mismatched sizes throw at material build (we'll add
+ * blit-resize when an actual project needs it).
+ */
+export interface TerrainMultiLayerMaterial {
+  kind: 'terrain-multi-layer';
+  /** 1..4 layers. Unused slots in the pipeline get neutral defaults. */
+  layers: TerrainLayerValue[];
+  /**
+   * RGBA splat. R/G/B/A = weight for layers 0/1/2/3 respectively, in any
+   * range — the shader normalises. Mask samples at un-tiled UVs so the
+   * splat pattern follows terrain shape.
+   */
+  splat: Texture2DValue;
+  /** UV multiplier for per-layer textures (not the splat). Default [1,1]. */
+  tileScale: [number, number];
+  /** Single global metallic (terrain is normally 0). */
+  metallic: number;
+  /**
+   * Strength of the height-weighted blend: 0 = pure linear (splat-only)
+   * blending; higher = the layer with the highest local height wins more
+   * sharply. Typical good range 4..16. Default 4.
+   */
+  heightBlendSharpness: number;
 }
 
 // A renderable scene is a list of entities. Each entity carries a geometry +
@@ -664,6 +715,22 @@ export function walkGpuResources(
       walkGpuResources(v.mask, visit, seen, _depth + 1);
       walkGpuResources(v.normalA, visit, seen, _depth + 1);
       walkGpuResources(v.normalB, visit, seen, _depth + 1);
+      return;
+    }
+    if (v.kind === 'terrain-multi-layer') {
+      // Each layer is { albedo, normal?, height?, roughness? } and the
+      // splat texture is shared across them. Recurse into each layer's
+      // texture slots so the cache keeps source textures alive while
+      // this material is referenced.
+      if (Array.isArray(v.layers)) {
+        for (const layer of v.layers as Array<Record<string, unknown>>) {
+          walkGpuResources(layer.albedo, visit, seen, _depth + 1);
+          walkGpuResources(layer.normal, visit, seen, _depth + 1);
+          walkGpuResources(layer.height, visit, seen, _depth + 1);
+          walkGpuResources(layer.roughness, visit, seen, _depth + 1);
+        }
+      }
+      walkGpuResources(v.splat, visit, seen, _depth + 1);
       return;
     }
   }
