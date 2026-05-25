@@ -21,6 +21,7 @@ import { MaterialPreview } from './material-preview.js';
 import { useRegistry } from './registry.js';
 import { ScenePreview } from './scene-preview.js';
 import { useEditorStore, type CameraState } from './store.js';
+import { LeafSkeletonPreview } from './leaf-skeleton-preview.js';
 import { TexturePreview } from './texture-preview.js';
 
 const types = createCoreTypeRegistry();
@@ -677,7 +678,22 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       {hasSlot && (
         <div className="sedon-node-preview-block" style={{ padding: PREVIEW_PADDING }}>
           {previewTarget && device ? (
-            previewTarget.kind === 'material' ? (
+            // Leaf-skeleton special case: the node emits two greyscale
+            // textures (shape + veins). The generic TexturePreview would
+            // only show the silhouette; this composites both so the user
+            // can see vein placement against the leaf at a glance.
+            // Downstream consumers still see the two separate textures.
+            def.id === 'leaf/skeleton'
+              && myOutputs
+              && isTexture2D(myOutputs.shape)
+              && isTexture2D(myOutputs.veins) ? (
+              <LeafSkeletonPreview
+                device={device}
+                shape={myOutputs.shape}
+                veins={myOutputs.veins}
+                size={PREVIEW_SIZE}
+              />
+            ) : previewTarget.kind === 'material' ? (
               <MaterialPreview
                 device={device}
                 material={previewTarget.value}
