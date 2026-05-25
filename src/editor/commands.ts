@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isSubgraphInternalKind } from '../core/subgraph.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
@@ -6,7 +7,9 @@ import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
-import { getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
+import type { NodeRegistry } from '../core/node-def.js';
+import { useRegistry } from './registry.js';
+import { getActiveCanvasEl, getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
 // Catalog of "no-argument" actions invokable from the command palette.
@@ -29,10 +32,13 @@ export interface PaletteCommand {
 }
 
 export function useCommands(): PaletteCommand[] {
-  // Static catalog — no React Flow context needed any more (file-ops
-  // operate purely on the store). useMemo just avoids handing a fresh
-  // array to the palette every parent render.
-  return useMemo(() => buildCommands(), []);
+  // The static catalog is fixed at build time; "Add: <kind>" entries
+  // are derived from the runtime registry, which changes whenever the
+  // user creates or renames a subgraph. Subscribing here keeps the
+  // palette in sync — open it after creating a subgraph and you'll see
+  // the wrapper as a searchable Add command without a reload.
+  const registry = useRegistry();
+  return useMemo(() => [...buildCommands(), ...buildAddNodeCommands(registry)], [registry]);
 }
 
 function buildCommands(): PaletteCommand[] {
@@ -293,4 +299,44 @@ function slugifyForSubgraph(label: string, existing: ReadonlySet<string>): strin
     const candidate = `${base}-${i}`;
     if (!existing.has(candidate) && candidate !== 'main') return candidate;
   }
+}
+
+// Insert a node of the given kind into the active canvas, positioned at
+// the visible center. Mirrors the right-click AddNodeMenu's placement —
+// the active canvas's RF instance maps the canvas-center screen point
+// to flow coordinates. No-op if no canvas is registered.
+export function addNodeAtCanvasCenter(kind: string): void {
+  const rf = getActiveCanvasRf();
+  if (!rf) return;
+  const id = crypto.randomUUID();
+  let position = { x: 100, y: 100 };
+  const el = getActiveCanvasEl();
+  if (el) {
+    const r = el.getBoundingClientRect();
+    position = rf.screenToFlowPosition({
+      x: r.left + r.width / 2,
+      y: r.top + r.height / 2,
+    });
+  }
+  rf.addNodes({ id, type: 'sedon', position, data: { kind } });
+  useEditorStore.getState().addNode({ id, kind });
+}
+
+// Build a palette command per registered NodeDef. The `Add: ` prefix
+// makes them searchable as a group (typing "add " in the palette shows
+// just these). Subgraph-internal kinds (subgraph-input/*,
+// subgraph-output/*) are excluded — they live INSIDE a subgraph and
+// aren't user-addable.
+function buildAddNodeCommands(registry: NodeRegistry): PaletteCommand[] {
+  const out: PaletteCommand[] = [];
+  for (const def of registry.list()) {
+    if (isSubgraphInternalKind(def.id)) continue;
+    out.push({
+      id: `add.${def.id}`,
+      label: `Add: ${def.id}`,
+      run: () => addNodeAtCanvasCenter(def.id),
+    });
+  }
+  out.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
 }

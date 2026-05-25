@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { isSubgraphInternalKind } from '../core/subgraph.js';
 import {
+  addNodeAtCanvasCenter,
   cleanupActiveGraph,
   closeActivePanel,
   createPanel,
@@ -127,28 +128,3 @@ export function useAppMenus(): TopMenu[] {
   }, [registry, undoLen, redoLen]);
 }
 
-// Insert a node of the given kind into the active canvas, positioned at
-// the visible center. Mirrors AddNodeMenu's behavior — it uses the
-// active canvas's RF instance to map viewport center to flow coords.
-// No-op if no canvas is registered.
-function addNodeAtCanvasCenter(kind: string): void {
-  // Lazy import to avoid pulling rf-registry into a path with no
-  // canvas yet (irrelevant in practice, but the menus are constructed
-  // at app-shell render — before any canvas mounts on first load).
-  import('./rf-registry.js').then(({ getActiveCanvasRf, getActiveCanvasEl }) => {
-    const rf = getActiveCanvasRf();
-    if (!rf) return;
-    const id = crypto.randomUUID();
-    let position = { x: 100, y: 100 };
-    const el = getActiveCanvasEl();
-    if (el) {
-      const r = el.getBoundingClientRect();
-      position = rf.screenToFlowPosition({
-        x: r.left + r.width / 2,
-        y: r.top + r.height / 2,
-      });
-    }
-    rf.addNodes({ id, type: 'sedon', position, data: { kind } });
-    useEditorStore.getState().addNode({ id, kind });
-  });
-}
