@@ -46,6 +46,12 @@
 }
 .sedon-panel--canvas {
   background: #1a1a1f;
+  /* Make the canvas panel a size container so its contents can size
+   * relative to the panel's actual height via `cqh` — used by the
+   * "+ Add Node" popup so it auto-shrinks when the user drags the
+   * canvas/assets splitter. DockView sizes the panel from outside,
+   * so `contain: size` (implied here) doesn't affect intrinsic sizing. */
+  container-type: size;
 }
 .sedon-panel--preview {
   background: #0d0d10;
@@ -504,7 +510,11 @@
 .sedon-add-node-popup {
   margin-top: 4px;
   min-width: 200px;
-  max-height: calc(100vh - 60px);
+  /* `cqh` = % of the canvas panel's height (container-type: size on
+   * .sedon-panel--canvas above). 60px headroom covers the button +
+   * its top/bottom margins. This auto-updates on splitter drag with
+   * no JS measurement. */
+  max-height: calc(100cqh - 60px);
   overflow-y: auto;
 }
 
