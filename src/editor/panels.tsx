@@ -1,6 +1,6 @@
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import type { IDockviewPanelProps } from 'dockview';
-import { useRef } from 'react';
+import type { DockviewPanelApi, IDockviewPanelProps } from 'dockview';
+import { useEffect, useRef } from 'react';
 import { wouldCreateCycle } from '../core/folder.js';
 import { AddNodeMenu } from './add-node-menu.js';
 import { AssetsPanel, ASSET_DND_TYPE, type AssetDndItem } from './assets-panel.js';
@@ -8,6 +8,28 @@ import { useLayoutStore } from './layout-store.js';
 import { NodeCanvas } from './node-canvas.js';
 import { Preview } from './preview.js';
 import { useEditorStore } from './store.js';
+
+// Resolve a graph id ('main' or a subgraph id) into its human label.
+// 'main' becomes 'Main'; subgraphs use their SubgraphDef.label (which
+// is renameable, so the tab updates live when the user renames a
+// subgraph). Falls back to the raw id if the subgraph was deleted —
+// usually transient (e.g. mid-undo) and clearer than a blank tab.
+function useGraphLabel(graphId: string): string {
+  return useEditorStore((s) => {
+    if (graphId === 'main') return 'Main';
+    const sg = s.subgraphs.find((g) => g.id === graphId);
+    return sg?.label ?? graphId;
+  });
+}
+
+// Push `title` into the DockView tab whenever it changes. Used by
+// Canvas + Preview panels to mirror "which graph am I showing" into
+// the tab strip — same convention VSCode uses for file tabs.
+function useDockviewPanelTitle(api: DockviewPanelApi, title: string): void {
+  useEffect(() => {
+    api.setTitle(title);
+  }, [api, title]);
+}
 
 // DockView panel components. Each panel kind ('node-canvas', 'preview',
 // 'assets', later 'inspector' / …) is registered once via the components
@@ -23,6 +45,15 @@ import { useEditorStore } from './store.js';
 // The inner component lives below the provider so it can use
 // useReactFlow(), which only resolves inside its provider's subtree.
 export function NodeCanvasPanel(props: IDockviewPanelProps) {
+  // Resolve effective graph for this canvas (pinned id or whatever the
+  // user is currently editing) and mirror its label into the tab.
+  // Same fallback chain as NodeCanvas itself — kept here so the title
+  // updates even before the inner component mounts.
+  const pinnedGraphId = useLayoutStore((s) => s.canvasGraphIds[props.api.id]);
+  const currentEditingId = useEditorStore((s) => s.currentEditingId);
+  const effectiveGraphId = pinnedGraphId ?? currentEditingId;
+  const label = useGraphLabel(effectiveGraphId);
+  useDockviewPanelTitle(props.api, label);
   return (
     <ReactFlowProvider>
       <NodeCanvasPanelInner panelId={props.api.id} />
@@ -121,6 +152,13 @@ export function PreviewPanel(props: IDockviewPanelProps) {
   // The pin lives in the layout store keyed by DockView panel id, so
   // each Preview maintains an independent target.
   const panelId = props.api.id;
+  // Mirror the effective graph label into the tab title, same chain
+  // Preview itself uses for picking which graph to render.
+  const pinnedGraphId = useLayoutStore((s) => s.pinnedGraphIds[panelId]);
+  const currentEditingId = useEditorStore((s) => s.currentEditingId);
+  const effectiveGraphId = pinnedGraphId ?? currentEditingId;
+  const label = useGraphLabel(effectiveGraphId);
+  useDockviewPanelTitle(props.api, label);
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
       e.preventDefault();

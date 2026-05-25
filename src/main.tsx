@@ -31,6 +31,11 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
     (window as unknown as { __sedonOpenGraphInCanvas__: typeof m.openGraphInCanvas }).__sedonOpenGraphInCanvas__ = m.openGraphInCanvas;
     (window as unknown as { __sedonOpenGraphInPreview__: typeof m.openGraphInPreview }).__sedonOpenGraphInPreview__ = m.openGraphInPreview;
   });
+  // Dockview API getter so repros can read panel titles / iterate
+  // panels without poking the DOM tab strip.
+  void import('./editor/dockview-handle.js').then((m) => {
+    (window as unknown as { __sedonGetDockview__: typeof m.getDockviewApi }).__sedonGetDockview__ = m.getDockviewApi;
+  });
   // Card-array blit counter — lets headless grass repros assert a colour
   // edit re-copies the array (a WebGPU canvas can't be pixel-diffed).
   void import('./render/grass.js').then((m) => {
