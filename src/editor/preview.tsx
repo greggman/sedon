@@ -462,7 +462,10 @@ export function Preview({ panelId }: PreviewProps = {}) {
     // preview-tile.tsx, change them here.
     const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
     const PREVIEW_NEAR = 0.1;
-    const PREVIEW_FAR = 100;
+    // Adaptive far plane — matches the colour-render frustum in
+    // preview-tile.tsx so the picking ray traverses the same depth
+    // range the user sees. A fixed 100m cap clipped 200m+ scenes.
+    const previewFar = (distance: number) => Math.max(200, distance * 4);
 
     // Walk the registered tiles and return the one whose canvas
     // contains `clientX, clientY`. Returns the canvas rect + entry so
@@ -518,7 +521,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
         viewportWidth: canvas.width, viewportHeight: canvas.height,
         modelView,
         fovYRadians: PREVIEW_FOV_Y, aspect: canvas.width / canvas.height,
-        zNear: PREVIEW_NEAR, zFar: PREVIEW_FAR,
+        zNear: PREVIEW_NEAR, zFar: previewFar(cam.distance),
       });
       if (id === 0) {
         // Click on sky / empty → deselect, matching how every DCC
@@ -640,7 +643,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
         viewportWidth: canvas.width, viewportHeight: canvas.height,
         modelView,
         fovYRadians: PREVIEW_FOV_Y, aspect: canvas.width / canvas.height,
-        zNear: PREVIEW_NEAR, zFar: PREVIEW_FAR,
+        zNear: PREVIEW_NEAR, zFar: previewFar(cam.distance),
       });
       const info = id !== 0 ? entry.renderer.getPickInfo(id) : null;
 

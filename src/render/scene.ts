@@ -5,6 +5,7 @@ import type {
   MaterialValue,
   SceneEntity,
   SceneValue,
+  TerrainFieldValue,
 } from '../core/resources.js';
 import { createGrassSystem, type GrassSystem } from './grass.js';
 import { ATMOSPHERIC_SUN_INTENSITY } from './sky-sample.js';
@@ -19,6 +20,7 @@ import {
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainMultiLayerKind } from './materials/terrain-multi-layer-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
+import { createTerrainSystem, type TerrainSystem } from './terrain-render.js';
 import { debug } from '../core/debug.js';
 import { getSampler, gpuObjectId } from './gpu-cache.js';
 import bloomDownsampleShaderCode from './bloom-downsample.wgsl';
@@ -980,6 +982,27 @@ export function createSceneRenderer(
     }
     return grassSystem;
   }
+  // Same lazy pattern for terrain (chunked-LOD renderer). Created on
+  // first use, never destroyed during the lifetime of the renderer.
+  // The material-bind-group layout has to match the terrain-multi-
+  // layer kind exactly so a single bind group is shared between the
+  // terrain renderer and any scene-entity that also uses the kind.
+  let terrainSystem: TerrainSystem | null = null;
+  let terrainFields: TerrainFieldValue[] = [];
+  function ensureTerrain(): TerrainSystem {
+    if (!terrainSystem) {
+      const tmlKind = shared.kinds.get('terrain-multi-layer');
+      if (!tmlKind) throw new Error('terrain renderer requires the terrain-multi-layer material kind');
+      const materialBindGroupLayout = (tmlKind.pipeline.getBindGroupLayout as (i: number) => GPUBindGroupLayout)(1);
+      terrainSystem = createTerrainSystem(
+        device,
+        HDR_FORMAT,
+        shared.sceneBindGroupLayout,
+        materialBindGroupLayout,
+      );
+    }
+    return terrainSystem;
+  }
   // Per-renderer ref tracking. Each setScene call updates these to the
   // CURRENT set of pool keys this renderer is holding refs on. The diff
   // against the previous round tells us which pool entries to release
@@ -1401,6 +1424,30 @@ export function createSceneRenderer(
     // Grass fields are render-time recipes, not batched entities — just
     // hold the list; the per-frame compute/draw in render() consumes it.
     grassFields = scene.grass ?? [];
+    // Terrain fields likewise. We also pre-warm the material cache for
+    // each field's material so the per-frame draw can just look up the
+    // bind group; building it on a frame would do the texture-2d-array
+    // assembly (16 render-pass blits) every frame, which would be
+    // catastrophic.
+    terrainFields = scene.terrain ?? [];
+    for (const f of terrainFields) {
+      const kindId: MaterialValue['kind'] = f.material.kind;
+      const kind = shared.kinds.get(kindId);
+      if (!kind) throw new Error(`terrain field references unknown material kind: ${kindId}`);
+      const structuralKey = (kind.materialStructuralKey as (m: MaterialValue) => string)(f.material);
+      const cacheKey = `${kindId}:${structuralKey}`;
+      usedMaterialKeys.add(cacheKey);
+      acquireMaterial(cacheKey, () => {
+        const built = (
+          kind.buildBindGroup as (m: MaterialValue) => { bindGroup: GPUBindGroup; paramBuffer: GPUBuffer }
+        )(f.material);
+        return { bindGroup: built.bindGroup, paramBuffer: built.paramBuffer };
+      });
+      (kind.writeMaterialParams as (m: MaterialValue, b: GPUBuffer) => void)(
+        f.material,
+        materialCacheGlobal.get(cacheKey)!.value.paramBuffer,
+      );
+    }
 
     // ----------------------------------------------------------------
     // GPU-picking bookkeeping: assign a contiguous id range to each
@@ -1743,6 +1790,28 @@ export function createSceneRenderer(
       if (!flatPreview && grassFields.length > 0) {
         ensureGrass().compute(encoder, grassFields, { modelView, projection, time });
       }
+      // Terrain LOD-selection compute — also before the color pass.
+      // Picks an LOD per chunk from camera distance and populates the
+      // per-LOD chunk-instance buffer + drawArgs that the draw pass
+      // below consumes. Material bind groups are resolved from the
+      // pre-warmed cache populated in setScene.
+      if (!flatPreview && terrainFields.length > 0) {
+        const sys = ensureTerrain();
+        sys.compute(
+          encoder,
+          terrainFields,
+          { modelView, projection },
+          sceneBindGroup,
+          (material) => {
+            const kindId = material.kind;
+            const kind = shared.kinds.get(kindId)!;
+            const structuralKey = (kind.materialStructuralKey as (m: MaterialValue) => string)(material);
+            const entry = materialCacheGlobal.get(`${kindId}:${structuralKey}`);
+            if (!entry) throw new Error('terrain material bind group missing from cache');
+            return entry.value.bindGroup;
+          },
+        );
+      }
 
       // Main color pass — writes linear-HDR into hdrColor.
       const pass = encoder.beginRenderPass({
@@ -1818,6 +1887,19 @@ export function createSceneRenderer(
       // depth-writing pipeline, so grass self-occludes correctly.
       if (!flatPreview && grassFields.length > 0) {
         ensureGrass().draw(pass, grassFields);
+      }
+      // Terrain draw: indirect-draw per LOD bucket, reading from the
+      // chunk-instance + drawArgs buffers the compute pass populated.
+      // Material bind group resolved from the same cache as the
+      // compute side so structural-key sharing works across the two
+      // calls.
+      if (!flatPreview && terrainFields.length > 0) {
+        ensureTerrain().draw(pass, terrainFields, (material) => {
+          const kindId = material.kind;
+          const kind = shared.kinds.get(kindId)!;
+          const structuralKey = (kind.materialStructuralKey as (m: MaterialValue) => string)(material);
+          return materialCacheGlobal.get(`${kindId}:${structuralKey}`)!.value.bindGroup;
+        });
       }
       pass.end();
 

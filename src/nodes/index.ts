@@ -56,6 +56,7 @@ import { sphereNode } from './sphere.js';
 import { stemPointsNode } from './stem-points.js';
 import { hydraulicErosionNode } from './hydraulic-erosion.js';
 import { terrainLayerNode } from './terrain-layer.js';
+import { terrainRendererNode } from './terrain-renderer.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { terrainMultiLayerMaterialNode } from './terrain-multi-layer-material.js';
 import { transformNode } from './transform.js';
@@ -119,6 +120,7 @@ export const CORE_NODES = [
   terrainMaterialNode,
   terrainLayerNode,
   terrainMultiLayerMaterialNode,
+  terrainRendererNode,
   hydraulicErosionNode,
   sceneEntityNode,
   sceneMergeNode,
@@ -194,6 +196,7 @@ export {
   terrainLayerNode,
   terrainMaterialNode,
   terrainMultiLayerMaterialNode,
+  terrainRendererNode,
   transformNode,
   uvTransformNode,
   warpNode,

@@ -168,6 +168,47 @@ export interface TerrainMultiLayerMaterial {
   heightBlendSharpness: number;
 }
 
+/**
+ * Chunked-LOD terrain field. Render-time recipe (no CPU mesh, no GPU
+ * vertex buffers in this value — the renderer pre-builds shared
+ * unit-grid meshes per LOD level once per field, then per frame:
+ *   1. compute pass selects an LOD per chunk from camera distance,
+ *   2. one indirect-draw per LOD bucket reads its filtered
+ *      chunk-instance buffer and writes vertices in the vertex shader
+ *      by sampling the heightfield directly.
+ *
+ * Carried on {@link SceneValue.terrain} alongside the grass field
+ * collection. Authored via the `terrain/renderer` node which packages
+ * a heightfield + a multi-layer terrain material + chunk/LOD
+ * parameters into one of these values.
+ */
+export interface TerrainFieldValue {
+  /** Drives the chunk vertex displacement and per-chunk height bounds. */
+  heightfield: HeightfieldValue;
+  /**
+   * Surface material. Bound via the existing terrain-multi-layer
+   * material-kind impl so the same fragment shader serves both regular
+   * scene entities and chunked terrain.
+   */
+  material: TerrainMultiLayerMaterial;
+  /** Chunk grid resolution across X and Z. Tuple of positive ints. */
+  chunkCount: [number, number];
+  /**
+   * Number of LOD levels. Vertex count per edge at LOD i =
+   * baseDivisions / 2^i (with 2-edge floor). e.g. baseDivisions 32 +
+   * lodLevels 4 → 32 / 16 / 8 / 4 verts per edge at LOD 0..3.
+   */
+  lodLevels: number;
+  /** Vertex count per edge at LOD 0. */
+  baseDivisions: number;
+  /**
+   * Camera distance (world units) at which each chunk drops one LOD.
+   * Chunk-center distance / lodDistance, clamped to [0, lodLevels-1],
+   * floored = chunk's LOD index.
+   */
+  lodDistance: number;
+}
+
 // A renderable scene is a list of entities. Each entity carries a geometry +
 // material reference and an instance transform (a column-major 4x4 matrix).
 // Entities sharing the same (geometry, material) refs get batched by the
@@ -321,6 +362,15 @@ export interface SceneValue {
    * constructor stays valid.
    */
   grass?: GrassFieldValue[];
+  /**
+   * Chunked-LOD terrain fields. Each field is a render-time recipe (see
+   * {@link TerrainFieldValue}); the renderer's per-frame compute pass
+   * picks an LOD per chunk from the camera distance and issues an
+   * indirect-draw per LOD bucket. Like {@link grass}, this is an
+   * optional add-on to a Scene: missing/empty for scenes without a
+   * terrain renderer.
+   */
+  terrain?: TerrainFieldValue[];
 }
 
 export interface PointCloudValue {
@@ -694,6 +744,16 @@ export function walkGpuResources(
         walkGpuResources(field.typeMap, visit, seen, _depth + 1);
         walkGpuResources(field.density, visit, seen, _depth + 1);
         walkGpuResources(field.heightfield, visit, seen, _depth + 1);
+      }
+    }
+    // Same story for terrain fields: they reference the input
+    // heightfield + material textures via the field value, and the
+    // renderer reaches for those on every frame's draw. Sweep needs
+    // to keep them alive while a terrain field is in the cache.
+    if (Array.isArray(v.terrain)) {
+      for (const field of v.terrain as Array<Record<string, unknown>>) {
+        walkGpuResources(field.heightfield, visit, seen, _depth + 1);
+        walkGpuResources(field.material, visit, seen, _depth + 1);
       }
     }
     return;

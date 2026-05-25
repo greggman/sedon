@@ -169,7 +169,12 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       const cam = cameraRef.current;
       debug(() => `[PreviewTile draw] label="${label}" yaw=${cam.yaw.toFixed(3)} pitch=${cam.pitch.toFixed(3)} dist=${cam.distance.toFixed(3)} target=[${cam.target.map((v) => v.toFixed(2)).join(',')}]`);
       const aspect = canvas.width / canvas.height;
-      const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, 100);
+      // zFar scales with orbit distance so the far plane never clips
+      // the scene back. Reverse-Z + depth32float keeps precision fine
+      // out to many km; the `max(200, …)` floor keeps tiny camera
+      // distances from collapsing the depth budget to nothing.
+      // Matches scene-preview.tsx's adaptive formula.
+      const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, Math.max(200, cam.distance * 4));
       // modelView = trans(0,0,-distance) * rotX(pitch) * rotY(yaw) * trans(-target)
       const modelView = multiply(
         multiply(
