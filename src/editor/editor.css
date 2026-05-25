@@ -526,11 +526,117 @@
 .sedon-top-toolbar {
   display: flex;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 2px 6px;
   background: #1a1a1f;
   border-bottom: 1px solid #2a2a2f;
-  z-index: 10;
-  justify-content: flex-end;
+  z-index: 20;
+  align-items: stretch;
+}
+
+.sedon-top-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+/* ============================================================
+ * Menu bar (App menu — File / Edit / Add / View)
+ * ============================================================ */
+.sedon-menubar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.sedon-menubar-item-wrap {
+  position: relative;
+}
+
+.sedon-menubar-item {
+  background: transparent;
+  border: none;
+  color: #ddd;
+  cursor: pointer;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
+
+.sedon-menubar-item:hover,
+.sedon-menubar-item--open {
+  background: #3a3a48;
+}
+
+/* Top-level menu drop-down popup. */
+.sedon-menubar-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  min-width: 180px;
+  z-index: 100;
+}
+
+/* Submenu fly-out. JS positions it via inline style. */
+.sedon-menubar-submenu {
+  min-width: 180px;
+  z-index: 101;
+}
+
+/* Row inside a menu popup. */
+.sedon-menu-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  cursor: pointer;
+  color: #ddd;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+}
+
+.sedon-menu-row--active,
+.sedon-menu-row:hover {
+  background: #3a3a48;
+}
+
+.sedon-menu-row-label {
+  flex: 1 1 auto;
+}
+
+.sedon-menu-row-shortcut {
+  margin-left: 24px;
+  color: #888;
+  font-size: 11px;
+}
+
+.sedon-menu-row-chevron {
+  margin-left: 12px;
+  color: #888;
+  font-size: 10px;
+}
+
+/* A disabled row swallows clicks via a transparent overlay (still
+ * shows the label in muted gray). */
+.sedon-menu-row-disabled-overlay {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.sedon-menu-row:has(> .sedon-menu-row-disabled-overlay) {
+  color: #666;
+  cursor: default;
+}
+.sedon-menu-row:has(> .sedon-menu-row-disabled-overlay):hover {
+  background: transparent;
+}
+
+.sedon-menu-separator {
+  height: 1px;
+  background: #3a3a48;
+  margin: 4px 6px;
 }
 
 /* ============================================================

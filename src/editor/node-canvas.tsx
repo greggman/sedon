@@ -136,8 +136,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // instead of relying on a shared provider. Unregister on unmount so
   // a closed panel's stale RF isn't picked up by "active canvas"
   // lookups.
+  const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    registerCanvasRf(panelId, rf);
+    registerCanvasRf(panelId, rf, wrapperRef.current);
     return () => unregisterCanvasRf(panelId);
   }, [panelId, rf]);
 
@@ -775,6 +776,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   return (
     <CanvasPanelContext.Provider value={canvasPanelInfo}>
       <div
+        ref={wrapperRef}
         // Wrapper is fullsize so the capture-phase pointerdown is hit
         // for clicks anywhere in the canvas, including on nodes.
         style={{ width: '100%', height: '100%' }}

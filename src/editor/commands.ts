@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 import { getActiveAssetPanel } from './asset-clipboard.js';
+import { confirmDiscardIfDirty } from './confirm-dirty.js';
+import { DEMOS } from './demos/index.js';
 import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
-import { getCanvasRf } from './rf-registry.js';
+import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
+import { getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
 // Catalog of "no-argument" actions invokable from the command palette.
@@ -138,7 +141,7 @@ function freshPanelId(component: string): string {
   return `${component}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-function splitActivePanel(direction: 'right' | 'below'): void {
+export function splitActivePanel(direction: 'right' | 'below'): void {
   const api = getDockviewApi();
   if (!api) return;
   const active = api.activePanel;
@@ -191,7 +194,7 @@ function splitActivePanel(direction: 'right' | 'below'): void {
   });
 }
 
-function closeActivePanel(): void {
+export function closeActivePanel(): void {
   const api = getDockviewApi();
   if (!api) return;
   const active = api.activePanel;
@@ -199,7 +202,7 @@ function closeActivePanel(): void {
   api.removePanel(active);
 }
 
-function createPanel(component: string, title: string): void {
+export function createPanel(component: string, title: string): void {
   const api = getDockviewApi();
   if (!api) return;
   api.addPanel({
@@ -219,5 +222,75 @@ function defaultTitle(component: string): string {
       return 'Assets';
     default:
       return component;
+  }
+}
+
+// Frame selected nodes in the active canvas (or fit-all if nothing is
+// selected). Mirrors the in-canvas F-key handler so the View menu and
+// shortcut share one definition.
+export function frameSelectedInActiveCanvas(): void {
+  const rf = getActiveCanvasRf();
+  if (!rf) return;
+  const allNodes = rf.getNodes();
+  if (allNodes.length === 0) return;
+  const selected = allNodes.filter((n) => n.selected);
+  const target = selected.length > 0 ? selected : allNodes;
+  rf.fitView({ padding: 0.2, nodes: target.map((n) => ({ id: n.id })), duration: 200 });
+}
+
+// Auto-arrange the current graph's nodes via rank-based layered layout.
+// Same code path as the old CleanupButton — measured node dimensions
+// come from the active canvas's RF instance, the layout result writes
+// through commitActivePositions so every canvas viewing this graph
+// re-syncs.
+export function cleanupActiveGraph(): void {
+  const rf = getActiveCanvasRf();
+  if (!rf) return;
+  const graph = useEditorStore.getState().graph;
+  const rfNodes = rf.getNodes();
+  const measured = new Map<string, NodeMeasurement | undefined>();
+  for (const n of rfNodes) {
+    const m = n.measured;
+    if (!m) { measured.set(n.id, undefined); continue; }
+    const entry: NodeMeasurement = {};
+    if (m.width !== undefined) entry.width = m.width;
+    if (m.height !== undefined) entry.height = m.height;
+    measured.set(n.id, entry);
+  }
+  const positions = layoutGraph(graph, measured);
+  useEditorStore.getState().commitActivePositions(positions);
+}
+
+// Load a demo project by id. Mirrors the old DemosMenu inline handler.
+// Guards on confirmDiscardIfDirty so unsaved work isn't silently lost.
+export function loadDemoById(id: string): void {
+  const demo = DEMOS.find((d) => d.id === id);
+  if (!demo) return;
+  if (!confirmDiscardIfDirty()) return;
+  const { graph, rootNodeId, subgraphs, cameras } = demo.build();
+  useEditorStore.getState().setGraph(graph, rootNodeId, subgraphs, cameras);
+}
+
+// Slugify + create-and-edit, lifted from the old NewSubgraphButton.
+// Uses window.prompt for the label — same low-fi UX as before.
+export function promptAndCreateSubgraph(): void {
+  const label = window.prompt('New subgraph name:', 'Custom');
+  if (label === null) return;
+  const trimmed = label.trim();
+  if (trimmed.length === 0) return;
+  const existing = new Set(useEditorStore.getState().subgraphs.map((s) => s.id));
+  const id = slugifyForSubgraph(trimmed, existing);
+  useEditorStore.getState().createSubgraph(id, trimmed);
+}
+
+function slugifyForSubgraph(label: string, existing: ReadonlySet<string>): string {
+  const base = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'subgraph';
+  if (!existing.has(base) && base !== 'main') return base;
+  for (let i = 2; ; i++) {
+    const candidate = `${base}-${i}`;
+    if (!existing.has(candidate) && candidate !== 'main') return candidate;
   }
 }

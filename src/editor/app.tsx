@@ -7,14 +7,12 @@ import {
   type ReactContextMenuItemConfig,
 } from 'dockview';
 import { useCallback, useEffect, useState } from 'react';
-import { CleanupButton } from './cleanup-button.js';
+import { useAppMenus } from './app-menus.js';
 import { CommandPalette } from './command-palette.js';
-import { DemosMenu } from './demos-menu.js';
 import { GithubLink } from './github-link.js';
 import { setDockviewApi } from './dockview-handle.js';
-import { FileMenu } from './file-menu.js';
 import { GraphSwitcher } from './graph-switcher.js';
-import { NewSubgraphButton } from './new-subgraph-button.js';
+import { MenuBar } from './menubar.js';
 import { PANEL_COMPONENTS } from './panels.js';
 import { bumpPopoutGeneration } from './popout-bus.js';
 import { useLayoutStore } from './layout-store.js';
@@ -31,12 +29,12 @@ import { useLayoutStore } from './layout-store.js';
 //   │  └──────────────────┴──────────────────┘│
 //   └─────────────────────────────────────────┘
 //
-// One ReactFlowProvider wraps the whole app so the toolbar's FileMenu
-// can use `useReactFlow()` while the canvas panel owns the actual RF
-// instance. With a single canvas this is the natural shape; multi-
-// canvas (Phase 2b) will scope per-panel RF providers and route file-
-// menu's position-commit through the store instead of through RF.
+// Toolbar widgets (GraphSwitcher, GithubLink) sit alongside the
+// MenuBar — the menu hosts commands (Save/Load/Demos/Undo/Add/Frame/etc),
+// the toolbar hosts persistent context indicators (current graph,
+// external links).
 export function App() {
+  const menus = useAppMenus();
   // Initial DockView layout: a canvas panel on the left, a preview
   // panel split to its right. `onReady` fires once when DockView's
   // internal model is initialised. We seed the model imperatively here
@@ -158,11 +156,9 @@ export function App() {
   return (
     <div className="sedon-app">
       <div className="sedon-top-toolbar">
+        <MenuBar menus={menus} />
+        <div className="sedon-top-toolbar-spacer" />
         <GraphSwitcher />
-        <DemosMenu />
-        <NewSubgraphButton />
-        <CleanupButton />
-        <FileMenu />
         <GithubLink />
       </div>
       <div className="sedon-dockview-container">

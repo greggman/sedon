@@ -14,10 +14,19 @@ import { getDockviewApi } from './dockview-handle.js';
 //      recently — better than failing, since the toolbar caller almost
 //      certainly meant "the canvas the user was last interacting with".
 
-const registry = new Map<string, ReactFlowInstance>();
+interface CanvasEntry {
+  rf: ReactFlowInstance;
+  el: HTMLElement | null;
+}
 
-export function registerCanvasRf(panelId: string, rf: ReactFlowInstance): void {
-  registry.set(panelId, rf);
+const registry = new Map<string, CanvasEntry>();
+
+export function registerCanvasRf(
+  panelId: string,
+  rf: ReactFlowInstance,
+  el: HTMLElement | null = null,
+): void {
+  registry.set(panelId, { rf, el });
 }
 
 export function unregisterCanvasRf(panelId: string): void {
@@ -25,10 +34,10 @@ export function unregisterCanvasRf(panelId: string): void {
 }
 
 export function getCanvasRf(panelId: string): ReactFlowInstance | null {
-  return registry.get(panelId) ?? null;
+  return registry.get(panelId)?.rf ?? null;
 }
 
-export function getActiveCanvasRf(): ReactFlowInstance | null {
+function getActiveEntry(): CanvasEntry | null {
   const api = getDockviewApi();
   const active = api?.activePanel;
   if (active) {
@@ -38,7 +47,15 @@ export function getActiveCanvasRf(): ReactFlowInstance | null {
   // Fall back to any registered canvas. Iteration order on Map is
   // insertion order; the last registered (most recent mount) lands last,
   // so we peek the tail to prefer recency.
-  let last: ReactFlowInstance | null = null;
-  for (const rf of registry.values()) last = rf;
+  let last: CanvasEntry | null = null;
+  for (const entry of registry.values()) last = entry;
   return last;
+}
+
+export function getActiveCanvasRf(): ReactFlowInstance | null {
+  return getActiveEntry()?.rf ?? null;
+}
+
+export function getActiveCanvasEl(): HTMLElement | null {
+  return getActiveEntry()?.el ?? null;
 }
