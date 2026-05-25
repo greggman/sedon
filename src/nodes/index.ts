@@ -54,6 +54,7 @@ import { slopeFromHeightNode } from './slope-from-height.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { stemPointsNode } from './stem-points.js';
+import { hydraulicErosionNode } from './hydraulic-erosion.js';
 import { terrainLayerNode } from './terrain-layer.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { terrainMultiLayerMaterialNode } from './terrain-multi-layer-material.js';
@@ -118,6 +119,7 @@ export const CORE_NODES = [
   terrainMaterialNode,
   terrainLayerNode,
   terrainMultiLayerMaterialNode,
+  hydraulicErosionNode,
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
@@ -188,6 +190,7 @@ export {
   solidColorNode,
   sphereNode,
   stemPointsNode,
+  hydraulicErosionNode,
   terrainLayerNode,
   terrainMaterialNode,
   terrainMultiLayerMaterialNode,

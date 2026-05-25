@@ -22,7 +22,10 @@ export function createMultiLayerTerrainDemo(): {
   const COL = 260;
   const ROW = 180;
 
-  // Heightfield from a single perlin so the terrain has shape.
+  // Heightfield from a single perlin, then run a hydraulic-erosion
+  // pass to carve realistic channels + ridges before meshing. The
+  // unedited perlin terrain is smooth and uninteresting; ~30k erosion
+  // drops give it the iconic eroded look in <100ms.
   const perlin = addNode(g, 'core/perlin', {
     position: { x: 0, y: 0 },
     inputValues: { scale: [2, 2], octaves: 4, lacunarity: 2, gain: 0.5, seed: 1, resolution: 256 },
@@ -31,9 +34,25 @@ export function createMultiLayerTerrainDemo(): {
     position: { x: COL, y: 0 },
     inputValues: { worldSize: [40, 40], heightRange: [0, 8] },
   });
+  const erosion = addNode(g, 'terrain/hydraulic-erosion', {
+    position: { x: COL * 1.5, y: 0 },
+    inputValues: {
+      drops: 30000,
+      seed: 1,
+      max_lifetime: 30,
+      inertia: 0.05,
+      capacity: 4,
+      deposition: 0.3,
+      erosion: 0.3,
+      evaporation: 0.01,
+      gravity: 4,
+      min_slope: 0.01,
+      brush_radius: 3,
+    },
+  });
   const terrainMesh = addNode(g, 'core/heightfield-to-mesh', {
     position: { x: COL * 2, y: 0 },
-    inputValues: { divisions: [64, 64] },
+    inputValues: { divisions: [128, 128] },
   });
 
   // Four solid-color layer albedos. Distinct primaries make it obvious
@@ -95,7 +114,8 @@ export function createMultiLayerTerrainDemo(): {
 
   // === Edges ============================================================
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: terrainMesh.id, socket: 'heightfield' });
+  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: erosion.id, socket: 'heightfield' });
+  addEdge(g, { node: erosion.id, socket: 'heightfield' }, { node: terrainMesh.id, socket: 'heightfield' });
 
   addEdge(g, { node: albedo0.id, socket: 'texture' }, { node: layer0.id, socket: 'albedo' });
   addEdge(g, { node: albedo1.id, socket: 'texture' }, { node: layer1.id, socket: 'albedo' });
