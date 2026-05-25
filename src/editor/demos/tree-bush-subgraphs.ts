@@ -162,20 +162,16 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 6 },
   });
 
-  // === Merge: trunk + leaves → tree; tree + flowers → final =============
-  // `core/scene-merge` is variadic — pre-declare two Scene sockets per
-  // merge so the existing pairwise wiring fits without runtime clicks.
-  const SM2 = [
-    { name: 'scene_0', type: 'Scene', optional: true },
-    { name: 'scene_1', type: 'Scene', optional: true },
-  ];
-  const mergeTreeLeaves = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 7, y: ROW * 1.5 },
-    extraInputs: SM2,
-  });
+  // === Merge: trunk + leaves + flowers → final ===========================
+  // `core/scene-merge` is variadic — one merge with three sockets covers
+  // every producer; no intermediate merges needed.
   const mergeAll = addNode(g, 'core/scene-merge', {
     position: { x: COL * 8, y: ROW * 3 },
-    extraInputs: SM2,
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+      { name: 'scene_2', type: 'Scene', optional: true },
+    ],
   });
 
   // === Edges =============================================================
@@ -208,11 +204,10 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
   addEdge(g, { node: flowerColor.id, socket: 'texture' }, { node: flowerMat.id, socket: 'basecolor' });
   addEdge(g, { node: flowerMat.id, socket: 'material' }, { node: flowerEntity.id, socket: 'material' });
 
-  // Merge.
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'scene_0' });
-  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: mergeTreeLeaves.id, socket: 'scene_1' });
-  addEdge(g, { node: mergeTreeLeaves.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
-  addEdge(g, { node: flowerEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
+  // Merge: trunk + leaves + flowers → final scene.
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
+  addEdge(g, { node: flowerEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_2' });
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

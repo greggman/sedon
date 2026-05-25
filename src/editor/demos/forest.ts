@@ -165,28 +165,17 @@ export function createForestDemo(): {
   });
 
   // === Final =============================================================
-  // `core/scene-merge` is variadic — pre-declare two Scene sockets per
-  // merge so the existing pairwise wiring (a → scene_0, b → scene_1)
-  // works without the user clicking "+ Add scene" first.
-  const SM2 = [
-    { name: 'scene_0', type: 'Scene', optional: true },
-    { name: 'scene_1', type: 'Scene', optional: true },
-  ];
-  const mergeTrees = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 9, y: ROW * 0.8 },
-    extraInputs: SM2,
-  });
-  const mergeVeg = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 10, y: ROW * 1.6 },
-    extraInputs: SM2,
-  });
-  // Three sockets here: terrain + vegetation + grass.
+  // `core/scene-merge` is variadic — pre-declare five Scene sockets so
+  // every scene producer wires straight into one merge without runtime
+  // "+ Add scene" clicks. Terrain + oak + pine + rock + grass.
   const mergeAll = addNode(g, 'core/scene-merge', {
     position: { x: COL * 11, y: ROW * 1.8 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
       { name: 'scene_1', type: 'Scene', optional: true },
       { name: 'scene_2', type: 'Scene', optional: true },
+      { name: 'scene_3', type: 'Scene', optional: true },
+      { name: 'scene_4', type: 'Scene', optional: true },
     ],
   });
 
@@ -288,14 +277,11 @@ export function createForestDemo(): {
   addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: rockScatter.id, socket: 'per_point_tint' });
   addEdge(g, { node: rockScale.id, socket: 'values' }, { node: rockScatter.id, socket: 'per_point_scale' });
 
-  // Merge: oak+pine scatters → trees; trees+rock scatter → vegetation;
-  // terrain+vegetation → all.
-  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'scene_0' });
-  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeTrees.id, socket: 'scene_1' });
-  addEdge(g, { node: mergeTrees.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'scene_0' });
-  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeVeg.id, socket: 'scene_1' });
+  // Merge: terrain + oak + pine + rock + grass → final scene.
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
-  addEdge(g, { node: mergeVeg.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
+  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
+  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_2' });
+  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_3' });
 
   // Grass: density = flatness × trail; type by altitude; two blade cards.
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: grassFlatness.id, socket: 'height' });
@@ -306,7 +292,7 @@ export function createForestDemo(): {
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: forestGrass.id, socket: 'typeMap' });
   addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_0' });
   addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_1' });
-  addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_2' });
+  addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_4' });
 
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
