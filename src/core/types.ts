@@ -64,6 +64,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Heightfield', color: '#827717', description: '2D scalar field with world bounds + height range' },
   { id: 'Lighting', color: '#fff176', description: 'scene-level sun + ambient lighting params' },
   { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
+  { id: 'Path', color: '#a1887f', description: 'polyline through world space (road, river, …)' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

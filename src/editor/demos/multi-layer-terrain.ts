@@ -49,6 +49,38 @@ export function createMultiLayerTerrainDemo(): {
     },
   });
 
+  // A river-shaped path that meanders across the terrain. Each
+  // control point is a Vec3 (Y is unused for carving — it's a 2D
+  // stamp). Wires into a path/carve-heightfield node that lowers
+  // the terrain along the polyline.
+  const pathSpline = addNode(g, 'path/spline', {
+    position: { x: COL * 1.7, y: ROW * 1.5 },
+    inputValues: {
+      width: 6,
+      samples_per_segment: 16,
+      point_0: [-90, 0, -90],
+      point_1: [-50, 0, -60],
+      point_2: [-30, 0, 0],
+      point_3: [10, 0, 20],
+      point_4: [40, 0, -10],
+      point_5: [80, 0, 40],
+      point_6: [90, 0, 90],
+    },
+    extraInputs: [
+      { name: 'point_0', type: 'Vec3', optional: true },
+      { name: 'point_1', type: 'Vec3', optional: true },
+      { name: 'point_2', type: 'Vec3', optional: true },
+      { name: 'point_3', type: 'Vec3', optional: true },
+      { name: 'point_4', type: 'Vec3', optional: true },
+      { name: 'point_5', type: 'Vec3', optional: true },
+      { name: 'point_6', type: 'Vec3', optional: true },
+    ],
+  });
+  const pathCarve = addNode(g, 'path/carve-heightfield', {
+    position: { x: COL * 1.85, y: 0 },
+    inputValues: { depth: 4, falloff: 5 },
+  });
+
   // Four solid-color layer albedos (red / green / blue / white).
   const albedo0 = addNode(g, 'core/solid-color', {
     position: { x: 0, y: ROW * 1.5 },
@@ -110,7 +142,9 @@ export function createMultiLayerTerrainDemo(): {
   // === Edges ============================================================
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
   addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: erosion.id, socket: 'heightfield' });
-  addEdge(g, { node: erosion.id, socket: 'heightfield' }, { node: terrainRenderer.id, socket: 'heightfield' });
+  addEdge(g, { node: erosion.id, socket: 'heightfield' }, { node: pathCarve.id, socket: 'heightfield' });
+  addEdge(g, { node: pathSpline.id, socket: 'path' }, { node: pathCarve.id, socket: 'path' });
+  addEdge(g, { node: pathCarve.id, socket: 'heightfield' }, { node: terrainRenderer.id, socket: 'heightfield' });
 
   addEdge(g, { node: albedo0.id, socket: 'texture' }, { node: layer0.id, socket: 'albedo' });
   addEdge(g, { node: albedo1.id, socket: 'texture' }, { node: layer1.id, socket: 'albedo' });

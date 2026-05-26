@@ -55,6 +55,8 @@ import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
 import { stemPointsNode } from './stem-points.js';
 import { hydraulicErosionNode } from './hydraulic-erosion.js';
+import { pathCarveHeightfieldNode } from './path-carve-heightfield.js';
+import { pathSplineNode } from './path-spline.js';
 import { terrainLayerNode } from './terrain-layer.js';
 import { terrainRendererNode } from './terrain-renderer.js';
 import { terrainMaterialNode } from './terrain-material.js';
@@ -122,6 +124,8 @@ export const CORE_NODES = [
   terrainMultiLayerMaterialNode,
   terrainRendererNode,
   hydraulicErosionNode,
+  pathSplineNode,
+  pathCarveHeightfieldNode,
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
@@ -193,6 +197,8 @@ export {
   sphereNode,
   stemPointsNode,
   hydraulicErosionNode,
+  pathCarveHeightfieldNode,
+  pathSplineNode,
   terrainLayerNode,
   terrainMaterialNode,
   terrainMultiLayerMaterialNode,

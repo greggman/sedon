@@ -412,6 +412,34 @@ export interface HeightfieldValue {
   heightRange: [number, number]; // (min Y, max Y)
 }
 
+/**
+ * Authored polyline through world space — the foundation for roads,
+ * rivers, and other linear features.
+ *
+ * `samples` is a pre-sampled polyline (XYZ triples, world units),
+ * dense enough that consumers can treat consecutive entries as line
+ * segments without visible faceting. Producers (`path/spline`) take
+ * the user's control points and tessellate them into this polyline at
+ * eval time; consumers (`path/carve-heightfield`, future
+ * `path/extrude`, water shoreline) only ever see samples, so the
+ * spline-vs-linear-vs-Bezier distinction never leaks downstream.
+ *
+ * `width` is the base full-width of the path in world units —
+ * carving uses width/2 as the inner half-width and falls off over
+ * the additional `falloff` extent declared by the consumer.
+ *
+ * `count` is samples.length / 3, kept for parity with other clouds /
+ * branches that expose a `count` for convenient consumer code.
+ */
+export interface PathValue {
+  /** Pre-sampled XYZ polyline; length = count * 3. */
+  samples: Float32Array;
+  /** Number of sample points (samples.length / 3). */
+  count: number;
+  /** Full-width of the path in world units. */
+  width: number;
+}
+
 // Scene-level lighting params produced by core/output and consumed by the
 // renderer's per-frame uniforms. World-space sun direction; RGB sun color
 // pre-scaled by intensity; RGB ambient added to every fragment as a flat
