@@ -1,5 +1,5 @@
 import type { NodeDef } from '../core/node-def.js';
-import type { GrassFieldValue, SceneValue } from '../core/resources.js';
+import type { GrassFieldValue, SceneValue, TerrainFieldValue } from '../core/resources.js';
 
 // Variadic Scene merge. Starts with NO input sockets — every input is a
 // per-instance extra added via the node's "+ Add scene" button (or by
@@ -23,16 +23,23 @@ export const sceneMergeNode: NodeDef = {
   evaluate(_ctx, inputs): { scene: SceneValue } {
     const entities = [];
     const grass: GrassFieldValue[] = [];
+    const terrain: TerrainFieldValue[] = [];
     for (const v of Object.values(inputs)) {
       if (v && typeof v === 'object' && Array.isArray((v as SceneValue).entities)) {
         entities.push(...(v as SceneValue).entities);
-        // Carry grass fields through the merge too — a grass scene
-        // merged with a terrain scene should keep its grass, not just
-        // its (empty) entity list.
+        // Carry sidecar render-time recipes through. Without these,
+        // wrapping a grass / terrain scene through scene-merge would
+        // silently drop the field and the renderer would only see
+        // the (often empty) `entities` list.
         const g = (v as SceneValue).grass;
         if (g) grass.push(...g);
+        const t = (v as SceneValue).terrain;
+        if (t) terrain.push(...t);
       }
     }
-    return { scene: grass.length > 0 ? { entities, grass } : { entities } };
+    const out: SceneValue = { entities };
+    if (grass.length > 0) out.grass = grass;
+    if (terrain.length > 0) out.terrain = terrain;
+    return { scene: out };
   },
 };

@@ -20,6 +20,7 @@ import {
 import { createPbrKind } from './materials/pbr-kind.js';
 import { createTerrainMultiLayerKind } from './materials/terrain-multi-layer-kind.js';
 import { createTerrainSplatKind } from './materials/terrain-splat-kind.js';
+import { createWaterKind } from './materials/water-kind.js';
 import { createTerrainSystem, type TerrainSystem } from './terrain-render.js';
 import { debug } from '../core/debug.js';
 import { getSampler, gpuObjectId } from './gpu-cache.js';
@@ -378,10 +379,15 @@ function ensureSharedRendererState(
   const shadowSampler = createShadowSampler(device);
   const shadowTexture = getShadowTexture(device);
   const sceneUniformBuffer = device.createBuffer({
-    // 192 (3 mat4) + 80 (lighting block: lightDir/lightColor/skyColor+
-    // ambientIntensity/groundColor/fog) = 272. Layout matches the
-    // `Uniforms` struct in pbr.wgsl / grass.wgsl / terrain-splat.wgsl.
-    size: 272,
+    // 192 (3 mat4) + 80 (lighting block) + 16 (time/pad).
+    //
+    // Time lands at offset 272 as a single f32 — water.wgsl declares
+    // it as part of its `Uniforms` struct so per-pixel ripples can
+    // animate without a dedicated bind group. Other shaders don't
+    // need to know — WGSL `Uniforms` structs are per-shader and only
+    // describe the bytes the shader actually reads, so leaving them
+    // unchanged is safe as long as offsets 0..271 stay stable.
+    size: 288,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const sceneBindGroup = device.createBindGroup({
@@ -411,6 +417,7 @@ function ensureSharedRendererState(
     ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-multi-layer', createTerrainMultiLayerKind(device, HDR_FORMAT, sceneBindGroupLayout)],
+    ['water', createWaterKind(device, HDR_FORMAT, sceneBindGroupLayout)],
   ]);
   const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
   const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
@@ -1704,6 +1711,14 @@ export function createSceneRenderer(
       lightingScratch[18] = lighting.fogColor[2] * dayFactor;
       lightingScratch[19] = lighting.fogDensity;
       device.queue.writeBuffer(sceneUniformBuffer, 192, lightingScratch as BufferSource);
+
+      // `time` (seconds). Drives water ripples (and any future
+      // animation that wants a clock). Stored at the trailing slot
+      // of the scene uniform buffer; shaders that don't need it
+      // simply omit the field from their `Uniforms` struct.
+      const timeScratch = new Float32Array(1);
+      timeScratch[0] = time;
+      device.queue.writeBuffer(sceneUniformBuffer, 272, timeScratch as BufferSource);
 
       device.queue.writeBuffer(shadowUniformBuffer, 0, lightViewProj as BufferSource);
 

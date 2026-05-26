@@ -58,6 +58,7 @@ import { hydraulicErosionNode } from './hydraulic-erosion.js';
 import { pathCarveHeightfieldNode } from './path-carve-heightfield.js';
 import { pathSplineNode } from './path-spline.js';
 import { terrainLayerNode } from './terrain-layer.js';
+import { waterPlaneNode } from './water-plane.js';
 import { terrainRendererNode } from './terrain-renderer.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { terrainMultiLayerMaterialNode } from './terrain-multi-layer-material.js';
@@ -126,6 +127,7 @@ export const CORE_NODES = [
   hydraulicErosionNode,
   pathSplineNode,
   pathCarveHeightfieldNode,
+  waterPlaneNode,
   sceneEntityNode,
   sceneMergeNode,
   mergeSceneEntitiesNode,
@@ -204,6 +206,7 @@ export {
   terrainMultiLayerMaterialNode,
   terrainRendererNode,
   transformNode,
+  waterPlaneNode,
   uvTransformNode,
   warpNode,
   worleyNode,

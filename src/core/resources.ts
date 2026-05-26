@@ -42,7 +42,7 @@ export interface CpuMeshRef {
 // kind module, and a new node that produces it. The rest of the engine
 // (scene graph, instance buffer, lighting/fog uniforms, sampler) stays
 // untouched.
-export type MaterialValue = PbrMaterial | TerrainSplatMaterial | TerrainMultiLayerMaterial;
+export type MaterialValue = PbrMaterial | TerrainSplatMaterial | TerrainMultiLayerMaterial | WaterMaterial;
 
 /**
  * Standard PBR Cook-Torrance (the only kind until we shipped this refactor).
@@ -166,6 +166,32 @@ export interface TerrainMultiLayerMaterial {
    * sharply. Typical good range 4..16. Default 4.
    */
   heightBlendSharpness: number;
+}
+
+/**
+ * Animated water surface material. All-procedural: no textures, no
+ * uniforms beyond colour + a few wave parameters. The fragment
+ * shader builds a tangent-space normal by summing scrolling sine
+ * waves driven by the scene-time uniform, then runs a tight-rough
+ * specular highlight against the sun for crisp glints.
+ *
+ * Pair with a Geometry that's a flat XZ plane at the desired water
+ * Y level — the `water/plane` node does this for a whole heightfield;
+ * a future `water/from-path` could ribbon a stream along a river
+ * spline.
+ */
+export interface WaterMaterial {
+  kind: 'water';
+  /** Linear RGBA water colour (sRGB authored). Default deep teal. */
+  color: [number, number, number, number];
+  /** Strength of the wave normal perturbation. 0 = mirror-flat. */
+  waveStrength: number;
+  /** World-space wavelength scale. Larger = bigger swells. */
+  waveScale: number;
+  /** Animation speed multiplier on the wave phase. */
+  waveSpeed: number;
+  /** Surface roughness for the specular highlight. ~0.05 = crisp sun glint. */
+  roughness: number;
 }
 
 /**
@@ -803,6 +829,10 @@ export function walkGpuResources(
       walkGpuResources(v.mask, visit, seen, _depth + 1);
       walkGpuResources(v.normalA, visit, seen, _depth + 1);
       walkGpuResources(v.normalB, visit, seen, _depth + 1);
+      return;
+    }
+    if (v.kind === 'water') {
+      // All-procedural — no GPU resources nested in a WaterMaterial.
       return;
     }
     if (v.kind === 'terrain-multi-layer') {

@@ -135,6 +135,28 @@ export function createMultiLayerTerrainDemo(): {
       lod_distance: 60,
     },
   });
+  // Water surface pooled in the carved river bed + low valleys. With
+  // heightRange [0,30] and the eroded terrain, water_level=10 floods
+  // the carved channel and adjacent low ground while the eroded
+  // ridges (~15–30 m) rise above as islands — reads as a coastline.
+  const water = addNode(g, 'water/plane', {
+    position: { x: COL * 3, y: ROW * 1.5 },
+    inputValues: {
+      water_level: 10.0,
+      color: [0.05, 0.25, 0.4, 1.0],
+      wave_strength: 0.4,
+      wave_scale: 6,
+      wave_speed: 1.0,
+      roughness: 0.05,
+    },
+  });
+  const sceneMerge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 3.5, y: 0 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
+  });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: 0 },
   });
@@ -158,7 +180,14 @@ export function createMultiLayerTerrainDemo(): {
 
   addEdge(g, { node: splat.id, socket: 'texture' }, { node: material.id, socket: 'splat' });
   addEdge(g, { node: material.id, socket: 'material' }, { node: terrainRenderer.id, socket: 'material' });
-  addEdge(g, { node: terrainRenderer.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
+
+  // Water reads the carved heightfield for sizing (worldSize matches
+  // the terrain) and emits a Scene; scene-merge combines it with the
+  // terrain renderer's Scene before the output node.
+  addEdge(g, { node: pathCarve.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
+  addEdge(g, { node: terrainRenderer.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
+  addEdge(g, { node: water.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
+  addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Frame the 200m terrain from a moderate elevation/distance so the
   // camera sits roughly above the centre but with chunks at a range of
