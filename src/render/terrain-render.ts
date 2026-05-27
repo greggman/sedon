@@ -239,7 +239,16 @@ export function createTerrainSystem(
 
     const lodMeshes: LodMesh[] = [];
     for (let lod = 0; lod < lodLevels; lod++) {
-      const vertsPerEdge = Math.max(2, field.baseDivisions >> lod);
+      // vertsPerEdge = (baseDivisions >> lod) + 1 (NOT just
+      // `>> lod`) so adjacent LODs share vertex positions exactly:
+      // LOD i has spacing 1/(baseDivisions >> i) and LOD i+1 has
+      // spacing 2/(baseDivisions >> i), so every LOD i+1 vertex is
+      // also an LOD i vertex. That alignment lets the vertex
+      // shader's geomorph snap a fine vertex to its LOD i+1 host
+      // and produce identical geometry at morph t=1, which in turn
+      // makes T-junctions at chunk boundaries vanish at the moment
+      // a chunk transitions LOD level.
+      const vertsPerEdge = Math.max(2, (field.baseDivisions >> lod) + 1);
       const { positions, indices } = buildUnitGrid(vertsPerEdge);
       const vb = device.createBuffer({
         size: positions.byteLength,

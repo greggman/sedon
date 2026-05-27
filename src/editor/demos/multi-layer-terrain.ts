@@ -142,8 +142,8 @@ export function createMultiLayerTerrainDemo(): {
   const water = addNode(g, 'water/plane', {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: {
-      water_level: 10.0,
-      color: [0.05, 0.25, 0.4, 1.0],
+      water_level: 13.0,
+      color: [0.05, 0.25, 0.4, 0.7],
       wave_strength: 0.4,
       wave_scale: 6,
       wave_speed: 1.0,

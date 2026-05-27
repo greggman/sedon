@@ -41,6 +41,12 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   void import('./render/grass.js').then((m) => {
     (window as unknown as { __sedonGrassBlits__: typeof m.getGrassBlitCount }).__sedonGrassBlits__ = m.getGrassBlitCount;
   });
+  // Render-bus animation toggle — repros that test time-driven
+  // effects (water shimmer, grass wind) need to start the play
+  // loop the same way clicking the toolbar's play button would.
+  void import('./editor/render-bus.js').then((m) => {
+    (window as unknown as { __sedonSetAnimating__: typeof m.setAnimating }).__sedonSetAnimating__ = m.setAnimating;
+  });
 }
 
 createRoot(root).render(<App />);

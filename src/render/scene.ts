@@ -455,7 +455,11 @@ function ensureSharedRendererState(
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const compositeUniform = device.createBuffer({
-    size: 16,
+    // 8 bytes bloom_intensity + tonemap_enabled, then 8 bytes
+    // underwater_active + underwater_strength, then 16 bytes
+    // underwater_color (vec4), then 16 bytes depth_unproject (vec4
+    // packing zNear/zFar for reverse-Z depth → world distance) = 48.
+    size: 48,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   // Pick (GPU-id) pipeline — see pick.wgsl. Same vertex layout as the
@@ -632,7 +636,10 @@ function buildIntermediates(
   const depthTexture = device.createTexture({
     size: [width, height],
     format: 'depth32float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    // TEXTURE_BINDING so the composite pass can sample depth values
+    // for underwater distance fog. (RENDER_ATTACHMENT is still the
+    // primary usage during the scene pass.)
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
   const hdrColor = device.createTexture({
     size: [width, height],
@@ -690,6 +697,7 @@ function buildIntermediates(
       { binding: 1, resource: bloomMipViews[0]! },
       { binding: 2, resource: shared.postSampler },
       { binding: 3, resource: shared.compositeUniform },
+      { binding: 4, resource: depthTexture.createView() },
     ],
   });
   return {
@@ -884,6 +892,14 @@ function createCompositeLayout(device: GPUDevice): GPUBindGroupLayout {
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      // Scene depth texture — non-filtering sample for the underwater
+      // distance-fog falloff. Bound as `unfilterable-float` so we
+      // can read raw depth values via textureLoad.
+      {
+        binding: 4,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'unfilterable-float' },
+      },
     ],
   });
 }
@@ -996,6 +1012,10 @@ export function createSceneRenderer(
   // terrain renderer and any scene-entity that also uses the kind.
   let terrainSystem: TerrainSystem | null = null;
   let terrainFields: TerrainFieldValue[] = [];
+  // Max water-level surfaced by the scene's water/plane nodes
+  // (carried through scene-merge). Used by the composite pass to
+  // detect camera submerge and apply the underwater tint.
+  let currentWaterLevel: number | undefined = undefined;
   function ensureTerrain(): TerrainSystem {
     if (!terrainSystem) {
       const tmlKind = shared.kinds.get('terrain-multi-layer');
@@ -1431,6 +1451,7 @@ export function createSceneRenderer(
     // Grass fields are render-time recipes, not batched entities — just
     // hold the list; the per-frame compute/draw in render() consumes it.
     grassFields = scene.grass ?? [];
+    currentWaterLevel = scene.waterLevel;
     // Terrain fields likewise. We also pre-warm the material cache for
     // each field's material so the per-frame draw can just look up the
     // bind group; building it on a frame would do the texture-2d-array
@@ -1729,9 +1750,49 @@ export function createSceneRenderer(
       bloomScratch[0] = lighting.bloomThreshold;
       bloomScratch[1] = lighting.bloomSoftKnee;
       device.queue.writeBuffer(brightPassUniform, 0, bloomScratch as BufferSource);
-      bloomScratch[0] = lighting.bloomIntensity;
-      bloomScratch[1] = flatPreview ? 0 : 1; // tonemap_enabled
-      device.queue.writeBuffer(compositeUniform, 0, bloomScratch as BufferSource);
+      // Composite uniform: bloom + tonemap + underwater. Underwater
+      // activates when the camera's world Y drops below the scene's
+      // max water level (scene.waterLevel, surfaced by water/plane
+      // and propagated through scene-merge). The tint multiplies the
+      // pre-tonemap HDR colour so bright pixels fade smoothly to
+      // green-blue rather than clipping to a flat colour.
+      // modelView^{-1}.translation = -Rᵀ · t. Same trick used in
+      // grass.ts + terrain-render.ts.
+      const mv = modelView;
+      const eyeY = -(mv[4]! * mv[12]! + mv[5]! * mv[13]! + mv[6]! * mv[14]!);
+      const submerged =
+        typeof currentWaterLevel === 'number' && eyeY < currentWaterLevel;
+      const compositeScratch = new Float32Array(12);
+      compositeScratch[0] = lighting.bloomIntensity;
+      compositeScratch[1] = flatPreview ? 0 : 1; // tonemap_enabled
+      compositeScratch[2] = submerged ? 1 : 0;   // underwater_active
+      compositeScratch[3] = 0.85;                // underwater_strength
+      // Tint: green-blue, fairly saturated so it reads as "under
+      // water" rather than "twilight". Multiplied into the HDR
+      // colour, so values < 1 darken + tint.
+      compositeScratch[4] = 0.15;
+      compositeScratch[5] = 0.45;
+      compositeScratch[6] = 0.55;
+      // .w of underwater_color piggybacks the per-frame time so the
+      // composite shader can wobble its sample UV — gives wavy-glass
+      // shimmer when submerged. composite.wgsl reads from this slot.
+      compositeScratch[7] = time;
+      // depth_unproject = (zNear, zFar) recovered from the
+      // projection matrix. Reverse-Z perspective packs:
+      //   m[10] = zNear/(zFar-zNear)
+      //   m[14] = zFar*zNear/(zFar-zNear)
+      // Inverting: zFar = m[14]/m[10], zNear = m[14]/(1 + m[10]).
+      // The composite shader uses these to recover real world
+      // distance from the depth buffer for underwater depth fog.
+      const projM10 = projection[10]!;
+      const projM14 = projection[14]!;
+      const zFar = projM10 !== 0 ? projM14 / projM10 : 1e6;
+      const zNear = projM10 !== 0 ? projM14 / (1 + projM10) : projM14;
+      compositeScratch[8] = zNear;
+      compositeScratch[9] = zFar;
+      compositeScratch[10] = 0;
+      compositeScratch[11] = 0;
+      device.queue.writeBuffer(compositeUniform, 0, compositeScratch as BufferSource);
 
       // Camera basis (world space) = rows of modelView's rotation block.
       // modelView = T(0,0,-d) * R * T(-target); the upper-left 3×3 is R,
@@ -1872,10 +1933,19 @@ export function createSceneRenderer(
       // cutout based on the material itself.
       pass.setBindGroup(0, sceneBindGroup);
       let activePipeline: GPURenderPipeline | null = null;
+      // Water draws AFTER terrain + grass so alpha-blend mixes against
+      // the existing colour buffer (terrain pixels under the water
+      // surface). Defer water-kind batches into a holding list and
+      // replay them post-terrain.
+      const deferredWater: typeof batches = [];
       for (const b of batches) {
         // Same empty-geometry skip as the shadow pass — see the
         // longer comment there for rationale.
         if (b.geometry.indexCount === 0) continue;
+        if (b.kindId === 'water') {
+          deferredWater.push(b);
+          continue;
+        }
         const kind = shared.kinds.get(b.kindId)!;
         const pipelineForBatch =
           flatPreview && kind.pipelineBlended
@@ -1915,6 +1985,28 @@ export function createSceneRenderer(
           const structuralKey = (kind.materialStructuralKey as (m: MaterialValue) => string)(material);
           return materialCacheGlobal.get(`${kindId}:${structuralKey}`)!.value.bindGroup;
         });
+      }
+      // Water: deferred from the regular batches loop above so its
+      // alpha-blend mixes against terrain + grass already in the
+      // colour buffer. Pipeline uses src-alpha over blend (set up in
+      // water-kind.ts); depth-test against terrain still occludes
+      // water sitting under terrain.
+      if (deferredWater.length > 0) {
+        activePipeline = null;
+        for (const b of deferredWater) {
+          const kind = shared.kinds.get(b.kindId)!;
+          if (kind.pipeline !== activePipeline) {
+            pass.setPipeline(kind.pipeline);
+            activePipeline = kind.pipeline;
+          }
+          pass.setBindGroup(1, b.materialBindGroup);
+          pass.setVertexBuffer(0, b.geometry.positionBuffer);
+          pass.setVertexBuffer(1, b.geometry.normalBuffer);
+          pass.setVertexBuffer(2, b.geometry.uvBuffer);
+          pass.setVertexBuffer(3, b.instanceBuffer);
+          pass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
+          pass.drawIndexed(b.geometry.indexCount, b.instanceCount);
+        }
       }
       pass.end();
 

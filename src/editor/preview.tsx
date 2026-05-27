@@ -82,7 +82,16 @@ interface PreviewProps {
 }
 
 export function Preview({ panelId }: PreviewProps = {}) {
+  // Two refs because we attach the keyboard/focus listeners to the
+  // pane wrapper (it's the focus target for WASD nav) but the
+  // pointer/wheel listeners to the inner canvas grid. The header
+  // chrome (Play/Pause button, pin dropdown) is a sibling of the
+  // grid — putting pointer listeners on the wrapper would catch
+  // pointerdown events that bubbled from those buttons and then
+  // setPointerCapture would steal the pointerup, so the buttons'
+  // own click handlers would never fire.
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuDevice | null>(null);
 
@@ -303,7 +312,8 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // pointerdown explicitly focuses it so WASD works after a click.
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper) return;
+    const grid = gridRef.current;
+    if (!wrapper || !grid) return;
 
     // Active pointers, keyed by pointerId. One entry → rotate/pan drag;
     // two → pinch-to-dolly (touch screens). Tracking by id (instead of a
@@ -335,7 +345,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       wrapper.focus();
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      try { wrapper.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      try { grid.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 
       if (pointers.size === 1) {
         mode = 'drag';
@@ -417,7 +427,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     const onPointerUp = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
       pointers.delete(e.pointerId);
-      try { wrapper.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      try { grid.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
 
       if (pointers.size === 1 && mode === 'pinch') {
         // One finger lifted mid-pinch; fall back to a single-pointer
@@ -753,26 +763,32 @@ export function Preview({ panelId }: PreviewProps = {}) {
       commitCamera(id, cameraRef.current);
     };
 
-    wrapper.addEventListener('pointerdown', onPointerDown);
-    wrapper.addEventListener('pointermove', onPointerMove);
-    wrapper.addEventListener('pointerup', onPointerUp);
-    wrapper.addEventListener('pointercancel', onPointerUp);
-    wrapper.addEventListener('wheel', onWheel, { passive: false });
+    // Pointer + wheel + contextmenu listen on the GRID (the canvas
+    // area). Keyboard + blur listen on the WRAPPER (the focus
+    // target). This split is load-bearing: the wrapper also
+    // contains the header chrome (Play/Pause, pin dropdown), so if
+    // pointerdown listened on the wrapper, button clicks would
+    // bubble in and setPointerCapture would steal their pointerup.
+    grid.addEventListener('pointerdown', onPointerDown);
+    grid.addEventListener('pointermove', onPointerMove);
+    grid.addEventListener('pointerup', onPointerUp);
+    grid.addEventListener('pointercancel', onPointerUp);
+    grid.addEventListener('wheel', onWheel, { passive: false });
+    grid.addEventListener('contextmenu', onContextMenu);
     wrapper.addEventListener('keydown', onKeyDown);
     wrapper.addEventListener('keyup', onKeyUp);
     wrapper.addEventListener('blur', onBlur);
-    wrapper.addEventListener('contextmenu', onContextMenu);
 
     return () => {
-      wrapper.removeEventListener('pointerdown', onPointerDown);
-      wrapper.removeEventListener('pointermove', onPointerMove);
-      wrapper.removeEventListener('pointerup', onPointerUp);
-      wrapper.removeEventListener('pointercancel', onPointerUp);
-      wrapper.removeEventListener('wheel', onWheel);
+      grid.removeEventListener('pointerdown', onPointerDown);
+      grid.removeEventListener('pointermove', onPointerMove);
+      grid.removeEventListener('pointerup', onPointerUp);
+      grid.removeEventListener('pointercancel', onPointerUp);
+      grid.removeEventListener('wheel', onWheel);
+      grid.removeEventListener('contextmenu', onContextMenu);
       wrapper.removeEventListener('keydown', onKeyDown);
       wrapper.removeEventListener('keyup', onKeyUp);
       wrapper.removeEventListener('blur', onBlur);
-      wrapper.removeEventListener('contextmenu', onContextMenu);
     };
   }, [commitCamera]);
 
@@ -1012,7 +1028,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
         )}
         <AnimateToggle />
       </div>
-      <div className="sedon-preview-grid">
+      <div className="sedon-preview-grid" ref={gridRef}>
         {gpu &&
           tiles.map((t) => (
             <PreviewTile

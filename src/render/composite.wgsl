@@ -16,12 +16,30 @@ struct Params {
   // values display exactly as authored (round-trip identity for
   // in-[0,1] colors).
   tonemap_enabled: f32,
+  // > 0.5 → camera is below scene water level; mix the output toward
+  // `underwater_color` to give a submerged look (blue/green tint +
+  // slight dim). 0 disables.
+  underwater_active: f32,
+  // 0..1 mix factor toward underwater_color when active.
+  underwater_strength: f32,
+  // .xyz = RGB tint applied when underwater. .w piggybacks `time`
+  // (seconds), driving the underwater UV-wobble shimmer.
+  underwater_color: vec4f,
+  // .x = zNear, .y = zFar of the scene's reverse-Z perspective
+  // projection. Used to recover real world distance from the
+  // reverse-Z depth value for distance-based underwater fog —
+  // `1 - depth_value` alone is hyperbolic and ~constant for most
+  // visible depths, so direct fog on it produces no gradient.
+  depth_unproject: vec4f,
 };
 
 @group(0) @binding(0) var scene_tex: texture_2d<f32>;
 @group(0) @binding(1) var bloom_tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
 @group(0) @binding(3) var<uniform> params: Params;
+// Scene depth (reverse-Z, depth32float) — sampled when underwater
+// to drive distance-based fog falloff.
+@group(0) @binding(4) var depth_tex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) position: vec4f,
@@ -65,9 +83,52 @@ fn linear_to_srgb(color: vec3f) -> vec3f {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
-  let scene = textureSample(scene_tex, samp, in.uv).rgb;
-  let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
-  let combined = scene + bloom * params.bloom_intensity;
+  // Underwater shimmer: when submerged, wobble the screen-space
+  // sample UV with a pair of cross-axis sines driven by time. Gives
+  // the wavy-glass distortion you see looking up from a pool. Tiny
+  // amplitude (~0.4% of the screen) keeps it subtle, not nauseating.
+  var sample_uv = in.uv;
+  if (params.underwater_active > 0.5) {
+    let t = params.underwater_color.w;
+    let wobble = vec2f(
+      sin(in.uv.y * 30.0 + t * 2.0) * 0.004,
+      sin(in.uv.x * 25.0 + t * 1.7) * 0.004,
+    );
+    sample_uv = clamp(in.uv + wobble, vec2f(0.0), vec2f(1.0));
+  }
+  let scene = textureSample(scene_tex, samp, sample_uv).rgb;
+  let bloom = textureSample(bloom_tex, samp, sample_uv).rgb;
+  var combined = scene + bloom * params.bloom_intensity;
+  // Underwater tint + distance fog. Applied in LINEAR HDR before
+  // tonemap so bright sun glints fade with the rest of the scene.
+  // Distance fog uses the depth texture's reverse-Z value as a
+  // proxy for "how far the photon travelled through water before
+  // hitting that surface". Far pixels fade hard to the murk colour;
+  // near pixels keep their original tone modulated by the base tint.
+  if (params.underwater_active > 0.5) {
+    let tint = params.underwater_color.rgb;
+    let dims = textureDimensions(depth_tex);
+    let px = vec2i(
+      clamp(i32(in.uv.x * f32(dims.x)), 0, i32(dims.x) - 1),
+      clamp(i32(in.uv.y * f32(dims.y)), 0, i32(dims.y) - 1),
+    );
+    let d = textureLoad(depth_tex, px, 0).r;
+    // Recover real world distance from the reverse-Z depth value.
+    // Reverse-Z perspective: d = zNear * (zFar - dist) / (dist *
+    // (zFar - zNear)). Inverting gives the closed-form below. Sky
+    // pixels (d → 0) collapse to zFar, treated as full murk.
+    let zNear = params.depth_unproject.x;
+    let zFar = params.depth_unproject.y;
+    let dist = (zNear * zFar) / (zNear + d * (zFar - zNear));
+    // exp(-dist * density). Density ~0.06 → visibility 0.5 at ~12
+    // units, 0.05 at ~50 units, ~0 at the far plane. Matches the
+    // "things 5–10 m away still read clear, anything past 30 m is
+    // murk" feel of looking through real cloudy water.
+    let visibility = exp(-dist * 0.06);
+    let near_color = mix(combined, combined * tint, params.underwater_strength);
+    let murk_color = tint * 0.25; // dim ambient floor far from camera
+    combined = mix(murk_color, near_color, visibility);
+  }
   let tonemapped = select(combined, khronos_neutral_tonemap(combined), params.tonemap_enabled > 0.5);
   return vec4f(linear_to_srgb(tonemapped), 1.0);
 }

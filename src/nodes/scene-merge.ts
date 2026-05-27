@@ -24,6 +24,7 @@ export const sceneMergeNode: NodeDef = {
     const entities = [];
     const grass: GrassFieldValue[] = [];
     const terrain: TerrainFieldValue[] = [];
+    let waterLevel: number | undefined;
     for (const v of Object.values(inputs)) {
       if (v && typeof v === 'object' && Array.isArray((v as SceneValue).entities)) {
         entities.push(...(v as SceneValue).entities);
@@ -35,11 +36,19 @@ export const sceneMergeNode: NodeDef = {
         if (g) grass.push(...g);
         const t = (v as SceneValue).terrain;
         if (t) terrain.push(...t);
+        // For waterLevel keep the MAX — the camera should "submerge"
+        // the moment it falls below the tallest water surface in the
+        // scene.
+        const wl = (v as SceneValue).waterLevel;
+        if (typeof wl === 'number') {
+          waterLevel = waterLevel === undefined ? wl : Math.max(waterLevel, wl);
+        }
       }
     }
     const out: SceneValue = { entities };
     if (grass.length > 0) out.grass = grass;
     if (terrain.length > 0) out.terrain = terrain;
+    if (waterLevel !== undefined) out.waterLevel = waterLevel;
     return { scene: out };
   },
 };

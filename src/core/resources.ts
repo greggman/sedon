@@ -192,6 +192,19 @@ export interface WaterMaterial {
   waveSpeed: number;
   /** Surface roughness for the specular highlight. ~0.05 = crisp sun glint. */
   roughness: number;
+  /**
+   * Optional heightfield reference. When present the shader samples
+   * the underlying terrain Y at each fragment and tints toward white
+   * within `foamWidth` of the shoreline (where water depth → 0).
+   * Without it, foam is disabled.
+   */
+  heightfield?: HeightfieldValue;
+  /**
+   * World-unit shoreline-foam falloff distance. The water surface
+   * fades from foam-white at depth 0 to its base colour at depth
+   * `foamWidth`. Default 1.5 m gives a believable wet-sand ring.
+   */
+  foamWidth: number;
 }
 
 /**
@@ -397,6 +410,15 @@ export interface SceneValue {
    * terrain renderer.
    */
   terrain?: TerrainFieldValue[];
+  /**
+   * Highest world-Y of any water plane in the scene. Used by the
+   * renderer to detect when the camera dips below water and apply
+   * the underwater post-process tint. With multiple water planes,
+   * `water/plane` and `core/scene-merge` keep this as the max so
+   * the camera "submerges" the moment it falls below the tallest
+   * water surface (typically the only one).
+   */
+  waterLevel?: number;
 }
 
 export interface PointCloudValue {
@@ -832,7 +854,9 @@ export function walkGpuResources(
       return;
     }
     if (v.kind === 'water') {
-      // All-procedural — no GPU resources nested in a WaterMaterial.
+      // Only the optional heightfield carries GPU resources; the
+      // colour + wave params are scalars.
+      walkGpuResources(v.heightfield, visit, seen, _depth + 1);
       return;
     }
     if (v.kind === 'terrain-multi-layer') {

@@ -27,7 +27,11 @@ struct Uniforms {
 struct WaterParams {
   color: vec4f,
   // x = waveStrength, y = waveScale, z = waveSpeed, w = roughness
-  params: vec4f,
+  waves: vec4f,
+  // x,y = worldSize (heightfield XZ extent), z = heightMin, w = heightMax
+  world: vec4f,
+  // x = foamWidth (world units), y = foamEnabled (0/1), z/w = unused
+  foam: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -36,6 +40,8 @@ struct WaterParams {
 @group(0) @binding(3) var shadow_samp: sampler_comparison;
 
 @group(1) @binding(0) var<uniform> water: WaterParams;
+@group(1) @binding(1) var heightTex: texture_2d<f32>;
+@group(1) @binding(2) var heightSamp: sampler;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -59,7 +65,17 @@ struct VsOut {
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
   let inst_mat = mat4x4f(in.inst_col0, in.inst_col1, in.inst_col2, in.inst_col3);
-  let world_pos4 = inst_mat * vec4f(in.position, 1.0);
+  var world_pos4 = inst_mat * vec4f(in.position, 1.0);
+  // Displace vertices vertically by the wave height field. Same
+  // function the fragment shader uses, so the analytic normal it
+  // computes is the true derivative of THIS surface (no shading-vs-
+  // silhouette mismatch). Strength + scale + speed come from the
+  // shared per-material uniforms.
+  let strength = water.waves.x;
+  let scale = water.waves.y;
+  let speed = water.waves.z;
+  let wave = computeWaves(world_pos4.xz, uniforms.time, strength, scale, speed);
+  world_pos4.y = world_pos4.y + wave.h;
   let view_pos4 = uniforms.modelView * world_pos4;
   var out: VsOut;
   out.position = uniforms.projection * view_pos4;
@@ -105,31 +121,43 @@ fn apply_fog(lit: vec3f, view_pos_z: f32) -> vec3f {
   return mix(srgb_to_linear(uniforms.fog.xyz), lit, visibility);
 }
 
-// Procedural water normal in TANGENT space (Y = up). Three scrolling
-// sine waves with non-aligned directions sum to a believable choppy
-// surface. World-XZ UVs so the pattern is locked to the world, not
-// the mesh — wider planes don't stretch the waves.
-fn waveNormal(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -> vec3f {
+// Procedural water surface = sum of three scrolling sine waves at
+// non-aligned directions. Returns both the height (consumed by the
+// vertex shader for vertical displacement) and the analytic
+// tangent-space normal (consumed by the fragment shader). Sharing
+// one function for both keeps the surface physically consistent —
+// the normal you see at a fragment is the true derivative of the
+// height the vertex shader displaced to.
+//
+// World-XZ inputs so the wave pattern is locked to the world, not
+// the mesh. Wider planes don't stretch the waves; subdividing the
+// mesh gives more taps of the same field.
+struct Wave {
+  h: f32,
+  n: vec3f,
+};
+
+fn computeWaves(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -> Wave {
   let invScale = 1.0 / max(scale, 0.0001);
   let p = worldXZ * invScale;
-  // Three wave directions chosen non-parallel + non-orthogonal so
-  // their interference doesn't produce regular grid artefacts.
   let d1 = vec2f( 1.0,  0.6);
   let d2 = vec2f(-0.4,  1.0);
   let d3 = vec2f( 0.7, -0.9);
-  let s1 = sin(dot(p, d1) + t * 1.0 * speed);
-  let s2 = sin(dot(p, d2) + t * 1.3 * speed);
-  let s3 = sin(dot(p, d3) + t * 0.7 * speed);
-  // Slopes for the analytic normal.
-  let c1 = cos(dot(p, d1) + t * 1.0 * speed);
-  let c2 = cos(dot(p, d2) + t * 1.3 * speed);
-  let c3 = cos(dot(p, d3) + t * 0.7 * speed);
+  let ph1 = dot(p, d1) + t * 1.0 * speed;
+  let ph2 = dot(p, d2) + t * 1.3 * speed;
+  let ph3 = dot(p, d3) + t * 0.7 * speed;
+  let s1 = sin(ph1);
+  let s2 = sin(ph2);
+  let s3 = sin(ph3);
+  let c1 = cos(ph1);
+  let c2 = cos(ph2);
+  let c3 = cos(ph3);
   let dhx = (c1 * d1.x + c2 * d2.x + c3 * d3.x) * strength * invScale;
   let dhz = (c1 * d1.y + c2 * d2.y + c3 * d3.y) * strength * invScale;
-  // Use the slope of the height field to construct the surface
-  // normal. Suppress sum factor by length so strength stays sane.
-  let _unused = (s1 + s2 + s3);
-  return normalize(vec3f(-dhx, 1.0, -dhz));
+  var out: Wave;
+  out.h = (s1 + s2 + s3) * strength;
+  out.n = normalize(vec3f(-dhx, 1.0, -dhz));
+  return out;
 }
 
 @fragment
@@ -137,12 +165,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // Build tangent-space normal from scrolling waves; rotate into
   // view space using the geometry's world basis (water plane has
   // world-up Y, so view_rot * tangent ≈ view_rot * world).
-  let strength = water.params.x;
-  let scale = water.params.y;
-  let speed = water.params.z;
-  let roughness = water.params.w;
+  let strength = water.waves.x;
+  let scale = water.waves.y;
+  let speed = water.waves.z;
+  let roughness = water.waves.w;
 
-  let n_world = waveNormal(in.world_pos.xz, uniforms.time, strength, scale, speed);
+  let n_world = computeWaves(in.world_pos.xz, uniforms.time, strength, scale, speed).n;
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
@@ -180,6 +208,58 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // top of the diffuse + specular. Keeps water reading as wet even
   // in shadow.
   let sky_reflect = uniforms.skyColor * f * 0.4;
-  let lit = direct + ambient_term + sky_reflect;
-  return vec4f(apply_fog(lit, in.view_pos.z), water.color.a);
+  var lit = direct + ambient_term + sky_reflect;
+
+  // Shoreline foam. When a heightfield is bound AND this fragment
+  // sits over the actual terrain footprint (UV in [0,1]), sample
+  // terrain Y at the pixel's world XZ and compute water depth here.
+  // Within the first `foamWidth` metres the surface fades toward
+  // bright foam-white, still multiplied by the sun/ambient so foam
+  // dims correctly in shadow.
+  //
+  // When the water plane extends past the heightfield (open water
+  // beyond the terrain edge), the UV bounds check skips foam — that
+  // region is "deep open water" with no shoreline to break against.
+  // Depth-driven opacity. The authored alpha (water.color.a) is the
+  // shallow-water opacity — that's where you actually want to see
+  // sand/foam/silt through the water. As depth grows, water reads
+  // as more opaque (Beer-Lambert: more water column = more photons
+  // absorbed). Without this, water with alpha=0.7 stays 30% see-
+  // through over even the deepest channels, making the whole
+  // surface look like tinted glass.
+  //
+  // When no heightfield is bound, depth can't be computed → fall
+  // back to the authored alpha unchanged.
+  var alpha = water.color.a;
+  if (water.foam.y > 0.5) {
+    let worldSize = water.world.xy;
+    let hMin = water.world.z;
+    let hMax = water.world.w;
+    let uv = in.world_pos.xz / worldSize + vec2f(0.5);
+    let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+    if (inHeightfield) {
+      let terrainH = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
+      let terrainY = hMin + terrainH * (hMax - hMin);
+      let depth = max(in.world_pos.y - terrainY, 0.0);
+      // Beer-Lambert-ish depth opacity. depth=0 → authored alpha
+      // (shallow, terrain shows through). depth ≥ ~2 m → fully
+      // opaque (deep water reads as solid colour). The exponent
+      // 1.5 tunes how quickly water hides what's beneath.
+      let depthOpacity = 1.0 - exp(-depth * 1.5);
+      let baseAlpha = mix(water.color.a, 1.0, depthOpacity);
+      // Foam mix on top: shoreline whitewater. Only when foamWidth>0.
+      var foam = 0.0;
+      if (water.foam.x > 0.0) {
+        foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
+        let foam_color = srgb_to_linear(vec3f(0.9, 0.94, 0.96));
+        lit = mix(lit, foam_color * (uniforms.lightColor * n_dot_l + ambient_color), foam);
+      }
+      // Foam is opaque whitewater; take the max of foam opacity
+      // and depth opacity so the foam never gets undercut by the
+      // shallow-water alpha.
+      alpha = max(baseAlpha, foam);
+    }
+  }
+
+  return vec4f(apply_fog(lit, in.view_pos.z), alpha);
 }

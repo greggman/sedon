@@ -115,14 +115,31 @@ fn lod_select(@builtin(global_invocation_id) gid: vec3<u32>) {
   let chunkCenter = vec3f(chunkCenterXZ.x, chunkY, chunkCenterXZ.y);
   let dist = length(chunkCenter - tu.cameraPos.xyz);
   // LOD: floor(dist / lodDistance), clamped to [0, lodLevels-1].
-  var lod = u32(max(0.0, floor(dist / max(tu.lodDistance, 0.0001))));
+  let distNorm = dist / max(tu.lodDistance, 0.0001);
+  var lod = u32(max(0.0, floor(distNorm)));
   if (lod >= tu.lodLevels) { lod = tu.lodLevels - 1u; }
+  // Geomorph factor t ∈ [0,1]. While a chunk sits in the NEAR half
+  // of its LOD distance band, t=0 (mesh uses its own LOD's verts).
+  // In the FAR half, t ramps 0→1 so by the moment the chunk would
+  // switch to LOD+1, its fine verts have already collapsed to the
+  // LOD+1 host positions. Combined with aligned per-LOD grids, the
+  // hand-off is geometrically continuous → no pop, no T-junction
+  // cracks. Max-LOD chunks have nothing coarser to morph toward, so
+  // keep t=0 for them.
+  var morphQ: u32 = 0u;
+  if (lod + 1u < tu.lodLevels) {
+    let lodFrac = distNorm - f32(lod);
+    let MORPH_START = 0.5;
+    let t = clamp((lodFrac - MORPH_START) / (1.0 - MORPH_START), 0.0, 1.0);
+    morphQ = u32(t * 255.0);
+  }
   let bucketBase = lod * totalChunks;
   let slot = atomicAdd(&drawArgs[lod].instanceCount, 1u);
-  // Pack the LOD into the high byte so the vertex shader can recover
-  // it without a per-draw-call uniform write. chunkIdx fits in 24
-  // bits (≤16M chunks); LOD fits in 4 bits (≤16 levels).
-  chunk_instances[bucketBase + slot] = (lod << 24u) | (gid.x & 0xFFFFFFu);
+  // 32-bit pack: 4 bits LOD (≤16 levels) | 8 bits morphQ (256
+  // quantizations) | 20 bits chunkIdx (≤1M chunks). The vertex
+  // shader reads this off a per-instance attribute and unpacks.
+  chunk_instances[bucketBase + slot] =
+    (lod << 28u) | (morphQ << 20u) | (gid.x & 0xFFFFFu);
 }
 
 // ---- Render pipeline (vertex + fragment) -------------------------
@@ -130,8 +147,8 @@ fn lod_select(@builtin(global_invocation_id) gid: vec3<u32>) {
 struct VsIn {
   // Unit-grid mesh: per-vertex position in [-0.5, 0.5] X-Z. Y always 0.
   @location(0) gridPos: vec3f,
-  // Per-instance packed value: lod in the high byte, chunkIdx in the
-  // low 24 bits. Written by the compute kernel.
+  // Per-instance packed value: 4 bits LOD | 8 bits morph quant |
+  // 20 bits chunkIdx. Written by the lod_select compute kernel.
   @location(1) chunkPacked: u32,
 };
 
@@ -155,8 +172,10 @@ fn worldY(uv: vec2f) -> f32 {
 
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
-  let chunkIdx = in.chunkPacked & 0xFFFFFFu;
-  let lod = (in.chunkPacked >> 24u) & 0xFu;
+  let chunkIdx = in.chunkPacked & 0xFFFFFu;
+  let morphQ = (in.chunkPacked >> 20u) & 0xFFu;
+  let lod = (in.chunkPacked >> 28u) & 0xFu;
+  let morphT = f32(morphQ) / 255.0;
   let cx = chunkIdx % tu.chunkCount.x;
   let cz = chunkIdx / tu.chunkCount.x;
   // World XZ for this vertex of this chunk. gridPos is in [-0.5, 0.5];
@@ -164,7 +183,23 @@ fn vs_main(in: VsIn) -> VsOut {
   // to the chunk's grid position.
   let chunkOrigin = tu.worldOrigin
     + (vec2f(f32(cx), f32(cz)) + vec2f(0.5)) * tu.chunkSize;
-  let worldXZ = chunkOrigin + in.gridPos.xz * tu.chunkSize;
+  // Geomorph: snap gridPos to the next-coarser LOD's vertex grid,
+  // then mix between fine and snapped by morphT. At t=0 we render
+  // the fine mesh as-is; at t=1 every fine vertex has collapsed
+  // onto a host LOD+1 vertex (its degenerate triangles are
+  // invisible). Aligned per-LOD grids (vertsPerEdge =
+  // (baseDivisions>>lod)+1, set in terrain-render.ts) guarantee
+  // the snapped position IS a valid LOD+1 vertex, so the hand-off
+  // is crack-free.
+  //
+  // Step size in [-0.5, 0.5] grid space at LOD+1 = 2 / divisions.
+  let divisions = max(1u, tu.baseDivisions >> lod);
+  let coarseStep = 2.0 / f32(divisions);
+  let gridNorm = in.gridPos.xz + vec2f(0.5);              // [0, 1]
+  let snappedNorm = round(gridNorm / coarseStep) * coarseStep;
+  let gridCoarse = snappedNorm - vec2f(0.5);
+  let gridMorphed = mix(in.gridPos.xz, gridCoarse, morphT);
+  let worldXZ = chunkOrigin + gridMorphed * tu.chunkSize;
   // UV into the heightfield for sampling height + normal.
   let totalSize = vec2f(tu.chunkCount) * tu.chunkSize;
   let uv = (worldXZ - tu.worldOrigin) / totalSize;
