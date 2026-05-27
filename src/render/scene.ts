@@ -324,6 +324,11 @@ interface SharedRendererState {
   shadowBindGroupLayout: GPUBindGroupLayout;
   singleInputLayout: GPUBindGroupLayout;
   compositeLayout: GPUBindGroupLayout;
+  // Group-2 layout used ONLY by the water material — exposes the
+  // opaque-pass depth copy (for SSR ray marching) and the opaque-pass
+  // colour copy (for refraction + SSR hit sampling). Both textures
+  // are per-canvas-size and rebuilt by buildIntermediates.
+  waterExtrasBindGroupLayout: GPUBindGroupLayout;
   sampler: GPUSampler;
   shadowSampler: GPUSampler;
   postSampler: GPUSampler;
@@ -375,6 +380,29 @@ function ensureSharedRendererState(
     return sharedState;
   }
   const sceneBindGroupLayout = createSceneBindGroupLayout(device);
+  const waterExtrasBindGroupLayout = device.createBindGroupLayout({
+    label: 'water-extras bind group layout',
+    entries: [
+      // Binding 0: copy of the opaque-pass depth buffer, sampled in
+      // SCREEN SPACE for SSR ray marching. depth32float bound as a
+      // plain float texture (unfilterable) — water.wgsl reads it
+      // via textureLoad.
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'unfilterable-float' },
+      },
+      // Binding 1: refraction source — a copy of hdrColor taken
+      // right before water draws, so water can sample the opaque
+      // scene under itself with wave-normal UV distortion. Also
+      // serves as the SSR hit-colour source.
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float' },
+      },
+    ],
+  });
   const sampler = createSharedSampler(device);
   const shadowSampler = createShadowSampler(device);
   const shadowTexture = getShadowTexture(device);
@@ -417,7 +445,7 @@ function ensureSharedRendererState(
     ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-multi-layer', createTerrainMultiLayerKind(device, HDR_FORMAT, sceneBindGroupLayout)],
-    ['water', createWaterKind(device, HDR_FORMAT, sceneBindGroupLayout)],
+    ['water', createWaterKind(device, HDR_FORMAT, sceneBindGroupLayout, waterExtrasBindGroupLayout)],
   ]);
   const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
   const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
@@ -573,10 +601,12 @@ function ensureSharedRendererState(
   sharedState = {
     device, format,
     sceneBindGroupLayout, shadowBindGroupLayout, singleInputLayout, compositeLayout,
+    waterExtrasBindGroupLayout,
     sampler, shadowSampler, postSampler, shadowTexture,
     shadowPipeline, skyPipeline, flatBackgroundPipeline,
     brightPassPipeline, downsamplePipeline, upsamplePipeline, compositePipeline,
-    sceneUniformBuffer, shadowUniformBuffer, skyUniformBuffer,
+    sceneUniformBuffer,
+    shadowUniformBuffer, skyUniformBuffer,
     brightPassUniform, compositeUniform,
     sceneBindGroup, shadowBindGroup, skyBindGroup,
     kinds,
@@ -599,6 +629,22 @@ interface SizeIntermediates {
   pyramidBindGroups: GPUBindGroup[];
   brightPassBindGroup: GPUBindGroup;
   compositeBindGroup: GPUBindGroup;
+  // Full-res depth copy of the opaque pass. Taken after opaque +
+  // terrain + grass have drawn but BEFORE water — water samples it
+  // in screen space for SSR ray marching. depth32float; same dims
+  // as depthTexture so the copyTextureToTexture between passes is
+  // a straight copy.
+  sceneDepthCopy: GPUTexture;
+  // Full-res refraction source. Copied from hdrColor AFTER opaque
+  // draws but BEFORE the water draws — water samples this texture
+  // at its own screen UV, distorted by the wave normal, to give
+  // the "scene wobbles under the water surface" effect, AND at the
+  // SSR hit pixel to colour the reflection. Same format as
+  // hdrColor so copyTextureToTexture works.
+  refractionTexture: GPUTexture;
+  // Bind group for water material's group(2) — points at the depth
+  // copy + refraction copy above. Allocated once per canvas size.
+  waterExtrasBindGroup: GPUBindGroup;
 }
 
 const intermediatesByKey = new Map<string, PoolEntry<SizeIntermediates>>();
@@ -637,14 +683,23 @@ function buildIntermediates(
     size: [width, height],
     format: 'depth32float',
     // TEXTURE_BINDING so the composite pass can sample depth values
-    // for underwater distance fog. (RENDER_ATTACHMENT is still the
-    // primary usage during the scene pass.)
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    // for underwater distance fog. COPY_SRC so we can snapshot it
+    // into sceneDepthCopy between the opaque pass and the water
+    // pass for SSR.
+    usage:
+      GPUTextureUsage.RENDER_ATTACHMENT
+      | GPUTextureUsage.TEXTURE_BINDING
+      | GPUTextureUsage.COPY_SRC,
   });
   const hdrColor = device.createTexture({
     size: [width, height],
     format: HDR_FORMAT,
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    // COPY_SRC so the refraction step can snapshot the opaque scene
+    // into refractionTexture between the opaque pass and water pass.
+    usage:
+      GPUTextureUsage.RENDER_ATTACHMENT
+      | GPUTextureUsage.TEXTURE_BINDING
+      | GPUTextureUsage.COPY_SRC,
   });
   const hdrColorView = hdrColor;
   const bloomMips: GPUTexture[] = [];
@@ -700,11 +755,35 @@ function buildIntermediates(
       { binding: 4, resource: depthTexture.createView() },
     ],
   });
+  // Full-res copies of the opaque pass — populated each frame via
+  // copyTextureToTexture between the opaque pass and the water
+  // draw. Same dims as hdrColor / depthTexture so the copies are
+  // straight (no scale or aspect translation).
+  const refractionTexture = device.createTexture({
+    label: 'refraction source',
+    size: [width, height],
+    format: HDR_FORMAT,
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+  });
+  const sceneDepthCopy = device.createTexture({
+    label: 'scene depth copy',
+    size: [width, height],
+    format: 'depth32float',
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+  });
+  const waterExtrasBindGroup = device.createBindGroup({
+    layout: shared.waterExtrasBindGroupLayout,
+    entries: [
+      { binding: 0, resource: sceneDepthCopy.createView() },
+      { binding: 1, resource: refractionTexture.createView() },
+    ],
+  });
   return {
     width, height,
     depthTexture, hdrColor, hdrColorView,
     bloomMips, bloomMipViews, bloomMipParamBuffers,
     pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
+    sceneDepthCopy, refractionTexture, waterExtrasBindGroup,
   };
 }
 
@@ -793,6 +872,8 @@ export function flushUnusedPools(): void {
       debug('[pool EVICTED INTERMEDIATES]', key);
       try { entry.value.depthTexture.destroy(); } catch { /* */ }
       try { entry.value.hdrColor.destroy(); } catch { /* */ }
+      try { entry.value.sceneDepthCopy.destroy(); } catch { /* */ }
+      try { entry.value.refractionTexture.destroy(); } catch { /* */ }
       for (const t of entry.value.bloomMips) {
         try { t.destroy(); } catch { /* */ }
       }
@@ -1662,7 +1743,8 @@ export function createSceneRenderer(
         pyramidBindGroups, brightPassBindGroup, compositeBindGroup,
       } = acquired.value;
       const {
-        sceneUniformBuffer, shadowUniformBuffer, skyUniformBuffer,
+        sceneUniformBuffer,
+        shadowUniformBuffer, skyUniformBuffer,
         brightPassUniform, compositeUniform,
         sceneBindGroup, shadowBindGroup, skyBindGroup,
         shadowTexture, shadowPipeline,
@@ -1734,9 +1816,14 @@ export function createSceneRenderer(
       device.queue.writeBuffer(sceneUniformBuffer, 192, lightingScratch as BufferSource);
 
       // `time` (seconds). Drives water ripples (and any future
-      // animation that wants a clock). Stored at the trailing slot
-      // of the scene uniform buffer; shaders that don't need it
-      // simply omit the field from their `Uniforms` struct.
+      // animation that wants a clock). Stored at offset 272 of the
+      // scene uniform buffer; shaders that don't need it simply
+      // omit the field from their `Uniforms` struct. The trailing
+      // 12 bytes (276-287) of the buffer are unused now that SSR
+      // replaced the planar reflection (which packed per-pass
+      // clipY values there); leaving the buffer allocated at 288
+      // bytes since shader-side Uniforms can be smaller than the
+      // backing buffer.
       const timeScratch = new Float32Array(1);
       timeScratch[0] = time;
       device.queue.writeBuffer(sceneUniformBuffer, 272, timeScratch as BufferSource);
@@ -1986,29 +2073,77 @@ export function createSceneRenderer(
           return materialCacheGlobal.get(`${kindId}:${structuralKey}`)!.value.bindGroup;
         });
       }
-      // Water: deferred from the regular batches loop above so its
-      // alpha-blend mixes against terrain + grass already in the
-      // colour buffer. Pipeline uses src-alpha over blend (set up in
-      // water-kind.ts); depth-test against terrain still occludes
-      // water sitting under terrain.
+      // End the opaque pass before the refraction copy. Water
+      // draws in a SEPARATE pass below so the shader can sample
+      // a snapshot of the opaque scene (refraction source) — that
+      // sample at the water fragment's screen UV with wave-normal
+      // distortion is what produces the "scene wobbles under the
+      // water" look.
+      pass.end();
+
+      // Refraction + depth snapshots for water. After the opaque
+      // pass (sky + opaque batches + grass + terrain have all
+      // landed in hdrColor + depthTexture), copy both into their
+      // dedicated read-only textures. The water pass samples the
+      // refraction copy for both the "look through the surface"
+      // path and as the colour source for SSR hits; it samples the
+      // depth copy as the SSR ray-marching depth buffer.
+      //
+      // Same command encoder, so the copies sequence correctly
+      // between the two render passes — no queue ordering hazards
+      // like we had with the planar-reflection writeBuffer trick.
       if (deferredWater.length > 0) {
-        activePipeline = null;
+        encoder.copyTextureToTexture(
+          { texture: acquired.value.hdrColor },
+          { texture: acquired.value.refractionTexture },
+          [acquired.value.width, acquired.value.height, 1],
+        );
+        encoder.copyTextureToTexture(
+          { texture: depthTexture! },
+          { texture: acquired.value.sceneDepthCopy },
+          [acquired.value.width, acquired.value.height, 1],
+        );
+      }
+
+      // Water pass: loadOp 'load' to preserve the opaque content
+      // already in hdrColor and depth (so water depth-tests against
+      // terrain). Water shader samples refractionTexture for its
+      // base colour AND for SSR hit colours, and sceneDepthCopy for
+      // SSR ray marching.
+      if (deferredWater.length > 0) {
+        const waterPass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: hdrColorView!,
+              loadOp: 'load',
+              storeOp: 'store',
+            },
+          ],
+          depthStencilAttachment: {
+            view: depthTexture!,
+            depthLoadOp: 'load',
+            depthStoreOp: 'store',
+          },
+        });
+        waterPass.setBindGroup(0, sceneBindGroup);
+        waterPass.setBindGroup(2, acquired.value.waterExtrasBindGroup);
+        let activeWaterPipeline: GPURenderPipeline | null = null;
         for (const b of deferredWater) {
           const kind = shared.kinds.get(b.kindId)!;
-          if (kind.pipeline !== activePipeline) {
-            pass.setPipeline(kind.pipeline);
-            activePipeline = kind.pipeline;
+          if (kind.pipeline !== activeWaterPipeline) {
+            waterPass.setPipeline(kind.pipeline);
+            activeWaterPipeline = kind.pipeline;
           }
-          pass.setBindGroup(1, b.materialBindGroup);
-          pass.setVertexBuffer(0, b.geometry.positionBuffer);
-          pass.setVertexBuffer(1, b.geometry.normalBuffer);
-          pass.setVertexBuffer(2, b.geometry.uvBuffer);
-          pass.setVertexBuffer(3, b.instanceBuffer);
-          pass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
-          pass.drawIndexed(b.geometry.indexCount, b.instanceCount);
+          waterPass.setBindGroup(1, b.materialBindGroup);
+          waterPass.setVertexBuffer(0, b.geometry.positionBuffer);
+          waterPass.setVertexBuffer(1, b.geometry.normalBuffer);
+          waterPass.setVertexBuffer(2, b.geometry.uvBuffer);
+          waterPass.setVertexBuffer(3, b.instanceBuffer);
+          waterPass.setIndexBuffer(b.geometry.indexBuffer, b.geometry.indexFormat);
+          waterPass.drawIndexed(b.geometry.indexCount, b.instanceCount);
         }
+        waterPass.end();
       }
-      pass.end();
 
       // Bright-pass: scene HDR → mip 0 (half-res, replace).
       const bright = encoder.beginRenderPass({

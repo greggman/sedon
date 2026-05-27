@@ -32,6 +32,10 @@ struct WaterParams {
   world: vec4f,
   // x = foamWidth (world units), y = foamEnabled (0/1), z/w = unused
   foam: vec4f,
+  // x = rippleStrength, y = rippleScale, z = rippleSpeed, w = unused.
+  // Per-fragment-only sub-mesh wave layer; see fs_main for how it
+  // combines with the mesh-scale `waves` layer.
+  ripple: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -42,6 +46,20 @@ struct WaterParams {
 @group(1) @binding(0) var<uniform> water: WaterParams;
 @group(1) @binding(1) var heightTex: texture_2d<f32>;
 @group(1) @binding(2) var heightSamp: sampler;
+
+// Copy of the depth buffer at the end of the opaque pass (everything
+// EXCEPT water has been drawn into it). Sampled in screen space for
+// SSR ray marching: each step's projected NDC.z is compared against
+// the stored depth to detect hits. depth32float bound as
+// `texture_2d<f32>` with unfilterable-float sampleType — read via
+// textureLoad, not textureSample.
+@group(2) @binding(0) var sceneDepth: texture_2d<f32>;
+// Full-res copy of the opaque HDR scene, taken right before water
+// draws. Used for two things: (1) refraction — sample at the water
+// fragment's own screen UV with a wave-normal offset to look THROUGH
+// the surface, (2) the SSR hit sample — read the colour at the
+// reflection-ray's hit pixel to feed back into the reflection term.
+@group(2) @binding(1) var refractionTex: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -160,6 +178,98 @@ fn computeWaves(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -
   return out;
 }
 
+// Screen-space reflection with binary-search refinement. Two phases:
+//
+//  1. COARSE march — step the reflection ray through view space at
+//     STEP_LEN intervals, checking the stored opaque depth at each
+//     projected pixel. With reverse-Z, the stored depth is larger
+//     for closer geometry. The first step whose NDC.z falls BELOW
+//     the stored depth has crossed the depth surface — somewhere
+//     between the previous step and this one.
+//
+//  2. REFINE — once a crossing is found, bisect between the last
+//     "in-front" sample and the first "behind" sample 6 times to
+//     pinpoint the actual crossing. Without refinement, the apparent
+//     hit position depends on whether the coarse step happens to
+//     land just inside or just outside the silhouette of nearby
+//     geometry — producing aliased "tabs" of reflected colour where
+//     no real intersection exists.
+//
+// After refinement, validate the hit with a small thickness check
+// (the ray must be within THICKNESS view-units of the surface's
+// recovered view-space depth). Recovering view-z from NDC.z uses
+// the standard reverse-Z perspective identity:
+//   view_z = -projection[3].z / (ndc.z + projection[2].z).
+//
+// Misses fall through to the sky colour (linear HDR ambient, from
+// the atmosphere model).
+fn ssr_reflect(view_pos: vec3f, n_view: vec3f) -> vec3f {
+  let incident = normalize(view_pos);
+  let refl_dir = reflect(incident, n_view);
+  let dims = vec2f(textureDimensions(sceneDepth, 0));
+  let MAX_STEPS = 48u;
+  let REFINE_STEPS = 6u;
+  let STEP_LEN: f32 = 1.0;
+  let THICKNESS: f32 = 0.35;
+  let p10 = uniforms.projection[2].z;
+  let p14 = uniforms.projection[3].z;
+
+  var prev_sample = view_pos;
+  for (var i: u32 = 1u; i <= MAX_STEPS; i = i + 1u) {
+    let sample_view = view_pos + refl_dir * (f32(i) * STEP_LEN);
+    let clip = uniforms.projection * vec4f(sample_view, 1.0);
+    if (clip.w <= 0.0) { break; }
+    let ndc = clip.xyz / clip.w;
+    if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0) { break; }
+    if (ndc.z < 0.0 || ndc.z > 1.0) { break; }
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    let px = vec2i(uv * dims);
+    let scene_depth = textureLoad(sceneDepth, px, 0).r;
+    // scene_depth == 0 → sky pixel; can't possibly be a hit there.
+    if (scene_depth > 0.0 && ndc.z < scene_depth) {
+      // Binary-refine between prev_sample (in front of surface)
+      // and sample_view (behind surface) for the exact crossing.
+      var lo = prev_sample;
+      var hi = sample_view;
+      for (var j: u32 = 0u; j < REFINE_STEPS; j = j + 1u) {
+        let mid = (lo + hi) * 0.5;
+        let mid_clip = uniforms.projection * vec4f(mid, 1.0);
+        let mid_ndc = mid_clip.xyz / mid_clip.w;
+        let mid_uv = vec2f(mid_ndc.x * 0.5 + 0.5, 0.5 - mid_ndc.y * 0.5);
+        let mid_px = vec2i(mid_uv * dims);
+        let mid_depth = textureLoad(sceneDepth, mid_px, 0).r;
+        if (mid_depth > 0.0 && mid_ndc.z < mid_depth) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      // hi ≈ the surface crossing. Sample colour + depth there and
+      // validate the thickness: if the ray is too far behind the
+      // recovered scene view-z, it crossed at a silhouette edge
+      // (sky-vs-object discontinuity) rather than a real surface.
+      let hi_clip = uniforms.projection * vec4f(hi, 1.0);
+      let hi_ndc = hi_clip.xyz / hi_clip.w;
+      let hi_uv = vec2f(hi_ndc.x * 0.5 + 0.5, 0.5 - hi_ndc.y * 0.5);
+      let hi_px = vec2i(hi_uv * dims);
+      let hi_depth = textureLoad(sceneDepth, hi_px, 0).r;
+      if (hi_depth > 0.0) {
+        let scene_view_z = -p14 / (hi_depth + p10);
+        let depth_gap = scene_view_z - hi.z;
+        if (depth_gap < THICKNESS) {
+          return textureLoad(refractionTex, hi_px, 0).rgb;
+        }
+      }
+      // Refined hit failed — drop to sky fallback rather than
+      // continuing past the surface (we'd just keep producing
+      // silhouette-edge false hits all the way to MAX_STEPS).
+      break;
+    }
+    prev_sample = sample_view;
+  }
+  return uniforms.skyColor;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   // Build tangent-space normal from scrolling waves; rotate into
@@ -170,7 +280,33 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let speed = water.waves.z;
   let roughness = water.waves.w;
 
-  let n_world = computeWaves(in.world_pos.xz, uniforms.time, strength, scale, speed).n;
+  // Two-layer wave normal. The MESH-SCALE layer (lo) is the same
+  // function the vertex shader displaces by — its normal here is
+  // the true derivative of the displaced surface. The RIPPLE layer
+  // (hi) is per-fragment only: typically tighter spatial scale +
+  // lower amplitude, designed to add sub-mesh surface texture that
+  // a tessellated plane can't carry through vertex displacement.
+  // Combining their tangent-space slopes (xz components of the
+  // (-dh/dx, 1, -dh/dz)-style normals) and renormalising gives
+  // visually overlaid waves + ripples.
+  //
+  // The two layers are independently authored (water.waves vs
+  // water.ripple) because the right ripple settings vary with the
+  // chosen main wave settings — a calm pool wants small ripples
+  // even when wave_strength=0, while a stormy ocean's big swells
+  // should overpower the ripple noise. The RIPPLE_TIME_OFFSET
+  // decorrelates the two layers' phases so the patterns read as
+  // independent rather than two copies of one wave.
+  let lo = computeWaves(in.world_pos.xz, uniforms.time, strength, scale, speed);
+  let RIPPLE_TIME_OFFSET: f32 = 13.7;
+  let hi = computeWaves(
+    in.world_pos.xz,
+    uniforms.time + RIPPLE_TIME_OFFSET,
+    water.ripple.x,
+    water.ripple.y,
+    water.ripple.z,
+  );
+  let n_world = normalize(vec3f(lo.n.x + hi.n.x, 1.0, lo.n.z + hi.n.z));
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
@@ -204,11 +340,54 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
 
   let direct = (k_d * albedo / PI + specular) * uniforms.lightColor * n_dot_l;
   let ambient_term = albedo * ambient_color;
-  // Water reflects extra sky — a fresnel-driven sky tint boost on
-  // top of the diffuse + specular. Keeps water reading as wet even
-  // in shadow.
-  let sky_reflect = uniforms.skyColor * f * 0.4;
-  var lit = direct + ambient_term + sky_reflect;
+  // Screen-space reflection. March the reflection ray through the
+  // depth buffer of the opaque scene. Hits sample the refraction
+  // colour copy at that pixel (the opaque scene buffer is the
+  // refraction texture — same content); misses return the sky
+  // colour. SSR replaces the older half-res planar-reflection pass,
+  // which had to render the whole scene a second time with a
+  // mirrored modelView and was the source of repeated correctness
+  // bugs (winding flip, clip-plane, queue.writeBuffer ordering).
+  let dims_main = vec2f(textureDimensions(refractionTex, 0));
+  let screen_uv = in.position.xy / dims_main;
+  let reflection_color = ssr_reflect(in.view_pos, n);
+  // Refraction sample. The refraction texture is a copy of hdrColor
+  // taken right before water draws (full-res), so it contains the
+  // opaque scene underneath the water. Sampling with the wave
+  // normal's XZ deflection gives the "scene wobbles through the
+  // water" effect that sells the surface as a transparent fluid
+  // rather than tinted glass. Stronger offset than reflection
+  // because under-water distortion reads as more pronounced.
+  let refr_uv = clamp(
+    vec2f(screen_uv.x + n_world.x * 0.025, screen_uv.y + n_world.z * 0.025),
+    vec2f(0.0),
+    vec2f(1.0),
+  );
+  let refraction_color = textureSample(refractionTex, samp, refr_uv).rgb;
+  // Reflection weight: fresnel `f` is correct for the physics but
+  // it dives to ~0.02 at normal incidence, which makes top-down
+  // water look like there's no mirror at all. Lift the floor to
+  // ~0.25 so a viewer looking straight down at calm water still
+  // sees terrain peaks reflected — same compromise every real-time
+  // renderer makes for visual readability.
+  // Fresnel-based mix between refraction (looking THROUGH the water
+  // at the scene beneath) and reflection (mirrored content from
+  // ABOVE the water). At grazing angles fresnel → 1 and water reads
+  // as a near-perfect mirror; looking straight down, fresnel → 0
+  // and you see almost entirely the refracted scene below. We
+  // lift the floor to 0.25 so straight-down water still shows SOME
+  // reflection — physically a bit too much but visually readable.
+  let reflWeight = mix(0.25, 1.0, f.r);
+  // Water tints the refraction — deeper light path = more water-
+  // colour absorbed. Authored water.color in linear HDR.
+  let water_tint = srgb_to_linear(water.color.rgb * in.tint.rgb);
+  let refracted_tinted = refraction_color * water_tint;
+  let water_surface = mix(refracted_tinted, reflection_color, reflWeight);
+  // Specular highlight (sun glint) sits on top of everything —
+  // it's the bright streak you see when the sun is roughly opposite
+  // the camera across the water plane.
+  let specular_term = specular * uniforms.lightColor * n_dot_l;
+  var lit = water_surface + specular_term;
 
   // Shoreline foam. When a heightfield is bound AND this fragment
   // sits over the actual terrain footprint (UV in [0,1]), sample
@@ -220,18 +399,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // When the water plane extends past the heightfield (open water
   // beyond the terrain edge), the UV bounds check skips foam — that
   // region is "deep open water" with no shoreline to break against.
-  // Depth-driven opacity. The authored alpha (water.color.a) is the
-  // shallow-water opacity — that's where you actually want to see
-  // sand/foam/silt through the water. As depth grows, water reads
-  // as more opaque (Beer-Lambert: more water column = more photons
-  // absorbed). Without this, water with alpha=0.7 stays 30% see-
-  // through over even the deepest channels, making the whole
-  // surface look like tinted glass.
+  // Refraction-based composition makes water effectively opaque
+  // (the scene beneath is already encoded in lit via the
+  // refraction sample), so alpha is 1 — the pipeline's src-alpha
+  // blend then reduces to a straight overwrite. The depth-driven
+  // alpha logic that the old transparent-water path needed is
+  // gone; depth still drives water-tint absorption (more depth →
+  // darker refraction) which we approximate with the refraction
+  // tint above.
   //
-  // When no heightfield is bound, depth can't be computed → fall
-  // back to the authored alpha unchanged.
-  var alpha = water.color.a;
-  if (water.foam.y > 0.5) {
+  // Foam ramp lives here so it can ride over the refraction-based
+  // surface: at the shoreline the surface goes from blue water to
+  // bright whitewater foam.
+  if (water.foam.y > 0.5 && water.foam.x > 0.0) {
     let worldSize = water.world.xy;
     let hMin = water.world.z;
     let hMax = water.world.w;
@@ -241,25 +421,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
       let terrainH = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
       let terrainY = hMin + terrainH * (hMax - hMin);
       let depth = max(in.world_pos.y - terrainY, 0.0);
-      // Beer-Lambert-ish depth opacity. depth=0 → authored alpha
-      // (shallow, terrain shows through). depth ≥ ~2 m → fully
-      // opaque (deep water reads as solid colour). The exponent
-      // 1.5 tunes how quickly water hides what's beneath.
-      let depthOpacity = 1.0 - exp(-depth * 1.5);
-      let baseAlpha = mix(water.color.a, 1.0, depthOpacity);
-      // Foam mix on top: shoreline whitewater. Only when foamWidth>0.
-      var foam = 0.0;
-      if (water.foam.x > 0.0) {
-        foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
-        let foam_color = srgb_to_linear(vec3f(0.9, 0.94, 0.96));
-        lit = mix(lit, foam_color * (uniforms.lightColor * n_dot_l + ambient_color), foam);
-      }
-      // Foam is opaque whitewater; take the max of foam opacity
-      // and depth opacity so the foam never gets undercut by the
-      // shallow-water alpha.
-      alpha = max(baseAlpha, foam);
+      let foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
+      let foam_color = srgb_to_linear(vec3f(0.9, 0.94, 0.96));
+      lit = mix(lit, foam_color * (uniforms.lightColor * n_dot_l + ambient_color), foam);
     }
   }
 
-  return vec4f(apply_fog(lit, in.view_pos.z), alpha);
+  return vec4f(apply_fog(lit, in.view_pos.z), 1.0);
 }

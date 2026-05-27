@@ -39,6 +39,7 @@ struct Uniforms {
   ambientIntensity: f32,
   groundColor: vec3f,
   fog: vec4f,
+  time: f32,
 };
 
 struct Material {

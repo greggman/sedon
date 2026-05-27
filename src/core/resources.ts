@@ -213,6 +213,21 @@ export interface WaterMaterial {
   /** Surface roughness for the specular highlight. ~0.05 = crisp sun glint. */
   roughness: number;
   /**
+   * Sub-mesh ripple layer — a SECOND wave evaluated per fragment only
+   * (no vertex displacement), at a tighter spatial scale + lower
+   * amplitude than the mesh-scale wave. Adds fine surface texture
+   * that a tessellated plane can't carry through vertex displacement,
+   * and breaks up reflections so they read as water rather than
+   * mirror. Three independent inputs because the right ripple
+   * settings vary with the chosen `waveStrength` / `waveScale` —
+   * e.g. a calm pool wants a small ripple even with no big waves,
+   * while a stormy ocean's waves overpower ripples that work for
+   * a calm scene. Set `rippleStrength` to 0 to disable.
+   */
+  rippleStrength: number;
+  rippleScale: number;
+  rippleSpeed: number;
+  /**
    * Optional heightfield reference. When present the shader samples
    * the underlying terrain Y at each fragment and tints toward white
    * within `foamWidth` of the shoreline (where water depth → 0).

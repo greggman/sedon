@@ -1,6 +1,5 @@
 import type { NodeDef } from '../core/node-def.js';
 import type {
-  HeightfieldValue,
   SceneValue,
   WaterMaterial,
 } from '../core/resources.js';
@@ -8,24 +7,23 @@ import { requireDevice } from '../core/resources.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 // Flat water plane sized to a heightfield's worldSize, sitting at a
-// configurable Y. Emits a Scene with one entity that uses the
-// `water` material kind — the renderer animates ripples + sun
-// specular against the scene-time uniform.
+// configurable Y. Takes an upstream Scene and APPENDS a water entity
+// to it — that scene-in-scene-out shape lets the water node sit
+// downstream of terrain/material/objects in the graph, and ensures
+// the renderer's reflection pass sees every entity that should
+// reflect in the water (not just the heightfield).
 //
-// v1 is a simple horizontal plane (one quad). Future variants:
-//   • per-vertex displacement for choppy seas (mesh subdivided)
-//   • shoreline foam where the plane intersects terrain (sample
-//     heightfield in the fragment, lerp toward white near zero
-//     terrain–water height diff)
-//   • water/from-path for ribbon-shaped rivers
+// Foam: the water plane samples the heightfield UV of the FIRST
+// terrain field in the input scene (if any) to drive the shoreline
+// fade. Scenes without a terrain field render with no foam.
 export const waterPlaneNode: NodeDef = {
   id: 'water/plane',
   category: 'Water',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'used for sizing — the water plane spans worldSize centred on the origin',
+      name: 'scene',
+      type: 'Scene',
+      description: 'upstream scene to add the water to. The water entity is appended to the scene\'s entity list; reflection rendering sees every entity that came in through this socket',
     },
     {
       name: 'water_level',
@@ -64,16 +62,40 @@ export const waterPlaneNode: NodeDef = {
       description: 'specular roughness — small values give crisp sun glints',
     },
     {
+      name: 'ripple_strength',
+      type: 'Float',
+      default: 0.15,
+      description: 'amplitude of the per-fragment sub-mesh ripple layer. Adds fine surface texture and breaks up reflections; 0 disables. Independent from wave_strength because calm pools want small ripples even with no swell, and stormy seas want big swells without ripples adding noise on top',
+    },
+    {
+      name: 'ripple_scale',
+      type: 'Float',
+      default: 1.0,
+      description: 'world-space wavelength of the ripple layer. Typically much smaller than wave_scale — sub-metre ripples on top of metre-scale waves',
+    },
+    {
+      name: 'ripple_speed',
+      type: 'Float',
+      default: 1.5,
+      description: 'animation speed multiplier for the ripple layer. Usually faster than wave_speed so ripples sparkle while the main waves roll',
+    },
+    {
       name: 'foam_width',
       type: 'Float',
       default: 1.5,
       description: 'world-unit shoreline foam falloff. Water tints toward white within this distance of where the terrain pierces the surface',
     },
     {
+      name: 'world_size',
+      type: 'Vec2',
+      default: [100, 100],
+      description: 'base XZ size of the water plane in metres. If the upstream scene has a terrain field its heightfield.worldSize overrides this — that\'s the common case (water sized to match terrain). Used directly when the scene has no terrain (e.g. an object-only scene with a flat mirror)',
+    },
+    {
       name: 'extent_scale',
       type: 'Float',
       default: 5,
-      description: 'plane size as a multiple of the heightfield worldSize. Default 5 = water extends 5× past the terrain edge so you see open water to the horizon instead of a hard edge. Foam is automatically suppressed outside the heightfield bounds',
+      description: 'plane size as a multiple of worldSize. Default 5 = water extends 5× past the visible terrain/object area so you see open water to the horizon instead of a hard edge. Foam is automatically suppressed outside the heightfield bounds',
     },
     {
       name: 'subdivisions',
@@ -85,25 +107,38 @@ export const waterPlaneNode: NodeDef = {
   outputs: [{ name: 'scene', type: 'Scene' }],
   evaluate(ctx, inputs): { scene: SceneValue } {
     const device = requireDevice(ctx);
-    const field = inputs.heightfield as HeightfieldValue;
+    const inputScene = inputs.scene as SceneValue;
     const waterLevel = inputs.water_level as number;
     const color = inputs.color as [number, number, number, number];
     const waveStrength = inputs.wave_strength as number;
     const waveScale = inputs.wave_scale as number;
     const waveSpeed = inputs.wave_speed as number;
     const roughness = inputs.roughness as number;
+    const rippleStrength = inputs.ripple_strength as number;
+    const rippleScale = inputs.ripple_scale as number;
+    const rippleSpeed = inputs.ripple_speed as number;
     const foamWidth = inputs.foam_width as number;
+    const worldSizeInput = inputs.world_size as [number, number];
     const extentScale = Math.max(1, inputs.extent_scale as number);
     const userSubdivisions = Math.max(1, Math.round(inputs.subdivisions as number));
 
-    // Subdivided plane sized to extentScale × heightfield worldSize.
-    // The terrain renderer centres the world on the origin; the water
-    // plane is centred too, so its UV mapping shares the same world
-    // axes. The extra extent gives "open water" beyond the terrain;
-    // the shader detects out-of-terrain pixels via UV bounds and
-    // skips foam there.
-    const w = field.worldSize[0] * extentScale;
-    const d = field.worldSize[1] * extentScale;
+    // Take the heightfield from the upstream scene's first terrain
+    // field if one is present — that's the foam reference. With no
+    // terrain in the scene, foam is disabled (open water only) and
+    // the plane size falls back to the `world_size` input.
+    const terrainField = inputScene.terrain?.[0];
+    const field = terrainField?.heightfield;
+    const baseSize = field
+      ? field.worldSize
+      : worldSizeInput;
+
+    // Subdivided plane sized to extentScale × baseSize. The terrain
+    // (if any) is centred on the origin; the water plane is centred
+    // too so its UV mapping shares the same world axes. The extra
+    // extent gives "open water" beyond the terrain; the shader
+    // detects out-of-terrain pixels via UV bounds and skips foam.
+    const w = baseSize[0] * extentScale;
+    const d = baseSize[1] * extentScale;
     // Auto-tessellate so wave displacement is actually visible.
     // Each wave wavelength is `waveScale` metres; we want at least
     // ~2 vertices per wavelength to avoid aliasing into noise. A
@@ -154,12 +189,17 @@ export const waterPlaneNode: NodeDef = {
       }
     }
 
+    // Reuse the water mesh across re-evaluations. The water entity is
+    // the LAST entry we appended last frame; find it (or fall back to
+    // a fresh allocation).
     const prev = ctx.previousOutput as { scene?: SceneValue } | undefined;
-    const prevGeometry = prev?.scene?.entities?.[0]?.geometry;
+    const prevWaterEntity = prev?.scene?.entities?.find(
+      (e) => e.material?.kind === 'water',
+    );
     const geometry = uploadMeshToGpu(
       device,
       { positions, normals, uvs, indices },
-      prevGeometry,
+      prevWaterEntity?.geometry,
     );
 
     const material: WaterMaterial = {
@@ -169,30 +209,39 @@ export const waterPlaneNode: NodeDef = {
       waveScale,
       waveSpeed,
       roughness,
-      heightfield: field,
+      rippleStrength,
+      rippleScale,
+      rippleSpeed,
       foamWidth,
+      ...(field !== undefined ? { heightfield: field } : {}),
     };
 
-    const scene: SceneValue = {
-      entities: [
-        {
-          geometry,
-          material,
-          // Identity transform — world positions baked into the
-          // quad's vertices already account for water_level.
-          transform: new Float32Array([
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1,
-          ]),
-          tint: new Float32Array([1, 1, 1, 1]),
-        },
-      ],
-      // Surface the water Y so the renderer can detect when the
-      // camera dips below this plane and apply the underwater tint
-      // in the composite pass.
+    const waterEntity = {
+      geometry,
+      material,
+      // Identity transform — world positions baked into the quad's
+      // vertices already account for water_level.
+      transform: new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ]),
+      tint: new Float32Array([1, 1, 1, 1]),
+    };
+
+    // Merge into the upstream scene. New waterLevel is the max of
+    // the upstream's and this one's so two water planes at
+    // different heights still trigger the underwater post-process
+    // when the camera dips below the higher of them.
+    const mergedWaterLevel = Math.max(
+      inputScene.waterLevel ?? -Infinity,
       waterLevel,
+    );
+    const scene: SceneValue = {
+      ...inputScene,
+      entities: [...inputScene.entities, waterEntity],
+      waterLevel: mergedWaterLevel,
     };
     return { scene };
   },

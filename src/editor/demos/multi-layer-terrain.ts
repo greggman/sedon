@@ -150,13 +150,6 @@ export function createMultiLayerTerrainDemo(): {
       roughness: 0.05,
     },
   });
-  const sceneMerge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 3.5, y: 0 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
-  });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: 0 },
   });
@@ -181,13 +174,12 @@ export function createMultiLayerTerrainDemo(): {
   addEdge(g, { node: splat.id, socket: 'texture' }, { node: material.id, socket: 'splat' });
   addEdge(g, { node: material.id, socket: 'material' }, { node: terrainRenderer.id, socket: 'material' });
 
-  // Water reads the carved heightfield for sizing (worldSize matches
-  // the terrain) and emits a Scene; scene-merge combines it with the
-  // terrain renderer's Scene before the output node.
-  addEdge(g, { node: pathCarve.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
-  addEdge(g, { node: terrainRenderer.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
-  addEdge(g, { node: water.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
-  addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
+  // Water takes the terrain renderer's Scene, appends a water entity,
+  // and forwards the merged scene straight to the output. The water
+  // node now extracts the heightfield (for foam UV) from the
+  // incoming scene's terrain field, so no separate heightfield edge.
+  addEdge(g, { node: terrainRenderer.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
+  addEdge(g, { node: water.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Frame the 200m terrain from a moderate elevation/distance so the
   // camera sits roughly above the centre but with chunks at a range of

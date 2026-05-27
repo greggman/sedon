@@ -3,6 +3,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 import { createInitialGraph } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
+import { createCubeOnWaterDemo } from './cube-on-water.js';
 import { createForestDemo } from './forest.js';
 import { createGrassTestDemo } from './grass-test.js';
 import { createLeafDemo } from './leaf.js';
@@ -34,4 +35,5 @@ export const DEMOS: Demo[] = [
   { id: 'tree-bush', label: 'Tree & Bush', build: createTreeBushDemo },
   { id: 'grass-test', label: 'Grass Test', build: createGrassTestDemo },
   { id: 'multi-layer-terrain', label: 'Terrain Layers (test)', build: createMultiLayerTerrainDemo },
+  { id: 'cube-on-water', label: 'Cube on Water (reflection test)', build: createCubeOnWaterDemo },
 ];

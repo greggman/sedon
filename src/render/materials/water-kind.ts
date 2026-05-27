@@ -27,6 +27,7 @@ export function createWaterKind(
   device: GPUDevice,
   format: GPUTextureFormat,
   sceneBindGroupLayout: GPUBindGroupLayout,
+  waterExtrasBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<WaterMaterial> {
   const materialBindGroupLayout = getBindGroupLayout(device, {
     entries: [
@@ -38,8 +39,14 @@ export function createWaterKind(
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     ],
   });
+  // Pipeline has THREE bind groups: scene (0) + material (1) +
+  // water-extras (2: opaque-depth copy + opaque-colour copy). Group
+  // 2's layout is owned by the scene renderer because its bind
+  // group is per-canvas-size, not per-material. The caller of
+  // pass.setBindGroup(2, ...) at draw time is scene.ts's main
+  // render loop (right before each water draw).
   const pipelineLayout = getPipelineLayout(device, {
-    bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
+    bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout, waterExtrasBindGroupLayout],
   });
   const module = getShaderModule(device, shaderCode);
   const pipeline = getRenderPipeline(device, {
@@ -113,12 +120,13 @@ export function createWaterKind(
       return `water|${htex}`;
     },
     writeMaterialParams(material, paramBuffer) {
-      // Layout matches WaterParams in water.wgsl. 64 bytes total.
+      // Layout matches WaterParams in water.wgsl. 80 bytes total.
       //   offset 0  vec4 color
       //   offset 16 vec4 (waveStrength, waveScale, waveSpeed, roughness)
       //   offset 32 vec4 (worldSizeX, worldSizeZ, heightMin, heightMax)
       //   offset 48 vec4 (foamWidth, foamEnabled, pad, pad)
-      const data = new Float32Array(16);
+      //   offset 64 vec4 (rippleStrength, rippleScale, rippleSpeed, pad)
+      const data = new Float32Array(20);
       data[0] = material.color[0];
       data[1] = material.color[1];
       data[2] = material.color[2];
@@ -136,11 +144,15 @@ export function createWaterKind(
       data[13] = hf ? 1 : 0; // foam enabled
       data[14] = 0;
       data[15] = 0;
+      data[16] = material.rippleStrength;
+      data[17] = material.rippleScale;
+      data[18] = material.rippleSpeed;
+      data[19] = 0;
       device.queue.writeBuffer(paramBuffer, 0, data as BufferSource);
     },
     buildBindGroup(material) {
       const paramBuffer = device.createBuffer({
-        size: 64,
+        size: 80,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);

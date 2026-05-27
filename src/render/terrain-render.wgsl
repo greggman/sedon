@@ -38,6 +38,7 @@ struct Uniforms {
   ambientIntensity: f32,
   groundColor: vec3f,
   fog: vec4f,
+  time: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -115,31 +116,21 @@ fn lod_select(@builtin(global_invocation_id) gid: vec3<u32>) {
   let chunkCenter = vec3f(chunkCenterXZ.x, chunkY, chunkCenterXZ.y);
   let dist = length(chunkCenter - tu.cameraPos.xyz);
   // LOD: floor(dist / lodDistance), clamped to [0, lodLevels-1].
+  // LOD is chosen per-chunk from CHUNK-CENTER distance (so the whole
+  // chunk renders with one mesh). The geomorph factor t, however,
+  // is computed PER-VERTEX in vs_main from each vertex's own
+  // distance to camera — that's what guarantees crack-free seams,
+  // because two adjacent chunks share a vertex at the same world
+  // position and so compute identical morph there.
   let distNorm = dist / max(tu.lodDistance, 0.0001);
   var lod = u32(max(0.0, floor(distNorm)));
   if (lod >= tu.lodLevels) { lod = tu.lodLevels - 1u; }
-  // Geomorph factor t ∈ [0,1]. While a chunk sits in the NEAR half
-  // of its LOD distance band, t=0 (mesh uses its own LOD's verts).
-  // In the FAR half, t ramps 0→1 so by the moment the chunk would
-  // switch to LOD+1, its fine verts have already collapsed to the
-  // LOD+1 host positions. Combined with aligned per-LOD grids, the
-  // hand-off is geometrically continuous → no pop, no T-junction
-  // cracks. Max-LOD chunks have nothing coarser to morph toward, so
-  // keep t=0 for them.
-  var morphQ: u32 = 0u;
-  if (lod + 1u < tu.lodLevels) {
-    let lodFrac = distNorm - f32(lod);
-    let MORPH_START = 0.5;
-    let t = clamp((lodFrac - MORPH_START) / (1.0 - MORPH_START), 0.0, 1.0);
-    morphQ = u32(t * 255.0);
-  }
   let bucketBase = lod * totalChunks;
   let slot = atomicAdd(&drawArgs[lod].instanceCount, 1u);
-  // 32-bit pack: 4 bits LOD (≤16 levels) | 8 bits morphQ (256
-  // quantizations) | 20 bits chunkIdx (≤1M chunks). The vertex
-  // shader reads this off a per-instance attribute and unpacks.
-  chunk_instances[bucketBase + slot] =
-    (lod << 28u) | (morphQ << 20u) | (gid.x & 0xFFFFFu);
+  // 32-bit pack: 4 bits LOD (≤16 levels) | 28 bits chunkIdx
+  // (≤256M chunks). The vertex shader reads this off a per-
+  // instance attribute and unpacks.
+  chunk_instances[bucketBase + slot] = (lod << 28u) | (gid.x & 0x0FFFFFFFu);
 }
 
 // ---- Render pipeline (vertex + fragment) -------------------------
@@ -172,10 +163,8 @@ fn worldY(uv: vec2f) -> f32 {
 
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
-  let chunkIdx = in.chunkPacked & 0xFFFFFu;
-  let morphQ = (in.chunkPacked >> 20u) & 0xFFu;
+  let chunkIdx = in.chunkPacked & 0x0FFFFFFFu;
   let lod = (in.chunkPacked >> 28u) & 0xFu;
-  let morphT = f32(morphQ) / 255.0;
   let cx = chunkIdx % tu.chunkCount.x;
   let cz = chunkIdx / tu.chunkCount.x;
   // World XZ for this vertex of this chunk. gridPos is in [-0.5, 0.5];
@@ -183,14 +172,34 @@ fn vs_main(in: VsIn) -> VsOut {
   // to the chunk's grid position.
   let chunkOrigin = tu.worldOrigin
     + (vec2f(f32(cx), f32(cz)) + vec2f(0.5)) * tu.chunkSize;
-  // Geomorph: snap gridPos to the next-coarser LOD's vertex grid,
-  // then mix between fine and snapped by morphT. At t=0 we render
-  // the fine mesh as-is; at t=1 every fine vertex has collapsed
-  // onto a host LOD+1 vertex (its degenerate triangles are
-  // invisible). Aligned per-LOD grids (vertsPerEdge =
-  // (baseDivisions>>lod)+1, set in terrain-render.ts) guarantee
-  // the snapped position IS a valid LOD+1 vertex, so the hand-off
-  // is crack-free.
+  let totalSize = vec2f(tu.chunkCount) * tu.chunkSize;
+
+  // PER-VERTEX geomorph factor. The vertex's OWN distance to the
+  // camera (not the chunk-center distance) drives the morph. This
+  // is the crack-free property: two adjacent chunks at different
+  // LODs share an edge vertex at the same world position, so they
+  // compute the same distance, the same morphT, and arrive at the
+  // same final position. T-junctions vanish.
+  //
+  // For the distance estimate we use the FINE vertex's height — an
+  // approximation, but adjacent chunks see the same fine position
+  // and the same heightfield sample at that UV, so they agree.
+  let worldXZ_fine = chunkOrigin + in.gridPos.xz * tu.chunkSize;
+  let uv_fine = (worldXZ_fine - tu.worldOrigin) / totalSize;
+  let h_fine = worldY(uv_fine);
+  let dist = length(vec3f(worldXZ_fine.x, h_fine, worldXZ_fine.y) - tu.cameraPos.xyz);
+  let distNorm = dist / max(tu.lodDistance, 0.0001);
+  let lodFrac = distNorm - f32(lod);
+  let MORPH_START = 0.5;
+  let morphT = clamp((lodFrac - MORPH_START) / (1.0 - MORPH_START), 0.0, 1.0);
+
+  // Snap gridPos to the next-coarser LOD's vertex grid, then mix
+  // between fine and snapped by morphT. At t=0 we render the fine
+  // mesh as-is; at t=1 every fine vertex has collapsed onto a host
+  // LOD+1 vertex (its degenerate triangles are invisible). Aligned
+  // per-LOD grids (vertsPerEdge = (baseDivisions>>lod)+1, set in
+  // terrain-render.ts) guarantee the snapped position IS a valid
+  // LOD+1 vertex.
   //
   // Step size in [-0.5, 0.5] grid space at LOD+1 = 2 / divisions.
   let divisions = max(1u, tu.baseDivisions >> lod);
@@ -200,8 +209,8 @@ fn vs_main(in: VsIn) -> VsOut {
   let gridCoarse = snappedNorm - vec2f(0.5);
   let gridMorphed = mix(in.gridPos.xz, gridCoarse, morphT);
   let worldXZ = chunkOrigin + gridMorphed * tu.chunkSize;
-  // UV into the heightfield for sampling height + normal.
-  let totalSize = vec2f(tu.chunkCount) * tu.chunkSize;
+  // UV into the heightfield for sampling height + normal (totalSize
+  // declared above for the morph-distance calc).
   let uv = (worldXZ - tu.worldOrigin) / totalSize;
   let h = worldY(uv);
   let worldPos = vec3f(worldXZ.x, h, worldXZ.y);
