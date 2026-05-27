@@ -11,6 +11,26 @@ export interface Texture2DValue {
   format: GPUTextureFormat;
   width: number;
   height: number;
+  /**
+   * Content revision. Bumped every time `reusableTexture` hands out
+   * a handle to a producer node — even when the underlying
+   * GPUTexture identity is preserved across re-evaluations.
+   *
+   * Why this exists: nodes like `core/solid-color` reuse the same
+   * GPUTexture and just overwrite its pixels. Downstream consumers
+   * that BAKE the source content into derived GPU state (e.g.
+   * `terrain-multi-layer-kind` blits each layer's albedo into a
+   * shared 2D-array texture once, when the material bind group is
+   * built) need a signal that the source content changed even
+   * though the GPUTexture identity didn't. Including this revision
+   * in a material's structural cache key forces the bind group
+   * (and its baked blits) to rebuild when content changes.
+   *
+   * Consumers that only HOLD a reference to the texture (without
+   * baking it into derived state) can safely ignore `revision` —
+   * they'll sample the current content automatically.
+   */
+  revision: number;
 }
 
 export interface GeometryValue {
@@ -695,6 +715,13 @@ export function reusableBuffer(
  * no other node references its texture, so mutating it can't corrupt
  * another node's cached output.
  */
+// Process-wide monotonic counter for Texture2DValue.revision. Every
+// reusableTexture call gets a unique value, so downstream consumers
+// that key on revision rebuild their derived state whenever a
+// producing node re-evaluates — even when the GPUTexture identity is
+// preserved by the reuse path below.
+let nextTextureRevision = 1;
+
 export function reusableTexture(
   device: GPUDevice,
   previous: unknown,
@@ -726,6 +753,7 @@ export function reusableTexture(
       format: desired.format,
       width: desired.width,
       height: desired.height,
+      revision: nextTextureRevision++,
     };
   }
   debug(() => `[reusableTexture ALLOC] ${desired.width}x${desired.height} ${desired.format} ${
@@ -742,6 +770,7 @@ export function reusableTexture(
     format: desired.format,
     width: desired.width,
     height: desired.height,
+    revision: nextTextureRevision++,
   };
 }
 

@@ -97,7 +97,7 @@ export function createWaterKind(
       { bytesPerRow: 4 },
       [1, 1],
     );
-    flatHeight = { texture: tex, format: 'rgba8unorm', width: 1, height: 1 };
+    flatHeight = { texture: tex, format: 'rgba8unorm', width: 1, height: 1, revision: 0 };
     return flatHeight;
   };
 

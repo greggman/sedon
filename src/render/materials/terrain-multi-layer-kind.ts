@@ -80,7 +80,7 @@ function ensureDefaults(device: GPUDevice): DefaultLayerTextures {
       { bytesPerRow: 4 },
       [1, 1],
     );
-    return { texture, format, width: 1, height: 1 };
+    return { texture, format, width: 1, height: 1, revision: 0 };
   };
   const result: DefaultLayerTextures = {
     albedo: make([0, 0, 0, 255]),
@@ -156,16 +156,28 @@ export function createTerrainMultiLayerKind(
     id: 'terrain-multi-layer',
     pipeline,
     materialStructuralKey(material) {
+      // Include the SOURCE Texture2DValue's content revision in
+      // each per-layer key. Without revision, two materials whose
+      // layers reuse the SAME underlying GPUTexture (via
+      // reusableTexture) but with newly-written content collide on
+      // the same structural key — the cached bind group is reused
+      // and the one-time blit-into-array (in buildBindGroup) is
+      // NEVER re-run, so the rendered terrain stays stuck on the
+      // old content. The revision bumps every reusableTexture call,
+      // so a producer-node re-eval forces a fresh structural key
+      // here and the array re-blit happens.
+      const texKey = (t: { texture: GPUTexture; revision: number }) =>
+        `${gpuObjectId(t.texture)}#${t.revision}`;
       const layerIds = material.layers
         .map((layer, i) => {
-          const a = gpuObjectId(layer.albedo.texture);
-          const n = layer.normal ? gpuObjectId(layer.normal.texture) : 'flat';
-          const h = layer.height ? gpuObjectId(layer.height.texture) : 'flat';
-          const r = layer.roughness ? gpuObjectId(layer.roughness.texture) : 'flat';
+          const a = texKey(layer.albedo);
+          const n = layer.normal ? texKey(layer.normal) : 'flat';
+          const h = layer.height ? texKey(layer.height) : 'flat';
+          const r = layer.roughness ? texKey(layer.roughness) : 'flat';
           return `${i}:${a}|${n}|${h}|${r}`;
         })
         .join(',');
-      const splatId = gpuObjectId(material.splat.texture);
+      const splatId = texKey(material.splat);
       return `terrain-multi-layer|${material.layers.length}|${layerIds}|splat=${splatId}`;
     },
     writeMaterialParams(material, paramBuffer) {

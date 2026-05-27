@@ -227,6 +227,7 @@ export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
     format,
     width: 1,
     height: 1,
+    revision: 0, // static cached fallback — content never changes
   };
   flatNormalCache.set(device, result);
   return result;
@@ -256,6 +257,7 @@ export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
     format,
     width: 1,
     height: 1,
+    revision: 0, // static cached fallback — content never changes
   };
   flatHalfCache.set(device, result);
   return result;

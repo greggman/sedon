@@ -39,6 +39,7 @@ function externalTexture(device: MockGPUDevice): Texture2DValue {
     format: 'rgba8unorm',
     width: 1,
     height: 1,
+    revision: 0,
   };
 }
 function externalGeometry(device: MockGPUDevice): GeometryValue {

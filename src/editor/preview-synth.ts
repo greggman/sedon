@@ -51,6 +51,7 @@ function getResources(device: GPUDevice): PreviewResources {
     format,
     width: 1,
     height: 1,
+    revision: 0, // static fallback — content never changes
   };
 
   // Default material for Geometry previews — surfaces show the shape
