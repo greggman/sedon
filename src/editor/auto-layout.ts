@@ -1,4 +1,5 @@
 import type { Graph } from '../core/graph.js';
+import type { NodeRegistry } from '../core/node-def.js';
 
 // Rank-based layered auto-layout, Sugiyama-flavored. Six phases:
 //
@@ -58,6 +59,17 @@ import type { Graph } from '../core/graph.js';
 
 const COL_GAP = 60;
 const ROW_GAP = 30;
+// Maximum allowed WHITESPACE between two consecutive nodes in the same
+// rank. The default Y refinement (Phase 5) pulls each node toward the
+// average Y of its neighbors and only enforces a MIN spacing (ROW_GAP),
+// so source nodes whose downstream neighbors sit far apart vertically
+// end up at widely-separated Y values with huge empty bands between
+// them. Adding a max-gap clamp inside the pack closes those bands: if
+// a node's barycentric target would put it more than MAX_ROW_GAP below
+// its predecessor's bottom edge, the pack pulls it up to the cap. This
+// trades some perfect-alignment-with-downstream for compactness — what
+// you want in practice for a dense graph like the forest demo.
+const MAX_ROW_GAP = 60;
 const DEFAULT_W = 240;
 const DEFAULT_H = 140;
 const REFINE_ITERATIONS = 24;
@@ -77,21 +89,74 @@ export interface NodeMeasurement {
   height?: number;
 }
 
+// Per-edge socket reference used by the median heuristic to bias node
+// ordering by WHICH socket each edge lands on. Without it two source
+// nodes that both feed the same target node tie at the target's
+// rank-position and fall back to insertion order — producing the
+// classic "aaa connects to socket b, bbb connects to socket a, but
+// aaa is still on top" wire-crossing artifact. With it, the source
+// whose edge enters the target's TOP socket sorts to the top.
+//
+// `socketBias` is in [0, 1) — the fraction of the socket-index within
+// the node's total declared sockets on that side. Median computation
+// adds this to the neighbor's rank-position, giving a continuous
+// score that differentiates edges to/from the same neighbor by
+// socket order.
+interface EdgeRef {
+  node: string;
+  socketBias: number;
+}
+
 export function layoutGraph(
   graph: Graph,
   measuredById: ReadonlyMap<string, NodeMeasurement | undefined>,
+  registry?: NodeRegistry,
 ): Map<string, { x: number; y: number }> {
+  // Resolve socket order from the registry (when provided). For each
+  // node, we need (a) the declared input socket names (+ any per-node
+  // extraInputs) and (b) the declared output socket names — used
+  // below to compute socketBias for every edge. Falls back to a stable
+  // empty order when no registry is available (tests that hand us a
+  // bare graph), which collapses socketBias to 0 and preserves the
+  // pre-existing behaviour.
+  const inputOrder = new Map<string, string[]>();
+  const outputOrder = new Map<string, string[]>();
+  for (const node of graph.nodes) {
+    const def = registry?.get(node.kind);
+    const baseIns = def?.inputs.map((i) => i.name) ?? [];
+    const extraIns = node.extraInputs?.map((i) => i.name) ?? [];
+    inputOrder.set(node.id, [...baseIns, ...extraIns]);
+    outputOrder.set(node.id, def?.outputs.map((o) => o.name) ?? []);
+  }
+
   // Predecessors and successors per node — both needed for bidirectional
-  // refinement. We mutate these later to insert dummies.
-  const preds = new Map<string, string[]>();
-  const succs = new Map<string, string[]>();
+  // refinement. Stored as EdgeRefs so the crossing-minimization median
+  // can read socket bias for each connection. We mutate these later to
+  // insert dummies for long edges; dummies use socketBias = 0 since
+  // they have no real sockets.
+  const preds = new Map<string, EdgeRef[]>();
+  const succs = new Map<string, EdgeRef[]>();
   for (const node of graph.nodes) {
     preds.set(node.id, []);
     succs.set(node.id, []);
   }
   for (const edge of graph.edges) {
-    preds.get(edge.to.node)?.push(edge.from.node);
-    succs.get(edge.from.node)?.push(edge.to.node);
+    const ins = inputOrder.get(edge.to.node) ?? [];
+    const outs = outputOrder.get(edge.from.node) ?? [];
+    const inIdx = ins.indexOf(edge.to.socket);
+    const outIdx = outs.indexOf(edge.from.socket);
+    // socketBias: fraction in [0,1). Edge to socket index k on a node
+    // with N inputs gets bias k/N (top socket = 0, bottom-most = (N-1)/N).
+    // Same for output sockets. Unknown socket (registry mismatch,
+    // disconnected node) → 0, which keeps it neutral in the median.
+    const inBias = inIdx >= 0 && ins.length > 0 ? inIdx / ins.length : 0;
+    const outBias = outIdx >= 0 && outs.length > 0 ? outIdx / outs.length : 0;
+    // preds[T] sees the predecessor's OUT socket — that's the vertical
+    // position on the source where THIS edge leaves. succs[S] sees the
+    // target's IN socket — the vertical position on the target where
+    // THIS edge arrives.
+    preds.get(edge.to.node)?.push({ node: edge.from.node, socketBias: outBias });
+    succs.get(edge.from.node)?.push({ node: edge.to.node, socketBias: inBias });
   }
 
   // Rank = longest path from any source. DFS with cycle protection.
@@ -104,7 +169,7 @@ export function layoutGraph(
     visiting.add(id);
     const ps = preds.get(id) ?? [];
     let r = 0;
-    for (const p of ps) r = Math.max(r, computeRank(p) + 1);
+    for (const p of ps) r = Math.max(r, computeRank(p.node) + 1);
     visiting.delete(id);
     rank.set(id, r);
     return r;
@@ -123,6 +188,14 @@ export function layoutGraph(
   // Phase 2: insert dummy nodes for long edges. Walk a snapshot of the
   // original edge list — we're mutating preds/succs so iterating the live
   // map would double-count.
+  //
+  // Socket bias propagation through the dummy chain: the FIRST dummy
+  // inherits the original source's output socket bias (so the chain
+  // "leaves" the source at the right vertical position). The LAST
+  // dummy carries the original target's input socket bias (so the
+  // chain "arrives" at the right vertical position). Intermediate
+  // dummy-to-dummy hops use bias 0 — dummies are placeholders with
+  // a single virtual socket centered on their midline.
   let dummyCounter = 0;
   for (const edge of graph.edges) {
     const fromRank = rank.get(edge.from.node);
@@ -130,22 +203,38 @@ export function layoutGraph(
     if (fromRank === undefined || toRank === undefined) continue;
     if (toRank - fromRank <= 1) continue;
 
-    removeOnce(succs.get(edge.from.node)!, edge.to.node);
-    removeOnce(preds.get(edge.to.node)!, edge.from.node);
+    // Find the EdgeRef on each side to recover the original biases
+    // (since this same edge could appear at different sockets later
+    // in graph.edges — match by node identity is enough here because
+    // graphs don't have parallel edges between the same pair).
+    const succEdgeFromSrc = succs.get(edge.from.node)!.find((e) => e.node === edge.to.node);
+    const predEdgeToTgt = preds.get(edge.to.node)!.find((e) => e.node === edge.from.node);
+    const srcOutBias = predEdgeToTgt?.socketBias ?? 0;
+    const tgtInBias = succEdgeFromSrc?.socketBias ?? 0;
+
+    removeOnceByNode(succs.get(edge.from.node)!, edge.to.node);
+    removeOnceByNode(preds.get(edge.to.node)!, edge.from.node);
 
     let prev = edge.from.node;
+    let prevToDummyBias = tgtInBias; // first hop from real source carries target's IN bias
     for (let r = fromRank + 1; r < toRank; r++) {
       const dummyId = `${DUMMY_PREFIX}${dummyCounter++}`;
       rank.set(dummyId, r);
-      preds.set(dummyId, [prev]);
+      // Predecessor's OUT bias on this hop: srcOutBias for the first
+      // dummy (so it "leaves" the source at the right Y), else 0.
+      const predBias = prev === edge.from.node ? srcOutBias : 0;
+      preds.set(dummyId, [{ node: prev, socketBias: predBias }]);
       succs.set(dummyId, []);
       heights.set(dummyId, DUMMY_HEIGHT);
       widths.set(dummyId, 0);
-      succs.get(prev)!.push(dummyId);
+      succs.get(prev)!.push({ node: dummyId, socketBias: prevToDummyBias });
       prev = dummyId;
+      // After the first hop, dummy-to-dummy edges are unbiased.
+      prevToDummyBias = 0;
     }
-    succs.get(prev)!.push(edge.to.node);
-    preds.get(edge.to.node)!.push(prev);
+    // Final hop: dummy → real target. Carry the target's input bias.
+    succs.get(prev)!.push({ node: edge.to.node, socketBias: tgtInBias });
+    preds.get(edge.to.node)!.push({ node: prev, socketBias: 0 });
   }
 
   // Group all nodes (real + dummy) by rank. Map iteration is insertion order,
@@ -175,8 +264,15 @@ export function layoutGraph(
 
       const scored = ranks[r]!.map((id, originalIdx) => {
         const ns = adj.get(id) ?? [];
+        // Each neighbor contributes its rank-position + socketBias —
+        // the bias differentiates two edges to/from the same neighbor
+        // by socket order, so a source feeding the target's TOP socket
+        // sorts above a source feeding the same target's bottom socket.
         const positions = ns
-          .map((n) => refIndexOf.get(n))
+          .map((e) => {
+            const p = refIndexOf.get(e.node);
+            return p === undefined ? undefined : p + e.socketBias;
+          })
           .filter((p): p is number => p !== undefined)
           .sort((a, b) => a - b);
         // Median of neighbor positions; nodes with no neighbors keep their
@@ -244,11 +340,48 @@ export function layoutGraph(
     if (!improved) break;
   }
 
+  // Post-Phase-5 compaction. Walk each rank top-to-bottom and collapse
+  // any whitespace gap larger than MAX_ROW_GAP — Phase 5 produces
+  // barycentric positions that minimise edge slope, but for graphs
+  // where a source's only downstream neighbour lives hundreds of
+  // pixels away in Y, the resulting gaps between groups can be many
+  // node heights tall. Pulling later nodes UP within a rank keeps
+  // their ORDER (and thus the crossing minimisation result) but
+  // tightens visual density. Done OUTSIDE assignY so it doesn't feed
+  // back into the iterative refinement.
+  for (const rankIds of ranks) {
+    if (rankIds.length < 2) continue;
+    let prevBottom = positions.get(rankIds[0]!)!.y + (heights.get(rankIds[0]!) ?? DEFAULT_H);
+    for (let i = 1; i < rankIds.length; i++) {
+      const id = rankIds[i]!;
+      const cur = positions.get(id)!;
+      const cap = prevBottom + MAX_ROW_GAP;
+      const y = Math.min(cur.y, cap);
+      positions.set(id, { x: cur.x, y });
+      prevBottom = y + (heights.get(id) ?? DEFAULT_H);
+    }
+  }
+
   // Strip dummies from output — the caller only knows about real nodes.
   const real = new Map<string, { x: number; y: number }>();
   for (const [id, pos] of positions) {
     if (!id.startsWith(DUMMY_PREFIX)) real.set(id, pos);
   }
+
+  // Anchor the layout's bounding box at (0, 0). Phase 5 has no global
+  // Y anchor — each node settles at the average center of its
+  // neighbours and the rank's overall origin floats free, so the
+  // topmost node can land at a negative Y. Translate everything so
+  // the topmost real node sits at Y=0; X is already zero-anchored by
+  // colX[0]=0. The caller expects "compact layout starting near the
+  // origin" — without this they'd have to scroll up to find their
+  // nodes.
+  let minY = Infinity;
+  for (const pos of real.values()) if (pos.y < minY) minY = pos.y;
+  if (Number.isFinite(minY) && minY !== 0) {
+    for (const [id, pos] of real) real.set(id, { x: pos.x, y: pos.y - minY });
+  }
+
   return real;
 }
 
@@ -258,8 +391,8 @@ export function layoutGraph(
 function assignY(
   ranks: ReadonlyArray<readonly string[]>,
   colX: ReadonlyArray<number>,
-  preds: ReadonlyMap<string, readonly string[]>,
-  succs: ReadonlyMap<string, readonly string[]>,
+  preds: ReadonlyMap<string, readonly EdgeRef[]>,
+  succs: ReadonlyMap<string, readonly EdgeRef[]>,
   heights: ReadonlyMap<string, number>,
   positions: Map<string, { x: number; y: number }>,
 ): void {
@@ -347,8 +480,8 @@ function segmentsIntersect(
   );
 }
 
-function removeOnce<T>(arr: T[], item: T): void {
-  const i = arr.indexOf(item);
+function removeOnceByNode(arr: EdgeRef[], nodeId: string): void {
+  const i = arr.findIndex((e) => e.node === nodeId);
   if (i >= 0) arr.splice(i, 1);
 }
 
@@ -360,8 +493,8 @@ function removeOnce<T>(arr: T[], item: T): void {
 // single-direction packing.
 function refineRank(
   rankIds: readonly string[],
-  preds: ReadonlyMap<string, readonly string[]>,
-  succs: ReadonlyMap<string, readonly string[]>,
+  preds: ReadonlyMap<string, readonly EdgeRef[]>,
+  succs: ReadonlyMap<string, readonly EdgeRef[]>,
   positions: Map<string, { x: number; y: number }>,
   heights: ReadonlyMap<string, number>,
 ): void {
@@ -377,12 +510,12 @@ function refineRank(
     } else {
       let sumCenters = 0;
       for (const p of ps) {
-        const pp = positions.get(p);
-        if (pp) sumCenters += pp.y + (heights.get(p) ?? DEFAULT_H) / 2;
+        const pp = positions.get(p.node);
+        if (pp) sumCenters += pp.y + (heights.get(p.node) ?? DEFAULT_H) / 2;
       }
       for (const s of ss) {
-        const sp = positions.get(s);
-        if (sp) sumCenters += sp.y + (heights.get(s) ?? DEFAULT_H) / 2;
+        const sp = positions.get(s.node);
+        if (sp) sumCenters += sp.y + (heights.get(s.node) ?? DEFAULT_H) / 2;
       }
       const avgCenter = sumCenters / n;
       targetY = avgCenter - h / 2;
@@ -396,6 +529,12 @@ function refineRank(
   // rank order as the vertical order: first item top, last item bottom.
 
   // Forward pass — push each node down if it would overlap its predecessor.
+  // ONLY a floor (min-gap) constraint — adding a ceiling here was tried
+  // and destabilised the iteration: with both fwd and bwd clamping in
+  // both directions, no rank has a fixed Y anchor and the whole layout
+  // drifts diagonally across iterations. Max-gap compaction happens in
+  // a single post-Phase-5 pass instead (see `compactRanks`), where the
+  // ranks are already stable.
   const fwd: number[] = new Array(items.length);
   let cursor = -Infinity;
   for (let i = 0; i < items.length; i++) {

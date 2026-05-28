@@ -8,7 +8,7 @@ import { loadProject, saveProject } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
 import type { NodeRegistry } from '../core/node-def.js';
-import { useRegistry } from './registry.js';
+import { buildRegistry, useRegistry } from './registry.js';
 import { getActiveCanvasEl, getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
@@ -252,7 +252,8 @@ export function frameSelectedInActiveCanvas(): void {
 export function cleanupActiveGraph(): void {
   const rf = getActiveCanvasRf();
   if (!rf) return;
-  const graph = useEditorStore.getState().graph;
+  const state = useEditorStore.getState();
+  const graph = state.graph;
   const rfNodes = rf.getNodes();
   const measured = new Map<string, NodeMeasurement | undefined>();
   for (const n of rfNodes) {
@@ -263,8 +264,15 @@ export function cleanupActiveGraph(): void {
     if (m.height !== undefined) entry.height = m.height;
     measured.set(n.id, entry);
   }
-  const positions = layoutGraph(graph, measured);
-  useEditorStore.getState().commitActivePositions(positions);
+  // Hand layoutGraph the registry so its crossing-minimisation phase
+  // can score edges by the SOCKET they terminate on, not just by the
+  // target node's rank position. Without this, two sources whose
+  // edges both land on the same target tie on score and fall back to
+  // insertion order — producing the "aaa connects to socket b, bbb
+  // connects to socket a, but aaa stays on top" wire-crossing.
+  const registry = buildRegistry(state.subgraphs);
+  const positions = layoutGraph(graph, measured, registry);
+  state.commitActivePositions(positions);
 }
 
 // Load a demo project by id. Mirrors the old DemosMenu inline handler.

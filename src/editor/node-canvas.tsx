@@ -149,13 +149,19 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // canvas changes too. Pinning at mount captures the user's intent:
   // "this panel was showing X" stays "this panel shows X" unless they
   // explicitly retarget it.
+  //
+  // Depend on the OBSERVED `pinnedGraphId` so the effect re-fires if
+  // a project load wipes `canvasGraphIds` via resetForNewProject. The
+  // panel survives the wipe (DockView keeps it) but its pin is gone;
+  // without this re-fire the canvas becomes silently unpinned and
+  // starts following `currentEditingId` again — which is exactly the
+  // "I split right and then opened a subgraph, why did BOTH canvases
+  // switch?" bug.
   useEffect(() => {
-    const layout = useLayoutStore.getState();
-    if (!layout.canvasGraphIds[panelId]) {
-      const initial = useEditorStore.getState().currentEditingId;
-      layout.setCanvasGraphId(panelId, initial);
-    }
-  }, [panelId]);
+    if (pinnedGraphId !== undefined) return;
+    const initial = useEditorStore.getState().currentEditingId;
+    useLayoutStore.getState().setCanvasGraphId(panelId, initial);
+  }, [panelId, pinnedGraphId]);
   // We use RF's internal store directly (not useUpdateNodeInternals) because
   // the public hook defers measurement to a requestAnimationFrame — by the
   // time it actually runs, our setRfEdges has already triggered a render

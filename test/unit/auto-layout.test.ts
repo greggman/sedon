@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addEdge, addNode, createGraph } from '../../src/core/graph.js';
 import { layoutGraph, type NodeMeasurement } from '../../src/editor/auto-layout.js';
+import { createCoreNodeRegistry } from '../../src/nodes/index.js';
 
 // Build the basic-demo-shape graph: grid → material → scene-entity ← sphere,
 // scene-entity → output. Sphere → scene-entity is a long edge (rank 0 → 2).
@@ -129,4 +130,53 @@ test('crossing minimization eliminates crossings on a reverse-mapped graph', () 
     positions.get('m2')!.y < positions.get('m1')!.y,
     `expected m2 above m1; got m2=${positions.get('m2')!.y} m1=${positions.get('m1')!.y}`,
   );
+});
+
+// Two source nodes feeding the SAME target node at different input
+// sockets. Without socket-aware median scoring the two sources tie
+// (both have one successor at the same rank-position) and fall back
+// to insertion order; with socket-aware scoring the source whose
+// edge enters the target's TOP socket sorts above the other —
+// minimising wire crossings even when only one target node is in
+// the next rank.
+test('socket-aware ordering: source feeding target.a sorts above source feeding target.b', () => {
+  const g = createGraph();
+  // Insertion order DELIBERATELY reversed from the desired layout —
+  // aaa is added first (so without socket awareness it ends up on
+  // top), but aaa connects to blend.b (the LOWER socket) so the
+  // correct layout puts bbb on top.
+  const aaa = addNode(g, 'core/solid-color', { id: 'aaa' });
+  const bbb = addNode(g, 'core/solid-color', { id: 'bbb' });
+  const blend = addNode(g, 'core/blend', { id: 'blend' });
+  addEdge(g, { node: aaa.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
+  addEdge(g, { node: bbb.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
+
+  const measured = new Map<string, NodeMeasurement | undefined>();
+  for (const n of g.nodes) measured.set(n.id, { width: 240, height: 140 });
+
+  const registry = createCoreNodeRegistry();
+  const positions = layoutGraph(g, measured, registry);
+  assert.ok(
+    positions.get('bbb')!.y < positions.get('aaa')!.y,
+    `bbb feeds blend.a (top socket) so it should sort above aaa which feeds blend.b; got bbb=${positions.get('bbb')!.y} aaa=${positions.get('aaa')!.y}`,
+  );
+});
+
+// Without a registry the function should keep its pre-existing
+// behaviour (no socket bias, ordering falls back to insertion order
+// for ties). Guards against accidentally requiring a registry from
+// callers that don't have one (older tests, etc.).
+test('no-registry call still produces a layout for the same graph', () => {
+  const g = createGraph();
+  const aaa = addNode(g, 'core/solid-color', { id: 'aaa' });
+  const bbb = addNode(g, 'core/solid-color', { id: 'bbb' });
+  const blend = addNode(g, 'core/blend', { id: 'blend' });
+  addEdge(g, { node: aaa.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
+  addEdge(g, { node: bbb.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
+  const measured = new Map<string, NodeMeasurement | undefined>();
+  for (const n of g.nodes) measured.set(n.id, { width: 240, height: 140 });
+  const positions = layoutGraph(g, measured);
+  // All three nodes get positions — the test only checks that omitting
+  // the registry doesn't break layout, not which order it picks.
+  assert.equal(positions.size, 3);
 });
