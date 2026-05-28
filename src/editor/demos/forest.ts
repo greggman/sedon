@@ -217,13 +217,29 @@ export function createForestDemo(): {
       baseColor: [0.9, 0.95, 0.85, 1], tipColor: [1, 1, 0.95, 1], colorVariation: 0.3, seed: 5,
     },
   });
+  // Water pooled at altitude 12 — exactly the oak/pine altitude split,
+  // so the eroded valleys flood while the higher pine band stays dry.
+  // wave_strength deliberately low (0.01) and wave_scale tight (1) so
+  // the surface reads as a calm forest pond rather than open sea. Foam
+  // width 0.4 gives a fine ring around the shoreline + any trees that
+  // happen to stand right at the waterline.
+  const water = addNode(g, 'water/plane', {
+    position: { x: COL * 11.5, y: ROW * 1.4 },
+    inputValues: {
+      water_level: 12,
+      wave_strength: 0.01,
+      wave_scale: 1,
+      foam_width: 0.4,
+    },
+  });
   const output = addNode(g, 'core/output', {
-    position: { x: COL * 12, y: ROW * 1.8 },
+    position: { x: COL * 12.5, y: ROW * 1.8 },
     inputValues: {
       // Density scaled down for the 100m world — fog fully fades distant
       // geometry by the far edge of the terrain.
       fog_density: 0.005,
       fog_color: [0.78, 0.82, 0.78, 1],
+      bloom_intensity: 0.0001,
     },
   });
 
@@ -297,14 +313,23 @@ export function createForestDemo(): {
   addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_1' });
   addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_4' });
 
-  addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
+  // Water takes the merged Scene, appends a water entity sized to the
+  // terrain's heightfield (via the scene's terrain field), and forwards
+  // straight to the output.
+  addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
+  addEdge(g, { node: water.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Per-graph initial framings. With the world scaled to meters, the
   // default-distance-3 orbit would land you inside a tree trunk on main
   // and at sub-1m range on the subgraphs. These framings put each context
   // at a viewing distance appropriate for its content's scale.
   const cameras: Record<string, CameraState> = {
-    main: { yaw: 0.4, pitch: 0.45, distance: 95, target: [0, 8, 0] },
+    main: {
+      yaw: -0.18556640625,
+      pitch: 0.38923828125,
+      distance: 51.877070530772566,
+      target: [15.689592375809005, -5.048873764467455, -14.762668633204159],
+    },
     'oak-tree': { yaw: 0.5, pitch: 0.25, distance: 35, target: [0, 10, 0] },
     'pine-tree': { yaw: 0.5, pitch: 0.25, distance: 50, target: [0, 15, 0] },
     'rock-mesh': { yaw: 0.5, pitch: 0.35, distance: 4, target: [0, 0, 0] },

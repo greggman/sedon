@@ -120,13 +120,14 @@ export function createWaterKind(
       return `water|${htex}`;
     },
     writeMaterialParams(material, paramBuffer) {
-      // Layout matches WaterParams in water.wgsl. 80 bytes total.
+      // Layout matches WaterParams in water.wgsl. 96 bytes total.
       //   offset 0  vec4 color
       //   offset 16 vec4 (waveStrength, waveScale, waveSpeed, roughness)
       //   offset 32 vec4 (worldSizeX, worldSizeZ, heightMin, heightMax)
       //   offset 48 vec4 (foamWidth, foamEnabled, pad, pad)
       //   offset 64 vec4 (rippleStrength, rippleScale, rippleSpeed, pad)
-      const data = new Float32Array(20);
+      //   offset 80 vec4 (absorption, pad, pad, pad)
+      const data = new Float32Array(24);
       data[0] = material.color[0];
       data[1] = material.color[1];
       data[2] = material.color[2];
@@ -148,11 +149,15 @@ export function createWaterKind(
       data[17] = material.rippleScale;
       data[18] = material.rippleSpeed;
       data[19] = 0;
+      data[20] = material.absorption;
+      data[21] = 0;
+      data[22] = 0;
+      data[23] = 0;
       device.queue.writeBuffer(paramBuffer, 0, data as BufferSource);
     },
     buildBindGroup(material) {
       const paramBuffer = device.createBuffer({
-        size: 80,
+        size: 96,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);

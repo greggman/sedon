@@ -228,6 +228,19 @@ export interface WaterMaterial {
   rippleScale: number;
   rippleSpeed: number;
   /**
+   * Per-world-unit absorption rate for the Beer-Lambert depth tint.
+   * Each channel of the refracted scene is attenuated by
+   *   exp(-depth · absorption · (1 - color_linear))
+   * so shallow water shows the scene below almost cleanly while
+   * deep water fades toward `color`. Higher values = water becomes
+   * fully tinted in less depth. `0` disables depth-based absorption
+   * and falls back to a uniform multiply by `color` (the old
+   * behaviour). The "water column" depth is the difference in
+   * view-space distance between the water fragment and the
+   * underwater geometry at the same screen pixel.
+   */
+  absorption: number;
+  /**
    * Optional heightfield reference. When present the shader samples
    * the underlying terrain Y at each fragment and tints toward white
    * within `foamWidth` of the shoreline (where water depth → 0).

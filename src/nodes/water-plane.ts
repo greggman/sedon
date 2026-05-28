@@ -80,6 +80,12 @@ export const waterPlaneNode: NodeDef = {
       description: 'animation speed multiplier for the ripple layer. Usually faster than wave_speed so ripples sparkle while the main waves roll',
     },
     {
+      name: 'absorption',
+      type: 'Float',
+      default: 0.15,
+      description: 'per-world-unit Beer-Lambert absorption. Refraction attenuates toward `color` with depth — higher = water reads its tint colour in less depth. 0 disables depth tinting and refraction is just multiplied by `color` (old behaviour). Typical values: 0.05 (very clear lake), 0.15 (sea), 0.5 (murky pond)',
+    },
+    {
       name: 'foam_width',
       type: 'Float',
       default: 1.5,
@@ -117,6 +123,7 @@ export const waterPlaneNode: NodeDef = {
     const rippleStrength = inputs.ripple_strength as number;
     const rippleScale = inputs.ripple_scale as number;
     const rippleSpeed = inputs.ripple_speed as number;
+    const absorption = inputs.absorption as number;
     const foamWidth = inputs.foam_width as number;
     const worldSizeInput = inputs.world_size as [number, number];
     const extentScale = Math.max(1, inputs.extent_scale as number);
@@ -212,6 +219,7 @@ export const waterPlaneNode: NodeDef = {
       rippleStrength,
       rippleScale,
       rippleSpeed,
+      absorption,
       foamWidth,
       ...(field !== undefined ? { heightfield: field } : {}),
     };

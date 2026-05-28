@@ -36,6 +36,9 @@ struct WaterParams {
   // Per-fragment-only sub-mesh wave layer; see fs_main for how it
   // combines with the mesh-scale `waves` layer.
   ripple: vec4f,
+  // x = absorption (per-world-unit Beer-Lambert rate), y/z/w unused.
+  // Drives the depth-based tint applied to refraction in fs_main.
+  transport: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -154,6 +157,47 @@ struct Wave {
   h: f32,
   n: vec3f,
 };
+
+// Per-fragment ripple normal — a 6-octave sum-of-sines with golden-
+// ratio frequency steps and golden-angle direction steps. The
+// golden-ratio choice is deliberate: φ is the worst irrationally
+// approximable number, so no two octaves' frequencies form a small
+// integer ratio and no two octaves' directions are parallel —
+// neither dimension can produce a repeating interference pattern at
+// any small scale. Higher octaves carry less amplitude but higher
+// frequency (and thus comparable slope), giving fine surface detail
+// without any one octave dominating.
+//
+// Only the NORMAL is needed (the vertex shader doesn't displace by
+// ripples — that'd require an absurdly dense mesh). 6 octaves cost
+// roughly 2× the 3-sine computeWaves; the explicit accumulator loop
+// + early-exit-friendly structure makes it cheap enough to run per
+// fragment.
+fn computeRipplesNormal(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -> vec3f {
+  let invScale = 1.0 / max(scale, 0.0001);
+  let p = worldXZ * invScale;
+  let goldenAngle: f32 = 2.39996323;  // 2π × (1 - 1/φ)
+  let phi: f32 = 1.6180339;
+  var dh_x: f32 = 0.0;
+  var dh_z: f32 = 0.0;
+  var amp_sum: f32 = 0.0;
+  var freq: f32 = 1.0;
+  var amp: f32 = 1.0;
+  for (var i: u32 = 0u; i < 6u; i = i + 1u) {
+    let angle = f32(i) * goldenAngle;
+    let dir = vec2f(cos(angle), sin(angle));
+    // Per-octave speed jitter so the layers don't pulse in unison.
+    let phase = dot(p, dir) * freq + t * speed * (1.0 + f32(i) * 0.137);
+    let c = cos(phase) * amp * freq;
+    dh_x += c * dir.x;
+    dh_z += c * dir.y;
+    amp_sum += amp;
+    freq *= phi;
+    amp /= phi;
+  }
+  let k = strength * invScale / amp_sum;
+  return normalize(vec3f(-dh_x * k, 1.0, -dh_z * k));
+}
 
 fn computeWaves(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -> Wave {
   let invScale = 1.0 / max(scale, 0.0001);
@@ -299,14 +343,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // independent rather than two copies of one wave.
   let lo = computeWaves(in.world_pos.xz, uniforms.time, strength, scale, speed);
   let RIPPLE_TIME_OFFSET: f32 = 13.7;
-  let hi = computeWaves(
+  let hi_n = computeRipplesNormal(
     in.world_pos.xz,
     uniforms.time + RIPPLE_TIME_OFFSET,
     water.ripple.x,
     water.ripple.y,
     water.ripple.z,
   );
-  let n_world = normalize(vec3f(lo.n.x + hi.n.x, 1.0, lo.n.z + hi.n.z));
+  let n_world = normalize(vec3f(lo.n.x + hi_n.x, 1.0, lo.n.z + hi_n.z));
   let view_rot = mat3x3f(
     uniforms.modelView[0].xyz,
     uniforms.modelView[1].xyz,
@@ -324,16 +368,40 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let n_dot_h = max(dot(n, h), 0.0);
   let h_dot_v = max(dot(h, v), 0.0);
 
+  // Geometric specular antialiasing. With the 6-octave ripple
+  // normal varying rapidly across pixels and a low authored
+  // `roughness` (0.05 for crisp sun glint), the raw GGX lobe is
+  // narrow enough that adjacent pixels can land in completely
+  // different parts of the highlight — producing single-pixel
+  // sparkle "fireflies" that alias as the camera moves. The
+  // Tokuyoshi-style fix widens the effective roughness in pixels
+  // where the normal varies a lot, using screen-space derivatives
+  // as a proxy for sub-pixel normal variance. Result: ripple
+  // sparkles read as a continuous bright field instead of flickery
+  // dots, while flat regions keep the authored crisp roughness.
+  // Clamped to 0.25 so even pathologically noisy regions don't
+  // become totally diffuse.
+  let n_dx = dpdx(n_world);
+  let n_dy = dpdy(n_world);
+  let kernel_rough2 = min(2.0 * (dot(n_dx, n_dx) + dot(n_dy, n_dy)), 0.25);
+  let eff_roughness = sqrt(roughness * roughness + kernel_rough2);
+
   // Water F0 is around 0.02 — physically correct, gives the soft
   // ambient reflectance + strong fresnel that water needs.
   let f0 = vec3f(0.02);
-  let f = fresnel_schlick(h_dot_v, f0);
-  let d = distribution_ggx(n_dot_h, roughness);
-  let g = geometry_smith(n_dot_v, n_dot_l, roughness);
-  let specular = (d * g * f) / max(4.0 * n_dot_v * n_dot_l, 0.0001);
+  // Microsurface Fresnel (h-based) drives the GGX specular lobe
+  // for the sun glint. Macrosurface Fresnel (n_dot_v based) drives
+  // the reflection-vs-refraction blend below — that's the correct
+  // split because the SSR/environment reflection sees the
+  // macroscopic surface, not the per-microfacet half-vector.
+  let f_micro = fresnel_schlick(h_dot_v, f0);
+  let f_macro = fresnel_schlick(n_dot_v, f0);
+  let d = distribution_ggx(n_dot_h, eff_roughness);
+  let g = geometry_smith(n_dot_v, n_dot_l, eff_roughness);
+  let specular = (d * g * f_micro) / max(4.0 * n_dot_v * n_dot_l, 0.0001);
 
   let albedo = srgb_to_linear(water.color.rgb * in.tint.rgb);
-  let k_d = (vec3f(1.0) - f);
+  let k_d = (vec3f(1.0) - f_micro);
   // Hemisphere ambient — water reflects sky strongly upward.
   let hemi_t = n_world.y * 0.5 + 0.5;
   let ambient_color = mix(uniforms.groundColor, uniforms.skyColor, hemi_t) * uniforms.ambientIntensity;
@@ -364,6 +432,47 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
     vec2f(1.0),
   );
   let refraction_color = textureSample(refractionTex, samp, refr_uv).rgb;
+  // Depth-based Beer-Lambert tint. Recover the underwater geometry's
+  // view-space z from the depth copy at this fragment's pixel (the
+  // copy was snapshotted before water drew, so it never contains
+  // water itself). The "water column depth" is the difference along
+  // the view ray between the water surface and the geometry behind
+  // it. Refraction attenuates per channel as
+  //   T_rgb = exp(-depth · absorption · (1 - color_linear))
+  // so channels far from `color` decay fastest with depth — a deep
+  // body of teal water suppresses red first, then green, leaving
+  // blue. At absorption=0 the depth term collapses to T=1 and we
+  // fall back to refraction multiplied uniformly by water.color
+  // (the pre-step-3 behaviour). The unfiltered point sample uses
+  // the fragment's exact pixel (no wave-normal offset for depth;
+  // mixing offset and non-offset samples would over-tint the
+  // ripple-bent refraction).
+  let water_color_lin = srgb_to_linear(water.color.rgb * in.tint.rgb);
+  let p10 = uniforms.projection[2].z;
+  let p14 = uniforms.projection[3].z;
+  let scene_depth_here = textureLoad(sceneDepth, vec2i(in.position.xy), 0).r;
+  // water_column = view-ray distance from this water fragment to
+  // the underwater geometry behind it. Consumed by BOTH the
+  // Beer-Lambert tint just below AND the depth-buffer foam logic
+  // later (so anything piercing the water gets a fringe of foam,
+  // not just terrain that the heightfield knows about). Zero when
+  // there's nothing underwater (sky pixel).
+  var water_column: f32 = 0.0;
+  if (scene_depth_here > 0.0) {
+    let scene_view_z = -p14 / (scene_depth_here + p10);
+    // Both view-z are negative; ray travels from water (closer to
+    // camera) to scene (farther). depth = how much extra view-ray
+    // length is inside water.
+    water_column = max(0.0, in.view_pos.z - scene_view_z);
+  }
+  var refracted_tinted: vec3f;
+  if (water_column > 0.0 && water.transport.x > 0.0) {
+    let absorption_rgb = vec3f(1.0) - water_color_lin;
+    let transmittance = exp(-water_column * water.transport.x * absorption_rgb);
+    refracted_tinted = mix(water_color_lin, refraction_color, transmittance);
+  } else {
+    refracted_tinted = refraction_color * water_color_lin;
+  }
   // Reflection weight: fresnel `f` is correct for the physics but
   // it dives to ~0.02 at normal incidence, which makes top-down
   // water look like there's no mirror at all. Lift the floor to
@@ -377,11 +486,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // and you see almost entirely the refracted scene below. We
   // lift the floor to 0.25 so straight-down water still shows SOME
   // reflection — physically a bit too much but visually readable.
-  let reflWeight = mix(0.25, 1.0, f.r);
-  // Water tints the refraction — deeper light path = more water-
-  // colour absorbed. Authored water.color in linear HDR.
-  let water_tint = srgb_to_linear(water.color.rgb * in.tint.rgb);
-  let refracted_tinted = refraction_color * water_tint;
+  let reflWeight = mix(0.25, 1.0, f_macro.r);
   let water_surface = mix(refracted_tinted, reflection_color, reflWeight);
   // Specular highlight (sun glint) sits on top of everything —
   // it's the bright streak you see when the sun is roughly opposite
@@ -389,39 +494,50 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let specular_term = specular * uniforms.lightColor * n_dot_l;
   var lit = water_surface + specular_term;
 
-  // Shoreline foam. When a heightfield is bound AND this fragment
-  // sits over the actual terrain footprint (UV in [0,1]), sample
-  // terrain Y at the pixel's world XZ and compute water depth here.
-  // Within the first `foamWidth` metres the surface fades toward
-  // bright foam-white, still multiplied by the sun/ambient so foam
-  // dims correctly in shadow.
+  // Foam. Two independent sources, taking the max so each fills
+  // gaps in the other:
   //
-  // When the water plane extends past the heightfield (open water
-  // beyond the terrain edge), the UV bounds check skips foam — that
-  // region is "deep open water" with no shoreline to break against.
-  // Refraction-based composition makes water effectively opaque
-  // (the scene beneath is already encoded in lit via the
-  // refraction sample), so alpha is 1 — the pipeline's src-alpha
-  // blend then reduces to a straight overwrite. The depth-driven
-  // alpha logic that the old transparent-water path needed is
-  // gone; depth still drives water-tint absorption (more depth →
-  // darker refraction) which we approximate with the refraction
-  // tint above.
+  //   • HEIGHTFIELD foam (terrain shoreline) — sample terrain Y
+  //     at this fragment's world XZ from the bound heightfield;
+  //     foam grows as terrain rises toward the water surface.
+  //     Gives a believable WORLD-LOCKED shoreline ring that doesn't
+  //     drift with camera angle. Requires a heightfield to be
+  //     bound; only fires inside the heightfield's UV footprint
+  //     (open water beyond the terrain edge gets no foam from
+  //     this source).
   //
-  // Foam ramp lives here so it can ride over the refraction-based
-  // surface: at the shoreline the surface goes from blue water to
-  // bright whitewater foam.
-  if (water.foam.y > 0.5 && water.foam.x > 0.0) {
-    let worldSize = water.world.xy;
-    let hMin = water.world.z;
-    let hMax = water.world.w;
-    let uv = in.world_pos.xz / worldSize + vec2f(0.5);
-    let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
-    if (inHeightfield) {
-      let terrainH = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
-      let terrainY = hMin + terrainH * (hMax - hMin);
-      let depth = max(in.world_pos.y - terrainY, 0.0);
-      let foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
+  //   • DEPTH-BUFFER foam (anything piercing the water) — reuses
+  //     `water_column` from Beer-Lambert above. Where the water
+  //     column over an underwater object is shallow, fade toward
+  //     foam. Works for any opaque geometry the depth pass wrote:
+  //     trees standing in water, partially-submerged rocks, the
+  //     bottom of a cube touching the surface. NOT world-locked
+  //     (it's view-ray length, not vertical depth), so on a flat
+  //     terrain shoreline the heightfield source produces the
+  //     nicer ring; the two are designed to coexist.
+  //
+  // Both use the same authored `foam_width` (world units). Foam
+  // colour is multiplied by direct sun + ambient so it dims
+  // correctly in shadow rather than glowing white.
+  if (water.foam.x > 0.0) {
+    var foam: f32 = 0.0;
+    if (water.foam.y > 0.5) {
+      let worldSize = water.world.xy;
+      let hMin = water.world.z;
+      let hMax = water.world.w;
+      let uv = in.world_pos.xz / worldSize + vec2f(0.5);
+      let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+      if (inHeightfield) {
+        let terrainH = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
+        let terrainY = hMin + terrainH * (hMax - hMin);
+        let depth = max(in.world_pos.y - terrainY, 0.0);
+        foam = max(foam, 1.0 - smoothstep(0.0, water.foam.x, depth));
+      }
+    }
+    if (water_column > 0.0) {
+      foam = max(foam, 1.0 - smoothstep(0.0, water.foam.x, water_column));
+    }
+    if (foam > 0.0) {
       let foam_color = srgb_to_linear(vec3f(0.9, 0.94, 0.96));
       lit = mix(lit, foam_color * (uniforms.lightColor * n_dot_l + ambient_color), foam);
     }
