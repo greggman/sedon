@@ -15,8 +15,14 @@ import type { SubgraphDef } from '../core/subgraph.js';
 // graphs) or creating a new subgraph (which switches contexts). Cheap
 // because subgraph defs and graphs are already kept immutable.
 export type Command =
-  | { kind: 'addNode'; node: GraphNode }
-  | { kind: 'removeNodes'; nodes: GraphNode[]; edges: GraphEdge[] }
+  // addNode / removeNodes carry the BEFORE rootNodeId so undo can
+  // restore it cleanly. applyForward may promote a freshly-added
+  // core/output to root (when the previous root is gone) or pick a
+  // remaining core/output when the current root is being removed —
+  // both transitions need the pre-command rootNodeId on hand for
+  // applyBackward to invert.
+  | { kind: 'addNode'; node: GraphNode; prevRootNodeId: string }
+  | { kind: 'removeNodes'; nodes: GraphNode[]; edges: GraphEdge[]; prevRootNodeId: string }
   | { kind: 'connect'; edge: GraphEdge; replaced: GraphEdge | null }
   | { kind: 'removeEdges'; edges: GraphEdge[] }
   | {
@@ -55,21 +61,35 @@ export interface ProjectSnapshot {
 export function applyForward(state: GraphState, cmd: Command): GraphState {
   const { graph, rootNodeId } = state;
   switch (cmd.kind) {
-    case 'addNode':
-      return {
-        graph: { ...graph, nodes: [...graph.nodes, cmd.node] },
-        rootNodeId,
-      };
+    case 'addNode': {
+      const nextNodes = [...graph.nodes, cmd.node];
+      // If the current root no longer resolves in the graph AND the
+      // added node is a core/output, auto-promote it. Recovers from
+      // "deleted the output, added a fresh one" — without this the
+      // preview stays stuck on the orphaned rootNodeId.
+      const rootResolves = nextNodes.some((n) => n.id === rootNodeId);
+      const nextRoot =
+        !rootResolves && cmd.node.kind === 'core/output' ? cmd.node.id : rootNodeId;
+      return { graph: { ...graph, nodes: nextNodes }, rootNodeId: nextRoot };
+    }
     case 'removeNodes': {
       const ids = new Set(cmd.nodes.map((n) => n.id));
       const edgeIds = new Set(cmd.edges.map((e) => e.id));
+      const nextNodes = graph.nodes.filter((n) => !ids.has(n.id));
+      // If the current root is being removed, promote any remaining
+      // core/output. Falls through to the original rootNodeId (now
+      // orphaned) only if no replacement exists — that case shows
+      // an empty preview, matching "no output in graph."
+      const nextRoot = ids.has(rootNodeId)
+        ? nextNodes.find((n) => n.kind === 'core/output')?.id ?? rootNodeId
+        : rootNodeId;
       return {
         graph: {
           ...graph,
-          nodes: graph.nodes.filter((n) => !ids.has(n.id)),
+          nodes: nextNodes,
           edges: graph.edges.filter((e) => !edgeIds.has(e.id)),
         },
-        rootNodeId,
+        rootNodeId: nextRoot,
       };
     }
     case 'connect': {
@@ -122,7 +142,7 @@ export function applyBackward(state: GraphState, cmd: Command): GraphState {
     case 'addNode':
       return {
         graph: { ...graph, nodes: graph.nodes.filter((n) => n.id !== cmd.node.id) },
-        rootNodeId,
+        rootNodeId: cmd.prevRootNodeId,
       };
     case 'removeNodes':
       return {
@@ -131,7 +151,7 @@ export function applyBackward(state: GraphState, cmd: Command): GraphState {
           nodes: [...graph.nodes, ...cmd.nodes],
           edges: [...graph.edges, ...cmd.edges],
         },
-        rootNodeId,
+        rootNodeId: cmd.prevRootNodeId,
       };
     case 'connect': {
       const filtered = graph.edges.filter((e) => e.id !== cmd.edge.id);

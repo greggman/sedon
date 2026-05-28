@@ -1314,7 +1314,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     markClean: () => set({ dirty: false }),
 
     addNode: (node) => {
-      dispatch({ kind: 'addNode', node });
+      dispatch({ kind: 'addNode', node, prevRootNodeId: get().rootNodeId });
     },
 
     connect: (id, from, to) => {
@@ -1334,13 +1334,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     removeNodes: (ids) => {
       if (ids.size === 0) return;
-      const graph = get().graph;
+      const state = get();
+      const graph = state.graph;
       const nodes = graph.nodes.filter((n) => ids.has(n.id));
       const edges = graph.edges.filter(
         (e) => ids.has(e.from.node) || ids.has(e.to.node),
       );
       if (nodes.length === 0) return;
-      dispatch({ kind: 'removeNodes', nodes, edges });
+      dispatch({ kind: 'removeNodes', nodes, edges, prevRootNodeId: state.rootNodeId });
     },
 
     setInputValue: (nodeId, name, value) => {
