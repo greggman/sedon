@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -31,9 +32,60 @@ export const pathMaskNode: NodeDef = {
       default: true,
       description: 'true = white OFF path (multiply into density to carve it); false = white ON path.',
     },
-    { name: 'resolution', type: 'Int', default: 256 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 256,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'greyscale mask of the meandering path. Polarity depends on `invert`',
+    },
+  ],
+  doc: {
+    summary: 'Procedural meandering path/road mask as a Texture2D.',
+    description: `
+Standalone path renderer — no upstream [path/spline](../../path/spline)
+needed. The path is a single straight line tilted by \`angle\`, offset
+across the texture by \`offset\`, half-width \`width\` (in UV units),
+and modulated by a sine wave (\`waviness\` controls amplitude,
+\`waveScale\` controls frequency) so it reads as an organic curve
+rather than a ruler line.
+
+Default is INVERTED (white off the path, dark on it) because the most
+common use is multiplying into a density map to KEEP the path clear —
+e.g. \`grass-density × path-mask\` puts no grass on the road. Set
+\`invert: false\` to get the road surface itself, white where the path
+runs, dark elsewhere.
+
+For a path that follows a list of control points instead of a single
+sine wave, build a [path/spline](../../path/spline) and feed it into
+[path/carve-heightfield](../../path/carve-heightfield) for the terrain
+side, then export a mask separately.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/path-mask', {
+        id: 'mask',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          angle: 20,
+          offset: 0.5,
+          width: 0.07,
+          waviness: 0.08,
+          waveScale: 2,
+          softness: 0.025,
+          invert: false,
+          resolution: 512,
+        },
+      });
+      return { graph: g, rootNodeId: 'mask' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

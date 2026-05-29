@@ -1,4 +1,5 @@
-import type { NodeDef } from '../core/node-def.js';
+import { addEdge, addNode, createGraph } from '../core/graph.js';
+import type { InputDef, NodeDef } from '../core/node-def.js';
 import type {
   HeightfieldValue,
   PathValue,
@@ -62,8 +63,16 @@ export const pathCarveHeightfieldNode: NodeDef = {
   id: 'path/carve-heightfield',
   category: 'Path',
   inputs: [
-    { name: 'heightfield', type: 'Heightfield' },
-    { name: 'path', type: 'Path' },
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      description: 'source terrain to carve into',
+    },
+    {
+      name: 'path',
+      type: 'Path',
+      description: 'centreline polyline from [path/spline](../../path/spline). The path\'s `width` field controls the inner flat section before falloff kicks in',
+    },
     {
       name: 'depth',
       type: 'Float',
@@ -74,10 +83,77 @@ export const pathCarveHeightfieldNode: NodeDef = {
       name: 'falloff',
       type: 'Float',
       default: 2.0,
-      description: 'extra world-unit extent outside the path\'s half-width over which the depth smoothly tapers to zero',
+      description: 'extra world-unit extent outside the path\'s half-width over which the depth smoothly tapers to zero. Larger = wider, gentler banks',
     },
   ],
-  outputs: [{ name: 'heightfield', type: 'Heightfield' }],
+  outputs: [
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      description: 'a new heightfield, same world size and height range as the input, with the path lowered into it',
+    },
+  ],
+  doc: {
+    summary: 'Lower a Heightfield along a Path — roads, riverbeds, paved trails.',
+    description: `
+For each output texel, computes the texel's world XZ, finds the
+distance to the nearest segment of the input path's polyline, and
+subtracts \`depth\` × a smoothstep falloff. Inside the path's half-width
+the full depth is removed (flat-bottomed channel); outside it the depth
+tapers smoothly to zero over an additional \`falloff\` world units.
+
+The result keeps the same world size and height range as the input
+heightfield — only the texture's R channel changes. Wire the output
+straight into [core/heightfield-to-mesh](../../core/heightfield-to-mesh)
+to render the terrain with the carved road; or feed it into another
+filter stage first (a [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)
+pass after carving will deposit sediment inside the road channel,
+useful for dirt tracks).
+
+The companion [path/mask](../../path/mask) is a sine-wave shortcut for
+authoring a single procedural road without a Spline. Carve takes a real
+Path from spline samples, so it follows any control-point layout.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const noise = addNode(g, 'core/perlin', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
+      });
+      const hf = addNode(g, 'core/heightfield', {
+        id: 'hf',
+        position: { x: 280, y: 0 },
+        inputValues: { worldSize: [20, 20], heightRange: [0, 4] },
+      });
+      const extras: InputDef[] = [
+        { name: 'point_0', type: 'Vec3' },
+        { name: 'point_1', type: 'Vec3' },
+        { name: 'point_2', type: 'Vec3' },
+      ];
+      const spline = addNode(g, 'path/spline', {
+        id: 'spline',
+        position: { x: 280, y: 220 },
+        extraInputs: extras,
+        inputValues: {
+          width: 3,
+          samples_per_segment: 16,
+          point_0: [-8, 0, -6],
+          point_1: [0, 0, 2],
+          point_2: [8, 0, -6],
+        },
+      });
+      const carve = addNode(g, 'path/carve-heightfield', {
+        id: 'carve',
+        position: { x: 560, y: 110 },
+        inputValues: { depth: 1.2, falloff: 2 },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
+      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: carve.id, socket: 'heightfield' });
+      addEdge(g, { node: spline.id, socket: 'path' }, { node: carve.id, socket: 'path' });
+      return { graph: g, rootNodeId: 'carve' };
+    },
+  },
   evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
     const inField = inputs.heightfield as HeightfieldValue;
