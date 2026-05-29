@@ -36,6 +36,28 @@ export interface InputDef {
    * work.
    */
   enumOptions?: ReadonlyArray<{ value: number; label: string }>;
+  /**
+   * Custom inline editor widget override. The default editor for an
+   * input is chosen by its `type` (Color → swatch picker, Float →
+   * scrubber, etc.); when this field is set the UI dispatches by
+   * `widget` instead. Used for input shapes that don't have their
+   * own socket type but need a special editor — e.g. `gradient`
+   * (the in-popup N-stop ramp editor).
+   *
+   * Pairs with `hideSocket` below — most widget-driven inputs are
+   * authored only (no incoming wire possible because nothing else
+   * has that shape), so they also opt out of the handle.
+   */
+  widget?: string;
+  /**
+   * Skip rendering the React Flow handle (socket) for this input.
+   * The input becomes authored-only: editable via its inline widget,
+   * but no wire can be connected to it. Useful for inputs whose
+   * underlying data shape exists only inside this one node — there's
+   * no socket type for "list of gradient stops," and no other node
+   * could produce one anyway, so the handle would only mislead.
+   */
+  hideSocket?: boolean;
 }
 
 export interface OutputDef {

@@ -13,6 +13,8 @@ import { useCanvasPanelId } from './canvas-panel-context.js';
 import { useCanvasNode, useCanvasNodeOutput } from './canvas-data.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
+import { GradientInput } from './inputs/gradient-editor.js';
+import type { GradientStop } from '../nodes/ramp.js';
 import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
@@ -215,6 +217,19 @@ function inlineEditor(
   value: unknown,
   onChange: (v: unknown) => void,
 ): React.ReactNode {
+  // Widget override comes first: an input may declare a `widget`
+  // (e.g. 'gradient') that maps to a special editor regardless of
+  // its underlying `type`. Drop-through for known widgets; if
+  // unrecognised, fall through to type-based dispatch so a typo
+  // in `widget` doesn't silently swallow the editor entirely.
+  if (input.widget === 'gradient') {
+    return (
+      <GradientInput
+        value={asStops(value)}
+        onChange={onChange as (n: GradientStop[]) => void}
+      />
+    );
+  }
   switch (input.type) {
     case 'Float':
       return <NumberInput value={asNumber(value, 0)} onChange={onChange} />;
@@ -274,6 +289,30 @@ function asRgba(v: unknown): [number, number, number, number] {
     return [v[0] as number, v[1] as number, v[2] as number, v[3] as number];
   }
   return [1, 1, 1, 1];
+}
+function asStops(v: unknown): GradientStop[] {
+  if (!Array.isArray(v)) return [{ position: 0, color: [0, 0, 0, 1] }, { position: 1, color: [1, 1, 1, 1] }];
+  const out: GradientStop[] = [];
+  for (const entry of v) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as { position?: unknown; color?: unknown; midpoint?: unknown };
+    if (typeof e.position !== 'number') continue;
+    if (!Array.isArray(e.color) || e.color.length !== 4) continue;
+    if (!e.color.every((c) => typeof c === 'number')) continue;
+    const stop: GradientStop = {
+      position: e.position,
+      color: [e.color[0]!, e.color[1]!, e.color[2]!, e.color[3]!] as [number, number, number, number],
+    };
+    // Preserve the optional midpoint — earlier I forgot this, which
+    // meant edits to the diamond persisted to the store but were
+    // stripped on the next render, so the diamond would never move.
+    if (typeof e.midpoint === 'number' && Number.isFinite(e.midpoint)) {
+      stop.midpoint = e.midpoint;
+    }
+    out.push(stop);
+  }
+  if (out.length === 0) return [{ position: 0, color: [0, 0, 0, 1] }, { position: 1, color: [1, 1, 1, 1] }];
+  return out;
 }
 
 // AddSocketForm: tiny inline form shown when the user clicks "+" on a
@@ -726,15 +765,20 @@ export function CustomNode({ id, data, selected }: NodeProps) {
 
       {/* Render def.inputs FIRST, then any per-instance extra inputs.
        * Both sets get type-colored handles + row UI; extras additionally
-       * get a × remove button (the regular inputs aren't user-removable). */}
+       * get a × remove button (the regular inputs aren't user-removable).
+       * Inputs flagged `hideSocket` skip the handle entirely — they're
+       * authored-only (no wire can target them); the row's inline editor
+       * still renders below. */}
       {def.inputs.map((input, i) => (
-        <TypedHandle
-          key={`h-in-${input.name}`}
-          socketName={input.name}
-          socketType={input.type}
-          side="input"
-          top={inputsTop + i * ROW_HEIGHT + ROW_HEIGHT / 2}
-        />
+        input.hideSocket ? null : (
+          <TypedHandle
+            key={`h-in-${input.name}`}
+            socketName={input.name}
+            socketType={input.type}
+            side="input"
+            top={inputsTop + i * ROW_HEIGHT + ROW_HEIGHT / 2}
+          />
+        )
       ))}
       {extraInputs.map((input, i) => (
         <TypedHandle

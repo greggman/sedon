@@ -39,11 +39,11 @@ import { useEditorStore } from '../../src/editor/store.js';
 test('addSubgraphSocketWithEdge with capturedDefault stamps it onto the new InputDef', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('cap-sg', 'cap sg');
-  // colorize.low has a node-def default of [0,0,0,1] (black), but
+  // grid.fg has a node-def default of [0,0,0,1] (black), but
   // suppose the inner instance has been overridden to dark green:
-  const colorize = addNode(sg.graph, 'core/colorize', {
+  const grid = addNode(sg.graph, 'core/grid', {
     position: { x: 0, y: 0 },
-    inputValues: { low: [0.18, 0.36, 0.16, 1] },
+    inputValues: { fg: [0.18, 0.36, 0.16, 1] },
   });
   useEditorStore.setState({
     subgraphs: [sg],
@@ -55,7 +55,7 @@ test('addSubgraphSocketWithEdge with capturedDefault stamps it onto the new Inpu
     sg.id,
     'input',
     'Color',
-    { node: colorize.id, socket: 'low' },
+    { node: grid.id, socket: 'fg' },
     { capturedDefault: [0.18, 0.36, 0.16, 1] },
   );
   const updated = useEditorStore
@@ -98,7 +98,7 @@ test('addSubgraphSocketWithEdge WITHOUT capturedDefault leaves the InputDef.defa
 test('addSubgraphSocketWithEdge labels the new socket after the source/target handle by default', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('label-sg', 'label sg');
-  const colorize = addNode(sg.graph, 'core/colorize', { position: { x: 0, y: 0 } });
+  const grid = addNode(sg.graph, 'core/grid', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -109,11 +109,11 @@ test('addSubgraphSocketWithEdge labels the new socket after the source/target ha
     sg.id,
     'input',
     'Color',
-    { node: colorize.id, socket: 'low' },
-    { preferredLabel: 'low' },
+    { node: grid.id, socket: 'fg' },
+    { preferredLabel: 'fg' },
   );
   let updated = useEditorStore.getState().subgraphs.find((s) => s.id === sg.id)!;
-  assert.equal(updated.inputs[0]!.label, 'low', 'first wire from low → label "low"');
+  assert.equal(updated.inputs[0]!.label, 'fg', 'first wire from fg → label "fg"');
 
   // Drag a second time from the same socket — same preferred label
   // collides, so the store dedupes with "-2".
@@ -121,22 +121,22 @@ test('addSubgraphSocketWithEdge labels the new socket after the source/target ha
     sg.id,
     'input',
     'Color',
-    { node: colorize.id, socket: 'low' },
-    { preferredLabel: 'low' },
+    { node: grid.id, socket: 'fg' },
+    { preferredLabel: 'fg' },
   );
   updated = useEditorStore.getState().subgraphs.find((s) => s.id === sg.id)!;
-  assert.equal(updated.inputs[1]!.label, 'low-2', 'second collision dedupes with -2 suffix');
+  assert.equal(updated.inputs[1]!.label, 'fg-2', 'second collision dedupes with -2 suffix');
 
-  // And a third — "low-3".
+  // And a third — "fg-3".
   store.addSubgraphSocketWithEdge(
     sg.id,
     'input',
     'Color',
-    { node: colorize.id, socket: 'low' },
-    { preferredLabel: 'low' },
+    { node: grid.id, socket: 'fg' },
+    { preferredLabel: 'fg' },
   );
   updated = useEditorStore.getState().subgraphs.find((s) => s.id === sg.id)!;
-  assert.equal(updated.inputs[2]!.label, 'low-3');
+  assert.equal(updated.inputs[2]!.label, 'fg-3');
 });
 
 test('addSubgraphSocketWithEdge with no preferredLabel falls back to "untitled" (old behavior preserved)', () => {

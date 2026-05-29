@@ -39,6 +39,8 @@ import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
+import { paletteNode } from './palette.js';
+import { rampNode } from './ramp.js';
 import { phyllotaxisPointsNode } from './phyllotaxis-points.js';
 import { planeNode } from './plane.js';
 import { radialPointsNode } from './radial-points.js';
@@ -94,6 +96,8 @@ export const CORE_NODES = [
   solidColorNode,
   gridNode,
   perlinNode,
+  paletteNode,
+  rampNode,
   worleyNode,
   ridgedNoiseNode,
   blendNode,
@@ -186,6 +190,8 @@ export {
   outputNode,
   pathMaskNode,
   perlinNode,
+  paletteNode,
+  rampNode,
   phyllotaxisPointsNode,
   planeNode,
   radialPointsNode,

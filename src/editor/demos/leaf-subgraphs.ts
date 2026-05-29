@@ -114,18 +114,23 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   });
 
   // Albedo gradient: vein neighborhoods (bright in input) map to
-  // `high` (pale yellow highlight); cell interiors (dark) map to
-  // `low` (body green). Midpoint pinched high so most of the leaf
-  // body reads as the body green and only thin neighborhoods near
-  // veins get the highlight.
+  // the pale-yellow highlight at t=1; cell interiors (dark) map to
+  // the body green at t=0. Midpoint pinched high (0.88) so most of
+  // the leaf body reads as the body green and only the thin
+  // neighbourhoods near veins get the highlight.
+  const ramp = addNode(g, 'core/ramp', {
+    position: { x: COL * 4.6, y: ROW * 13.3 },
+    inputValues: {
+      gradient: [
+        { position: 0, color: [0.18, 0.36, 0.16, 1], midpoint: 0.8775703125 },
+        { position: 1, color: [0.82, 0.86, 0.42, 1] },
+      ],
+      resolution: 256,
+    },
+  });
   const colorize = addNode(g, 'core/colorize', {
     position: { x: COL * 5.3, y: ROW * 13.3 },
-    inputValues: {
-      low: [0.18, 0.36, 0.16, 1],
-      high: [0.82, 0.86, 0.42, 1],
-      midpoint: 0.8775703125,
-      resolution: 512,
-    },
+    inputValues: { resolution: 512 },
   });
 
   // Mask both final outputs by the shape so the cell colors and
@@ -148,6 +153,7 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   addEdge(g, { node: mixWithVeins.id, socket: 'texture' }, { node: tonedDown.id, socket: 'b' });
   addEdge(g, { node: tonedDown.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
   addEdge(g, { node: tonedDown.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
+  addEdge(g, { node: ramp.id, socket: 'texture' }, { node: colorize.id, socket: 'ramp' });
 
   // Mask the two final maps by shape (`a` = shape, `b` = colored/normal).
   addEdge(g, { node: skeleton.id, socket: 'shape' }, { node: albedoMask.id, socket: 'a' });

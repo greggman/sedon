@@ -1266,6 +1266,123 @@
 }
 
 /* ============================================================
+ * Gradient input — swatch trigger + popover editor. The trigger
+ * lives in a regular 28px-tall node row; the popover (portalled
+ * into <body>) carries the live gradient bar + draggable markers
+ * + RGBA-sub-picker.
+ * ============================================================ */
+
+/* In-row swatch trigger — same shape and dimensions as the Color
+ * input's swatch button. Shows the current gradient over the shared
+ * checkerboard so alpha reads as transparency. */
+.sedon-gradientinput {
+  width: 100%;
+  height: 22px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  background-color: var(--sedon-checker-bg);
+  background-image: var(--sedon-checker);
+  background-size: var(--sedon-checker-size);
+  background-position: var(--sedon-checker-pos);
+}
+.sedon-gradientinput-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Popover wrapper — portalled, fixed-positioned by the component,
+ * carries chrome around the editor (background panel + border). */
+.sedon-gradient-popup {
+  position: fixed;
+  z-index: 10000;
+  background: #1f1f1f;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+
+.sedon-gradient-editor {
+  position: relative;
+  width: 100%;
+  outline: none;
+}
+
+.sedon-gradient-bar {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: copy;
+  background-color: var(--sedon-checker-bg);
+  background-image: var(--sedon-checker);
+  background-size: var(--sedon-checker-size);
+  background-position: var(--sedon-checker-pos);
+}
+.sedon-gradient-bar-fill {
+  width: 100%;
+  height: 100%;
+}
+
+.sedon-gradient-stops {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  margin-top: 2px;
+}
+
+/* Each marker is a 12×12 swatch with a small arrow point. The
+ * position-along-bar comes from inline `left: ${pct}%` set by the
+ * component; -50% margin centres the marker on its position. */
+.sedon-gradient-stop {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sedon-gradient-stop-swatch {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #444;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.sedon-gradient-stop--selected .sedon-gradient-stop-swatch {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Photoshop-style midpoint diamond. Between each pair of stops a
+ * draggable diamond marks where the 50/50 mix happens. Rotated
+ * square + scaled smaller than the stop markers so it reads as
+ * subordinate. Centered on its left% via -50% transform. */
+.sedon-gradient-mid {
+  position: absolute;
+  top: 1px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  transform: rotate(45deg);
+  background: #999;
+  border: 1px solid #222;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sedon-gradient-mid:hover {
+  background: #ccc;
+}
+
+/* ============================================================
  * Material preview (in-node 3D preview)
  * ============================================================ */
 .sedon-material-preview {

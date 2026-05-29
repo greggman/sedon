@@ -77,12 +77,20 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
   });
 
   // Wire: boundary inputs → perlin seed + colorize colors.
+  // `core/palette` bridges the boundary's two Color inputs into a
+  // 2-pixel ramp texture that colorize then samples. Lives between
+  // the colour boundary and colorize because colorize's `ramp` is a
+  // texture input (no more separate `low`/`high` scalars).
+  const palette = addNode(g, 'core/palette', {
+    position: { x: COL * 2.5, y: ROW * 0.6 },
+  });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: fibers.id, socket: 'seed' });
   addEdge(g, { node: fibers.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
-  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
-  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
+  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: palette.id, socket: 'color_a' });
+  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: palette.id, socket: 'color_b' });
+  addEdge(g, { node: palette.id, socket: 'ramp' }, { node: colorize.id, socket: 'ramp' });
   // Detail chain.
   addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: detailNormal.id, socket: 'height' });
 
@@ -173,14 +181,20 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
     inputValues: { strength: 12, resolution: 256 },
   });
 
+  // Boundary colours → 2-pixel ramp → colorize.ramp. Same pattern
+  // as the bark subgraph; see the comment there.
+  const palette = addNode(g, 'core/palette', {
+    position: { x: COL * 3.5, y: ROW * 0.6 },
+  });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: broad.id, socket: 'seed' });
   addEdge(g, { node: broad.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
   addEdge(g, { node: detail.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
   addEdge(g, { node: blend.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
-  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
-  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
+  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: palette.id, socket: 'color_a' });
+  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: palette.id, socket: 'color_b' });
+  addEdge(g, { node: palette.id, socket: 'ramp' }, { node: colorize.id, socket: 'ramp' });
   addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });
   addEdge(g, { node: normal.id, socket: 'texture' }, { node: outputNode.id, socket: 'normal' });
 
@@ -278,6 +292,10 @@ export function buildRockTextureSubgraph(): SubgraphDef {
     inputValues: { strength: 18, resolution: 256 },
   });
 
+  // Boundary colours → 2-pixel ramp → colorize.ramp.
+  const palette = addNode(g, 'core/palette', {
+    position: { x: COL * 3.5, y: ROW * 0.6 },
+  });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: cells.id, socket: 'seed' });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: grain.id, socket: 'seed' });
   addEdge(g, { node: cells.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
@@ -285,8 +303,9 @@ export function buildRockTextureSubgraph(): SubgraphDef {
   addEdge(g, { node: blend.id, socket: 'texture' }, { node: levels.id, socket: 'input' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
   addEdge(g, { node: levels.id, socket: 'texture' }, { node: normal.id, socket: 'height' });
-  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: colorize.id, socket: 'low' });
-  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: colorize.id, socket: 'high' });
+  addEdge(g, { node: inputNode.id, socket: 'color_dark' }, { node: palette.id, socket: 'color_a' });
+  addEdge(g, { node: inputNode.id, socket: 'color_light' }, { node: palette.id, socket: 'color_b' });
+  addEdge(g, { node: palette.id, socket: 'ramp' }, { node: colorize.id, socket: 'ramp' });
   addEdge(g, { node: detailNoise.id, socket: 'texture' }, { node: detailNormal.id, socket: 'height' });
 
   addEdge(g, { node: colorize.id, socket: 'texture' }, { node: outputNode.id, socket: 'basecolor' });

@@ -3,11 +3,21 @@ import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
   requireDevice,
   reusableBindGroup,
-  reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
 import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import shader from './colorize.wgsl';
+
+// Remap a single-channel input through a 1D RAMP TEXTURE. Pairs with
+// `core/ramp` for authored gradients, but any Nx1 RGBA texture works
+// as the palette source — e.g. a sampled brand-colour strip, a heat
+// map LUT, etc.
+//
+// The shader does the half-texel sample-uv correction so a 2-pixel
+// ramp behaves like a clean 0→1 lerp, not a "stuck at endpoint until
+// 0.25" step — see colorize.wgsl. Authors using `core/ramp` get the
+// expected linear behaviour by default; authors using an arbitrary
+// LUT texture get the same correction for free.
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
@@ -15,34 +25,30 @@ export const colorizeNode: NodeDef = {
   id: 'core/colorize',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'factor', type: 'Texture2D' },
-    { name: 'low', type: 'Color', default: [0, 0, 0, 1] },
-    { name: 'high', type: 'Color', default: [1, 1, 1, 1] },
     {
-      name: 'midpoint',
-      type: 'Float',
-      default: 0.5,
-      description:
-        'where the 50/50 mix sits along the input range. 0.5 = linear (default); <0.5 biases toward high; >0.5 biases toward low.',
+      name: 'factor',
+      type: 'Texture2D',
+      description: 'single-channel input. Its red value at each pixel is the parameter t ∈ [0,1] that samples the ramp; e.g. a perlin texture becomes a ramp-coloured noise pattern',
+    },
+    {
+      name: 'ramp',
+      type: 'Texture2D',
+      description: 'Nx1 colour palette texture (typically from `core/ramp`). Sampled by the per-pixel factor value to produce the output colour. Any Texture2D works — but ramps are 1-row wide because only the U axis matters',
     },
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [{ name: 'texture', type: 'Texture2D' }],
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
-    __uniformBuffer?: GPUBuffer;
     __bindGroup?: ReusableBindGroup;
   } {
     const device = requireDevice(ctx);
     const factor = inputs.factor as Texture2DValue;
-    const low = inputs.low as [number, number, number, number];
-    const high = inputs.high as [number, number, number, number];
-    const midpoint = inputs.midpoint as number;
+    const ramp = inputs.ramp as Texture2DValue;
     const resolution = inputs.resolution as number;
 
     const prev = ctx.previousOutput as {
       texture?: Texture2DValue;
-      __uniformBuffer?: GPUBuffer;
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
@@ -55,20 +61,10 @@ export const colorizeNode: NodeDef = {
         GPUTextureUsage.COPY_SRC,
     });
 
-    // Uniform: vec4 low + vec4 high + f32 midpoint, padded to 48 (next
-    // 16-byte multiple above 36).
-    const uniformData = new Float32Array(12);
-    uniformData.set(low, 0);
-    uniformData.set(high, 4);
-    uniformData[8] = midpoint;
-
-    const uniformBuffer = reusableBuffer(
-      device,
-      prev?.__uniformBuffer as GPUBuffer | undefined,
-      uniformData as BufferSource,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    );
-
+    // Linear filtering covers both the factor sample (smooth across
+    // the input) and the ramp sample (smooth between adjacent stop
+    // colours). Repeat addressing for factor only affects authoring
+    // edge cases; clamp would also be fine here.
     const sampler = getSampler(device, {
       magFilter: 'linear',
       minFilter: 'linear',
@@ -87,10 +83,10 @@ export const colorizeNode: NodeDef = {
       device,
       prev?.__bindGroup,
       pipeline.getBindGroupLayout(0),
-      [uniformBuffer, factor.texture, sampler],
+      [factor.texture, ramp.texture, sampler],
       () => [
-        { binding: 0, resource: uniformBuffer },
-        { binding: 1, resource: factor.texture },
+        { binding: 0, resource: factor.texture },
+        { binding: 1, resource: ramp.texture },
         { binding: 2, resource: sampler },
       ],
     );
@@ -112,6 +108,6 @@ export const colorizeNode: NodeDef = {
     pass.end();
     device.queue.submit([encoder.finish()]);
 
-    return { texture: out, __uniformBuffer: uniformBuffer, __bindGroup: bindGroup };
+    return { texture: out, __bindGroup: bindGroup };
   },
 };
