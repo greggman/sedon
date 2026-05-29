@@ -231,6 +231,7 @@ export function createForestDemo(): {
       wave_scale: 1,
       foam_width: 0.1,
       ring_speed: 0.25,
+      foam_color: [0.25, 0.3, 0.4, 0.9],
     },
   });
   const output = addNode(g, 'core/output', {
