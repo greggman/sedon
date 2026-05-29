@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type {
   HeightfieldValue,
@@ -141,7 +142,111 @@ export const waterPlaneNode: NodeDef = {
       description: 'minimum mesh tessellation per edge. The plane is auto-tessellated to ~2 vertices per wave wavelength so the displacement reads as waves rather than noise; this input is the floor — increase it for extra smoothness, decrease for cheaper renders',
     },
   ],
-  outputs: [{ name: 'scene', type: 'Scene' }],
+  outputs: [
+    {
+      name: 'scene',
+      type: 'Scene',
+      description: 'the upstream scene with a single water entity appended. waterLevel sidecar set to max(upstream, this) so the renderer\'s underwater post-process kicks in correctly when the camera dips below the surface',
+    },
+  ],
+  doc: {
+    summary: 'Append a flat water plane (with ripples, foam, refraction) to a Scene.',
+    description: `
+Takes a Scene in, appends one water entity, passes the scene out. The
+scene-in / scene-out shape matters: it places the water DOWNSTREAM of
+terrain / objects in the graph, so the renderer's reflection pass sees
+every entity that should reflect in the water (not just the terrain).
+
+The plane is auto-tessellated to roughly two vertices per
+\`wave_scale\` wavelength along the longer axis, so wave displacement
+actually reads as waves rather than aliasing into noise. \`subdivisions\`
+acts as a floor on top of that auto-rate.
+
+There are TWO ripple layers because real water has two too:
+
+- **Waves** (\`wave_strength\`, \`wave_scale\`, \`wave_speed\`) — large
+  swells driven by the vertex displacement, visible in silhouette.
+- **Ripples** (\`ripple_strength\`, \`ripple_scale\`, \`ripple_speed\`) —
+  small per-fragment normal perturbation. Independent because calm
+  pools want ripples without swells, stormy seas want swells without
+  ripple noise.
+
+**Shoreline foam + rings** come from sampling the heightfield (either
+the explicit \`heightfield\` input or the heightfield carried by an
+upstream [terrain/renderer](../../terrain/renderer)). Where terrain
+rises through the surface, water tints toward \`foam_color\` over
+\`foam_width\` metres. Concentric rings expand outward at
+\`ring_speed\` m/s with spacing \`ring_spacing\` and exp-decay
+\`ring_decay\` — they hug the shoreline naturally because slope-to-zero
+at plateaus puts the rings in the decay tail.
+
+**Underwater absorption** uses Beer-Lambert: refraction tints by
+\`color\` according to depth × \`absorption\`. 0.05 = clear lake, 0.15 = sea,
+0.5 = murky pond. Setting \`absorption: 0\` reverts to flat multiply (the
+pre-Beer-Lambert behaviour).
+
+\`extent_scale\` makes the plane bigger than the terrain so you see
+open water to the horizon instead of a hard rectangular edge — foam
+is suppressed past the heightfield bounds automatically.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // Terrain → terrain/renderer scene → water plane appended on top.
+      const noise = addNode(g, 'core/perlin', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
+      });
+      const hf = addNode(g, 'core/heightfield', {
+        id: 'hf',
+        position: { x: 280, y: 0 },
+        inputValues: { worldSize: [40, 40], heightRange: [0, 4] },
+      });
+      const hfMesh = addNode(g, 'core/heightfield-to-mesh', {
+        id: 'hfMesh',
+        position: { x: 560, y: 0 },
+        inputValues: { divisions: [64, 64], cpu_access: false },
+      });
+      const albedo = addNode(g, 'core/solid-color', {
+        id: 'albedo',
+        position: { x: 280, y: 200 },
+        inputValues: { color: [0.42, 0.5, 0.35, 1], resolution: 32 },
+      });
+      const mat = addNode(g, 'core/material', {
+        id: 'mat',
+        position: { x: 560, y: 200 },
+        inputValues: { roughness: 0.7, metallic: 0 },
+      });
+      const entity = addNode(g, 'core/scene-entity', {
+        id: 'entity',
+        position: { x: 840, y: 100 },
+        inputValues: {},
+      });
+      const water = addNode(g, 'water/plane', {
+        id: 'water',
+        position: { x: 1120, y: 100 },
+        inputValues: {
+          water_level: 1.6,
+          color: [0.1, 0.35, 0.45, 0.9],
+          wave_strength: 0.4, wave_scale: 6, wave_speed: 1,
+          roughness: 0.05,
+          ripple_strength: 0.15, ripple_scale: 1, ripple_speed: 1.5,
+          absorption: 0.15,
+          ring_spacing: 0.3, ring_speed: 0.5, ring_decay: 3,
+          foam_width: 1.5, foam_color: [0.75, 0.8, 0.82, 1],
+          world_size: [40, 40], extent_scale: 5, subdivisions: 64,
+        },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
+      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: hfMesh.id, socket: 'heightfield' });
+      addEdge(g, { node: albedo.id, socket: 'texture' }, { node: mat.id, socket: 'basecolor' });
+      addEdge(g, { node: hfMesh.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+      addEdge(g, { node: mat.id, socket: 'material' }, { node: entity.id, socket: 'material' });
+      addEdge(g, { node: entity.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
+      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
+      return { graph: g, rootNodeId: 'water' };
+    },
+  },
   evaluate(ctx, inputs): { scene: SceneValue } {
     const device = requireDevice(ctx);
     const inputScene = inputs.scene as SceneValue;

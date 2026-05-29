@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -21,15 +22,90 @@ export const grassBladesNode: NodeDef = {
   id: 'core/grass-blades',
   category: 'Texture/Generators',
   inputs: [
-    { name: 'bladeCount', type: 'Int', default: 5 },
-    { name: 'baseColor', type: 'Color', default: [0.12, 0.3, 0.08, 1] },
-    { name: 'tipColor', type: 'Color', default: [0.55, 0.78, 0.32, 1] },
-    { name: 'width', type: 'Float', default: 1, description: 'Blade width multiplier.' },
-    { name: 'lean', type: 'Float', default: 0.15, description: 'How far blade tips sweep sideways.' },
-    { name: 'seed', type: 'Float', default: 0 },
-    { name: 'resolution', type: 'Int', default: 256 },
+    {
+      name: 'bladeCount',
+      type: 'Int',
+      default: 5,
+      description: 'how many blades draw inside the card. 3 reads as sparse tufts; 8+ as a tight clump',
+    },
+    {
+      name: 'baseColor',
+      type: 'Color',
+      default: [0.12, 0.3, 0.08, 1],
+      description: 'colour at the bottom of each blade',
+    },
+    {
+      name: 'tipColor',
+      type: 'Color',
+      default: [0.55, 0.78, 0.32, 1],
+      description: 'colour at the tip of each blade — typically lighter / yellower for sun-bleached realism',
+    },
+    {
+      name: 'width',
+      type: 'Float',
+      default: 1,
+      description: 'blade width multiplier; >1 makes broader leaves, <1 thinner spikes',
+    },
+    {
+      name: 'lean',
+      type: 'Float',
+      default: 0.15,
+      description: 'how far the tips sweep sideways from the base. 0 = straight up; higher = wind-pressed look',
+    },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'random seed; varies blade positions, leans, and per-blade jitter',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 256,
+      description: 'output texture width and height. 256 is fine for distance grass; 512 for hero close-ups',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'a single blade card: RGB is the base→tip gradient, A is the per-blade silhouette. Wire into [core/grass](../../core/grass)\'s `card_0` (or any `card_N`) input',
+    },
+  ],
+  doc: {
+    summary: 'Procedural blade-card texture for core/grass — tapered blades with alpha silhouette.',
+    description: `
+The default card art for [core/grass](../../core/grass). Renders
+\`bladeCount\` tapered blades into an RGBA texture: RGB is a base→tip
+colour gradient, A is the per-blade silhouette. The alpha is what
+makes grass actually look like grass — without it the grass shader's
+quad would render as a solid rectangle.
+
+Use multiple instances with different seeds / colors / blade counts
+to author a varied grass field (each one feeds a separate \`card_N\`
+on [core/grass](../../core/grass); the field's typeMap picks which
+card each blade samples). For exotic plants — clover, ferns, dry
+straw — author the card art externally and feed that texture in
+directly instead.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/grass-blades', {
+        id: 'blades',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          bladeCount: 5,
+          baseColor: [0.12, 0.3, 0.08, 1],
+          tipColor: [0.55, 0.78, 0.32, 1],
+          width: 1,
+          lean: 0.15,
+          seed: 0,
+          resolution: 256,
+        },
+      });
+      return { graph: g, rootNodeId: 'blades' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;
