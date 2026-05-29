@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import {
   generatePalmBranchGraph,
@@ -36,7 +37,49 @@ export const branchPalmNode: NodeDef = {
     },
     { name: 'seed', type: 'Float', default: 0.41 },
   ],
-  outputs: [{ name: 'branches', type: 'BranchGraph' }],
+  outputs: [
+    {
+      name: 'branches',
+      type: 'BranchGraph',
+      description: 'a single-curve BranchGraph (no children). Realize via [branch/tube](../../branch/tube); place fronds at the tip with [branch/sample-points](../../branch/sample-points) using `onlyTips=true` + `tipCount=N`',
+    },
+  ],
+  doc: {
+    summary: 'Single unbranched curving trunk — palm, banana, tree fern, agave.',
+    description: `
+A trunk that curves gracefully under its own lean. \`leanAngle\` sets
+the tilt at the base; \`leanCurvature\` keeps adding degrees of bend per
+segment as you go up, producing the characteristic palm-fronds-over-
+the-beach silhouette. \`leanAzimuth\` rotates which compass direction
+the tree leans toward.
+
+No children — palms don't branch. Crown fronds are placed downstream
+with [branch/sample-points](../../branch/sample-points) using
+\`onlyTips=true\` and \`tipCount=N\` (typically 8–14 fronds), each
+sample point feeding a leaf-card instance through
+[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+with \`align: true\`.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const palm = addNode(g, 'branch/palm', {
+        id: 'palm',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          height: 8, trunkRadiusBase: 0.18, trunkRadiusTip: 0.12,
+          trunkSegments: 14, leanAngle: 8, leanCurvature: 0.8,
+          leanAzimuth: 0, seed: 0.41,
+        },
+      });
+      const tube = addNode(g, 'branch/tube', {
+        id: 'tube',
+        position: { x: 280, y: 0 },
+        inputValues: { sides: 8, uvTilingV: 0.5 },
+      });
+      addEdge(g, { node: palm.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+      return { graph: g, rootNodeId: 'tube' };
+    },
+  },
   evaluate(_ctx, inputs): { branches: BranchGraphValue } {
     return {
       branches: generatePalmBranchGraph({

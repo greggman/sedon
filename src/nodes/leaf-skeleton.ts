@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -115,9 +116,66 @@ export const leafSkeletonNode: NodeDef = {
     { name: 'resolution', type: 'Int', default: 512 },
   ],
   outputs: [
-    { name: 'shape', type: 'Texture2D' },
-    { name: 'veins', type: 'Texture2D' },
+    {
+      name: 'shape',
+      type: 'Texture2D',
+      description: 'greyscale leaf silhouette; alpha channel is the AA mask for the inside-of-leaf indicator. Downstream stages multiply against this to keep their output inside the leaf outline',
+    },
+    {
+      name: 'veins',
+      type: 'Texture2D',
+      description: 'greyscale vein density (midrib + side veins + sub-veins), clipped to the leaf interior and carrying the same alpha mask as `shape`',
+    },
   ],
+  doc: {
+    summary: 'Parametric leaf silhouette + vein pattern as two greyscale textures.',
+    description: `
+The first node of the leaf authoring chain. Produces two Texture2D
+outputs:
+
+- **shape** — greyscale silhouette with alpha = AA mask. The
+  half-width profile is parametric: \`y^baseCurvature × (1−y)^tipPointedness\`
+  scaled by \`width\`. Vary the two exponents to cover ovate (default),
+  lanceolate (taller, narrower), obovate (peak above middle), etc.
+  Set \`lobeCount > 0\` for pinnate lobed leaves like oak / sweetgum;
+  \`lobeDepth\` controls how deep the sinuses cut.
+
+- **veins** — midrib + \`branchCount\` pairs of primary side veins +
+  \`subBranchCount\` ladder ribs per primary. \`branchAngle\` /
+  \`branchCurve\` / \`branchTaper\` shape the primaries;
+  \`subBranchCurveStart\` and \`subBranchCurveGrowth\` interpolate the
+  sub-vein forward-bias from base to tip.
+
+Both outputs are clipped to the silhouette so downstream stages
+(distance-transform → ramp → colorize for albedo,
+[core/normal-from-height](../../core/normal-from-height) for surface
+detail) compose cleanly. The full chain ends in
+[core/leaf-mesh](../../core/leaf-mesh) for a billboard-ready Geometry.
+
+For sample chains see the leaf subgraphs in the editor demos —
+\`oak-leaf\`, \`generic-broadleaf\`, etc. all build on this node.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // The leaf-skeleton's editor preview composites shape + veins
+      // into a single visual; the docs preview falls back to the first
+      // output (shape) via TexturePreview.
+      addNode(g, 'leaf/skeleton', {
+        id: 'skeleton',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          length: 1, width: 0.22, tipPointedness: 1.6,
+          baseCurvature: 0.8,
+          branchCount: 6, branchAngle: 55, branchCurve: 0.7,
+          branchTaper: 0.75,
+          subBranchCount: 10, subBranchCurveStart: 0.05, subBranchCurveGrowth: 0.35,
+          lobeCount: 0, lobeDepth: 0.6,
+          seed: 0, resolution: 512,
+        },
+      });
+      return { graph: g, rootNodeId: 'skeleton' };
+    },
+  },
   evaluate(ctx, inputs): {
     shape: Texture2DValue;
     veins: Texture2DValue;

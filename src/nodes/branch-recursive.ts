@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import { generateRecursiveBranchGraph, type BranchGraphValue } from '../render/branch-graph.js';
 
@@ -77,7 +78,65 @@ export const branchRecursiveNode: NodeDef = {
     },
     { name: 'seed', type: 'Float', default: 0.31 },
   ],
-  outputs: [{ name: 'branches', type: 'BranchGraph' }],
+  outputs: [
+    {
+      name: 'branches',
+      type: 'BranchGraph',
+      description: 'branch skeleton (centerlines + per-segment radii). Realize as a mesh via [branch/tube](../../branch/tube), or sample leaf/flower positions via [branch/sample-points](../../branch/sample-points)',
+    },
+  ],
+  doc: {
+    summary: 'Recursive parametric branching — trunk + children-per-segment ratios. Oak/birch/bush.',
+    description: `
+The canonical parametric branch generator. A trunk of \`trunkSegments\`
+segments; at each segment in the branching zone (above
+\`branchStart\` fraction of length), \`branchesPerSegment\` children
+spawn at \`branchAngle\` from the parent tangent, rotated around the
+trunk by \`phyllotaxisAngle\` between consecutive children. Each child
+recursively spawns its own children down to \`maxDepth\`.
+
+Per-child geometry comes from RATIOS off the parent:
+- \`lengthRatio\` — child length ÷ parent length (0.65 = 35% shorter)
+- \`radiusRatio\` — child root radius ÷ parent root radius
+- \`segmentRatio\` — child segment count ÷ parent segment count
+- \`tipRadiusFraction\` — each branch tapers linearly from root to tip
+
+Use for stylized oak, birch, generic deciduous, bushes. Pair with
+[branch/tropism](../../branch/tropism) downstream for natural droop,
+then [branch/tube](../../branch/tube) for the renderable mesh and
+[branch/sample-points](../../branch/sample-points) for leaf placements.
+
+The other generator families have specialised topologies that this
+generic node can't fake cleanly:
+[branch/palm](../../branch/palm) for unbranched curving trunks,
+[branch/whorled-pine](../../branch/whorled-pine) for monopodial conifers,
+[branch/space-colonization](../../branch/space-colonization) for
+canopy-driven naturalism.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const branches = addNode(g, 'branch/recursive', {
+        id: 'branches',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          trunkHeight: 6, trunkRadius: 0.25, trunkSegments: 10,
+          maxDepth: 3, branchesPerSegment: 1, branchStart: 0.4,
+          branchAngle: 50, branchAngleJitter: 12,
+          lengthRatio: 0.65, radiusRatio: 0.55,
+          branchCurvature: 4, phyllotaxisAngle: 137.5,
+          segmentRatio: 0.75, minSegmentsPerBranch: 3,
+          tipRadiusFraction: 0.2, seed: 0.31,
+        },
+      });
+      const tube = addNode(g, 'branch/tube', {
+        id: 'tube',
+        position: { x: 280, y: 0 },
+        inputValues: { sides: 8, uvTilingV: 0.5 },
+      });
+      addEdge(g, { node: branches.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+      return { graph: g, rootNodeId: 'tube' };
+    },
+  },
   evaluate(_ctx, inputs): { branches: BranchGraphValue } {
     return {
       branches: generateRecursiveBranchGraph({

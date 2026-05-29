@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import {
   generateWhorledPineBranchGraph,
@@ -84,7 +85,68 @@ export const branchWhorledPineNode: NodeDef = {
     { name: 'subBranchAngle', type: 'Float', default: 55 },
     { name: 'seed', type: 'Float', default: 0.58 },
   ],
-  outputs: [{ name: 'branches', type: 'BranchGraph' }],
+  outputs: [
+    {
+      name: 'branches',
+      type: 'BranchGraph',
+      description: 'pine-shaped BranchGraph (trunk + whorled laterals). Realize via [branch/tube](../../branch/tube); for the characteristic pine droop add [branch/tropism](../../branch/tropism) with positive gravity in between',
+    },
+  ],
+  doc: {
+    summary: 'Monopodial conifer — single trunk with lateral branches in whorls. Pine/spruce/fir.',
+    description: `
+A single dominant trunk with lateral branches arranged in WHORLS (rings)
+at regular height intervals. \`whorlCount\` rings between \`whorlStart\`
+and \`whorlEnd\` (as fractions of trunk height); each ring carries
+\`branchesPerWhorl\` evenly-spaced branches, rotated by
+\`whorlPhaseOffset\` from the previous ring so they don't stack
+directly above each other.
+
+Branch length tapers from \`branchLengthAtBase\` at the lowest whorl
+to \`branchLengthAtTop\` at the topmost whorl — that's what gives the
+characteristic conical envelope: long bottom branches, short top.
+
+Branches in this generator don't sag — they leave the trunk at
+\`branchAngle\` and stay straight. Pipe through
+[branch/tropism](../../branch/tropism) with a positive \`gravity\` to get
+the natural pine droop where lower whorls hang lower.
+
+For young firs with single straight whorl branches use
+\`subBranchCount: 0\`; for older specimens with feathered branchlets,
+bump it up. Pair with [branch/tube](../../branch/tube) for the mesh.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const pine = addNode(g, 'branch/whorled-pine', {
+        id: 'pine',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          trunkHeight: 12, trunkRadiusBase: 0.32, trunkRadiusTip: 0.04,
+          trunkSegments: 16, trunkLean: 0,
+          whorlCount: 8, whorlStart: 0.25, whorlEnd: 0.95,
+          branchesPerWhorl: 6, whorlPhaseOffset: 35,
+          branchLengthAtBase: 3.5, branchLengthAtTop: 0.6,
+          branchAngle: 80, branchSegments: 6,
+          branchRadiusFraction: 0.25, branchTipRadiusFraction: 0.15,
+          subBranchCount: 0, subBranchLengthRatio: 0.45, subBranchAngle: 55,
+          seed: 0.58,
+        },
+      });
+      const droop = addNode(g, 'branch/tropism', {
+        id: 'droop',
+        position: { x: 280, y: 0 },
+        inputValues: { gravity: 0.18, phototropism: [0, 0, 0], wobble: 0.02, wobbleSeed: 0.7 },
+      });
+      const tube = addNode(g, 'branch/tube', {
+        id: 'tube',
+        position: { x: 560, y: 0 },
+        inputValues: { sides: 8, uvTilingV: 0.5 },
+      });
+      addEdge(g, { node: pine.id, socket: 'branches' }, { node: droop.id, socket: 'branches' });
+      addEdge(g, { node: droop.id, socket: 'branches' }, { node: tube.id, socket: 'branches' });
+      return { graph: g, rootNodeId: 'tube' };
+    },
+  },
   evaluate(_ctx, inputs): { branches: BranchGraphValue } {
     return {
       branches: generateWhorledPineBranchGraph({
