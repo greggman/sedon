@@ -1213,8 +1213,31 @@
   pointer-events: none;
 }
 
-/* Byte editors (R/G/B/A). Compact 4-column grid; each cell has a
- * tiny label above a number input. */
+/* Toggle row above the channel inputs — two pill-buttons that cycle
+ * the channel display: RGBA↔HSLA and 0-1↔0-255. */
+.sedon-color-toggles {
+  display: flex;
+  gap: 4px;
+}
+.sedon-color-toggle {
+  flex: 1 1 0;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.sedon-color-toggle:hover {
+  background: #333;
+  border-color: #555;
+}
+
+/* Channel editors (R/G/B/A, H/S/L/A). Compact 4-column grid; each
+ * cell has a tiny label above a NumberInput (drag-to-scrub). The
+ * cell-input styling is delegated to .sedon-numinput-{drag,edit}. */
 .sedon-color-bytes {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1223,26 +1246,19 @@
 .sedon-color-byte {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
   font-size: 10px;
   color: #aaa;
+  min-width: 0;
 }
-.sedon-color-byte input {
-  width: 100%;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 2px;
-  color: #ddd;
-  font-size: 11px;
-  padding: 1px 3px;
+.sedon-color-byte > span {
   text-align: center;
-  -moz-appearance: textfield;
 }
-.sedon-color-byte input::-webkit-inner-spin-button,
-.sedon-color-byte input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.sedon-color-byte .sedon-numinput-drag,
+.sedon-color-byte .sedon-numinput-edit {
+  font-size: 11px;
+  padding: 2px 3px;
 }
 
 /* Hex input — label on the left, monospace text input filling

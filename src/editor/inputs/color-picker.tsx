@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { NumberInput } from './number-input.js';
 
 // Popover RGBA picker. Layout:
 //
@@ -14,16 +15,37 @@ import { createPortal } from 'react-dom';
 //   ├─────────────────────────┤
 //   │  ░░░░░░░░██████████     │  ← Alpha slider: track gradient
 //   ├─────────────────────────┤    from fully transparent (current
-//   │  R [255] G [128] B [..] │    RGB at α=0) to fully opaque
-//   │  A [255]  HEX [#ff80…]  │    (α=1), composited over a
-//   └─────────────────────────┘    checkerboard.
+//   │  [RGBA] [0-1]           │    RGB at α=0) to fully opaque
+//   │  R 0.5  G 0.25  B 0.1   │    (α=1), composited over a
+//   │  A 1.0  HEX  #80401a    │    checkerboard.
+//   └─────────────────────────┘
 //
 // Internal state model is HSV + alpha. RGB→HSV happens once on open
-// (from the prop value) and on hex / R/G/B-input commits; everything
+// (from the prop value) and on hex / channel-input commits; everything
 // else (drag the SV box / hue / alpha) stays in HSV so dragging into
 // a desaturated zone doesn't lose the active hue.
+//
+// Channel editors below are NumberInput-style drag-to-scrub controls.
+// Two top-row toggles select the display:
+//   - mode: RGBA (R/G/B/A) vs HSLA (H/S/L/A) — HSLA is derived from
+//     HSV by L = V·(1−S/2) and friends; the H component is shared.
+//   - unit: 0-1 floats vs whatever "byte-ish" integers each channel
+//     naturally wants (R/G/B/A: 0–255; H: 0–360; S/L: 0–100). Picking
+//     "0-255" as the toggle label is a small lie for HSLA channels but
+//     it's the obvious mental model: "switch to integer-ish units."
+//
+// Toggle preferences persist module-globally so reopening the picker
+// in the same session remembers the user's choice.
 
 type Rgba = readonly [number, number, number, number];
+
+type ColorMode = 'rgba' | 'hsla';
+type ColorUnit = 'float' | 'byte';
+
+// Session-persistent toggle preferences. Module-level so re-mounting
+// the picker (open/close/open) preserves the user's last choice.
+let savedMode: ColorMode = 'rgba';
+let savedUnit: ColorUnit = 'float';
 
 interface ColorPickerProps {
   value: Rgba;
@@ -33,8 +55,11 @@ interface ColorPickerProps {
   anchorRect: DOMRect;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
+  return clamp(v, 0, 1);
 }
 
 function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
@@ -68,6 +93,24 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
     case 5: return [v, p, q];
   }
   return [0, 0, 0];
+}
+
+// HSV ↔ HSL share H (the same 0–1 wheel position) but differ on the
+// saturation/lightness axes. The standard formulas:
+//   L  = V · (1 − S_v/2)
+//   S_l = L ∈ {0, 1} ? 0 : (V − L) / min(L, 1−L)
+// and inversely:
+//   V  = L + S_l · min(L, 1−L)
+//   S_v = V == 0 ? 0 : 2·(1 − L/V)
+function hsvToHsl(h: number, sv: number, v: number): [number, number, number] {
+  const l = v * (1 - sv / 2);
+  const sl = l === 0 || l === 1 ? 0 : (v - l) / Math.min(l, 1 - l);
+  return [h, sl, l];
+}
+function hslToHsv(h: number, sl: number, l: number): [number, number, number] {
+  const v = l + sl * Math.min(l, 1 - l);
+  const sv = v === 0 ? 0 : 2 * (1 - l / v);
+  return [h, sv, v];
 }
 
 function toByte(c: number): number {
@@ -126,6 +169,13 @@ export function ColorPicker({ value, onChange, onClose, anchorRect }: ColorPicke
   const [sat, setSat] = useState(initialHsv[1]);
   const [val, setVal] = useState(initialHsv[2]);
   const [alpha, setAlpha] = useState(a0);
+
+  // Display-mode toggles (kept in sync with module-globals via the
+  // setters below so reopening the picker carries the choice over).
+  const [mode, setModeState] = useState<ColorMode>(savedMode);
+  const [unit, setUnitState] = useState<ColorUnit>(savedUnit);
+  const setMode = (m: ColorMode) => { savedMode = m; setModeState(m); };
+  const setUnit = (u: ColorUnit) => { savedUnit = u; setUnitState(u); };
 
   // Derived RGB (for rendering hex input + the alpha-track gradient end).
   const [r, g, b] = useMemo(() => hsvToRgb(hue, sat, val), [hue, sat, val]);
@@ -203,6 +253,81 @@ export function ColorPicker({ value, onChange, onClose, anchorRect }: ColorPicke
     emit(hue, sat, val, nx);
   });
 
+  // Apply a normalised (0–1) channel value back to internal HSV state.
+  // Branches on (mode, channel); RGBA-channel writes RGB→HSV-convert
+  // first, HSLA-channel writes HSL→HSV-convert.
+  const applyChannel01 = (channel: 0 | 1 | 2 | 3, v01: number) => {
+    v01 = clamp01(v01);
+    if (channel === 3) {
+      setAlpha(v01);
+      emit(hue, sat, val, v01);
+      return;
+    }
+    if (mode === 'rgba') {
+      const nr = channel === 0 ? v01 : r;
+      const ng = channel === 1 ? v01 : g;
+      const nb = channel === 2 ? v01 : b;
+      const [nh, ns, nv] = rgbToHsv(nr, ng, nb);
+      setHue(nh); setSat(ns); setVal(nv);
+      emit(nh, ns, nv, alpha);
+    } else {
+      const [hh, sl, ll] = hsvToHsl(hue, sat, val);
+      const nh = channel === 0 ? v01 : hh;
+      const nsl = channel === 1 ? v01 : sl;
+      const nll = channel === 2 ? v01 : ll;
+      const [hv, sv, vv] = hslToHsv(nh, nsl, nll);
+      setHue(hv); setSat(sv); setVal(vv);
+      emit(hv, sv, vv, alpha);
+    }
+  };
+
+  // Channel layout: label, displayed value, integer (drag step pivot),
+  // and the channel index for the apply callback. The displayed value
+  // is computed from the current internal HSV+α according to (mode,
+  // unit); on change we invert back through applyChannel01.
+  interface ChannelSpec {
+    label: string;
+    value: number;
+    integer: boolean;
+    /** Scale factor: displayed = stored01 * scale. */
+    scale: number;
+  }
+  const [hs, ss, ls] = mode === 'hsla' ? hsvToHsl(hue, sat, val) : [0, 0, 0];
+  const channels: ChannelSpec[] = (() => {
+    if (mode === 'rgba') {
+      if (unit === 'float') {
+        return [
+          { label: 'R', value: r, integer: false, scale: 1 },
+          { label: 'G', value: g, integer: false, scale: 1 },
+          { label: 'B', value: b, integer: false, scale: 1 },
+          { label: 'A', value: alpha, integer: false, scale: 1 },
+        ];
+      }
+      return [
+        { label: 'R', value: toByte(r), integer: true, scale: 255 },
+        { label: 'G', value: toByte(g), integer: true, scale: 255 },
+        { label: 'B', value: toByte(b), integer: true, scale: 255 },
+        { label: 'A', value: toByte(alpha), integer: true, scale: 255 },
+      ];
+    }
+    // HSLA
+    if (unit === 'float') {
+      return [
+        { label: 'H', value: hs, integer: false, scale: 1 },
+        { label: 'S', value: ss, integer: false, scale: 1 },
+        { label: 'L', value: ls, integer: false, scale: 1 },
+        { label: 'A', value: alpha, integer: false, scale: 1 },
+      ];
+    }
+    // HSLA bytes: H 0-360°, S/L 0-100%, A 0-255.
+    return [
+      { label: 'H', value: Math.round(hs * 360), integer: true, scale: 360 },
+      { label: 'S', value: Math.round(ss * 100), integer: true, scale: 100 },
+      { label: 'L', value: Math.round(ls * 100), integer: true, scale: 100 },
+      { label: 'A', value: toByte(alpha), integer: true, scale: 255 },
+    ];
+  })();
+
   // Numeric input editing. Hex is the easy one (single text field).
   // R/G/B/A inputs commit on blur or Enter — keeping them controlled
   // from local string state lets the user type intermediate values
@@ -223,47 +348,9 @@ export function ColorPicker({ value, onChange, onClose, anchorRect }: ColorPicke
     emit(nh, ns, nv, parsed[3]);
   }
 
-  // R/G/B/A byte editors.
-  const renderByteInput = (label: string, channel: 'r' | 'g' | 'b' | 'a') => {
-    const current = channel === 'r' ? toByte(r)
-                  : channel === 'g' ? toByte(g)
-                  : channel === 'b' ? toByte(b)
-                  : toByte(alpha);
-    return (
-      <label className="sedon-color-byte">
-        <span>{label}</span>
-        <input
-          type="number"
-          min={0}
-          max={255}
-          step={1}
-          value={current}
-          onChange={(e) => {
-            const n = parseInt(e.target.value, 10);
-            if (!Number.isFinite(n)) return;
-            const v01 = clamp01(n / 255);
-            if (channel === 'a') {
-              setAlpha(v01);
-              emit(hue, sat, val, v01);
-            } else {
-              const nr = channel === 'r' ? v01 : r;
-              const ng = channel === 'g' ? v01 : g;
-              const nb = channel === 'b' ? v01 : b;
-              const [nh, ns, nv] = rgbToHsv(nr, ng, nb);
-              setHue(nh);
-              setSat(ns);
-              setVal(nv);
-              emit(nh, ns, nv, alpha);
-            }
-          }}
-        />
-      </label>
-    );
-  };
-
   // Position the popup just below the anchor, clamped to the viewport.
   const POPUP_W = 220;
-  const POPUP_H = 280;
+  const POPUP_H = 320;
   const left = Math.min(
     Math.max(8, anchorRect.left),
     window.innerWidth - POPUP_W - 8,
@@ -325,11 +412,36 @@ export function ColorPicker({ value, onChange, onClose, anchorRect }: ColorPicke
         </div>
       </div>
 
+      <div className="sedon-color-toggles">
+        <button
+          type="button"
+          className="sedon-color-toggle"
+          onClick={() => setMode(mode === 'rgba' ? 'hsla' : 'rgba')}
+          title="toggle RGBA / HSLA channel display"
+        >
+          {mode === 'rgba' ? 'RGBA' : 'HSLA'}
+        </button>
+        <button
+          type="button"
+          className="sedon-color-toggle"
+          onClick={() => setUnit(unit === 'float' ? 'byte' : 'float')}
+          title="toggle 0–1 floats / integer units (0–255, 0–360°, 0–100%)"
+        >
+          {unit === 'float' ? '0–1' : '0–255'}
+        </button>
+      </div>
+
       <div className="sedon-color-bytes">
-        {renderByteInput('R', 'r')}
-        {renderByteInput('G', 'g')}
-        {renderByteInput('B', 'b')}
-        {renderByteInput('A', 'a')}
+        {channels.map((ch, i) => (
+          <label key={ch.label} className="sedon-color-byte">
+            <span>{ch.label}</span>
+            <NumberInput
+              value={ch.value}
+              integer={ch.integer}
+              onChange={(n) => applyChannel01(i as 0 | 1 | 2 | 3, n / ch.scale)}
+            />
+          </label>
+        ))}
       </div>
 
       <label className="sedon-color-hex">
