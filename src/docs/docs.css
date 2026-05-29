@@ -1,0 +1,305 @@
+/* Sedon docs site — standalone styles. Independent from editor.css
+ * because the docs pages don't load the editor bundle; they're a tiny
+ * separate React app with their own bundle.
+ *
+ * Dark theme that matches the editor's palette so the visual identity
+ * is consistent if the user clicks through from the [?] icon. */
+
+:root {
+  --doc-bg: #1a1a1f;
+  --doc-fg: #ddd;
+  --doc-muted: #888;
+  --doc-border: #333;
+  --doc-card-bg: #22222a;
+  --doc-accent: #88a;
+  --doc-code-bg: #2a2a2a;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--doc-bg);
+  color: var(--doc-fg);
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* The shell spans the full viewport so each section can choose its
+ * own max-width. Header gets a full-width bottom border with the
+ * breadcrumb centered inside; text sections cap at 960px to keep prose
+ * readable; the sample-graph + preview section gets a wider 1280px
+ * cap so the embedded React Flow canvas has room to breathe. */
+.sedon-doc-shell {
+  padding: 0 0 64px;
+}
+
+.sedon-doc-header {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--doc-border);
+  margin-bottom: 24px;
+}
+.sedon-doc-header > * {
+  display: block;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+
+.sedon-doc-breadcrumb {
+  color: var(--doc-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.sedon-doc-breadcrumb:hover {
+  color: var(--doc-accent);
+}
+
+.sedon-doc-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* Default section width — narrow, prose-friendly. The sample-graph
+ * section opts into the wider variant below. */
+.sedon-doc-section,
+.sedon-doc-title-row,
+.sedon-doc-summary {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+.sedon-doc-section--wide {
+  max-width: 1280px;
+}
+
+.sedon-doc-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sedon-doc-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #fff;
+}
+
+.sedon-doc-category {
+  color: var(--doc-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+}
+
+.sedon-doc-summary {
+  font-size: 16px;
+  color: #cfcfd6;
+  margin: 0;
+}
+
+.sedon-doc-section {
+  margin: 0;
+}
+
+.sedon-doc-h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.sedon-doc-paragraph {
+  margin: 0 0 10px;
+}
+
+/* Pre-rendered description body. Styling for the HTML elements
+ * showdown emits — paragraphs, links, inline code, lists, emphasis.
+ * Inherits the section's max-width / centering, so prose stays
+ * readable. */
+.sedon-doc-description p {
+  margin: 0 0 12px;
+}
+.sedon-doc-description p:last-child {
+  margin-bottom: 0;
+}
+.sedon-doc-description a {
+  color: var(--doc-accent);
+  text-decoration: none;
+}
+.sedon-doc-description a:hover {
+  text-decoration: underline;
+}
+.sedon-doc-description code {
+  background: var(--doc-code-bg);
+  color: #cfcfd6;
+}
+.sedon-doc-description ul,
+.sedon-doc-description ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.sedon-doc-description li {
+  margin: 2px 0;
+}
+.sedon-doc-description strong { color: #fff; }
+
+.sedon-doc-muted {
+  color: var(--doc-muted);
+  font-style: italic;
+}
+
+/* Sample-graph + preview area. Two-column grid: graph on the left
+ * (a real React Flow embed of the authored sample), live preview of
+ * the rootNodeId output on the right. Both children carry their own
+ * fixed height so the dark-bg cards line up regardless of how many
+ * nodes the sample graph contains. */
+.sedon-doc-sample {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  align-items: stretch;
+}
+.sedon-doc-sample-graph {
+  height: 480px;
+  background: #1a1a1f;
+  border: 1px solid var(--doc-border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.sedon-doc-sample-result {
+  display: flex;
+  flex-direction: column;
+  background: var(--doc-card-bg);
+  border: 1px solid var(--doc-border);
+  border-radius: 4px;
+  padding: 10px;
+  gap: 8px;
+}
+.sedon-doc-sample-result-label {
+  font-size: 11px;
+  color: var(--doc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.sedon-doc-sample-result-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sedon-doc-sample-error {
+  color: #d77;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Narrow screens: stack instead of side-by-side. */
+@media (max-width: 720px) {
+  .sedon-doc-sample {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sedon-doc-sample-graph { height: 280px; }
+}
+
+/* Inputs / outputs tables. */
+.sedon-doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sedon-doc-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--doc-border);
+  color: var(--doc-muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.sedon-doc-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--doc-border);
+  vertical-align: top;
+}
+.sedon-doc-cell-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #fff;
+  white-space: nowrap;
+}
+.sedon-doc-cell-type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--doc-accent);
+  white-space: nowrap;
+}
+.sedon-doc-cell-default {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--doc-muted);
+  white-space: nowrap;
+}
+.sedon-doc-cell-desc {
+  color: #ccc;
+}
+.sedon-doc-enum {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: var(--doc-muted);
+  font-size: 12px;
+}
+.sedon-doc-enum code {
+  color: var(--doc-accent);
+}
+
+/* Index page list. */
+.sedon-doc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sedon-doc-list li {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--doc-border);
+}
+.sedon-doc-list a {
+  color: var(--doc-accent);
+  text-decoration: none;
+}
+.sedon-doc-list a:hover {
+  text-decoration: underline;
+}
+.sedon-doc-list-summary {
+  color: var(--doc-muted);
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+.sedon-doc-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--doc-muted);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--doc-code-bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 0.92em;
+}
