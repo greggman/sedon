@@ -1731,3 +1731,23 @@
   color: #888;
   font-style: italic;
 }
+
+/* ============================================================
+ * Selected edge — animated gray↔white pulse
+ *
+ * Edges are styled inline by rf-conversion.ts with a per-type
+ * stroke colour, so the override needs `!important` to win when
+ * the edge is selected. We bump the stroke-width too so the
+ * affordance reads even when the user isn't watching the
+ * animation tick.
+ * ============================================================ */
+@keyframes sedon-edge-selected-pulse {
+  0%, 100% { stroke: #6a6a72; }
+  50%      { stroke: #ffffff; }
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke-width: 3 !important;
+  animation: sedon-edge-selected-pulse 1.2s ease-in-out infinite;
+}

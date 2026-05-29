@@ -2,6 +2,7 @@ import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
 import { useMemo, useState } from 'react';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
 import type {
+  GeometryValue,
   HeightfieldValue,
   MaterialValue,
   SceneValue,
@@ -21,6 +22,7 @@ import { NumberInput } from './inputs/number-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { useLayoutStore } from './layout-store.js';
 import { MaterialPreview } from './material-preview.js';
+import { MeshPreview } from './mesh-preview.js';
 import { useRegistry } from './registry.js';
 import { ScenePreview } from './scene-preview.js';
 import { useEditorStore, type CameraState } from './store.js';
@@ -123,10 +125,25 @@ function isScene(v: unknown): v is SceneValue {
   );
 }
 
+function isGeometry(v: unknown): v is GeometryValue {
+  // GeometryValue carries GPU buffers + indexCount/indexFormat. The
+  // `positionBuffer` field uniquely identifies it vs. other kinds.
+  // Geometry instances with a CPU-side mesh additionally have `mesh`,
+  // but MeshPreview can render from that, so we only require the GPU
+  // shape here.
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'positionBuffer' in v &&
+    'indexCount' in v
+  );
+}
+
 type PreviewTarget =
   | { kind: 'texture'; value: Texture2DValue }
   | { kind: 'material'; value: MaterialValue }
-  | { kind: 'scene'; value: SceneValue };
+  | { kind: 'scene'; value: SceneValue }
+  | { kind: 'geometry'; value: GeometryValue };
 
 function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | null {
   if (!outputs) return null;
@@ -135,6 +152,9 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
     if (isHeightfield(v)) return { kind: 'texture', value: v.texture };
     if (isTexture2D(v)) return { kind: 'texture', value: v };
     if (isScene(v)) return { kind: 'scene', value: v };
+    // Geometry comes last so a node that emits both a Scene and a
+    // Geometry (none today, but possible) gets the richer preview.
+    if (isGeometry(v)) return { kind: 'geometry', value: v };
   }
   return null;
 }
@@ -150,7 +170,8 @@ function hasPreviewSlot(def: NodeDef): boolean {
       out.type === 'Texture2D' ||
       out.type === 'Material' ||
       out.type === 'Heightfield' ||
-      out.type === 'Scene'
+      out.type === 'Scene' ||
+      out.type === 'Geometry'
     ) {
       return true;
     }
@@ -781,6 +802,27 @@ export function CustomNode({ id, data, selected }: NodeProps) {
                   camera={subgraphCamera ?? DEFAULT_SCENE_PREVIEW_CAMERA}
                 />
               </div>
+            ) : previewTarget.kind === 'geometry' ? (
+              // Wireframe thumbnail of the raw mesh. Same fill-parent
+              // pattern as ScenePreview — wrap in a sized box. We only
+              // render when CPU-side mesh data is available; GPU-only
+              // meshes (compute-built grass, heightfield-to-mesh with
+              // cpu_access=false) fall back to the placeholder.
+              previewTarget.value.mesh ? (
+                <div style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}>
+                  <MeshPreview
+                    device={device}
+                    geometry={previewTarget.value}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="sedon-node-preview-placeholder"
+                  style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
+                >
+                  GPU
+                </div>
+              )
             ) : (
               <TexturePreview
                 device={device}
