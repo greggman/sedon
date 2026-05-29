@@ -1,4 +1,5 @@
-import type { NodeDef } from '../core/node-def.js';
+import { addEdge, addNode, createGraph } from '../core/graph.js';
+import type { InputDef, NodeDef } from '../core/node-def.js';
 import type {
   GeometryValue,
   MaterialValue,
@@ -68,8 +69,111 @@ export const mergeSceneEntitiesNode: NodeDef = {
   // Re-stamps provenance to this merge node + ctx.subgraphPath, so the
   // cached output depends on context.
   provenanceDependent: true,
-  inputs: [{ name: 'scene', type: 'Scene' }],
-  outputs: [{ name: 'scene', type: 'Scene' }],
+  inputs: [
+    {
+      name: 'scene',
+      type: 'Scene',
+      description: 'input scene whose entities will be grouped + flattened. Every entity must have CPU-side mesh data — feed [core/heightfield-to-mesh](../../core/heightfield-to-mesh) outputs through with `cpu_access: true`, primitive geometries have it by default',
+    },
+  ],
+  outputs: [
+    {
+      name: 'scene',
+      type: 'Scene',
+      description: 'a new scene with one entity per unique (material, tint) pair. Each output entity holds a single merged mesh with every input entity\'s transform baked into its vertices',
+    },
+  ],
+  doc: {
+    summary: 'Flatten a Scene into one merged mesh per (material, tint) group.',
+    description: `
+Takes a Scene with many entities, groups them by their (material, tint)
+pair, bakes each entity's per-entity transform into the vertices, and
+merges every group's meshes into one. Output is a new Scene with one
+entity per unique group — same visual result as the input, but fewer
+draw calls.
+
+The classic use: a [core/instance-scene-on-points](../../core/instance-scene-on-points)
+that scatters 5,000 trees produces 5,000 entities, all sharing the same
+material. Run the result through this node and you get a single mesh
+covering all 5,000 trunks — one draw call instead of 5,000.
+
+Tint participates in the group key because it can't be baked into
+vertex data (no per-vertex colour attribute today). Two entities with
+the same material but different tints stay as separate output entities.
+
+Caveats:
+- Every input entity needs CPU-side mesh data (\`geometry.mesh\` must
+  be populated). Primitives have it by default; GPU-native sources
+  like [core/heightfield-to-mesh](../../core/heightfield-to-mesh) need
+  \`cpu_access: true\`.
+- The merge throws away per-source identity. Picking a merged entity
+  routes back to THIS merge node, not the original scene-entity that
+  contributed the geometry.
+- For a non-flattening combine, use
+  [core/scene-merge](../../core/scene-merge) instead — it just
+  concatenates entity lists without re-meshing.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const sphere = addNode(g, 'core/sphere', {
+        id: 'sphere',
+        position: { x: 0, y: 0 },
+        inputValues: { radius: 0.4, segments: 24, rings: 12 },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 0.6 },
+      });
+      // Two entities sharing the same material — that's the case the
+      // merge actually collapses into one mesh. core/material needs a
+      // basecolor texture, not optional.
+      const basecolor = addNode(g, 'core/solid-color', {
+        id: 'basecolor',
+        position: { x: 0, y: 400 },
+        inputValues: { color: [0.55, 0.62, 0.45, 1], resolution: 32 },
+      });
+      const mat = addNode(g, 'core/material', {
+        id: 'mat',
+        position: { x: 280, y: 400 },
+        inputValues: { roughness: 0.6, metallic: 0 },
+      });
+      const entA = addNode(g, 'core/scene-entity', {
+        id: 'entA',
+        position: { x: 560, y: 0 },
+        inputValues: {},
+      });
+      const entB = addNode(g, 'core/scene-entity', {
+        id: 'entB',
+        position: { x: 560, y: 220 },
+        inputValues: {},
+      });
+      const extras: InputDef[] = [
+        { name: 'scene_0', type: 'Scene' },
+        { name: 'scene_1', type: 'Scene' },
+      ];
+      const sceneMerge = addNode(g, 'core/scene-merge', {
+        id: 'scenes',
+        position: { x: 840, y: 110 },
+        extraInputs: extras,
+        inputValues: {},
+      });
+      const flatten = addNode(g, 'core/merge-scene-entities', {
+        id: 'flatten',
+        position: { x: 1120, y: 110 },
+        inputValues: {},
+      });
+      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: mat.id, socket: 'basecolor' });
+      addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: entA.id, socket: 'geometry' });
+      addEdge(g, { node: mat.id, socket: 'material' }, { node: entA.id, socket: 'material' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entB.id, socket: 'geometry' });
+      addEdge(g, { node: mat.id, socket: 'material' }, { node: entB.id, socket: 'material' });
+      addEdge(g, { node: entA.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
+      addEdge(g, { node: entB.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
+      addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: flatten.id, socket: 'scene' });
+      return { graph: g, rootNodeId: 'flatten' };
+    },
+  },
   evaluate(ctx, inputs): { scene: SceneValue } {
     const device = requireDevice(ctx);
     const scene = inputs.scene as SceneValue;
