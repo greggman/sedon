@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -49,9 +50,54 @@ export const distanceTransformNode: NodeDef = {
       description:
         'false (default) outputs distance (0 at seed, 1 far away). true outputs proximity (1 at seed, 0 far) — useful when the next stage wants seeds to read as bright/highlights.',
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'greyscale 0..1: each pixel\'s distance to the nearest seed pixel, normalised by maxDistance. With invert=false the seed is 0 (dark) and far pixels are 1 (bright); with invert=true the seed is bright',
+    },
+  ],
+  doc: {
+    summary: 'Per-pixel Euclidean distance to the nearest seed pixel (Jump Flood Algorithm).',
+    description:
+      'For each pixel, finds the nearest input pixel whose red value exceeds `threshold` ' +
+      'and writes its Euclidean distance (in UV units, normalised by `maxDistance`). ' +
+      'Implemented with the Jump Flood Algorithm — ~log₂(resolution) ping-pong passes, ' +
+      'fast enough to use freely in compositing chains.\n\n' +
+      'The killer use is "soft falloff from a feature". Pipe a vein texture (sharp lines) ' +
+      'into a DT with invert=true and you get bright cores fading to dark cell-interiors ' +
+      'over `maxDistance`. Pipe a city mask in and you get a gradient that\'s strongest ' +
+      'at the streets and fades over a few blocks. Run it through a Ramp + Colorize and ' +
+      'you have a usable albedo gradient from a binary mask.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const src = addNode(g, 'core/grid', {
+        id: 'src',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          fg: [1, 1, 1, 1],
+          bg: [0, 0, 0, 1],
+          divisions: [2, 2],
+          line_width: 0.05,
+          resolution: 512,
+        },
+      });
+      const dt = addNode(g, 'core/distance-transform', {
+        id: 'dt',
+        position: { x: 280, y: 0 },
+        inputValues: { threshold: 0.5, maxDistance: 0.25, invert: false, resolution: 512 },
+      });
+      addEdge(g, { node: src.id, socket: 'texture' }, { node: dt.id, socket: 'texture' });
+      return { graph: g, rootNodeId: 'dt' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __jfa?: [Texture2DValue, Texture2DValue];

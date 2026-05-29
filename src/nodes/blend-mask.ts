@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -18,12 +19,73 @@ export const blendMaskNode: NodeDef = {
   id: 'core/blend-mask',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'a', type: 'Texture2D' },
-    { name: 'b', type: 'Texture2D' },
-    { name: 'mask', type: 'Texture2D' },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'a',
+      type: 'Texture2D',
+      description: 'background texture — shows through where mask is 0',
+    },
+    {
+      name: 'b',
+      type: 'Texture2D',
+      description: 'foreground texture — shows where mask is 1',
+    },
+    {
+      name: 'mask',
+      type: 'Texture2D',
+      description: 'per-pixel mix factor sampled from the R channel: 0 = pure a, 1 = pure b, intermediate values lerp linearly',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'per-pixel `mix(a, b, mask.r)` — same shape as core/blend but each pixel\'s factor comes from the mask instead of a uniform value',
+    },
+  ],
+  doc: {
+    summary: 'Per-pixel mask blend: mix(a, b, mask.r) per texel.',
+    description:
+      'Same operation as core/blend\'s `mix` mode, but the blend factor comes from a mask ' +
+      'texture instead of a single Float. Each output pixel = `mix(a, b, mask.r)`.\n\n' +
+      'The classic use is splat-painting terrain — wire a slope mask into `mask`, rock into ' +
+      '`b`, grass into `a`, and you get rock on the steeps and grass on the flats with smooth ' +
+      'transitions. Other use cases: regional colour swaps (paint where a city goes), ' +
+      'weather effects (snow accumulation by altitude mask), or any blend where the strength ' +
+      'varies across the texture.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const a = addNode(g, 'core/solid-color', {
+        id: 'grass',
+        position: { x: 0, y: 0 },
+        inputValues: { color: [1, 0, 0, 1], resolution: 256 },
+      });
+      const b = addNode(g, 'core/solid-color', {
+        id: 'rock',
+        position: { x: 0, y: 180 },
+        inputValues: { color: [0, 1, 1, 1], resolution: 256 },
+      });
+      const mask = addNode(g, 'core/perlin', {
+        id: 'mask',
+        position: { x: 0, y: 360 },
+        inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
+      });
+      const blendMask = addNode(g, 'core/blend-mask', {
+        id: 'blend',
+        position: { x: 280, y: 180 },
+        inputValues: { resolution: 256 },
+      });
+      addEdge(g, { node: a.id, socket: 'texture' }, { node: blendMask.id, socket: 'a' });
+      addEdge(g, { node: b.id, socket: 'texture' }, { node: blendMask.id, socket: 'b' });
+      addEdge(g, { node: mask.id, socket: 'texture' }, { node: blendMask.id, socket: 'mask' });
+      return { graph: g, rootNodeId: 'blend' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __bindGroup?: ReusableBindGroup;

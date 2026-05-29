@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -19,7 +20,11 @@ export const levelsNode: NodeDef = {
   id: 'core/levels',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'input', type: 'Texture2D' },
+    {
+      name: 'input',
+      type: 'Texture2D',
+      description: 'source texture to tone-adjust',
+    },
     {
       name: 'brightness',
       type: 'Float',
@@ -30,17 +35,56 @@ export const levelsNode: NodeDef = {
       name: 'contrast',
       type: 'Float',
       default: 1,
-      description: 'multiplier around mid-gray (0.5); >1 expands range, <1 compresses',
+      description: 'multiplier around mid-gray (0.5); >1 expands range (more punchy), <1 compresses (greys things out)',
     },
     {
       name: 'gamma',
       type: 'Float',
       default: 1,
-      description: '<1 pushes midtones brighter, >1 pushes them darker',
+      description: 'midtone curve. <1 pushes midtones brighter (lifts shadows), >1 pushes them darker (crushes shadows)',
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'the input run through `(((rgb + brightness) − 0.5) · contrast + 0.5)^gamma`',
+    },
+  ],
+  doc: {
+    summary: 'Brightness / contrast / gamma adjustment on a texture.',
+    description:
+      'A standard tone-adjustment trio. Brightness shifts the curve up or down; contrast ' +
+      'expands or compresses range around the midpoint; gamma reshapes the midtones with ' +
+      'a power curve. Defaults are a no-op so dropping the node in unconfigured passes the ' +
+      'input through unchanged.\n\n' +
+      'The most common reason to reach for Levels: procedural noise often comes out flat ' +
+      '(no extreme darks or lights), and a Colorize downstream will read muddy because the ' +
+      'gradient only ever gets sampled near t=0.5. Bump contrast above 1 and the noise ' +
+      'starts using more of the gradient. Crush gamma below 1 and the bright bits pop ' +
+      'while the dark bits stay dark.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const src = addNode(g, 'core/perlin', {
+        id: 'src',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [6, 6], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      const lev = addNode(g, 'core/levels', {
+        id: 'levels',
+        position: { x: 280, y: 0 },
+        inputValues: { brightness: 0, contrast: 3.5, gamma: 0.7, resolution: 512 },
+      });
+      addEdge(g, { node: src.id, socket: 'texture' }, { node: lev.id, socket: 'input' });
+      return { graph: g, rootNodeId: 'levels' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

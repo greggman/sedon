@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -19,16 +20,63 @@ export const blurNode: NodeDef = {
   id: 'core/blur',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'texture', type: 'Texture2D' },
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'source texture to blur',
+    },
     {
       name: 'radius',
       type: 'Float',
       default: 8,
-      description: 'Gaussian half-width in pixels at the output resolution. 0 disables the blur.',
+      description: 'Gaussian half-width in pixels at the output resolution. 0 disables the blur; small values (2–8) soften noise, large values (32+) create halos / soft shadows',
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'the input texture run through a separable Gaussian blur',
+    },
+  ],
+  doc: {
+    summary: 'Separable Gaussian blur — soften a texture by `radius` pixels.',
+    description:
+      'Runs a horizontal then vertical 1D Gaussian sweep over the source texture. ' +
+      'Separable form means cost is O(2·radius) per pixel instead of O(radius²), so even ' +
+      'large radii stay cheap.\n\n' +
+      'Use to soften noise before gradient-mapping (Perlin → Blur → Colorize reads as ' +
+      'wash, not stipple), to build halo and soft-shadow effects, to smooth a mask\'s ' +
+      'transitions so blend-mask reads gradient instead of stepped, or as the input to ' +
+      'normal-from-height when you want gentler surface slopes.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const src = addNode(g, 'core/grid', {
+        id: 'src',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          fg: [1, 1, 0, 1],
+          bg: [0, 0, 1, 1],
+          divisions: [8, 8],
+          line_width: 0.06,
+          resolution: 512,
+        },
+      });
+      const blur = addNode(g, 'core/blur', {
+        id: 'blur',
+        position: { x: 280, y: 0 },
+        inputValues: { radius: 16, resolution: 512 },
+      });
+      addEdge(g, { node: src.id, socket: 'texture' }, { node: blur.id, socket: 'texture' });
+      return { graph: g, rootNodeId: 'blur' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __intermediate?: Texture2DValue;

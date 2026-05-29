@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -35,9 +36,63 @@ export const colorizeNode: NodeDef = {
       type: 'Texture2D',
       description: 'Nx1 colour palette texture (typically from `core/ramp`). Sampled by the per-pixel factor value to produce the output colour. Any Texture2D works — but ramps are 1-row wide because only the U axis matters',
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'the factor texture remapped through the ramp: each input pixel\'s luminance picks the colour from the corresponding spot along the ramp',
+    },
+  ],
+  doc: {
+    summary: 'Photoshop-style Gradient Map — remap a texture through a 1D colour ramp.',
+    description:
+      'For each pixel in `factor`, compute its Rec. 709 luminance (so a colour image weighs ' +
+      'green > red > blue, matching perception; a single-channel mask just passes its red ' +
+      'value through), use that as t ∈ [0, 1], and sample `ramp` at uv = (t, 0.5) for the ' +
+      'output colour.\n\n' +
+      'The classic procedural-texture pattern: noise → colorize. A perlin noise on its own ' +
+      'is just greyscale wash. Pipe it through a Colorize with a hand-tuned ramp (or one ' +
+      'built from a Palette node taking subgraph-input colours) and you get a tinted, ' +
+      'gradient-mapped result with all the structure of the noise but the colour of the ' +
+      'ramp. Works just as well on Worley, ridged noise, distance transforms — anything ' +
+      'that ends up in the [0, 1] range.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const noise = addNode(g, 'core/perlin', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      const ramp = addNode(g, 'core/ramp', {
+        id: 'ramp',
+        position: { x: 0, y: 220 },
+        inputValues: {
+          gradient: [
+            { position: 0, color: [0.10, 0.18, 0.40, 1] },
+            { position: 0.5, color: [0.85, 0.55, 0.20, 1] },
+            { position: 1, color: [0.98, 0.92, 0.70, 1] },
+          ],
+          interpolation: 0,
+          resolution: 256,
+        },
+      });
+      const colorize = addNode(g, 'core/colorize', {
+        id: 'colorize',
+        position: { x: 280, y: 110 },
+        inputValues: { resolution: 512 },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: colorize.id, socket: 'factor' });
+      addEdge(g, { node: ramp.id, socket: 'texture' }, { node: colorize.id, socket: 'ramp' });
+      return { graph: g, rootNodeId: 'colorize' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __bindGroup?: ReusableBindGroup;

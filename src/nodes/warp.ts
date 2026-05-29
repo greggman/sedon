@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -15,12 +16,74 @@ export const warpNode: NodeDef = {
   id: 'core/warp',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'input', type: 'Texture2D' },
-    { name: 'warp', type: 'Texture2D' },
-    { name: 'intensity', type: 'Float', default: 0.1 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'input',
+      type: 'Texture2D',
+      description: 'the texture being warped — its UVs get offset before sampling',
+    },
+    {
+      name: 'warp',
+      type: 'Texture2D',
+      description: 'a second texture whose R/G channels supply the per-pixel UV offsets. Typically a noise texture (Perlin / Worley); the difference between the value and 0.5 picks the offset direction',
+    },
+    {
+      name: 'intensity',
+      type: 'Float',
+      default: 0.1,
+      description: 'how far to shift the UVs (in UV units). 0 = no warp; 0.1 = subtle shimmer; 0.3+ = melted/molten look',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'the input texture, sampled at UVs offset by `(warp.r − 0.5, warp.g − 0.5) · intensity` per pixel',
+    },
+  ],
+  doc: {
+    summary: 'Distort a texture by offsetting its UVs with a second texture.',
+    description:
+      'For each output pixel, samples the warp texture\'s R/G channels at the current UV, ' +
+      'converts them to a signed offset (value − 0.5), scales by `intensity`, and reads the ' +
+      'input texture at the offset UV. The result is the input "pushed around" by the warp.\n\n' +
+      'Use to break the regularity of procedural noise (Perlin warped by another Perlin ' +
+      'gives that classic flame/marble look), to add wind motion to a static texture by ' +
+      'modulating intensity over time, or to roughen the edges of a hand-built grid / ' +
+      'mask so it doesn\'t read so mechanical.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const src = addNode(g, 'core/grid', {
+        id: 'src',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          fg: [0.08, 0.08, 0.12, 1],
+          bg: [0.88, 0.88, 0.92, 1],
+          divisions: [8, 8],
+          line_width: 0.05,
+          resolution: 512,
+        },
+      });
+      const warpTex = addNode(g, 'core/perlin', {
+        id: 'warpTex',
+        position: { x: 0, y: 220 },
+        inputValues: { scale: [3, 3], octaves: 3, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      const warp = addNode(g, 'core/warp', {
+        id: 'warp',
+        position: { x: 280, y: 110 },
+        inputValues: { intensity: 0.12, resolution: 512 },
+      });
+      addEdge(g, { node: src.id, socket: 'texture' }, { node: warp.id, socket: 'input' });
+      addEdge(g, { node: warpTex.id, socket: 'texture' }, { node: warp.id, socket: 'warp' });
+      return { graph: g, rootNodeId: 'warp' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

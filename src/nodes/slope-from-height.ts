@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -20,22 +21,64 @@ export const slopeFromHeightNode: NodeDef = {
   id: 'core/slope-from-height',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'height', type: 'Texture2D' },
+    {
+      name: 'height',
+      type: 'Texture2D',
+      description: 'greyscale heightfield: the R channel is read as height',
+    },
     {
       name: 'strength',
       type: 'Float',
       default: 4,
-      description: 'gradient multiplier; larger → more area reads as steep',
+      description: 'gradient multiplier; larger values make more area read as steep (more white pixels in the output)',
     },
     {
       name: 'invert',
       type: 'Bool',
       default: false,
-      description: 'output flatness (white on flats) instead of slope — e.g. as a grass-density mask',
+      description: 'output flatness (white on flats) instead of steepness — use as a grass-density mask, foam mask, or anywhere flats should be marked',
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'greyscale slope mask: black where the height is flat, white where it changes fast (steep). With invert=true the polarity is flipped',
+    },
+  ],
+  doc: {
+    summary: 'Heightfield → greyscale slope mask (steeper = brighter).',
+    description:
+      'Samples the input height\'s gradient magnitude — a central-difference filter that ' +
+      'reads "how fast does the height change here?" — and writes it directly as a ' +
+      'greyscale mask. Flat areas → black; steep areas → white.\n\n' +
+      'The killer use is splat-painting terrain. Wire a heightfield in, get a slope mask ' +
+      'out, drop it into a Blend-Mask as the `mask` input with grass for `a` and rock for ' +
+      '`b`, and you get grass on the flats and rock on the steeps with a smooth gradient ' +
+      'in between. With invert=true you get the opposite — useful as a "grow grass here" ' +
+      'or "spawn foam here" mask.',
+    sampleGraph: () => {
+      const g = createGraph();
+      const src = addNode(g, 'core/ridged-noise', {
+        id: 'height',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: -0.5, seed: 0, resolution: 512 },
+      });
+      const sfh = addNode(g, 'core/slope-from-height', {
+        id: 'slope',
+        position: { x: 280, y: 0 },
+        inputValues: { strength: 4, invert: false, resolution: 512 },
+      });
+      addEdge(g, { node: src.id, socket: 'texture' }, { node: sfh.id, socket: 'height' });
+      return { graph: g, rootNodeId: 'slope' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;
