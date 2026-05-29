@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -31,9 +32,62 @@ export const gridDistributeNode: NodeDef = {
       default: 0,
       description: '0 = perfect grid, 1 = full ±half-cell random offset',
     },
-    { name: 'seed', type: 'Float', default: 0 },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'jitter PRNG seed; same seed reproduces the same jittered layout',
+    },
   ],
-  outputs: [{ name: 'points', type: 'PointCloud' }],
+  outputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: '`cols × rows` points on the XZ plane (Y = 0), centred at the origin. Normals are world-up so downstream align-to-normal keeps instances upright',
+    },
+  ],
+  doc: {
+    summary: 'Regular grid of points on the XZ plane, with optional jitter.',
+    description: `
+The simplest distributor for "scatter things uniformly across an area".
+\`cols × rows\` points, evenly spaced by \`spacing\`, centred on the
+origin and lying flat on Y = 0.
+
+\`jitter\` perturbs each point within ±half-cell randomly — 0 leaves the
+grid perfectly regular (city blocks), 1 gives a full per-cell random
+offset (looks like Poisson sampling for free). Normals are world-up so
+downstream
+[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+with \`align: true\` places instances upright.
+
+To project the grid onto a heightfield (so points sit ON terrain
+instead of floating at Y = 0), feed the points through a future
+\`snap-to-heightfield\` node or use
+[core/distribute-on-faces](../../core/distribute-on-faces) directly on
+the terrain mesh.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const points = addNode(g, 'core/grid-distribute', {
+        id: 'points',
+        position: { x: 0, y: 0 },
+        inputValues: { cols: 8, rows: 8, spacing: 0.6, jitter: 0.3, seed: 0 },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const inst = addNode(g, 'core/instance-geometry-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 100 },
+        inputValues: { scale: 0.18, align: true },
+      });
+      addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(_ctx, inputs): { points: PointCloudValue } {
     const cols = Math.max(1, Math.floor(inputs.cols as number));
     const rows = Math.max(1, Math.floor(inputs.rows as number));

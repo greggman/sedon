@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type {
   FloatCloudValue,
@@ -113,9 +114,22 @@ export const instanceSceneOnPointsNode: NodeDef = {
   // and ctx.subgraphPath — output is context-dependent.
   provenanceDependent: true,
   inputs: [
-    { name: 'points', type: 'PointCloud' },
-    { name: 'instance', type: 'Scene' },
-    { name: 'scale', type: 'Float', default: 1 },
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: 'where to place copies of the scene. Each point\'s position drives the placement; its normal drives orientation when `align` is on',
+    },
+    {
+      name: 'instance',
+      type: 'Scene',
+      description: 'source scene from [core/scene-entity](../../core/scene-entity) (or any other Scene). Every entity in the source is scattered to every point — entities that share refs across points batch into one instanced draw',
+    },
+    {
+      name: 'scale',
+      type: 'Float',
+      default: 1,
+      description: 'uniform scale applied to every placed copy',
+    },
     {
       name: 'align',
       type: 'Bool',
@@ -146,9 +160,100 @@ export const instanceSceneOnPointsNode: NodeDef = {
       optional: true,
       description: 'optional per-point RGB tint, multiplied into each entity tint',
     },
-    { name: 'seed', type: 'Float', default: 0 },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'PRNG seed for built-in per-point yaw jitter when no per_point_yaw cloud is wired',
+    },
   ],
-  outputs: [{ name: 'scene', type: 'Scene' }],
+  outputs: [
+    {
+      name: 'scene',
+      type: 'Scene',
+      description: 'a new Scene with one entity per (input entity × point) pair. Entities sharing refs across points draw as instanced batches; per-entity provenance is preserved so GPU picking still routes clicks back to the right source node',
+    },
+  ],
+  doc: {
+    summary: 'Scatter a Scene at every point — preserves entity boundaries for instanced rendering.',
+    description: `
+For each point, transforms every entity in the source scene by (scale,
+align-to-normal, translate-to-point) and emits one entity per (source
+entity × point) pair. Crucially, entities that share (geometry,
+material) refs across the resulting points get drawn together as one
+instanced batch — that's what makes scattering 5,000 trees tractable
+even though each tree is a multi-entity scene with trunk + foliage.
+
+This is the right scattering node for INDEPENDENT OBJECTS — forests,
+debris fields, scattered rocks, crowd characters. Each instance is its
+own entity, so:
+
+- GPU picking routes clicks back to the right source node (provenance
+  stamps the placement chain).
+- Per-instance tint via \`per_point_tint\` works without baking colours
+  into vertex data.
+- The renderer batches per (geometry, material), not per vertex blob.
+
+For a single MERGED MESH instead (track of railroad ties, ridge of
+spires that should bend as one), reach for
+[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+— that one CPU-merges into one Geometry.
+
+Per-point variation comes from optional Cloud inputs:
+- \`per_point_scale\`: Vec3, per-axis scale multiplier
+- \`per_point_yaw\`: Float, rotation around local +Y in radians. When
+  unwired, the node generates its own deterministic yaw jitter from \`seed\`
+  so a forest doesn't look like every tree faces the same direction.
+- \`per_point_active\`: Float, mask. Values ≥ 0.5 are realised.
+  Pair with [core/cloud-step](../../core/cloud-step) to mask scatter by
+  altitude/slope/density.
+- \`per_point_tint\`: Vec3, RGB tint multiplied into the entity's tint.
+  Pair with [core/random-vec3-cloud](../../core/random-vec3-cloud) for
+  natural species colour variation.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // Grid of 64 points → 64 scenes (each a coloured cube
+      // scene-entity) via the instancer. Live scene preview shows the
+      // resulting batched draws.
+      const points = addNode(g, 'core/grid-distribute', {
+        id: 'points',
+        position: { x: 0, y: 0 },
+        inputValues: { cols: 6, rows: 6, spacing: 0.8, jitter: 0.4, seed: 0 },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const basecolor = addNode(g, 'core/solid-color', {
+        id: 'basecolor',
+        position: { x: 0, y: 380 },
+        inputValues: { color: [0.55, 0.62, 0.42, 1], resolution: 32 },
+      });
+      const material = addNode(g, 'core/material', {
+        id: 'material',
+        position: { x: 280, y: 380 },
+        inputValues: { roughness: 0.6, metallic: 0 },
+      });
+      const entity = addNode(g, 'core/scene-entity', {
+        id: 'entity',
+        position: { x: 560, y: 200 },
+        inputValues: {},
+      });
+      const inst = addNode(g, 'core/instance-scene-on-points', {
+        id: 'inst',
+        position: { x: 840, y: 100 },
+        inputValues: { scale: 0.18, align: true, seed: 0 },
+      });
+      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
+      addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: entity.id, socket: 'scene' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(ctx, inputs): { scene: SceneValue } {
     const points = inputs.points as PointCloudValue;
     const instance = inputs.instance as SceneValue;

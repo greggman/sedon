@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -92,9 +93,73 @@ export const stemPointsNode: NodeDef = {
       description:
         'distance from `start` to the first node, as a fraction of `length`. Lets you keep the base of the stem bare',
     },
-    { name: 'seed', type: 'Float', default: 0.5 },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0.5,
+      description: 'jitter seed; varies per-leaf tilt slightly so the result doesn\'t read as mechanical',
+    },
   ],
-  outputs: [{ name: 'points', type: 'PointCloud' }],
+  outputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: 'leaf-attachment points along the stem. Per-point normals point in the leaf-attachment direction (tilted by `tilt` toward the stem tip)',
+    },
+  ],
+  doc: {
+    summary: 'Botanically-flavoured point placement along a stem — alternate / opposite / whorled.',
+    description: `
+The three textbook leaf-arrangement patterns, parameterised:
+
+- **mode = 0 (alternate)** — one leaf per node, rotated \`nodeRotation\`
+  degrees from the previous (default 137.508° = golden angle = spiral
+  phyllotaxis; pass 180° for strict left/right alternate).
+- **mode = 1 (opposite)** — two leaves per node, 180° apart, with each
+  successive pair rotated \`nodeRotation\` from the previous (default
+  90° = decussate; consecutive pairs perpendicular, the look of mints
+  and maples from above).
+- **mode = 2 (whorled)** — \`whorlCount\` leaves per node, evenly spaced
+  around the stem; each successive whorl rotated \`nodeRotation\` from
+  the previous (default 0° = aligned; set to 60° for the staggered
+  bedstraw look).
+
+\`tilt\` controls how far each leaf's normal points up the stem vs.
+straight out — 0 = leaves stick out perpendicular, 60° gives the
+natural "leaves slope upward" look.
+
+Pair with [core/instance-geometry-on-points](../../core/instance-geometry-on-points)
++ \`align: true\` (or [core/leaf-mesh](../../core/leaf-mesh) instances on
+the points) to actually place leaves. Each leaf's local +Y aligns to
+its point's normal.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const points = addNode(g, 'core/stem-points', {
+        id: 'points',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          start: [0, 0, 0], axis: [0, 1, 0],
+          length: 2, nodes: 6, mode: 0, whorlCount: 3,
+          nodeRotation: 137.508, startAngle: 0,
+          tilt: 60, startOffset: 0.1, seed: 0.5,
+        },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const inst = addNode(g, 'core/instance-geometry-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 100 },
+        inputValues: { scale: 0.15, align: true },
+      });
+      addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(_ctx, inputs): { points: PointCloudValue } {
     const start = inputs.start as [number, number, number];
     const axisRaw = inputs.axis as [number, number, number];

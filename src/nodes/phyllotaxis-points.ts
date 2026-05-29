@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -66,9 +67,73 @@ export const phyllotaxisPointsNode: NodeDef = {
       description:
         'radius multiplier at the last point. 1 = constant radius; 0 = tapers to the axis (pinecone); >1 = opens outward (sunflower head fills as i grows)',
     },
-    { name: 'seed', type: 'Float', default: 0.5 },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0.5,
+      description: 'small per-point jitter seed; does not affect the spiral structure',
+    },
   ],
-  outputs: [{ name: 'points', type: 'PointCloud' }],
+  outputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: '`count` points arranged in a phyllotactic spiral. Normals point outward from the axis at each point',
+    },
+  ],
+  doc: {
+    summary: 'Spiral arrangement of points — sunflower seeds, pinecones, succulent rosettes.',
+    description: `
+What real plants use for tight seed packing. Each successive point is
+rotated by \`angle\` degrees around \`axis\` and stepped forward along
+the stem. With \`angle = 137.508°\` (the **golden angle**) the spiral
+packs into the visually-familiar Fibonacci pattern — consecutive
+points never share a rational fraction of the circle, so they tile
+the disc densely without lining up into visible spokes.
+
+The point at index i sits at:
+\`\`\`
+center + (i / (count-1)) · length · axis_unit
+       + radius_at_i · (cos(i·angle) · n1 + sin(i·angle) · n2)
+\`\`\`
+
+where n1, n2 span the plane perpendicular to \`axis\`. \`radius_at_i\`
+lerps from \`radius\` toward \`radius · radiusGrowth\`:
+
+- \`radiusGrowth = 1\`: cylindrical (constant radius) — stem rosette.
+- \`radiusGrowth = 0\`: tapers to a point — pinecone or grass-tip cluster.
+- \`radiusGrowth > 1\`: opens outward — sunflower head, fern unfurling.
+
+For a flat sunflower-disc layout set \`length = 0\` and \`radiusGrowth > 1\`.
+Other \`angle\` values are useful too: 180 = alternate leaves, 90 =
+cruciate (cabbage), 144 = 5-fold whorls.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const points = addNode(g, 'core/phyllotaxis-points', {
+        id: 'points',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          center: [0, 0, 0], axis: [0, 1, 0], length: 0,
+          count: 80, angle: 137.508, radius: 0.08, radiusGrowth: 6,
+          seed: 0.5,
+        },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const inst = addNode(g, 'core/instance-geometry-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 100 },
+        inputValues: { scale: 0.06, align: true },
+      });
+      addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(_ctx, inputs): { points: PointCloudValue } {
     const center = inputs.center as [number, number, number];
     const axisRaw = inputs.axis as [number, number, number];

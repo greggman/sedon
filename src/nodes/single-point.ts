@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -9,7 +10,12 @@ export const singlePointNode: NodeDef = {
   id: 'core/single-point',
   category: 'Geometry/Distribution',
   inputs: [
-    { name: 'position', type: 'Vec3', default: [0, 0, 0] },
+    {
+      name: 'position',
+      type: 'Vec3',
+      default: [0, 0, 0],
+      description: 'world-space position of the single point',
+    },
     {
       name: 'normal',
       type: 'Vec3',
@@ -17,7 +23,54 @@ export const singlePointNode: NodeDef = {
       description: 'surface normal at the point (drives align-to-normal in downstream scatter)',
     },
   ],
-  outputs: [{ name: 'points', type: 'PointCloud' }],
+  outputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: 'a 1-point cloud carrying position + normal. Feed into [core/instance-geometry-on-points](../../core/instance-geometry-on-points) or [core/instance-scene-on-points](../../core/instance-scene-on-points) to drop a single object at the position',
+    },
+  ],
+  doc: {
+    summary: 'A 1-point PointCloud at a user-provided world-space position.',
+    description: `
+The trivial distributor. Useful when you need
+[core/instance-scene-on-points](../../core/instance-scene-on-points) to
+drop a single scene at a specific world-space location — e.g. placing
+each species at its own offset in a "tree family" demo where there's
+no Scene-level transform node yet, or hand-placing one boulder in a
+forest demo.
+
+For multiple specific positions, use multiple single-point nodes and
+merge them upstream of the instancer, or reach for a real distributor
+like [core/grid-distribute](../../core/grid-distribute),
+[core/radial-points](../../core/radial-points),
+[core/phyllotaxis-points](../../core/phyllotaxis-points), or
+[core/distribute-on-faces](../../core/distribute-on-faces).
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // One point → one cube via the instancer. Wireframe preview
+      // shows the cube exactly where the point lives.
+      const point = addNode(g, 'core/single-point', {
+        id: 'point',
+        position: { x: 0, y: 0 },
+        inputValues: { position: [0, 0, 0], normal: [0, 1, 0] },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const inst = addNode(g, 'core/instance-geometry-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 100 },
+        inputValues: { scale: 0.5, align: true },
+      });
+      addEdge(g, { node: point.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(_ctx, inputs): { points: PointCloudValue } {
     const pos = inputs.position as [number, number, number];
     const norm = inputs.normal as [number, number, number];

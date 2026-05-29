@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -66,9 +67,69 @@ export const radialPointsNode: NodeDef = {
       default: 0,
       description: 'rotation offset (degrees) for the first point. Use to stagger two rings into a double-row arrangement',
     },
-    { name: 'seed', type: 'Float', default: 0.37 },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0.37,
+      description: 'jitter seed; same seed reproduces the same per-point tilt jitter',
+    },
   ],
-  outputs: [{ name: 'points', type: 'PointCloud' }],
+  outputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description: '`count` points evenly spaced around the axis. Normals are the outward direction tilted by `tilt` toward the axis',
+    },
+  ],
+  doc: {
+    summary: 'Fan N points around an axis at evenly-spaced angles (palm fronds, daisy petals).',
+    description: `
+The generalised radial fan. All points sit at
+\`center + radiusOffset · outward_direction\` where the outward
+direction lies in the plane perpendicular to \`axis\` at angle
+\`baseAngle + i/count · 360°\`.
+
+Each point's normal is that outward direction, optionally tilted
+toward \`axis\` by \`tilt\` degrees (with per-point random jitter).
+A downstream
+[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+with \`align: true\` will orient each instance to face along the
+tilted normal.
+
+Use cases — anything radially-symmetric that doesn't grow from a
+branch: palm fronds (radiusOffset = 0, tilt > 0), daisy / dandelion
+petals (radiusOffset > 0, small tilt), halo of bracts around a flower
+center, asterisks of grass. Combine with
+[core/single-point](../../core/single-point) +
+[core/instance-scene-on-points](../../core/instance-scene-on-points)
+to place a whole flower scene at a point.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const points = addNode(g, 'core/radial-points', {
+        id: 'points',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          center: [0, 0, 0], axis: [0, 1, 0],
+          count: 8, radiusOffset: 1, tilt: 30, tiltJitter: 0,
+          baseAngle: 0, seed: 0.37,
+        },
+      });
+      const cube = addNode(g, 'core/cube', {
+        id: 'cube',
+        position: { x: 0, y: 200 },
+        inputValues: { size: 1 },
+      });
+      const inst = addNode(g, 'core/instance-geometry-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 100 },
+        inputValues: { scale: 0.25, align: true },
+      });
+      addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
+    },
+  },
   evaluate(_ctx, inputs): { points: PointCloudValue } {
     const center = inputs.center as [number, number, number];
     const axisRaw = inputs.axis as [number, number, number];
