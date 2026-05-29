@@ -84,7 +84,7 @@ export interface SaveFile {
 }
 
 export function serializeSaveFile(file: SaveFile): string {
-  return JSON.stringify(file, null, 2);
+  return JSON.stringify(file);
 }
 
 /**

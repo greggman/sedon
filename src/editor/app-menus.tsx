@@ -11,7 +11,7 @@ import {
   splitActivePanel,
 } from './commands.js';
 import { DEMOS } from './demos/index.js';
-import { loadProject, saveProject } from './file-ops.js';
+import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
@@ -41,6 +41,7 @@ export function useAppMenus(): TopMenu[] {
       items: [
         { kind: 'item', label: 'Save…', shortcut: '⌘S', run: () => saveProject() },
         { kind: 'item', label: 'Load…', shortcut: '⌘O', run: () => loadProject() },
+        { kind: 'item', label: 'Save to URL', run: () => { void saveProjectToUrl(); } },
         { kind: 'separator' },
         { kind: 'submenu', label: 'Demos', items: demoEntries },
       ],

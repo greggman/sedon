@@ -4,7 +4,7 @@ import { getActiveAssetPanel } from './asset-clipboard.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { getDockviewApi } from './dockview-handle.js';
-import { loadProject, saveProject } from './file-ops.js';
+import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
 import type { NodeRegistry } from '../core/node-def.js';
@@ -54,6 +54,11 @@ function buildCommands(): PaletteCommand[] {
       label: 'File: Load Project…',
       shortcut: 'Cmd/Ctrl+O',
       run: () => loadProject(),
+    },
+    {
+      id: 'file.save-to-url',
+      label: 'File: Save to URL (copy shareable link)',
+      run: () => { void saveProjectToUrl(); },
     },
     {
       id: 'edit.undo',

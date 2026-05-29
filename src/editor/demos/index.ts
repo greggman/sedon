@@ -1,6 +1,6 @@
 import type { Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
-import { createInitialGraph } from '../initial-graph.js';
+import { createBasicScene } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
@@ -28,7 +28,7 @@ export interface Demo {
 }
 
 export const DEMOS: Demo[] = [
-  { id: 'basic', label: 'Basic', build: createInitialGraph },
+  { id: 'basic', label: 'Basic', build: createBasicScene },
   { id: 'forest', label: 'Forest', build: createForestDemo },
   { id: 'city', label: 'City', build: createCityDemo },
   { id: 'leaf', label: 'Leaf', build: createLeafDemo },

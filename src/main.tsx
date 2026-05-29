@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './editor/app.js';
 import { DEMOS } from './editor/demos/index.js';
 import { useEditorStore } from './editor/store.js';
+import { decodeProjectFromUrl, getUrlJsonParam } from './editor/url-state.js';
 import 'dockview/dist/styles/dockview.css';
 import './editor/editor.css';
 
@@ -49,4 +50,28 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   });
 }
 
-createRoot(root).render(<App />);
+// Bootstrap from URL before rendering. If `?json=<base64url>` is
+// present we async-decode the embedded project and replace the store
+// state via `setGraph` — same code path as the Demos menu / file
+// load — BEFORE React mounts, so the user never sees a flash of the
+// default scene. Failures just log + fall through to the default; a
+// broken share link shouldn't lock the user out of the editor.
+void (async () => {
+  const jsonParam = getUrlJsonParam();
+  if (jsonParam) {
+    try {
+      const file = await decodeProjectFromUrl(jsonParam);
+      useEditorStore.getState().setGraph(
+        file.project.graph,
+        file.project.rootNodeId,
+        file.project.subgraphs,
+        file.project.cameras,
+        file.project.viewports,
+        file.project.folders,
+      );
+    } catch (e) {
+      console.error('Failed to load project from URL:', e);
+    }
+  }
+  createRoot(root).render(<App />);
+})();

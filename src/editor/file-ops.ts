@@ -7,9 +7,14 @@ import {
   SAVE_FORMAT_VERSION,
   serializeSaveFile,
   type LayoutData,
+  type ProjectData,
   type SaveFile,
 } from './save-load.js';
 import { useEditorStore } from './store.js';
+import {
+  buildShareableSaveFile,
+  encodeProjectToUrl,
+} from './url-state.js';
 
 // Project-level Save / Load. Pure store operations now — no React Flow
 // dependency. Per-panel ReactFlowProviders mean there's no longer a
@@ -37,7 +42,12 @@ function withPositions<G extends { nodes: { id: string; position?: { x: number; 
   };
 }
 
-export function saveProject(): void {
+// Snapshot the editor + layout stores into a SaveFile-shaped object.
+// Shared by saveProject (file download) and saveProjectToUrl (URL
+// encode) so both export exactly what the user sees on screen and
+// they can't drift in shape. Returns the FULL SaveFile including the
+// layout block; callers that don't want layout (URL share) drop it.
+function snapshotProject(): { project: ProjectData; layout: LayoutData | undefined } {
   const state = useEditorStore.getState();
   // Pans / zooms / orbit gestures during this session go to the layout
   // store's per-graph LRU maps (so multi-pane viewport state stays
@@ -75,20 +85,26 @@ export function saveProject(): void {
   }
   const hasLayout = Object.keys(layoutData).length > 0;
 
+  const project: ProjectData = {
+    graph: withPositions(state.mainGraph, state.nodePositions.main),
+    rootNodeId: state.mainRootNodeId,
+    subgraphs: state.subgraphs.map((sg) => ({
+      ...sg,
+      graph: withPositions(sg.graph, state.nodePositions[sg.id]),
+    })),
+    ...(state.folders.length > 0 ? { folders: state.folders } : {}),
+    ...(Object.keys(cameras).length > 0 ? { cameras } : {}),
+    ...(Object.keys(viewports).length > 0 ? { viewports } : {}),
+  };
+  return { project, layout: hasLayout ? layoutData : undefined };
+}
+
+export function saveProject(): void {
+  const { project, layout } = snapshotProject();
   const file: SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
-    project: {
-      graph: withPositions(state.mainGraph, state.nodePositions.main),
-      rootNodeId: state.mainRootNodeId,
-      subgraphs: state.subgraphs.map((sg) => ({
-        ...sg,
-        graph: withPositions(sg.graph, state.nodePositions[sg.id]),
-      })),
-      ...(state.folders.length > 0 ? { folders: state.folders } : {}),
-      ...(Object.keys(cameras).length > 0 ? { cameras } : {}),
-      ...(Object.keys(viewports).length > 0 ? { viewports } : {}),
-    },
-    ...(hasLayout ? { layout: layoutData } : {}),
+    project,
+    ...(layout !== undefined ? { layout } : {}),
   };
   const json = serializeSaveFile(file);
   const blob = new Blob([json], { type: 'application/json' });
@@ -99,6 +115,39 @@ export function saveProject(): void {
   a.click();
   URL.revokeObjectURL(url);
   useEditorStore.getState().markClean();
+}
+
+/**
+ * Build a shareable URL of the current project (no layout) and copy
+ * it to the clipboard. On failure (clipboard blocked, etc.) the URL
+ * is shown via prompt() so the user can copy it manually. Async
+ * because the underlying CompressionStream is async.
+ */
+export async function saveProjectToUrl(): Promise<void> {
+  try {
+    const { project } = snapshotProject();
+    const file = buildShareableSaveFile(project);
+    const url = await encodeProjectToUrl(file);
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      copied = true;
+    } catch {
+      // Clipboard unavailable (insecure context, permission denied,
+      // or the browser blocked the write — fall through to prompt).
+    }
+    if (copied) {
+      // eslint-disable-next-line no-alert
+      alert(`Shareable URL copied to clipboard (${url.length} chars).`);
+    } else {
+      // eslint-disable-next-line no-alert
+      prompt('Shareable URL (copy this):', url);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // eslint-disable-next-line no-alert
+    alert(`Failed to build shareable URL: ${msg}`);
+  }
 }
 
 export function loadProject(): void {
