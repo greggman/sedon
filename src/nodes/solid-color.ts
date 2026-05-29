@@ -38,12 +38,14 @@ export const solidColorNode: NodeDef = {
   ],
   doc: {
     summary: 'A flat colour as a Texture2D.',
-    description:
-      'Renders one solid colour into every pixel of an N×N texture. Useful as the ' +
-      '`a` or `b` input to a blend node when you want to test "what does this look like ' +
-      'tinted purple", as a stand-in albedo while you build out the rest of a material, ' +
-      'or anywhere a downstream consumer wants a texture but you only want to feed it a ' +
-      'colour.',
+    description: `
+Renders one solid colour into every pixel of an N×N texture. Useful as the
+\`a\` or \`b\` input to a [core/blend](../../core/blend) /
+[core/blend-mask](../../core/blend-mask) when you want to test "what does
+this look like tinted purple", as a stand-in albedo while you build out the
+rest of a material, or anywhere a downstream consumer wants a texture but
+you only want to feed it a colour.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/solid-color', {

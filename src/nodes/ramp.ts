@@ -199,17 +199,24 @@ export const rampNode: NodeDef = {
   ],
   doc: {
     summary: 'Author an N-stop colour gradient as an Nx1 RGBA texture.',
-    description:
-      'Builds a 1D palette from N (position, colour) stops, drawn into an Nx1 texture so ' +
-      'downstream nodes can sample it with a parameter in [0, 1]. Authoring happens in the ' +
-      'in-node gradient editor — click the bar to add a stop, drag to move, double-click ' +
-      'to recolour, Delete to remove. Each stop optionally carries a midpoint (the diamond ' +
-      'between adjacent stops) controlling where the 50/50 mix lands.\n\n' +
-      'Three interpolation modes: Linear is a straight lerp between stops; Smooth runs the ' +
-      'lerp through a smoothstep curve so the transition reads softer; Constant draws each ' +
-      'stop\'s colour up to the next stop with no blending (pixel-perfect step palette).\n\n' +
-      'Pair with core/colorize to remap a greyscale source (perlin, worley, distance ' +
-      'transform, …) through the gradient — same behaviour as Photoshop\'s Gradient Map.',
+    description: `
+Builds a 1D palette from N (position, colour) stops, drawn into an Nx1
+texture so downstream nodes can sample it with a parameter in [0, 1].
+Authoring happens in the in-node gradient editor — click the bar to add a
+stop, drag to move, double-click to recolour, Delete to remove. Each stop
+optionally carries a midpoint (the diamond between adjacent stops)
+controlling where the 50/50 mix lands.
+
+Three interpolation modes: Linear is a straight lerp between stops; Smooth
+runs the lerp through a smoothstep curve so the transition reads softer;
+Constant draws each stop's colour up to the next stop with no blending
+(pixel-perfect step palette).
+
+Pair with [core/colorize](../../core/colorize) to remap a greyscale source
+([core/perlin](../../core/perlin), [core/worley](../../core/worley),
+[core/distance-transform](../../core/distance-transform), …) through the
+gradient — same behaviour as Photoshop's Gradient Map.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/ramp', {

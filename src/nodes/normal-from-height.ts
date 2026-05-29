@@ -43,14 +43,20 @@ export const normalFromHeightNode: NodeDef = {
   ],
   doc: {
     summary: 'Convert a heightfield texture into a tangent-space normal map.',
-    description:
-      'Samples the input height\'s slope using a central-difference filter (one tap left, ' +
-      'one right, one up, one down), builds the per-pixel surface tangent and bitangent, ' +
-      'cross-products them to get the normal, and encodes the result into RGB.\n\n' +
-      'Negative strength flips the apparent direction — useful for "carved" features like ' +
-      'leaf veins where the dark pixels in the height map should read as valleys not ridges. ' +
-      'Pair with the output of Perlin / Worley / Distance-Transform / Levels chains to get ' +
-      'surface micro-detail "for free" without modelling geometry.',
+    description: `
+Samples the input height's slope using a central-difference filter (one tap
+left, one right, one up, one down), builds the per-pixel surface tangent and
+bitangent, cross-products them to get the normal, and encodes the result
+into RGB.
+
+Negative strength flips the apparent direction — useful for "carved"
+features like leaf veins where the dark pixels in the height map should
+read as valleys not ridges. Pair with the output of
+[core/perlin](../../core/perlin) / [core/worley](../../core/worley) /
+[core/distance-transform](../../core/distance-transform) /
+[core/levels](../../core/levels) chains to get surface micro-detail "for
+free" without modelling geometry.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/perlin', {

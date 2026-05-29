@@ -48,14 +48,18 @@ export const warpNode: NodeDef = {
   ],
   doc: {
     summary: 'Distort a texture by offsetting its UVs with a second texture.',
-    description:
-      'For each output pixel, samples the warp texture\'s R/G channels at the current UV, ' +
-      'converts them to a signed offset (value − 0.5), scales by `intensity`, and reads the ' +
-      'input texture at the offset UV. The result is the input "pushed around" by the warp.\n\n' +
-      'Use to break the regularity of procedural noise (Perlin warped by another Perlin ' +
-      'gives that classic flame/marble look), to add wind motion to a static texture by ' +
-      'modulating intensity over time, or to roughen the edges of a hand-built grid / ' +
-      'mask so it doesn\'t read so mechanical.',
+    description: `
+For each output pixel, samples the warp texture's R/G channels at the
+current UV, converts them to a signed offset (value − 0.5), scales by
+\`intensity\`, and reads the input texture at the offset UV. The result is
+the input "pushed around" by the warp.
+
+Use to break the regularity of procedural noise
+([core/perlin](../../core/perlin) warped by another perlin gives that
+classic flame/marble look), to add wind motion to a static texture by
+modulating intensity over time, or to roughen the edges of a hand-built
+[core/grid](../../core/grid) / mask so it doesn't read so mechanical.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/grid', {

@@ -47,14 +47,19 @@ export const blurNode: NodeDef = {
   ],
   doc: {
     summary: 'Separable Gaussian blur — soften a texture by `radius` pixels.',
-    description:
-      'Runs a horizontal then vertical 1D Gaussian sweep over the source texture. ' +
-      'Separable form means cost is O(2·radius) per pixel instead of O(radius²), so even ' +
-      'large radii stay cheap.\n\n' +
-      'Use to soften noise before gradient-mapping (Perlin → Blur → Colorize reads as ' +
-      'wash, not stipple), to build halo and soft-shadow effects, to smooth a mask\'s ' +
-      'transitions so blend-mask reads gradient instead of stepped, or as the input to ' +
-      'normal-from-height when you want gentler surface slopes.',
+    description: `
+Runs a horizontal then vertical 1D Gaussian sweep over the source texture.
+Separable form means cost is O(2·radius) per pixel instead of O(radius²), so
+even large radii stay cheap.
+
+Use to soften noise before gradient-mapping ([core/perlin](../../core/perlin)
+→ blur → [core/colorize](../../core/colorize) reads as wash, not stipple), to
+build halo and soft-shadow effects, to smooth a mask's transitions so
+[core/blend-mask](../../core/blend-mask) reads gradient instead of stepped,
+or as the input to
+[core/normal-from-height](../../core/normal-from-height) when you want gentler
+surface slopes.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/grid', {

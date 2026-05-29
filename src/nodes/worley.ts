@@ -62,13 +62,16 @@ export const worleyNode: NodeDef = {
   ],
   doc: {
     summary: 'Cellular (Worley) noise — each pixel is the distance to its nearest random point.',
-    description:
-      'Scatters seed points across the plane and writes each pixel\'s distance to the closest one. ' +
-      'The result reads as a Voronoi-like field of cells with bright edges where two cells meet ' +
-      'and dark centres where the seed point sits.\n\n' +
-      'Use for stone / scale / cracked-earth / leaf-vein patterns, foam masks on water, ' +
-      'or as a base for distance-transform → ramp pipelines that want a more "structured" ' +
-      'starting texture than smooth fbm noise.',
+    description: `
+Scatters seed points across the plane and writes each pixel's distance to the
+closest one. The result reads as a Voronoi-like field of cells with bright edges
+where two cells meet and dark centres where the seed point sits.
+
+Use for stone / scale / cracked-earth / leaf-vein patterns, foam masks on water,
+or as a base for [core/distance-transform](../../core/distance-transform) →
+[core/ramp](../../core/ramp) pipelines that want a more "structured" starting
+texture than smooth fbm noise.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/worley', {

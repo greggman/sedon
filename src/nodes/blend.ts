@@ -60,15 +60,18 @@ export const blendNode: NodeDef = {
   ],
   doc: {
     summary: 'Combine two textures pixelwise under a chosen blend mode.',
-    description:
-      'Blend modes: mix (linear interpolation), add (a + factor·b), multiply ' +
-      '(a · ((1−factor) + factor·b)), screen (1 − (1−a)·(1−factor·b)). The mix mode ' +
-      'is what most users want by default; multiply is the classic "mask" operation ' +
-      '(use a = colour, b = greyscale mask); add brightens; screen brightens while ' +
-      'staying soft at the top end.\n\n' +
-      'Inputs are sampled with linear filtering and repeat addressing, so blending ' +
-      'two textures of different resolutions still works — the smaller one tiles to ' +
-      'cover the output.',
+    description: `
+Blend modes: mix (linear interpolation), add (a + factor·b), multiply
+(a · ((1−factor) + factor·b)), screen (1 − (1−a)·(1−factor·b)). The mix mode
+is what most users want by default; multiply is the classic "mask" operation
+(use a = colour, b = greyscale mask); add brightens; screen brightens while
+staying soft at the top end.
+
+Inputs are sampled with linear filtering and repeat addressing, so blending
+two textures of different resolutions still works — the smaller one tiles to
+cover the output. For per-pixel blending where the strength varies across
+the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
+`,
     sampleGraph: () => {
       // Perlin (smooth fbm) blended with Worley (cellular distance) so
       // the mix is visually obvious — pure noise on one side, cell

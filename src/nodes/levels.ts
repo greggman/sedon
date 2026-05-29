@@ -59,16 +59,18 @@ export const levelsNode: NodeDef = {
   ],
   doc: {
     summary: 'Brightness / contrast / gamma adjustment on a texture.',
-    description:
-      'A standard tone-adjustment trio. Brightness shifts the curve up or down; contrast ' +
-      'expands or compresses range around the midpoint; gamma reshapes the midtones with ' +
-      'a power curve. Defaults are a no-op so dropping the node in unconfigured passes the ' +
-      'input through unchanged.\n\n' +
-      'The most common reason to reach for Levels: procedural noise often comes out flat ' +
-      '(no extreme darks or lights), and a Colorize downstream will read muddy because the ' +
-      'gradient only ever gets sampled near t=0.5. Bump contrast above 1 and the noise ' +
-      'starts using more of the gradient. Crush gamma below 1 and the bright bits pop ' +
-      'while the dark bits stay dark.',
+    description: `
+A standard tone-adjustment trio. Brightness shifts the curve up or down;
+contrast expands or compresses range around the midpoint; gamma reshapes the
+midtones with a power curve. Defaults are a no-op so dropping the node in
+unconfigured passes the input through unchanged.
+
+The most common reason to reach for levels: procedural noise often comes out
+flat (no extreme darks or lights), and a [core/colorize](../../core/colorize)
+downstream will read muddy because the gradient only ever gets sampled near
+t=0.5. Bump contrast above 1 and the noise starts using more of the gradient.
+Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/perlin', {

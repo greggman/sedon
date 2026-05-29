@@ -54,16 +54,20 @@ export const mapRangeNode: NodeDef = {
   ],
   doc: {
     summary: 'Linearly remap a Float from one range to another.',
-    description:
-      'The texture-and-procedural workhorse: take a Float that lives in one range and ' +
-      're-express it in another. Examples — a noise value in [0, 1] needs to become a ' +
-      'height in [-50, 200]; a UI slider in [0, 100] needs to drive an angle in [0, 2π]; ' +
-      'a normalised distance needs to become a per-pixel scale factor.\n\n' +
-      'With clamp = false (the default) values outside the input range extrapolate past ' +
-      'the output range linearly — useful when the input range is just "the typical case" ' +
-      'and you\'re OK with occasional outliers passing through. With clamp = true the ' +
-      'output is bounded, which is what you want when a downstream consumer can\'t cope ' +
-      'with out-of-range values (e.g. a colour channel that\'ll get clipped at the GPU).',
+    description: `
+The texture-and-procedural workhorse: take a Float that lives in one range
+and re-express it in another. Examples — a noise value in [0, 1] needs to
+become a height in [-50, 200]; a UI slider in [0, 100] needs to drive an
+angle in [0, 2π]; a normalised distance needs to become a per-pixel scale
+factor.
+
+With clamp = false (the default) values outside the input range extrapolate
+past the output range linearly — useful when the input range is just "the
+typical case" and you're OK with occasional outliers passing through. With
+clamp = true the output is bounded, which is what you want when a
+downstream consumer can't cope with out-of-range values (e.g. a colour
+channel that'll get clipped at the GPU).
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/map-range', {

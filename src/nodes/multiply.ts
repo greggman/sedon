@@ -27,11 +27,12 @@ export const multiplyNode: NodeDef = {
   ],
   doc: {
     summary: 'Multiply two Floats.',
-    description:
-      'Just `a · b`. Use to scale a Float coming out of another node by a tunable ' +
-      'constant — e.g. running a noise-driven Float (mountain height, branch length) ' +
-      'through a Multiply gives you one knob to dial the overall magnitude without ' +
-      'touching the upstream graph.',
+    description: `
+Just \`a · b\`. Use to scale a Float coming out of another node by a tunable
+constant — e.g. running a noise-driven Float (mountain height, branch
+length) through a multiply gives you one knob to dial the overall magnitude
+without touching the upstream graph.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/multiply', {

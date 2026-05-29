@@ -54,15 +54,18 @@ export const slopeFromHeightNode: NodeDef = {
   ],
   doc: {
     summary: 'Heightfield → greyscale slope mask (steeper = brighter).',
-    description:
-      'Samples the input height\'s gradient magnitude — a central-difference filter that ' +
-      'reads "how fast does the height change here?" — and writes it directly as a ' +
-      'greyscale mask. Flat areas → black; steep areas → white.\n\n' +
-      'The killer use is splat-painting terrain. Wire a heightfield in, get a slope mask ' +
-      'out, drop it into a Blend-Mask as the `mask` input with grass for `a` and rock for ' +
-      '`b`, and you get grass on the flats and rock on the steeps with a smooth gradient ' +
-      'in between. With invert=true you get the opposite — useful as a "grow grass here" ' +
-      'or "spawn foam here" mask.',
+    description: `
+Samples the input height's gradient magnitude — a central-difference filter
+that reads "how fast does the height change here?" — and writes it directly
+as a greyscale mask. Flat areas → black; steep areas → white.
+
+The killer use is splat-painting terrain. Wire a heightfield in, get a
+slope mask out, drop it into a [core/blend-mask](../../core/blend-mask) as
+the \`mask\` input with grass for \`a\` and rock for \`b\`, and you get
+grass on the flats and rock on the steeps with a smooth gradient in
+between. With invert=true you get the opposite — useful as a "grow grass
+here" or "spawn foam here" mask.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/ridged-noise', {

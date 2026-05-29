@@ -67,15 +67,20 @@ export const ridgedNoiseNode: NodeDef = {
   ],
   doc: {
     summary: 'Ridged-multifractal noise — sharp creases instead of soft hills.',
-    description:
-      'Same lattice and tiling layout as Perlin, but each octave is folded through ' +
-      '`(1 − |perlin|)²` and weighted by the previous octave\'s value (Musgrave\'s ridged ' +
-      'multifractal). The result has sharp bright ridges where the underlying Perlin noise ' +
-      'crosses zero, with each successive octave only adding detail where the previous ' +
-      'octave was already bright — concentrating creases along major spines.\n\n' +
-      'Perfect for mountain ridges and rock-fracture patterns when used as a heightfield ' +
-      'directly, or as the input to a heightfield-to-mesh chain. Invert (1 − result) and ' +
-      'you get a dry-riverbed network of dark grooves on a light plateau.',
+    description: `
+Same lattice and tiling layout as [core/perlin](../../core/perlin), but each
+octave is folded through \`(1 − |perlin|)²\` and weighted by the previous
+octave's value (Musgrave's ridged multifractal). The result has sharp bright
+ridges where the underlying Perlin noise crosses zero, with each successive
+octave only adding detail where the previous octave was already bright —
+concentrating creases along major spines.
+
+Perfect for mountain ridges and rock-fracture patterns when used as a
+heightfield directly, or as the input to a
+[core/heightfield-to-mesh](../../core/heightfield-to-mesh) chain. Invert
+(1 − result) and you get a dry-riverbed network of dark grooves on a light
+plateau.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/ridged-noise', {

@@ -47,12 +47,16 @@ export const mixNode: NodeDef = {
   ],
   doc: {
     summary: 'Linearly interpolate two Colors by a Float factor.',
-    description:
-      'Per-channel `a + (b − a) · factor`. Operates on Color RGBA values — for ' +
-      'texture-based blending, reach for core/blend (mix mode) or core/blend-mask instead.\n\n' +
-      'Use anywhere you have two colours and want to dial smoothly between them: ' +
-      'subgraph boundary defaults that the parent should be able to override, hand-tuned ' +
-      'gradient endpoints fed into a Palette, or one half of an A/B authoring comparison.',
+    description: `
+Per-channel \`a + (b − a) · factor\`. Operates on Color RGBA values — for
+texture-based blending, reach for [core/blend](../../core/blend) (mix mode)
+or [core/blend-mask](../../core/blend-mask) instead.
+
+Use anywhere you have two colours and want to dial smoothly between them:
+subgraph boundary defaults that the parent should be able to override,
+hand-tuned gradient endpoints fed into a [core/palette](../../core/palette),
+or one half of an A/B authoring comparison.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/mix', {

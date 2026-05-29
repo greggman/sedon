@@ -66,16 +66,21 @@ export const distanceTransformNode: NodeDef = {
   ],
   doc: {
     summary: 'Per-pixel Euclidean distance to the nearest seed pixel (Jump Flood Algorithm).',
-    description:
-      'For each pixel, finds the nearest input pixel whose red value exceeds `threshold` ' +
-      'and writes its Euclidean distance (in UV units, normalised by `maxDistance`). ' +
-      'Implemented with the Jump Flood Algorithm — ~log₂(resolution) ping-pong passes, ' +
-      'fast enough to use freely in compositing chains.\n\n' +
-      'The killer use is "soft falloff from a feature". Pipe a vein texture (sharp lines) ' +
-      'into a DT with invert=true and you get bright cores fading to dark cell-interiors ' +
-      'over `maxDistance`. Pipe a city mask in and you get a gradient that\'s strongest ' +
-      'at the streets and fades over a few blocks. Run it through a Ramp + Colorize and ' +
-      'you have a usable albedo gradient from a binary mask.',
+    description: `
+For each pixel, finds the nearest input pixel whose red value exceeds
+\`threshold\` and writes its Euclidean distance (in UV units, normalised by
+\`maxDistance\`). Implemented with the Jump Flood Algorithm —
+~log₂(resolution) ping-pong passes, fast enough to use freely in compositing
+chains.
+
+The killer use is "soft falloff from a feature". Pipe a vein texture
+(sharp lines) into a DT with invert=true and you get bright cores fading to
+dark cell-interiors over \`maxDistance\`. Pipe a city mask in and you get a
+gradient that's strongest at the streets and fades over a few blocks. Run
+it through a [core/ramp](../../core/ramp) +
+[core/colorize](../../core/colorize) and you have a usable albedo gradient
+from a binary mask.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const src = addNode(g, 'core/grid', {

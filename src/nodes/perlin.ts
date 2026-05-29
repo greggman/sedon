@@ -62,13 +62,15 @@ export const perlinNode: NodeDef = {
   ],
   doc: {
     summary: 'Fractal Brownian Motion noise as a 2D texture.',
-    description:
-      'Layers multiple octaves of classic Perlin noise to produce a smooth, organic ' +
-      'greyscale texture. Higher octave counts add finer detail; lacunarity controls ' +
-      'how fast frequency grows per octave; gain controls how fast amplitude falls off.\n\n' +
-      'Use as a base for terrain heightfields, cloud cover, vein patterns on leaves, ' +
-      'turbulence for water — anything that wants natural irregularity without a ' +
-      'visible grid.',
+    description: `
+Layers multiple octaves of classic Perlin noise to produce a smooth, organic
+greyscale texture. Higher octave counts add finer detail; lacunarity controls
+how fast frequency grows per octave; gain controls how fast amplitude falls off.
+
+Use as a base for terrain heightfields, cloud cover, vein patterns on leaves,
+turbulence for water — anything that wants natural irregularity without a
+visible grid.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/perlin', {

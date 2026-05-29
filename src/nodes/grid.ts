@@ -56,13 +56,17 @@ export const gridNode: NodeDef = {
   ],
   doc: {
     summary: 'A 2D grid texture — line colour, cell colour, divisions, line width.',
-    description:
-      'Renders a configurable grid into an N×N texture. The two colours fill the cells and ' +
-      'the dividing lines; `divisions` picks how many cells span the texture; `line_width` ' +
-      'controls how chunky the lines are relative to a cell.\n\n' +
-      'Handy as a visual test pattern when wiring up a texture pipeline (you immediately ' +
-      'see whether UVs are tiling correctly), a placeholder mask while building a more ' +
-      'serious texture chain, or a hand-tuned mask for tile/brick/checker effects.',
+    description: `
+Renders a configurable grid into an N×N texture. The two colours fill the
+cells and the dividing lines; \`divisions\` picks how many cells span the
+texture; \`line_width\` controls how chunky the lines are relative to a
+cell.
+
+Handy as a visual test pattern when wiring up a texture pipeline (you
+immediately see whether UVs are tiling correctly), a placeholder mask while
+building a more serious texture chain, or a hand-tuned mask for
+tile/brick/checker effects.
+`,
     sampleGraph: () => {
       const g = createGraph();
       addNode(g, 'core/grid', {

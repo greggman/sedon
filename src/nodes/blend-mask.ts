@@ -50,14 +50,18 @@ export const blendMaskNode: NodeDef = {
   ],
   doc: {
     summary: 'Per-pixel mask blend: mix(a, b, mask.r) per texel.',
-    description:
-      'Same operation as core/blend\'s `mix` mode, but the blend factor comes from a mask ' +
-      'texture instead of a single Float. Each output pixel = `mix(a, b, mask.r)`.\n\n' +
-      'The classic use is splat-painting terrain — wire a slope mask into `mask`, rock into ' +
-      '`b`, grass into `a`, and you get rock on the steeps and grass on the flats with smooth ' +
-      'transitions. Other use cases: regional colour swaps (paint where a city goes), ' +
-      'weather effects (snow accumulation by altitude mask), or any blend where the strength ' +
-      'varies across the texture.',
+    description: `
+Same operation as [core/blend](../../core/blend)'s \`mix\` mode, but the blend
+factor comes from a mask texture instead of a single Float. Each output
+pixel = \`mix(a, b, mask.r)\`.
+
+The classic use is splat-painting terrain — wire a
+[core/slope-from-height](../../core/slope-from-height) mask into \`mask\`,
+rock into \`b\`, grass into \`a\`, and you get rock on the steeps and grass on
+the flats with smooth transitions. Other use cases: regional colour swaps
+(paint where a city goes), weather effects (snow accumulation by altitude
+mask), or any blend where the strength varies across the texture.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const a = addNode(g, 'core/solid-color', {

@@ -52,17 +52,23 @@ export const colorizeNode: NodeDef = {
   ],
   doc: {
     summary: 'Photoshop-style Gradient Map — remap a texture through a 1D colour ramp.',
-    description:
-      'For each pixel in `factor`, compute its Rec. 709 luminance (so a colour image weighs ' +
-      'green > red > blue, matching perception; a single-channel mask just passes its red ' +
-      'value through), use that as t ∈ [0, 1], and sample `ramp` at uv = (t, 0.5) for the ' +
-      'output colour.\n\n' +
-      'The classic procedural-texture pattern: noise → colorize. A perlin noise on its own ' +
-      'is just greyscale wash. Pipe it through a Colorize with a hand-tuned ramp (or one ' +
-      'built from a Palette node taking subgraph-input colours) and you get a tinted, ' +
-      'gradient-mapped result with all the structure of the noise but the colour of the ' +
-      'ramp. Works just as well on Worley, ridged noise, distance transforms — anything ' +
-      'that ends up in the [0, 1] range.',
+    description: `
+For each pixel in \`factor\`, compute its Rec. 709 luminance (so a colour
+image weighs green > red > blue, matching perception; a single-channel mask
+just passes its red value through), use that as t ∈ [0, 1], and sample
+\`ramp\` at uv = (t, 0.5) for the output colour.
+
+The classic procedural-texture pattern: noise → colorize. A
+[core/perlin](../../core/perlin) noise on its own is just greyscale wash.
+Pipe it through colorize with a hand-tuned [core/ramp](../../core/ramp) (or
+one built from a [core/palette](../../core/palette) node taking
+subgraph-input colours) and you get a tinted, gradient-mapped result with
+all the structure of the noise but the colour of the ramp. Works just as
+well on [core/worley](../../core/worley),
+[core/ridged-noise](../../core/ridged-noise),
+[core/distance-transform](../../core/distance-transform) — anything that
+ends up in the [0, 1] range.
+`,
     sampleGraph: () => {
       const g = createGraph();
       const noise = addNode(g, 'core/perlin', {
