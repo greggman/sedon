@@ -421,10 +421,53 @@ function mergeNodePositions(
   return next;
 }
 
-const initial = createInitialGraph();
-const initialNodePositions: EditorState['nodePositions'] = {
-  main: extractPositions(initial.graph),
-};
+// Shape every "load a project" input conforms to — demos, the initial
+// graph, save-file load. Subgraphs / cameras / viewports / folders are
+// optional so a minimal graph (just `{ graph, rootNodeId }`) still
+// type-checks; they default to empty when absent.
+interface ProjectInit {
+  graph: Graph;
+  rootNodeId: string;
+  subgraphs?: SubgraphDef[];
+  cameras?: Record<string, CameraState>;
+  viewports?: Record<string, ViewportState>;
+  folders?: Folder[];
+}
+
+// Single source of truth for "turn a ProjectInit into the slice of
+// EditorState it determines." Used both at store creation (line below)
+// AND inside `setGraph` for runtime demo/file loads, so the two paths
+// can't drift. Returns ONLY the project-derived fields; the caller
+// adds transient runtime bits (evalCache, device, syncCounter).
+function projectStateSlice(init: ProjectInit): Pick<
+  EditorState,
+  | 'graph' | 'rootNodeId' | 'mainGraph' | 'mainRootNodeId'
+  | 'subgraphs' | 'folders' | 'currentEditingId'
+  | 'cameras' | 'viewports' | 'nodePositions'
+  | 'undoStack' | 'redoStack' | 'dirty'
+> {
+  const nodePositions: EditorState['nodePositions'] = { main: extractPositions(init.graph) };
+  for (const sg of init.subgraphs ?? []) {
+    nodePositions[sg.id] = extractPositions(sg.graph);
+  }
+  return {
+    graph: init.graph,
+    rootNodeId: init.rootNodeId,
+    mainGraph: init.graph,
+    mainRootNodeId: init.rootNodeId,
+    subgraphs: init.subgraphs ?? [],
+    folders: init.folders ?? [],
+    currentEditingId: 'main',
+    cameras: init.cameras ?? {},
+    viewports: init.viewports ?? {},
+    nodePositions,
+    undoStack: [],
+    redoStack: [],
+    dirty: false,
+  };
+}
+
+const initialProjectSlice = projectStateSlice(createInitialGraph());
 
 export const useEditorStore = create<EditorState>((set, get) => {
   // Compute the routing-back state — when a mutation produces a new graph,
@@ -577,22 +620,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
   }
 
   return {
-    graph: initial.graph,
-    rootNodeId: initial.rootNodeId,
-    mainGraph: initial.graph,
-    mainRootNodeId: initial.rootNodeId,
-    subgraphs: [],
-    folders: [],
-    currentEditingId: 'main',
-    cameras: {},
-    viewports: {},
+    // Project-derived fields (graph, root, subgraphs, cameras,
+    // viewports, folders, nodePositions, currentEditingId, undo/redo,
+    // dirty) all come from the same helper as `setGraph` uses for
+    // runtime demo/file loads — so swapping which builder feeds the
+    // initial graph (createInitialGraph → createForestDemo → any
+    // other Demo.build()) automatically picks up subgraphs and
+    // cameras without further wiring.
+    ...initialProjectSlice,
+    // Transient runtime state that's NOT part of "what project is
+    // loaded": GPU device handle gets set after WebGPU init; the
+    // eval cache is per-process; syncCounter starts at 0 (setGraph
+    // bumps it at runtime so consumers re-derive).
     evalCache: createEvalCache(),
-    nodePositions: initialNodePositions,
     device: null,
-    undoStack: [],
-    redoStack: [],
     syncCounter: 0,
-    dirty: false,
 
     setDevice: (device) => set({ device }),
 
@@ -614,32 +656,22 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // its `setState` call AFTER setGraph restores the saved layout
       // on top of this reset — same net effect as the prior code.
       useLayoutStore.getState().resetForNewProject();
-      // Seed positions from every graph entering the store: main + each
-      // subgraph. Each editing context gets its own nodeId→position map.
-      const nodePositions: EditorState['nodePositions'] = { main: extractPositions(graph) };
-      for (const sg of subgraphs ?? []) {
-        nodePositions[sg.id] = extractPositions(sg.graph);
-      }
-      set({
+      // Shared project-slice builder — same helper the store init
+      // uses — so the initial-graph path and the runtime-load path
+      // can't drift. The conditional spread for each optional field
+      // is for exactOptionalPropertyTypes: passing
+      // `subgraphs: undefined` explicitly isn't assignable to
+      // `subgraphs?: SubgraphDef[]`; omitting the key is.
+      const init: ProjectInit = {
         graph,
         rootNodeId,
-        mainGraph: graph,
-        mainRootNodeId: rootNodeId,
-        subgraphs: subgraphs ?? [],
-        folders: folders ?? [],
-        currentEditingId: 'main',
-        // New project state ⇒ either the demo-provided initial cameras
-        // (so the user sees a sensibly-framed scene on load) or an empty
-        // map (each context falls back to DEFAULT_CAMERA on first view).
-        cameras: cameras ?? {},
-        // Same story for graph viewports: pre-seed if provided, else
-        // start empty and let NodeCanvas's fitView fill in on first
-        // navigation.
-        viewports: viewports ?? {},
-        nodePositions,
-        undoStack: [],
-        redoStack: [],
-        dirty: false,
+        ...(subgraphs !== undefined ? { subgraphs } : {}),
+        ...(cameras !== undefined ? { cameras } : {}),
+        ...(viewports !== undefined ? { viewports } : {}),
+        ...(folders !== undefined ? { folders } : {}),
+      };
+      set({
+        ...projectStateSlice(init),
         syncCounter: get().syncCounter + 1,
       });
     },
