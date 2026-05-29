@@ -375,7 +375,6 @@ function DocsSamplePreviewInner(_props: DocsSamplePreviewProps) {
               <MeshPreview
                 device={device}
                 geometry={previewTarget.value}
-                size={280}
                 interactive
               />
             ) : (
@@ -392,7 +391,6 @@ function DocsSamplePreviewInner(_props: DocsSamplePreviewProps) {
               device={device}
               scene={previewTarget.value}
               camera={DEFAULT_DOC_CAMERA}
-              size={280}
               interactive
             />
           ) : (

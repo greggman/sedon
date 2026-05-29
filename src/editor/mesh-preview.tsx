@@ -23,7 +23,6 @@ import wireframeShader from './mesh-preview.wgsl';
 interface MeshPreviewProps {
   device: GPUDevice;
   geometry: GeometryValue;
-  size?: number;
   /**
    * When true, the canvas captures pointer drags (orbit yaw + pitch
    * around the mesh centre) and wheel events (zoom distance). Defaults
@@ -32,6 +31,10 @@ interface MeshPreviewProps {
    */
   interactive?: boolean;
 }
+
+// The canvas always fills its parent container — a ResizeObserver
+// keeps the drawing buffer (and the depth texture) in sync with the
+// CSS box. Callers that want a fixed size wrap us in a sized div.
 
 interface PipelineCache {
   pipeline: GPURenderPipeline;
@@ -125,7 +128,7 @@ function aabb(positions: Float32Array): { center: [number, number, number]; radi
 }
 
 export function MeshPreview({
-  device, geometry, size = 256, interactive = false,
+  device, geometry, interactive = false,
 }: MeshPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
@@ -305,7 +308,7 @@ export function MeshPreview({
       if (depthRef.current === depth) depthRef.current = null;
       bindGroupRef.current = null;
     };
-  }, [device, geometry, size]);
+  }, [device, geometry]);
 
   // Pointer-drag orbit + wheel zoom. Sensitivity matches ScenePreview's
   // interactive mode. Pitch clamped just inside (−π/2, π/2) to avoid
@@ -338,6 +341,38 @@ export function MeshPreview({
     }
     lastPointerRef.current = null;
   }, [interactive]);
+  // Track CSS box changes via ResizeObserver, resize the drawing
+  // buffer to match, recreate the depth texture at the new
+  // dimensions (the reverse-Z pass needs depth sized to the colour
+  // attachment), then redraw. The projection's aspect is recomputed
+  // from canvas.width / canvas.height each draw so it adapts
+  // automatically.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const w = Math.max(1, Math.round(entry.contentRect.width * dpr));
+      const h = Math.max(1, Math.round(entry.contentRect.height * dpr));
+      if (canvas.width === w && canvas.height === h) return;
+      canvas.width = w;
+      canvas.height = h;
+      // Depth texture must match the colour attachment dimensions.
+      const oldDepth = depthRef.current;
+      depthRef.current = device.createTexture({
+        size: [w, h],
+        format: 'depth32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      oldDepth?.destroy();
+      drawRef.current();
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [device]);
+
   // Wheel handler attached as a NATIVE DOM listener with
   // `{ passive: false }` so preventDefault() actually works. React's
   // onWheel registers a passive listener by default; calling
@@ -363,11 +398,13 @@ export function MeshPreview({
   return (
     <canvas
       ref={canvasRef}
-      width={size}
-      height={size}
+      // 1×1 initial buffer; the ResizeObserver brings it to the
+      // actual CSS box on the first frame.
+      width={1}
+      height={1}
       style={{
-        width: size,
-        height: size,
+        width: '100%',
+        height: '100%',
         display: 'block',
         // touch-action: none stops mobile/trackpad scroll from
         // hijacking our pointer drags. cursor reflects affordance.

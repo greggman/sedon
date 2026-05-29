@@ -31,7 +31,6 @@ interface ScenePreviewProps {
    * and `target` are overridden by the auto-frame fit.
    */
   camera: CameraState;
-  size?: number;
   /**
    * When true, the canvas captures pointer drags (orbit yaw + pitch)
    * and wheel events (zoom distance). Defaults to false so thumbnail
@@ -43,8 +42,15 @@ interface ScenePreviewProps {
   interactive?: boolean;
 }
 
+// The canvas always fills its parent container — a ResizeObserver
+// keeps the drawing buffer in sync with the CSS box. Callers that
+// want a fixed size (thumbnails, in-node previews) wrap us in a
+// width/height-constrained div; callers that want to fill (docs,
+// panel hosts) let their layout drive the parent's dimensions. This
+// matches how the editor's main Preview pane behaves and how an
+// <img style="width: 100%; height: 100%"> works.
 export function ScenePreview({
-  device, scene, camera, size = 128, interactive = false,
+  device, scene, camera, interactive = false,
 }: ScenePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
@@ -248,16 +254,40 @@ export function ScenePreview({
     };
   }, [interactive, framedCamera]);
 
-  const dpr = window.devicePixelRatio || 1;
+  // Track CSS box size via ResizeObserver and sync the drawing
+  // buffer. The projection matrix is recomputed from canvas.width /
+  // canvas.height every draw so aspect adapts automatically.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const w = Math.max(1, Math.round(entry.contentRect.width * dpr));
+      const h = Math.max(1, Math.round(entry.contentRect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        requestRender();
+      }
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <canvas
       ref={canvasRef}
       className="sedon-scene-preview"
-      width={Math.round(size * dpr)}
-      height={Math.round(size * dpr)}
+      // 1×1 initial buffer; the ResizeObserver brings it to the
+      // actual CSS box on the first frame.
+      width={1}
+      height={1}
       style={{
-        width: size,
-        height: size,
+        width: '100%',
+        height: '100%',
+        display: 'block',
         // touch-action: none stops mobile/trackpad scroll from
         // hijacking our pointer drags. cursor reflects affordance.
         ...(interactive ? { touchAction: 'none', cursor: 'grab' } : {}),

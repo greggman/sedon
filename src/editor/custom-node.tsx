@@ -753,12 +753,15 @@ export function CustomNode({ id, data, selected }: NodeProps) {
                 size={PREVIEW_SIZE}
               />
             ) : previewTarget.kind === 'scene' ? (
-              <ScenePreview
-                device={device}
-                scene={previewTarget.value}
-                camera={subgraphCamera ?? DEFAULT_SCENE_PREVIEW_CAMERA}
-                size={PREVIEW_SIZE}
-              />
+              // ScenePreview always fills its parent — wrap in a
+              // sized box so the in-node thumbnail stays at PREVIEW_SIZE.
+              <div style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}>
+                <ScenePreview
+                  device={device}
+                  scene={previewTarget.value}
+                  camera={subgraphCamera ?? DEFAULT_SCENE_PREVIEW_CAMERA}
+                />
+              </div>
             ) : (
               <TexturePreview
                 device={device}

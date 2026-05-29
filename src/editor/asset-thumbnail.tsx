@@ -156,12 +156,15 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
   if (!device || !scene) {
     return <>{fallback}</>;
   }
+  // ScenePreview always fills its parent — wrap it in a sized box
+  // here to keep thumbnails at the prop-driven dimensions.
   return (
-    <ScenePreview
-      device={device}
-      scene={scene}
-      camera={DEFAULT_THUMB_CAMERA}
-      size={size}
-    />
+    <div style={{ width: size, height: size }}>
+      <ScenePreview
+        device={device}
+        scene={scene}
+        camera={DEFAULT_THUMB_CAMERA}
+      />
+    </div>
   );
 }
