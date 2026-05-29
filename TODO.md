@@ -1,17 +1,26 @@
 # TODOs
 
-## --- steps ---
-
-
-## --- new ---
-
-- [ ] Select All (Cmd/Ctrl-A) should select in the view, not HTML
+- [ ] should zoom level in canvas be reset on load? is graph position saved?
+  currently if I start with the scene=leaf it's zoomed in. When I load the forest it's also zoomed in.
+- [ ] what is core/palette?
+- [ ] what is the point of heightfield - why is it not just a texture (f16)?
+- [ ] document subscene-input/subscene-output
+- [ ] geometry nodes should have a preview?
+- [ ] mesh and scene preview should fill the preview element
+- [ ] why does erosion turn return a heightfield
+- [ ] what is carve-heightfield, why not just a texture with subtract?
+- [ ] no points on split (even defaults) 
+- [ ] split doesn't work (delete point, add point, new point is not used)
+- [ ] write dev docs for LLMs (and humans)
+- [ ] nodes need to not crash (wave_scale = 0) for example
+- [ ] cleanup graph needs to frame the graph (though maybe not change zoom? Just go to
+ middle at same zoom level?)
+- [ ] make dragging asset to tab bar tab, make that asset that tab, off tab, edit that asset in new tab
+- [ ] Add node needs filter at top (or removed)
+- [ ] in preview spline editor
+- [ ] in preview TRS editor
 - [ ] grass blades should be made with leaf nodes
 - [ ] add SSAO
-- [ ] 'f' frame needs to work in canvas
-- [ ] list of nodes is too long, when canvas is shorter than screen you can not
-  scroll though canvas.
-- [ ] move asset under canvas
 - [ ] the direction setting should not be an open vector?
   * numbers should go 0->1->0->-1->0 right?
   * an arc transparent ball you can drag with a cone arrow inside?
@@ -21,10 +30,14 @@
   and W up to stop forward movement. Then you get 60fps movement.
   OTOH, if it's running slow (5fps) and you press W you'd get more movement
   per press making it harder to navigate.
+- [ ] add previews for other nodes (not sure what)
+  - [ ] branch/recursive
+  - [ ] branch/tropism
+  - [ ] branch/sample-points
+  - [ ] branch/whorled-pine
 - [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
 terrain renderer that tessellates the terrain
 based on distance from the camera. 
-- [ ] better leaf preview
 - [ ] node view (like assets)
   - [ ] nodes in folders
   - [ ] list, icon
@@ -33,24 +46,16 @@ based on distance from the camera.
 - [ ] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
 - [ ] need to be able to set default on subgraph-input
-- [ ] highlight selected node
-- [ ] show names on nodes (editable)
 - [ ] leaf/skeleton needs better preview
 - [ ] future nodes
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
 - [ ] left/skeleton needs to start from bottom center?
-- [ ] too many previews?
 - [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
 - [ ] divider between folders and content needs to be slidable
 use asset view
 - [ ] design should not be "extra inputs". It should be "array of input name,type"
 - [ ] move the WebGPU parts to a worker
-- [ ] seems like clicking on a node should select it?
-
-  currently, to delete a node, you must drag select (hold shift). then
-  delete. seems like click delete should work
-
 - [ ] need a better UI than 3 numbers for setting a direction 
 - [ ] change sky to use a lookup table for speed - need to recompute
   when the sun changes.
@@ -59,6 +64,11 @@ use asset view
 - [ ] is there a list/array entry type
 - [ ] solid-color should just be color (special case or give it 2 outputs)
 - [ ] editable texture? a node with a pixel editor?
+  This is mostly for drawing terrain? Though I can
+  guess you'd want to edit terrain in the preview
+  with pull up, push down.
+  - [ ] simple brush with alpha - like 2d blend demo
+  - [ ] needs undo
 - [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
 - [ ] having color nodes is gross - solutions
   - [*] color inputs, like numbers, have a color
@@ -86,10 +96,6 @@ use asset view
 
     Not sure if we should have one of these are all of them
 
-- [ ] Need real menus probably
-
-  Must handle diagonal drag to submenus.
-
 - [ ] Probably need an "Inspector"
 
   It would show all the inputs in a node, some with better
@@ -99,10 +105,8 @@ use asset view
 - [ ] material previews should use track camera, not orbit
 - [ ] preview sphere should be larger 
 - [ ] touch support? (iPad) - maybe iphone
-- [ ] need to be able to size split
 - [ ] support HDR output
-- [ ] colorize should be N stop? Instead of 2 stop? 
-- [ ] import png, jpg, webp
+- [ ] import png, jpg, webp (use URL where # is local)
 - [ ] import gltf
   Need to decide how to import. Seems like rather than the entire scene
   you should be able to reference individual assets (models, textures, materials).
@@ -112,11 +116,106 @@ use asset view
 
 - [ ] camera
   - [ ] orbit vs track control (option)
-  - [ ] frame
+  - [*] frame
   - [ ] ortho
 
 
 ## --- done ---
+
+- [x] in the docs, when an input is a color, insert a small square div in the value cell, before the numerical value
+- [*] terrain-renderer has a bad camera - needs to move up (it's under terrain)
+- [*] grass has a bad camera - needs to move up (it's under terrain)
+- [*] water plane bad camera - needs to be much closer - probably does not need terrain? (node, save graph, it's a good example of not good auto-layout)
+- [*] pre-zoom frame, currently when you load the page you see the canvas zoom
+- [*] docs preview is not interactive (can't "camera")
+- [*] MeshPreview (see through, green/blue), diff color on back-face
+- [*] we need to show geometry (wireframe)
+- [*] generate docs
+
+  This is a semi-big task - I don't think the actual work is difficult
+  it's there are many nodes. I want your opinion before starting.
+
+  Can we add a help system? The help system would be that each node has
+  a [?] icon in the top right and maybe there is a help icon in the menu bar
+  that leads to the help with a table of contents.
+
+  The help would be at docs.html and the links would be something like
+  `docs.html?topic=core/output`. Each topic would have
+
+  * a description of what the node does
+  * a table showing each input, its type, and a description
+  * a table showing each output, its type, and a description
+  * a sample graph (using the canvas) with the node and enough supporting nodes to show a preview
+  * a sample preview, showing something that shows a result of the node.
+
+    The layout might be something like
+
+          +------------------+
+          | header           |
+          +------------------+
+          |   name of node   |
+          +--------+---------+
+          | graph  | preview |
+          +--------+---------+
+          | inputs           |
+          | outputs          |
+          +------------------+
+
+    If possible, the data needed to make this page should be present on
+    the node's definition so clear it needs to be added when making a new node
+
+    Instead of `docs.html?topic=<topic>` make it would be better to generate a page per topic
+    in like `docs/nodes/<topic>`? Better for search engines?
+
+- [*] use ramp texture for hemisphere? (no, but added ramp)
+- [*] colorize should be N stop? Instead of 2 stop? 
+- [*] edit in canvas updated all canvases, should only update LRU
+- [*] double click subgraph, should only update LRU
+- [*] deleting all nodes, adding back nodes, preview never pixels up core/output
+- [*] simplest graph, cleanup, wrong order
+- [*] fix edge - it's on object,not water.
+- [*] foam color glows
+- [*] color editor with alpha
+- [*] query param for initial scene
+- [*] query param to start with animation on
+- [*] make foam color settable
+- [*] save to URL
+- [*] color control should use 0 to 1, not 0, 255 (optional? if so default to 1)
+- [*] color control values should allow dragging like node numbers
+- [*] color control should have toggle for HSL/RGB
+- [*] list of nodes is too long, when canvas is shorter than screen you can not
+  scroll though canvas.
+- [*] fix scene-merge (use less)
+  - example - forest has 3 scene-merge nodes where 1 would do.
+- [*] better leaf preview
+
+  Show the leaf shape in one color and the veins in another, same preview
+
+- [*] make connection dots align with text
+- [*] Canvas tab should show name of graph being edited - preview tab should show name of subgraph being viewed (same as vscode shows file being edited)
+- [*] move asset view under canvas (25%) tall
+- [*] use Levenshtein distance? - uses fuzzy search like VSCode.
+- [*] Add "Add X" commands to Shift-Cmd/Ctrl-P?
+  - add core/sphere
+  - add leaf/skeleton
+  - etc...
+- [*] Select All (Cmd/Ctrl-A) should select in the current view, not HTML
+  - preview = no-op?
+  - asset = select all in folder?
+  - canvas - select all nodes
+
+- [*] 'f' frame needs to work in canvas
+- [*] need to be able to size split
+- [*] Need real menus probably
+
+  Must handle diagonal drag to submenus.
+
+- [*] highlight selected node
+- [*] show names on nodes (editable)
+- [*] seems like clicking on a node should select it?
+
+  currently, to delete a node, you must drag select (hold shift). then
+  delete. seems like click delete should work
 
 - [*] grass
 - [*] ridged-noise
