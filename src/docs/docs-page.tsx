@@ -26,12 +26,46 @@ function formatDefault(value: unknown): string {
   return JSON.stringify(value);
 }
 
+// Small swatch shown next to a Color default value in the table.
+// Colors are authored as [r, g, b, a] in [0, 1] linear-ish sRGB; we
+// just clamp + multiply by 255 to render. Alpha sits over the same
+// checkerboard the editor uses so transparent colours read as
+// transparent. Returns null when the value isn't a length-4 numeric
+// array (defensive — the type system already guarantees this for
+// well-formed NodeDefs, but a doc author with a typo shouldn't crash
+// the page).
+function ColorSwatch({ value }: { value: unknown }): React.JSX.Element | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const [r, g, b, a] = value as number[];
+  if (
+    typeof r !== 'number' || typeof g !== 'number'
+    || typeof b !== 'number' || typeof a !== 'number'
+  ) return null;
+  const byte = (c: number) => Math.max(0, Math.min(255, Math.round(c * 255)));
+  const css = `rgba(${byte(r)}, ${byte(g)}, ${byte(b)}, ${a})`;
+  // Two stacked elements: outer shows the checkerboard, inner
+  // overlays the authored colour. CSS `background-image` always
+  // paints on top of `background-color`, so a single-element swatch
+  // with both would hide the checker behind the colour even for
+  // fully-transparent alpha. Same pattern the editor's
+  // `.sedon-color-current-swatch` + `.sedon-color-current-fill` uses.
+  return (
+    <span className="sedon-doc-color-swatch" aria-hidden>
+      <span className="sedon-doc-color-swatch-fill" style={{ background: css }} />
+    </span>
+  );
+}
+
 function InputRow({ input }: { input: InputDef }) {
+  const isColor = input.type === 'Color';
   return (
     <tr>
       <td className="sedon-doc-cell-name">{input.label ?? input.name}</td>
       <td className="sedon-doc-cell-type">{input.type}</td>
-      <td className="sedon-doc-cell-default">{formatDefault(input.default)}</td>
+      <td className="sedon-doc-cell-default">
+        {isColor && <ColorSwatch value={input.default} />}
+        {formatDefault(input.default)}
+      </td>
       <td className="sedon-doc-cell-desc">
         {input.description ?? <span className="sedon-doc-muted">no description</span>}
         {input.enumOptions && (
