@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { argv } from 'node:process';
 import { pathToFileURL } from 'node:url';
+import showdown from 'showdown';
 
 const serve = argv.includes('--serve');
 // `--prod` swaps the React build to its production bundle by inlining
@@ -93,13 +94,21 @@ const docsOptions = {
 // dynamic import handles ESM properly without us needing to set up a
 // VM context, and (b) the bundled module may use top-level await
 // and other ESM-only constructs that a Function constructor can't run.
-async function listDocumentedNodeIds() {
+async function listDocumentedNodes() {
   // The probe imports through src/nodes/index.ts. Using the project's
   // own `.js`-suffixed import style (matches editor source); esbuild
   // resolves it via resolveDir + the bundler's TS resolution rules.
+  // We return id + raw markdown description here; the main build then
+  // pipes the markdown through showdown to produce HTML embedded in the
+  // generated per-node HTML config block.
   const probeSource = `
     import { CORE_NODES } from './src/nodes/index.js';
-    export const ids = CORE_NODES.filter((n) => n.doc).map((n) => n.id);
+    export const nodes = CORE_NODES
+      .filter((n) => n.doc)
+      .map((n) => ({
+        id: n.id,
+        descriptionMarkdown: n.doc.description ?? '',
+      }));
   `;
   const result = await esbuild.build({
     stdin: { contents: probeSource, loader: 'ts', resolveDir: process.cwd() },
@@ -114,10 +123,34 @@ async function listDocumentedNodeIds() {
   await writeFile(tmp, result.outputFiles[0].text, 'utf8');
   try {
     const mod = await import(pathToFileURL(tmp).href);
-    return /** @type {string[]} */ (mod.ids);
+    return /** @type {Array<{id: string; descriptionMarkdown: string}>} */ (mod.nodes);
   } finally {
     await unlink(tmp).catch(() => {});
   }
+}
+
+// Pre-configured showdown converter used to render every node's
+// description markdown into HTML at build time. Flags:
+//   • simpleLineBreaks: true so a single `\n` inside a paragraph stays
+//     as a `<br>` — matters less here because our descriptions split on
+//     blank lines into paragraphs, but it's the sane default if anyone
+//     does write single-line breaks.
+//   • openLinksInNewWindow: false because cross-node links navigate
+//     within the docs site; new tabs would be more annoying than helpful.
+//   • strikethrough: true so `~~foo~~` works if anyone reaches for it.
+const markdownConverter = new showdown.Converter({
+  simpleLineBreaks: false,
+  openLinksInNewWindow: false,
+  strikethrough: true,
+});
+
+// Embed an arbitrary string into a `<script type="application/json">`
+// block safely: JSON.stringify covers most edge cases, but the resulting
+// JSON can still contain `</script>` if any source string did. Escape
+// `<` to its JSON Unicode-escape form so the HTML parser never sees a
+// premature script close.
+function safeJsonForScriptTag(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
 // `depthToRoot` is the relative path from the page back to the repo
@@ -143,13 +176,17 @@ const HTML_TEMPLATE = (title, configJson, depthToRoot) => `<!doctype html>
 
 // Generate `docs/index.html` (TOC) and `docs/nodes/<id>/index.html`
 // for every node whose NodeDef carries a `doc` field. The list comes
-// from `listDocumentedNodeIds()` above (which walks the same registry
-// the editor uses), so it's always in sync with the source.
+// from `listDocumentedNodes()` above (which walks the same registry
+// the editor uses), so it's always in sync with the source. Each node's
+// description markdown is rendered to HTML at build time via showdown
+// and embedded in the page's inline config block — the runtime never
+// sees the original markdown, just the prebuilt HTML it can stuff
+// straight into the DOM.
 async function writeDocsHtml() {
-  const documentedIds = await listDocumentedNodeIds();
+  const documented = await listDocumentedNodes();
 
   // TOC at /docs/index.html — one directory up to reach the repo root.
-  const tocConfig = JSON.stringify({ kind: 'index' });
+  const tocConfig = safeJsonForScriptTag({ kind: 'index' });
   await mkdir('docs', { recursive: true });
   await writeFile(
     'docs/index.html',
@@ -159,19 +196,26 @@ async function writeDocsHtml() {
 
   // Per-node pages at /docs/nodes/<id>/index.html. The id segments
   // become directories: depth = 2 (docs/ + nodes/) + segment count.
-  for (const id of documentedIds) {
-    const dir = path.join('docs', 'nodes', ...id.split('/'));
+  for (const node of documented) {
+    const dir = path.join('docs', 'nodes', ...node.id.split('/'));
     await mkdir(dir, { recursive: true });
-    const depth = 2 + id.split('/').length;
+    const depth = 2 + node.id.split('/').length;
     const depthToRoot = '../'.repeat(depth);
-    const config = JSON.stringify({ kind: 'node', nodeId: id });
+    const descriptionHtml = node.descriptionMarkdown.trim()
+      ? markdownConverter.makeHtml(node.descriptionMarkdown)
+      : '';
+    const config = safeJsonForScriptTag({
+      kind: 'node',
+      nodeId: node.id,
+      descriptionHtml,
+    });
     await writeFile(
       path.join(dir, 'index.html'),
-      HTML_TEMPLATE(`${id} — Sedon docs`, config, depthToRoot),
+      HTML_TEMPLATE(`${node.id} — Sedon docs`, config, depthToRoot),
       'utf8',
     );
   }
-  console.log(`Docs HTML written: 1 TOC + ${documentedIds.length} node page(s)`);
+  console.log(`Docs HTML written: 1 TOC + ${documented.length} node page(s)`);
 }
 
 if (serve) {

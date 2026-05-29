@@ -18,9 +18,11 @@
     "@types/node": "^20.11.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/showdown": "^2.0.6",
     "@webgpu/types": "^0.1.40",
     "esbuild": "^0.20.0",
     "puppeteer": "^25.0.2",
+    "showdown": "^2.1.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"
   },
