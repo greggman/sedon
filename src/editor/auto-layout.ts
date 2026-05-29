@@ -3,9 +3,15 @@ import type { NodeRegistry } from '../core/node-def.js';
 
 // Rank-based layered auto-layout, Sugiyama-flavored. Six phases:
 //
-//   1. RANK ASSIGNMENT — each node's column is its longest-path distance from
-//      any source, so all predecessors land to its left. DFS with cycle
-//      protection (back-edges treated as sources).
+//   1. RANK ASSIGNMENT — each node's column is `maxBackRank - backRank(node)`,
+//      where `backRank(node)` is the longest path from THIS node to any
+//      sink. This places nodes as FAR RIGHT as possible — a source whose
+//      only consumer lives deep in the graph gets placed right next to that
+//      consumer, instead of being banished to column 0 alongside a wholly
+//      unrelated long-chain source. (E.g. the forest demo's Pine-Tree
+//      subgraph wrapper only feeds the scatter four hops downstream, so it
+//      lands one column left of the scatter — not all the way at the left
+//      edge.) DFS with cycle protection (back-edges treated as sinks).
 //
 //   2. DUMMY NODES — for any edge that spans more than one rank, insert a
 //      virtual node in each intervening rank so the edge becomes a chain.
@@ -159,22 +165,37 @@ export function layoutGraph(
     succs.get(edge.from.node)?.push({ node: edge.to.node, socketBias: inBias });
   }
 
-  // Rank = longest path from any source. DFS with cycle protection.
-  const rank = new Map<string, number>();
+  // Rank assignment via "longest path TO sink, mirrored." For each node
+  // we first compute `backRank` = longest path from this node to any
+  // sink (counted in edges, so a sink itself = 0). The final rank is
+  // `maxBackRank - backRank`, which places each node as FAR RIGHT as
+  // possible: a node sits exactly `backRank` columns from the right
+  // edge, so a short-chain source (Pine-Tree → scatter → merge →
+  // water → output) lands at column maxBackRank - 4, NOT at column 0
+  // alongside the long-chain source (perlin → heightfield → ... →
+  // output) whose backRank is much larger. Result: every node hugs
+  // its consumers, only the genuinely longest chains stretch to the
+  // far left, and short-chain branches no longer leave a column-1-to-
+  // column-N void of long dummy edges crossing the canvas.
+  const backRank = new Map<string, number>();
   const visiting = new Set<string>();
-  const computeRank = (id: string): number => {
-    const cached = rank.get(id);
+  const computeBackRank = (id: string): number => {
+    const cached = backRank.get(id);
     if (cached !== undefined) return cached;
     if (visiting.has(id)) return 0;
     visiting.add(id);
-    const ps = preds.get(id) ?? [];
+    const ss = succs.get(id) ?? [];
     let r = 0;
-    for (const p of ps) r = Math.max(r, computeRank(p.node) + 1);
+    for (const s of ss) r = Math.max(r, computeBackRank(s.node) + 1);
     visiting.delete(id);
-    rank.set(id, r);
+    backRank.set(id, r);
     return r;
   };
-  for (const n of graph.nodes) computeRank(n.id);
+  for (const n of graph.nodes) computeBackRank(n.id);
+  let maxBackRank = 0;
+  for (const v of backRank.values()) if (v > maxBackRank) maxBackRank = v;
+  const rank = new Map<string, number>();
+  for (const [id, br] of backRank) rank.set(id, maxBackRank - br);
 
   // Per-node measurements (real nodes only initially; dummies added below).
   const heights = new Map<string, number>();

@@ -1,5 +1,6 @@
 import type { NodeDef } from '../core/node-def.js';
 import type {
+  HeightfieldValue,
   SceneValue,
   WaterMaterial,
 } from '../core/resources.js';
@@ -24,6 +25,12 @@ export const waterPlaneNode: NodeDef = {
       name: 'scene',
       type: 'Scene',
       description: 'upstream scene to add the water to. The water entity is appended to the scene\'s entity list; reflection rendering sees every entity that came in through this socket',
+    },
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      optional: true,
+      description: 'optional heightfield used to drive shoreline foam (water samples terrain Y at each fragment and fades toward foam-white near the waterline). A direct wire takes precedence over any heightfield carried implicitly by an upstream `terrain/renderer` field; pass-throughs that don\'t go through terrain/renderer (e.g. heightfield-to-mesh + scene-entity) need this socket wired explicitly. With nothing wired and no terrain field on the scene, foam is disabled',
     },
     {
       name: 'water_level',
@@ -86,6 +93,24 @@ export const waterPlaneNode: NodeDef = {
       description: 'per-world-unit Beer-Lambert absorption. Refraction attenuates toward `color` with depth — higher = water reads its tint colour in less depth. 0 disables depth tinting and refraction is just multiplied by `color` (old behaviour). Typical values: 0.05 (very clear lake), 0.15 (sea), 0.5 (murky pond)',
     },
     {
+      name: 'ring_spacing',
+      type: 'Float',
+      default: 0.3,
+      description: 'horizontal world-unit distance between successive shoreline ripple rings. With the default 0.3, rings are 30 cm apart — so you see ~3 rings packed into the first metre off shore. Smaller = denser rings; larger = a few well-separated bands. Rings hug the shoreline outline regardless of terrain slope (plateaus get no rings because slope → 0 pushes the rings into the decay tail)',
+    },
+    {
+      name: 'ring_speed',
+      type: 'Float',
+      default: 0.5,
+      description: 'outward expansion rate of shoreline ripple rings in world units / sec. 0 makes them static (stripes that never move). Default 0.5 = a slow ripple-like creep; bump to 2-3 for fast splash-style waves',
+    },
+    {
+      name: 'ring_decay',
+      type: 'Float',
+      default: 3.0,
+      description: 'how fast shoreline ripple rings fade with horizontal distance. Intensity = exp(-distance * ring_decay). Default 3.0 → 22%-intensity at 0.5 m from shore, 5% at 1 m, 1% at 1.5 m — rings tightly hug the shoreline. Lower (e.g. 1.0) lets rings carry several metres into open water; 0 disables the rings entirely',
+    },
+    {
       name: 'foam_width',
       type: 'Float',
       default: 1.5,
@@ -124,17 +149,25 @@ export const waterPlaneNode: NodeDef = {
     const rippleScale = inputs.ripple_scale as number;
     const rippleSpeed = inputs.ripple_speed as number;
     const absorption = inputs.absorption as number;
+    const ringSpacing = inputs.ring_spacing as number;
+    const ringSpeed = inputs.ring_speed as number;
+    const ringDecay = inputs.ring_decay as number;
     const foamWidth = inputs.foam_width as number;
     const worldSizeInput = inputs.world_size as [number, number];
     const extentScale = Math.max(1, inputs.extent_scale as number);
     const userSubdivisions = Math.max(1, Math.round(inputs.subdivisions as number));
 
-    // Take the heightfield from the upstream scene's first terrain
-    // field if one is present — that's the foam reference. With no
-    // terrain in the scene, foam is disabled (open water only) and
-    // the plane size falls back to the `world_size` input.
+    // Heightfield for shoreline foam + plane sizing. Resolution order:
+    //   1. The `heightfield` input socket if wired (covers the
+    //      heightfield-to-mesh + scene-entity pattern where the
+    //      heightfield isn't carried on the scene).
+    //   2. The first terrain field's heightfield (terrain/renderer
+    //      adds one to scene.terrain[]).
+    //   3. None — foam is disabled and the plane sizes from
+    //      `world_size`.
+    const directHeightfield = inputs.heightfield as HeightfieldValue | undefined;
     const terrainField = inputScene.terrain?.[0];
-    const field = terrainField?.heightfield;
+    const field = directHeightfield ?? terrainField?.heightfield;
     const baseSize = field
       ? field.worldSize
       : worldSizeInput;
@@ -220,6 +253,9 @@ export const waterPlaneNode: NodeDef = {
       rippleScale,
       rippleSpeed,
       absorption,
+      ringSpacing,
+      ringSpeed,
+      ringDecay,
       foamWidth,
       ...(field !== undefined ? { heightfield: field } : {}),
     };

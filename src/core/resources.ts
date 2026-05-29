@@ -241,6 +241,24 @@ export interface WaterMaterial {
    */
   absorption: number;
   /**
+   * Concentric animated ripple rings emanating from the heightfield
+   * shoreline (where terrain rises through the water surface). Three
+   * scalars control the look:
+   *   - `ringSpacing` (world units): distance between successive
+   *     rings. Smaller → more rings packed close together.
+   *   - `ringSpeed` (world units / sec): how fast the rings travel
+   *     outward from shore.
+   *   - `ringDecay` (per world unit): how quickly distant rings fade.
+   *     Intensity = exp(-distance * ringDecay), so 0.1 ≈ fades by
+   *     63% over 10 m; 0.5 ≈ same over 2 m. Set to 0 to disable.
+   * The rings live alongside the static shoreline foam ring (driven
+   * by `foamWidth`); together they read as foam at the shore that
+   * pulses outward in waves.
+   */
+  ringSpacing: number;
+  ringSpeed: number;
+  ringDecay: number;
+  /**
    * Optional heightfield reference. When present the shader samples
    * the underlying terrain Y at each fragment and tints toward white
    * within `foamWidth` of the shoreline (where water depth → 0).

@@ -229,7 +229,8 @@ export function createForestDemo(): {
       water_level: 12,
       wave_strength: 0.01,
       wave_scale: 1,
-      foam_width: 0.4,
+      foam_width: 0.1,
+      ring_speed: 0.25,
     },
   });
   const output = addNode(g, 'core/output', {
@@ -317,6 +318,11 @@ export function createForestDemo(): {
   // terrain's heightfield (via the scene's terrain field), and forwards
   // straight to the output.
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
+  // The forest uses heightfield-to-mesh + scene-entity (no terrain/renderer),
+  // so the heightfield isn't carried implicitly on the merged scene. Wire
+  // it directly into the water node so the shader has terrain Y available
+  // for shoreline foam.
+  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
   addEdge(g, { node: water.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Per-graph initial framings. With the world scaled to meters, the

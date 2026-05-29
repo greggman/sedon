@@ -39,6 +39,12 @@ struct WaterParams {
   // x = absorption (per-world-unit Beer-Lambert rate), y/z/w unused.
   // Drives the depth-based tint applied to refraction in fs_main.
   transport: vec4f,
+  // Shoreline ripple rings. x = spacing (world units between rings,
+  // converted to angular freq = 2π/spacing inside the shader);
+  // y = speed (world units / sec, outward from shore);
+  // z = decay (per world unit; intensity = exp(-distance · decay)).
+  // z=0 disables the ring effect.
+  rings: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -173,6 +179,49 @@ struct Wave {
 // roughly 2× the 3-sine computeWaves; the explicit accumulator loop
 // + early-exit-friendly structure makes it cheap enough to run per
 // fragment.
+// Bicubic B-spline sampling of the heightfield's red channel. Plain
+// bilinear is C0 only — the contour lines of an interpolated bilinear
+// surface have visible kinks at every texel-quad boundary, so the
+// shoreline rings (depth-keyed) inherit those kinks and read as a
+// blocky grid. Bicubic interpolation is C2 smooth, so depth's level
+// sets are smooth curves and the rings hug the shoreline outline
+// without grid artifacts. The 4-tap optimisation (Sigg-Hadwiger):
+// pair the cubic weights into two 2-tap linear sums per axis, then
+// shift four bilinear samples to sub-texel positions whose weighted
+// blend reproduces the full 4×4 bicubic. Same result as 16-tap, four
+// taps total.
+fn sampleHeightBicubic(uv: vec2f) -> f32 {
+  let dim = vec2f(textureDimensions(heightTex, 0));
+  let p = uv * dim - vec2f(0.5);
+  let pi = floor(p);
+  let f = p - pi;
+  let f2 = f * f;
+  let f3 = f2 * f;
+  let omf = vec2f(1.0) - f;
+  let omf2 = omf * omf;
+  let omf3 = omf2 * omf;
+  // Cubic B-spline weights at the four neighbour offsets (-1, 0, +1, +2).
+  let w0 = omf3 / 6.0;
+  let w1 = (vec2f(4.0) - 6.0 * f2 + 3.0 * f3) / 6.0;
+  let w2 = (vec2f(4.0) - 6.0 * omf2 + 3.0 * omf3) / 6.0;
+  let w3 = f3 / 6.0;
+  // Pair them: each pair becomes one bilinear tap at a sub-texel offset.
+  let s0 = w0 + w1;
+  let s1 = w2 + w3;
+  let t0 = w1 / s0 - vec2f(1.0);
+  let t1 = w3 / s1 + vec2f(1.0);
+  let inv_dim = vec2f(1.0) / dim;
+  let uv0 = (pi + vec2f(0.5) + vec2f(t0.x, t0.y)) * inv_dim;
+  let uv1 = (pi + vec2f(0.5) + vec2f(t1.x, t0.y)) * inv_dim;
+  let uv2 = (pi + vec2f(0.5) + vec2f(t0.x, t1.y)) * inv_dim;
+  let uv3 = (pi + vec2f(0.5) + vec2f(t1.x, t1.y)) * inv_dim;
+  let v0 = textureSampleLevel(heightTex, heightSamp, uv0, 0.0).r;
+  let v1 = textureSampleLevel(heightTex, heightSamp, uv1, 0.0).r;
+  let v2 = textureSampleLevel(heightTex, heightSamp, uv2, 0.0).r;
+  let v3 = textureSampleLevel(heightTex, heightSamp, uv3, 0.0).r;
+  return v0 * (s0.x * s0.y) + v1 * (s1.x * s0.y) + v2 * (s0.x * s1.y) + v3 * (s1.x * s1.y);
+}
+
 fn computeRipplesNormal(worldXZ: vec2f, t: f32, strength: f32, scale: f32, speed: f32) -> vec3f {
   let invScale = 1.0 / max(scale, 0.0001);
   let p = worldXZ * invScale;
@@ -451,18 +500,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let p10 = uniforms.projection[2].z;
   let p14 = uniforms.projection[3].z;
   let scene_depth_here = textureLoad(sceneDepth, vec2i(in.position.xy), 0).r;
-  // water_column = view-ray distance from this water fragment to
-  // the underwater geometry behind it. Consumed by BOTH the
-  // Beer-Lambert tint just below AND the depth-buffer foam logic
-  // later (so anything piercing the water gets a fringe of foam,
-  // not just terrain that the heightfield knows about). Zero when
+  // water_column = view-ray distance from this water fragment to the
+  // underwater geometry behind it (in view-z units, ≈ ray length
+  // when the camera looks roughly down). Feeds the Beer-Lambert
+  // refraction tint just below — that's the light path through
+  // water, so a view-aligned measure is correct here. Zero when
   // there's nothing underwater (sky pixel).
   var water_column: f32 = 0.0;
   if (scene_depth_here > 0.0) {
     let scene_view_z = -p14 / (scene_depth_here + p10);
-    // Both view-z are negative; ray travels from water (closer to
-    // camera) to scene (farther). depth = how much extra view-ray
-    // length is inside water.
     water_column = max(0.0, in.view_pos.z - scene_view_z);
   }
   var refracted_tinted: vec3f;
@@ -494,52 +540,92 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let specular_term = specular * uniforms.lightColor * n_dot_l;
   var lit = water_surface + specular_term;
 
-  // Foam. Two independent sources, taking the max so each fills
-  // gaps in the other:
+  // Heightfield-driven shoreline foam + animated rings spreading
+  // outward from the shore. Both effects sample the heightfield at
+  // the fragment's world XZ via BICUBIC interpolation (C2 smooth —
+  // bilinear's C0 kinks made rings read as a blocky grid):
   //
-  //   • HEIGHTFIELD foam (terrain shoreline) — sample terrain Y
-  //     at this fragment's world XZ from the bound heightfield;
-  //     foam grows as terrain rises toward the water surface.
-  //     Gives a believable WORLD-LOCKED shoreline ring that doesn't
-  //     drift with camera angle. Requires a heightfield to be
-  //     bound; only fires inside the heightfield's UV footprint
-  //     (open water beyond the terrain edge gets no foam from
-  //     this source).
+  //   • STATIC FOAM — fades from foam-white at depth=0 to clear at
+  //     depth=foam_width. A tight ring at the waterline.
   //
-  //   • DEPTH-BUFFER foam (anything piercing the water) — reuses
-  //     `water_column` from Beer-Lambert above. Where the water
-  //     column over an underwater object is shallow, fade toward
-  //     foam. Works for any opaque geometry the depth pass wrote:
-  //     trees standing in water, partially-submerged rocks, the
-  //     bottom of a cube touching the surface. NOT world-locked
-  //     (it's view-ray length, not vertical depth), so on a flat
-  //     terrain shoreline the heightfield source produces the
-  //     nicer ring; the two are designed to coexist.
+  //   • RIPPLES — sin wave keyed on the TRUE horizontal distance
+  //     from shore, animated outward. Distance = depth ÷ slope,
+  //     where slope is computed from the bicubic gradient via
+  //     forward differences at neighbouring bicubic taps. Plateaus
+  //     (slope ≈ 0) push h_dist → ∞, so the exp falloff cuts them
+  //     to zero — no big patches of equal-depth water lighting up
+  //     in unison. Steep cliffs (large slope) collapse h_dist back
+  //     toward depth, so rings hug the wall tightly. The half-cycle
+  //     clip (max with 0) means only ring PEAKS are visible.
   //
-  // Both use the same authored `foam_width` (world units). Foam
-  // colour is multiplied by direct sun + ambient so it dims
-  // correctly in shadow rather than glowing white.
-  if (water.foam.x > 0.0) {
-    var foam: f32 = 0.0;
-    if (water.foam.y > 0.5) {
-      let worldSize = water.world.xy;
-      let hMin = water.world.z;
-      let hMax = water.world.w;
-      let uv = in.world_pos.xz / worldSize + vec2f(0.5);
-      let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
-      if (inHeightfield) {
-        let terrainH = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
-        let terrainY = hMin + terrainH * (hMax - hMin);
-        let depth = max(in.world_pos.y - terrainY, 0.0);
-        foam = max(foam, 1.0 - smoothstep(0.0, water.foam.x, depth));
+  // Cost: 3 bicubic taps × 4 samples = 12 texture taps total. The
+  // heightfield is small (256–512² typical) and fully in cache, so
+  // negligible at typical canvas sizes.
+  //
+  // Limitation: only the HEIGHTFIELD generates rings/foam. Objects
+  // that pierce the water but aren't in the heightfield (scattered
+  // trees, rocks, etc.) don't contribute. Adding them requires a
+  // separate top-down rasterisation into a combined object/terrain
+  // mask — left as a TODO.
+  //
+  // Foam/ripple lighting is capped just below the bloom threshold so
+  // the white surface doesn't trigger the post-process glow halo.
+  if (water.foam.x > 0.0 && water.foam.y > 0.5) {
+    let worldSize = water.world.xy;
+    let hMin = water.world.z;
+    let hMax = water.world.w;
+    let uv = in.world_pos.xz / worldSize + vec2f(0.5);
+    let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
+    if (inHeightfield) {
+      let terrainH = sampleHeightBicubic(uv);
+      let terrainY = hMin + terrainH * (hMax - hMin);
+      let depth = max(in.world_pos.y - terrainY, 0.0);
+      let static_foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
+
+      // Slope via bicubic forward differences. Two extra bicubic
+      // taps (centre is already in `terrainH`) give the gradient of
+      // a C2-smooth surface, so slope is itself smooth — no boxy
+      // pixelation in the rings even on gradual slopes. The texel
+      // step for forward differences uses the heightfield's actual
+      // dims so the math is correct for any heightfield resolution.
+      let dims = vec2f(textureDimensions(heightTex, 0));
+      let texel = vec2f(1.0) / dims;
+      let world_per_texel = worldSize / dims;
+      let terrainH_e = sampleHeightBicubic(uv + vec2f(texel.x, 0.0));
+      let terrainH_n = sampleHeightBicubic(uv + vec2f(0.0, texel.y));
+      let dy_per_world_x = (terrainH_e - terrainH) * (hMax - hMin) / world_per_texel.x;
+      let dy_per_world_z = (terrainH_n - terrainH) * (hMax - hMin) / world_per_texel.y;
+      let slope = length(vec2f(dy_per_world_x, dy_per_world_z));
+      // Floor so a perfectly-flat lakebed doesn't divide by zero —
+      // the tiny slope is enough to give a finite (large) h_dist
+      // that the exp decay then clamps to zero.
+      let h_dist = depth / max(slope, 0.05);
+
+      // Concentric ring animation in horizontal-distance space.
+      // `ring_spacing` is the world-distance between rings,
+      // converted to angular frequency 2π / spacing. `ring_speed`
+      // is the outward expansion rate in world units / second.
+      // `ring_decay` controls how fast distant rings fade. Disable
+      // by setting either decay or spacing to 0.
+      let ring_spacing = water.rings.x;
+      let ring_speed   = water.rings.y;
+      let ring_decay   = water.rings.z;
+      var ripple: f32 = 0.0;
+      if (ring_decay > 0.0 && ring_spacing > 0.0) {
+        let ring_freq = 6.2831853 / ring_spacing;
+        let phase = h_dist * ring_freq - uniforms.time * ring_speed * ring_freq;
+        ripple = max(0.0, sin(phase)) * exp(-h_dist * ring_decay);
       }
-    }
-    if (water_column > 0.0) {
-      foam = max(foam, 1.0 - smoothstep(0.0, water.foam.x, water_column));
-    }
-    if (foam > 0.0) {
-      let foam_color = srgb_to_linear(vec3f(0.9, 0.94, 0.96));
-      lit = mix(lit, foam_color * (uniforms.lightColor * n_dot_l + ambient_color), foam);
+
+      let foam = max(static_foam, ripple);
+      if (foam > 0.0) {
+        let foam_color = srgb_to_linear(vec3f(0.75, 0.80, 0.82));
+        let foam_lit = min(
+          foam_color * (uniforms.lightColor * n_dot_l * 0.3 + ambient_color),
+          vec3f(0.92),
+        );
+        lit = mix(lit, foam_lit, foam);
+      }
     }
   }
 

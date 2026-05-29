@@ -53,15 +53,28 @@ function buildMeasurements(): Map<string, NodeMeasurement | undefined> {
 // tracking node positions on drag). A future dynamic routing pass would
 // be the place to enforce that.
 
-test('rank assignment: sphere and grid in column 0', () => {
+test('rank assignment: short-chain sources sit close to their consumer, long-chain sources stay leftmost', () => {
   const graph = basicGraph();
   const positions = layoutGraph(graph, buildMeasurements());
-  // Same column means same x.
-  assert.equal(positions.get('grid')!.x, positions.get('sphere')!.x);
-  // Material is one column right.
-  assert.ok(positions.get('material')!.x > positions.get('grid')!.x);
-  // Scene-entity is two columns right of grid.
+  // Chain to output (in edges):
+  //   grid → material → scene-entity → output  (3)
+  //   sphere → scene-entity → output            (2)
+  // The "as right as possible" ranking places each node at
+  // (maxBackRank - backRank), so sphere lands one column LEFT of
+  // scene-entity (same column as material), NOT all the way at column 0
+  // alongside grid. Grid still anchors column 0 because its chain is
+  // longest.
+  assert.equal(
+    positions.get('material')!.x,
+    positions.get('sphere')!.x,
+    'sphere should share a column with material — right before scene-entity',
+  );
+  assert.ok(
+    positions.get('grid')!.x < positions.get('sphere')!.x,
+    'grid (longest chain to sink) sits left of sphere',
+  );
   assert.ok(positions.get('scene-entity')!.x > positions.get('material')!.x);
+  assert.ok(positions.get('output')!.x > positions.get('scene-entity')!.x);
 });
 
 // Build a graph that crosses if rank-1 keeps source order: sources S1, S2 →
