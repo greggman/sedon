@@ -43,14 +43,21 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      # Stage exactly what the page needs: index.html + the built dist
-      # bundle. Everything else (src, tests, node_modules, scripts) stays
-      # off the public artifact.
+      # Stage exactly what the page needs: index.html, the built dist
+      # bundle, and the docs site (docs/index.html TOC + docs/nodes/
+      # <id>/index.html per documented node, all generated into
+      # ./docs/ by `npm run build` — see scripts/build.mjs's
+      # writeDocsHtml). The docs HTML files reference assets at
+      # /dist/docs/main.{js,css}, so docs/ MUST sit alongside dist/
+      # at the published site root for the relative `../dist/...`
+      # paths to resolve. Everything else (src, tests, node_modules,
+      # scripts) stays off the public artifact.
       - name: Stage site
         run: |
           mkdir -p _site
           cp index.html _site/
           cp -r dist _site/dist
+          cp -r docs _site/docs
 
       - uses: actions/upload-pages-artifact@v3
         with:
