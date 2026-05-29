@@ -1,5 +1,9 @@
 node_modules/
 dist/
+# Generated docs site only — leading slash anchors this to the repo
+# root so `src/docs/` (the source files for the docs site) is NOT
+# ignored.
+/docs/
 *.log
 .DS_Store
 .idea/
