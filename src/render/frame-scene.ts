@@ -26,13 +26,66 @@ const EMPTY: FramingResult = { target: [0, 0, 0], distance: 5 };
 export function frameScene(
   scene: SceneValue,
   fovYRadians: number,
-  margin = 1.25,
+  margin = 1,
 ): FramingResult {
-  if (scene.entities.length === 0) return EMPTY;
+  // Empty entities + empty terrain + empty grass = nothing to frame.
+  // Render-time recipes (terrain, grass) carry a heightfield with the
+  // world-space bounds we need, so scenes that have ONLY those still
+  // frame correctly.
+  if (
+    scene.entities.length === 0
+    && (scene.terrain ?? []).length === 0
+    && (scene.grass ?? []).length === 0
+  ) {
+    return EMPTY;
+  }
 
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   let any = false;
+
+  // Terrain fields: use the heightfield's full world bounds. The
+  // texture is conventionally centred on the origin so the XZ extent
+  // is ±worldSize/2 and the Y extent is heightRange.
+  for (const field of scene.terrain ?? []) {
+    const hf = field.heightfield;
+    const halfX = hf.worldSize[0] * 0.5;
+    const halfZ = hf.worldSize[1] * 0.5;
+    if (-halfX < minX) minX = -halfX;
+    if (halfX > maxX) maxX = halfX;
+    if (hf.heightRange[0] < minY) minY = hf.heightRange[0];
+    if (hf.heightRange[1] > maxY) maxY = hf.heightRange[1];
+    if (-halfZ < minZ) minZ = -halfZ;
+    if (halfZ > maxZ) maxZ = halfZ;
+    any = true;
+  }
+
+  // Grass fields: grass renders only within `field.maxDistance` of the
+  // camera, so framing to the underlying heightfield's full extent
+  // would put the camera too far away — outside the visible grass
+  // disc — and no blades would render at all (which is what showed up
+  // when [core/grass] was framed against the full 40-unit heightfield).
+  //
+  // For grass-only scenes, contribute a much smaller XZ extent so the
+  // autofit places the camera INSIDE the visible-grass region. The
+  // factor `/8` is empirically tuned: it gives an autofit distance
+  // around `maxDistance / 4` for a square grass disc, so the camera
+  // sits well inside the draw range with room for foreground blades.
+  // When terrain is also in the scene, the terrain loop above will
+  // already have set bounds that exceed these, so this is a no-op for
+  // mixed grass+terrain — exactly the right behavior (frame the
+  // visible terrain; grass renders in front of the camera anyway).
+  for (const field of scene.grass ?? []) {
+    const hf = field.heightfield;
+    const halfXZ = field.maxDistance / 8;
+    if (-halfXZ < minX) minX = -halfXZ;
+    if (halfXZ > maxX) maxX = halfXZ;
+    if (hf.heightRange[0] < minY) minY = hf.heightRange[0];
+    if (hf.heightRange[1] > maxY) maxY = hf.heightRange[1];
+    if (-halfXZ < minZ) minZ = -halfXZ;
+    if (halfXZ > maxZ) maxZ = halfXZ;
+    any = true;
+  }
 
   for (const ent of scene.entities) {
     const m = ent.transform;
