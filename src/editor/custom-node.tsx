@@ -729,7 +729,26 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       </div>
 
       {hasSlot && (
-        <div className="sedon-node-preview-block" style={{ padding: PREVIEW_PADDING }}>
+        <div
+          className="sedon-node-preview-block"
+          style={{
+            padding: PREVIEW_PADDING,
+            // Subgraph wrappers: double-clicking the preview drills
+            // into the wrapped subgraph, same as clicking the "Edit"
+            // button in the header. The cursor hint advertises the
+            // affordance.
+            ...(isSubgraphWrapper ? { cursor: 'pointer' } : {}),
+          }}
+          {...(isSubgraphWrapper
+            ? {
+                onDoubleClick: (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  onEditSubgraph();
+                },
+                title: 'Double-click to edit this subgraph',
+              }
+            : {})}
+        >
           {previewTarget && device ? (
             // Leaf-skeleton special case: the node emits two greyscale
             // textures (shape + veins). The generic TexturePreview would
