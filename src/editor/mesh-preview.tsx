@@ -338,11 +338,26 @@ export function MeshPreview({
     }
     lastPointerRef.current = null;
   }, [interactive]);
-  const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+  // Wheel handler attached as a NATIVE DOM listener with
+  // `{ passive: false }` so preventDefault() actually works. React's
+  // onWheel registers a passive listener by default; calling
+  // preventDefault from inside it is silently ignored, so the docs
+  // page would scroll under the user's cursor while they tried to
+  // zoom the preview.
+  useEffect(() => {
     if (!interactive) return;
-    const next = distScaleRef.current * (1 + e.deltaY * 0.001);
-    distScaleRef.current = Math.max(0.1, Math.min(10, next));
-    drawRef.current();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      const next = distScaleRef.current * (1 + e.deltaY * 0.001);
+      distScaleRef.current = Math.max(0.1, Math.min(10, next));
+      drawRef.current();
+    };
+    canvas.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheelNative);
+    };
   }, [interactive]);
 
   return (
@@ -362,7 +377,6 @@ export function MeshPreview({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onWheel={onWheel}
     />
   );
 }

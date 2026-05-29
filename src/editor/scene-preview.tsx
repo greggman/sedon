@@ -219,18 +219,33 @@ export function ScenePreview({
     }
     lastPointerRef.current = null;
   }, [interactive]);
-  const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+  // Wheel handler attached as a NATIVE DOM listener with
+  // `{ passive: false }` so preventDefault() actually works. React's
+  // onWheel registers a passive listener by default; calling
+  // preventDefault from inside it is silently ignored, so the docs
+  // page would scroll under the user's cursor while they tried to
+  // zoom the preview.
+  useEffect(() => {
     if (!interactive) return;
-    // React's `WheelEvent` is passive by default; the canvas's
-    // touch-action: none style (below) prevents the page from
-    // scrolling under us, so we don't need preventDefault here.
-    const cam = cameraRef.current;
-    // Clamp to a sensible range relative to the auto-frame distance
-    // — too close and the near plane clips; too far and bloom/HDR
-    // breaks down on tiny meshes.
-    const newDist = cam.distance * (1 + e.deltaY * 0.001);
-    cam.distance = Math.max(framedCamera.distance * 0.1, Math.min(framedCamera.distance * 10, newDist));
-    requestRender();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      const cam = cameraRef.current;
+      // Clamp to a sensible range relative to the auto-frame distance
+      // — too close and the near plane clips; too far and bloom/HDR
+      // breaks down on tiny meshes.
+      const newDist = cam.distance * (1 + e.deltaY * 0.001);
+      cam.distance = Math.max(
+        framedCamera.distance * 0.1,
+        Math.min(framedCamera.distance * 10, newDist),
+      );
+      requestRender();
+    };
+    canvas.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheelNative);
+    };
   }, [interactive, framedCamera]);
 
   const dpr = window.devicePixelRatio || 1;
@@ -251,7 +266,6 @@ export function ScenePreview({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onWheel={onWheel}
     />
   );
 }
