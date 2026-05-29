@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -26,13 +27,65 @@ export const ridgedNoiseNode: NodeDef = {
       default: [4, 4],
       description: 'tiling frequency per axis. Integers only — fractional periods would break tileability and get rounded',
     },
-    { name: 'octaves', type: 'Int', default: 5 },
-    { name: 'lacunarity', type: 'Float', default: 2 },
-    { name: 'gain', type: 'Float', default: 0.5 },
-    { name: 'seed', type: 'Float', default: 0 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'octaves',
+      type: 'Int',
+      default: 5,
+      description: 'how many ridged layers stack on top of each other. More octaves add finer crease detail; 1 gives a single set of broad ridges',
+    },
+    {
+      name: 'lacunarity',
+      type: 'Float',
+      default: 2,
+      description: 'frequency multiplier between octaves. 2 = each octave doubles the ridge density',
+    },
+    {
+      name: 'gain',
+      type: 'Float',
+      default: 0.5,
+      description: 'amplitude multiplier between octaves. <0.5 yields a few dominant ridges; higher keeps every octave loud (busy result)',
+    },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'random seed offset. Change to get a different ridge pattern at the same scale/octaves',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'ridged-multifractal noise in [0, 1]: sharp bright creases where Perlin noise crosses zero, dark valleys between them',
+    },
+  ],
+  doc: {
+    summary: 'Ridged-multifractal noise — sharp creases instead of soft hills.',
+    description:
+      'Same lattice and tiling layout as Perlin, but each octave is folded through ' +
+      '`(1 − |perlin|)²` and weighted by the previous octave\'s value (Musgrave\'s ridged ' +
+      'multifractal). The result has sharp bright ridges where the underlying Perlin noise ' +
+      'crosses zero, with each successive octave only adding detail where the previous ' +
+      'octave was already bright — concentrating creases along major spines.\n\n' +
+      'Perfect for mountain ridges and rock-fracture patterns when used as a heightfield ' +
+      'directly, or as the input to a heightfield-to-mesh chain. Invert (1 − result) and ' +
+      'you get a dry-riverbed network of dark grooves on a light plateau.',
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/ridged-noise', {
+        id: 'ridged',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      return { graph: g, rootNodeId: 'ridged' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

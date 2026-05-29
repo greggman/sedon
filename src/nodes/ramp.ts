@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
 import { requireDevice, reusableTexture } from '../core/resources.js';
@@ -189,7 +190,44 @@ export const rampNode: NodeDef = {
       description: 'output texture width in pixels (height is always 1). Higher = smoother gradient at the cost of upload size; 256 covers smooth lerps; 16 is enough for hand-stepped palettes',
     },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'Nx1 RGBA gradient texture. Sample with t ∈ [0, 1] (applying a half-texel offset, see ramp.ts header) to read the colour at that position along the gradient',
+    },
+  ],
+  doc: {
+    summary: 'Author an N-stop colour gradient as an Nx1 RGBA texture.',
+    description:
+      'Builds a 1D palette from N (position, colour) stops, drawn into an Nx1 texture so ' +
+      'downstream nodes can sample it with a parameter in [0, 1]. Authoring happens in the ' +
+      'in-node gradient editor — click the bar to add a stop, drag to move, double-click ' +
+      'to recolour, Delete to remove. Each stop optionally carries a midpoint (the diamond ' +
+      'between adjacent stops) controlling where the 50/50 mix lands.\n\n' +
+      'Three interpolation modes: Linear is a straight lerp between stops; Smooth runs the ' +
+      'lerp through a smoothstep curve so the transition reads softer; Constant draws each ' +
+      'stop\'s colour up to the next stop with no blending (pixel-perfect step palette).\n\n' +
+      'Pair with core/colorize to remap a greyscale source (perlin, worley, distance ' +
+      'transform, …) through the gradient — same behaviour as Photoshop\'s Gradient Map.',
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/ramp', {
+        id: 'ramp',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          gradient: [
+            { position: 0, color: [0.18, 0.36, 0.16, 1] },
+            { position: 0.6, color: [0.55, 0.62, 0.28, 1] },
+            { position: 1, color: [0.95, 0.88, 0.42, 1] },
+          ],
+          interpolation: 0,
+          resolution: 256,
+        },
+      });
+      return { graph: g, rootNodeId: 'ramp' };
+    },
+  },
   evaluate(ctx, inputs): { texture: Texture2DValue } {
     const device = requireDevice(ctx);
     const stops = normaliseStops(inputs.gradient);

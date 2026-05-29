@@ -1,8 +1,10 @@
 import * as esbuild from 'esbuild';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { argv } from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 const serve = argv.includes('--serve');
 // `--prod` swaps the React build to its production bundle by inlining
@@ -78,13 +80,45 @@ const docsOptions = {
   entryPoints: ['src/docs/main.tsx'],
 };
 
-// Filter list — which nodes get a generated docs page. Empty array
-// means "all nodes with a `doc` field"; non-empty restricts to the
-// listed kinds while the docs system is in proof-of-concept mode and
-// only a handful of nodes have authored docs. Remove this filter (or
-// set to []) once enough nodes have docs that publishing everything
-// makes sense.
-const DOC_FILTER = ['core/perlin', 'core/blend'];
+// Walk the runtime node registry to find which kinds carry a
+// `doc` field, and emit one static page per documented kind. The walk
+// happens in a one-shot Node sub-process by bundling a small probe
+// against the same source the editor uses, so there's no manual list
+// to keep in sync — adding `doc: {...}` to a NodeDef immediately gets
+// it a page on the next build.
+//
+// The probe writes its result to a temp file and exits; we
+// dynamic-import that file to read the list. We use a written-file
+// path rather than evaluating the string directly because (a) Node's
+// dynamic import handles ESM properly without us needing to set up a
+// VM context, and (b) the bundled module may use top-level await
+// and other ESM-only constructs that a Function constructor can't run.
+async function listDocumentedNodeIds() {
+  // The probe imports through src/nodes/index.ts. Using the project's
+  // own `.js`-suffixed import style (matches editor source); esbuild
+  // resolves it via resolveDir + the bundler's TS resolution rules.
+  const probeSource = `
+    import { CORE_NODES } from './src/nodes/index.js';
+    export const ids = CORE_NODES.filter((n) => n.doc).map((n) => n.id);
+  `;
+  const result = await esbuild.build({
+    stdin: { contents: probeSource, loader: 'ts', resolveDir: process.cwd() },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    write: false,
+    logLevel: 'error',
+    loader: { '.wgsl': 'text' },
+  });
+  const tmp = path.join(os.tmpdir(), `sedon-docs-probe-${process.pid}-${Date.now()}.mjs`);
+  await writeFile(tmp, result.outputFiles[0].text, 'utf8');
+  try {
+    const mod = await import(pathToFileURL(tmp).href);
+    return /** @type {string[]} */ (mod.ids);
+  } finally {
+    await unlink(tmp).catch(() => {});
+  }
+}
 
 // `depthToRoot` is the relative path from the page back to the repo
 // root (`../`, `../../../`, …). The docs entry bundles to
@@ -108,11 +142,12 @@ const HTML_TEMPLATE = (title, configJson, depthToRoot) => `<!doctype html>
 `;
 
 // Generate `docs/index.html` (TOC) and `docs/nodes/<id>/index.html`
-// for each filtered node. We avoid TypeScript imports here by reading
-// the doc filter directly from `DOC_FILTER` — the docs-page bundle
-// resolves each node id against its registry at page-load time, so the
-// build step only needs to know which HTML shells to write.
+// for every node whose NodeDef carries a `doc` field. The list comes
+// from `listDocumentedNodeIds()` above (which walks the same registry
+// the editor uses), so it's always in sync with the source.
 async function writeDocsHtml() {
+  const documentedIds = await listDocumentedNodeIds();
+
   // TOC at /docs/index.html — one directory up to reach the repo root.
   const tocConfig = JSON.stringify({ kind: 'index' });
   await mkdir('docs', { recursive: true });
@@ -124,7 +159,7 @@ async function writeDocsHtml() {
 
   // Per-node pages at /docs/nodes/<id>/index.html. The id segments
   // become directories: depth = 2 (docs/ + nodes/) + segment count.
-  for (const id of DOC_FILTER) {
+  for (const id of documentedIds) {
     const dir = path.join('docs', 'nodes', ...id.split('/'));
     await mkdir(dir, { recursive: true });
     const depth = 2 + id.split('/').length;
@@ -136,7 +171,7 @@ async function writeDocsHtml() {
       'utf8',
     );
   }
-  console.log(`Docs HTML written: 1 TOC + ${DOC_FILTER.length} node page(s)`);
+  console.log(`Docs HTML written: 1 TOC + ${documentedIds.length} node page(s)`);
 }
 
 if (serve) {

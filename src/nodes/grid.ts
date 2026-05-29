@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -15,13 +16,69 @@ export const gridNode: NodeDef = {
   id: 'core/grid',
   category: 'Texture/Generators',
   inputs: [
-    { name: 'fg', type: 'Color', default: [0, 0, 0, 1] },
-    { name: 'bg', type: 'Color', default: [1, 1, 1, 1] },
-    { name: 'divisions', type: 'Vec2i', default: [8, 8] },
-    { name: 'line_width', type: 'Float', default: 0.05 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'fg',
+      type: 'Color',
+      default: [0, 0, 0, 1],
+      description: 'line colour drawn on top of bg',
+    },
+    {
+      name: 'bg',
+      type: 'Color',
+      default: [1, 1, 1, 1],
+      description: 'cell-interior colour drawn between lines',
+    },
+    {
+      name: 'divisions',
+      type: 'Vec2i',
+      default: [8, 8],
+      description: 'number of cells along X and Y. [8, 8] = 8×8 grid; can be asymmetric ([16, 1] gives vertical stripes)',
+    },
+    {
+      name: 'line_width',
+      type: 'Float',
+      default: 0.05,
+      description: 'thickness of each grid line as a fraction of a cell (0.05 = 5% of cell width). 0 = no lines; 1 = solid fg',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'a grid texture: bg in cell interiors, fg along the dividing lines',
+    },
+  ],
+  doc: {
+    summary: 'A 2D grid texture — line colour, cell colour, divisions, line width.',
+    description:
+      'Renders a configurable grid into an N×N texture. The two colours fill the cells and ' +
+      'the dividing lines; `divisions` picks how many cells span the texture; `line_width` ' +
+      'controls how chunky the lines are relative to a cell.\n\n' +
+      'Handy as a visual test pattern when wiring up a texture pipeline (you immediately ' +
+      'see whether UVs are tiling correctly), a placeholder mask while building a more ' +
+      'serious texture chain, or a hand-tuned mask for tile/brick/checker effects.',
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/grid', {
+        id: 'grid',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          fg: [0.08, 0.08, 0.12, 1],
+          bg: [0.88, 0.88, 0.92, 1],
+          divisions: [8, 8],
+          line_width: 0.06,
+          resolution: 256,
+        },
+      });
+      return { graph: g, rootNodeId: 'grid' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

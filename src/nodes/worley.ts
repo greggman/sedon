@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -15,14 +16,69 @@ export const worleyNode: NodeDef = {
   id: 'core/worley',
   category: 'Texture/Noise',
   inputs: [
-    { name: 'scale', type: 'Float', default: 4 },
-    { name: 'octaves', type: 'Int', default: 1 },
-    { name: 'lacunarity', type: 'Float', default: 2 },
-    { name: 'gain', type: 'Float', default: 0.5 },
-    { name: 'seed', type: 'Float', default: 0 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'scale',
+      type: 'Float',
+      default: 4,
+      description: 'cell density: how many cells fit across the texture in each axis. Higher = smaller, more cells; lower = bigger, fewer cells',
+    },
+    {
+      name: 'octaves',
+      type: 'Int',
+      default: 1,
+      description: 'how many cellular layers stack together. 1 = pure Worley cells; >1 mixes finer cells on top of coarser ones for fractal cell patterns',
+    },
+    {
+      name: 'lacunarity',
+      type: 'Float',
+      default: 2,
+      description: 'frequency multiplier between octaves (only meaningful when octaves > 1). 2 = each layer has twice the cell density',
+    },
+    {
+      name: 'gain',
+      type: 'Float',
+      default: 0.5,
+      description: 'amplitude multiplier between octaves (only meaningful when octaves > 1). <0.5 fades fine cells fast; >0.5 keeps them visible',
+    },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'random seed offset. Change to shuffle the cell-point positions',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'cellular noise: each pixel encodes the distance to its nearest cell point, normalised to [0, 1]. Cell centres are dark, cell edges are bright',
+    },
+  ],
+  doc: {
+    summary: 'Cellular (Worley) noise — each pixel is the distance to its nearest random point.',
+    description:
+      'Scatters seed points across the plane and writes each pixel\'s distance to the closest one. ' +
+      'The result reads as a Voronoi-like field of cells with bright edges where two cells meet ' +
+      'and dark centres where the seed point sits.\n\n' +
+      'Use for stone / scale / cracked-earth / leaf-vein patterns, foam masks on water, ' +
+      'or as a base for distance-transform → ramp pipelines that want a more "structured" ' +
+      'starting texture than smooth fbm noise.',
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/worley', {
+        id: 'worley',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: 6, octaves: 1, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      return { graph: g, rootNodeId: 'worley' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;
