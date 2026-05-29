@@ -5,7 +5,7 @@
 // serve) serves the repo at `/`, so the docs sit at `/docs/...`; the
 // same paths work in any static deploy that keeps that root.
 
-export const DOCS_BASE = '/docs';
+export const DOCS_BASE = './docs';
 
 /**
  * URL for a single node's docs page. `target` selects whether to point
