@@ -51,7 +51,19 @@ function getPipeline(device: GPUDevice, format: GPUTextureFormat): GPURenderPipe
     fragment: {
       module,
       entryPoint: 'fs_main',
-      targets: [{ format }],
+      targets: [{
+        format,
+        blend: {
+          color: {
+            srcFactor: 'one',
+            dstFactor: 'one-minus-src-alpha'
+          },
+          alpha: {
+            srcFactor: 'one',
+            dstFactor: 'one-minus-src-alpha'
+          },
+        },
+      }],
     },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
     depthStencil: {
@@ -166,8 +178,8 @@ export function MeshPreview({ device, geometry, size = 256 }: MeshPreviewProps) 
     // Uniform layout: mat4 mvp (64B), vec4 bg (16B), vec4 line (16B).
     const uniformData = new Float32Array(24);
     uniformData.set(mvp, 0);
-    uniformData.set([0.13, 0.13, 0.15, 1], 16); // bg — matches the docs preview card
-    uniformData.set([0.92, 0.92, 0.96, 1], 20); // line — soft off-white
+    uniformData.set([0.25, 0.5, 1, 1], 16); // back facing color
+    uniformData.set([0.25, 1, 0.5, 1], 20); // front facing color
 
     const ubuf = device.createBuffer({
       size: uniformData.byteLength,

@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 
@@ -39,7 +40,80 @@ export const terrainMaterialNode: NodeDef = {
       description: 'tangent-space normal map for layer B; falls back to flat if unwired',
     },
   ],
-  outputs: [{ name: 'material', type: 'Material' }],
+  outputs: [
+    {
+      name: 'material',
+      type: 'Material',
+      description: 'two-layer terrain-splat material; consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [core/scene-entity](../../core/scene-entity) on top of a heightfield mesh',
+    },
+  ],
+  doc: {
+    summary: 'Two-layer splat-painted terrain material — grass / rock on the same surface.',
+    description: `
+The basic terrain authoring move: two basecolor textures (grass and
+rock, say), one mask that picks which one shows where, plus per-layer
+roughness and optional per-layer normal maps.
+
+The mask's red channel selects between layers per pixel — 0 = layer A,
+1 = layer B, intermediate values blend smoothly. Common mask sources:
+
+- [core/slope-from-height](../../core/slope-from-height) routes grass
+  to flats and rock to steeps.
+- The heightfield texture itself routes by altitude (snow up high,
+  forest mid, beach low).
+- A composed [core/blend](../../core/blend) /
+  [core/colorize](../../core/colorize) chain authors the splat by
+  hand.
+
+\`tile_scale\` tiles the two BASECOLOR samples at a tighter rate than
+the mask — so the splat boundary follows the terrain shape (large
+features) while the grass/rock textures themselves repeat densely for
+close-up detail. For more than two layers, reach for
+[core/terrain-multi-layer-material](../../core/terrain-multi-layer-material)
+instead.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // Two flat colours stand in for grass + rock textures; a perlin
+      // noise mask routes them across the surface.
+      const grassCol = addNode(g, 'core/solid-color', {
+        id: 'grass',
+        position: { x: 0, y: 0 },
+        inputValues: { color: [0.28, 0.46, 0.18, 1], resolution: 32 },
+      });
+      const rockCol = addNode(g, 'core/solid-color', {
+        id: 'rock',
+        position: { x: 0, y: 180 },
+        inputValues: { color: [0.55, 0.5, 0.45, 1], resolution: 32 },
+      });
+      const mask = addNode(g, 'core/perlin', {
+        id: 'mask',
+        position: { x: 0, y: 360 },
+        inputValues: { scale: [3, 3], octaves: 4, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
+      });
+      const sphere = addNode(g, 'core/sphere', {
+        id: 'sphere',
+        position: { x: 280, y: -100 },
+        inputValues: { radius: 1, segments: 48, rings: 24 },
+      });
+      const material = addNode(g, 'core/terrain-material', {
+        id: 'material',
+        position: { x: 280, y: 180 },
+        inputValues: { roughness_a: 0.9, roughness_b: 0.7, tile_scale: [1, 1] },
+      });
+      const entity = addNode(g, 'core/scene-entity', {
+        id: 'entity',
+        position: { x: 560, y: 50 },
+        inputValues: {},
+      });
+      addEdge(g, { node: grassCol.id, socket: 'texture' }, { node: material.id, socket: 'layer_a' });
+      addEdge(g, { node: rockCol.id, socket: 'texture' }, { node: material.id, socket: 'layer_b' });
+      addEdge(g, { node: mask.id, socket: 'texture' }, { node: material.id, socket: 'mask' });
+      addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
+      return { graph: g, rootNodeId: 'entity' };
+    },
+  },
   evaluate(_ctx, inputs): { material: MaterialValue } {
     const normalA = inputs.normal_a as Texture2DValue | undefined;
     const normalB = inputs.normal_b as Texture2DValue | undefined;

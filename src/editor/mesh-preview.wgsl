@@ -9,8 +9,8 @@
 
 struct Uniforms {
   mvp: mat4x4f,
-  bg_color: vec4f,
-  line_color: vec4f,
+  back_color: vec4f,
+  front_color: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -44,7 +44,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VSOut) -> @location(0) vec4f {
+fn fs_main(in: VSOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
   // Distance to nearest edge, in barycentric space. fwidth measures the
   // per-pixel screen-space derivative, so dividing by it scales `d` into
   // pixel units — the line width then reads as a constant screen-space
@@ -53,6 +53,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
   let aa_width = fwidth(d) * 1.5;
   // 1 at the edge, 0 in the interior, with a soft falloff over aa_width.
   let edge = 1.0 - smoothstep(0.0, aa_width, d);
-  let rgb = mix(u.bg_color.rgb, u.line_color.rgb, edge);
-  return vec4f(rgb, 1.0);
+  if (edge < 0.5) { discard; }
+  let rgb = select(u.back_color.rgb, u.front_color.rgb, front);
+  return vec4f(rgb * edge, edge);
 }

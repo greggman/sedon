@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 
@@ -5,10 +6,29 @@ export const materialNode: NodeDef = {
   id: 'core/material',
   category: 'Materials',
   inputs: [
-    { name: 'basecolor', type: 'Texture2D' },
-    { name: 'roughness', type: 'Float', default: 0.5 },
-    { name: 'metallic', type: 'Float', default: 0 },
-    { name: 'normal', type: 'Texture2D', optional: true },
+    {
+      name: 'basecolor',
+      type: 'Texture2D',
+      description: 'albedo texture. Required — wire a [core/solid-color](../../core/solid-color) for a flat colour, or any other Texture2D-producing chain for patterned surfaces',
+    },
+    {
+      name: 'roughness',
+      type: 'Float',
+      default: 0.5,
+      description: 'surface roughness, 0 = mirror smooth, 1 = fully matte',
+    },
+    {
+      name: 'metallic',
+      type: 'Float',
+      default: 0,
+      description: '0 = dielectric (plastic, wood, leaf, ceramic), 1 = metal. Intermediate values are physically odd but visually useful for tarnished or partially-metallic surfaces',
+    },
+    {
+      name: 'normal',
+      type: 'Texture2D',
+      optional: true,
+      description: 'tangent-space normal map. Wire a [core/normal-from-height](../../core/normal-from-height) here to add surface micro-detail without modelling geometry',
+    },
     {
       name: 'detail_basecolor',
       type: 'Texture2D',
@@ -37,11 +57,92 @@ export const materialNode: NodeDef = {
       name: 'alpha_cutoff',
       type: 'Float',
       default: 0,
-      description:
-        '>0 enables hard cutout — discards fragments with basecolor alpha below this threshold and renders two-sided. 0.5 is standard foliage. 0 = opaque, back-face-culled.',
+      description: '>0 enables hard cutout — discards fragments with basecolor alpha below this threshold and renders two-sided. 0.5 is standard foliage. 0 = opaque, back-face-culled',
     },
   ],
-  outputs: [{ name: 'material', type: 'Material' }],
+  outputs: [
+    {
+      name: 'material',
+      type: 'Material',
+      description: 'PBR Cook-Torrance material ready to feed into [core/scene-entity](../../core/scene-entity)',
+    },
+  ],
+  doc: {
+    summary: 'Standard PBR (Cook-Torrance) material — basecolor + roughness + metallic + optional normal/detail maps.',
+    description: `
+The workhorse material node. Bundles a basecolor texture, scalar
+roughness, scalar metallic, and an optional normal map into a PBR
+\`MaterialValue\` ready for [core/scene-entity](../../core/scene-entity).
+
+The detail trio (\`detail_basecolor\`, \`detail_normal\`, \`detail_scale\`,
+\`detail_strength\`) addresses tile repetition: a single grass texture
+stretched over a 200m terrain reads as obvious tiling at close range.
+Authoring a small high-frequency greyscale overlay (the detail
+basecolor) and multiplying it on at \`detail_scale\` × the base UV rate
+breaks the regularity. Same for normals.
+
+Set \`alpha_cutoff\` above 0 for foliage / chain-link / lattice — the
+material switches to two-sided rendering with hard-edge cutout. 0.5 is
+the standard foliage threshold; 0 (the default) leaves the material
+opaque and back-face-culled.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      // A noise-driven albedo + height → normal chain gives the
+      // preview enough visual interest to actually show the PBR shading
+      // working (a flat colour ball reads as a uniform circle).
+      const noise = addNode(g, 'core/perlin', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [6, 6], octaves: 3, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
+      });
+      const ramp = addNode(g, 'core/ramp', {
+        id: 'ramp',
+        position: { x: 0, y: 200 },
+        inputValues: {
+          gradient: [
+            { position: 0, color: [0.0, 0.5, 1, 1] },
+            { position: 1, color: [0.9, 0.55, 0.25, 1] },
+          ],
+          interpolation: 0,
+          resolution: 64,
+        },
+      });
+      const basecolor = addNode(g, 'core/colorize', {
+        id: 'basecolor',
+        position: { x: 280, y: 100 },
+        inputValues: { resolution: 256 },
+      });
+      const normalMap = addNode(g, 'core/normal-from-height', {
+        id: 'normal',
+        position: { x: 280, y: 320 },
+        inputValues: { strength: 3, resolution: 256 },
+      });
+      const sphere = addNode(g, 'core/sphere', {
+        id: 'sphere',
+        position: { x: 560, y: -100 },
+        inputValues: { radius: 1, segments: 48, rings: 24 },
+      });
+      const material = addNode(g, 'core/material', {
+        id: 'material',
+        position: { x: 560, y: 200 },
+        inputValues: { roughness: 0.6, metallic: 0 },
+      });
+      const entity = addNode(g, 'core/scene-entity', {
+        id: 'entity',
+        position: { x: 840, y: 50 },
+        inputValues: {},
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: basecolor.id, socket: 'factor' });
+      addEdge(g, { node: ramp.id, socket: 'texture' }, { node: basecolor.id, socket: 'ramp' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: normalMap.id, socket: 'height' });
+      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
+      addEdge(g, { node: normalMap.id, socket: 'texture' }, { node: material.id, socket: 'normal' });
+      addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
+      return { graph: g, rootNodeId: 'entity' };
+    },
+  },
   evaluate(_ctx, inputs): { material: MaterialValue } {
     const normal = inputs.normal as Texture2DValue | undefined;
     const detailBasecolor = inputs.detail_basecolor as Texture2DValue | undefined;
