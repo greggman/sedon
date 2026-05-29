@@ -271,6 +271,15 @@ export interface WaterMaterial {
    * `foamWidth`. Default 1.5 m gives a believable wet-sand ring.
    */
   foamWidth: number;
+  /**
+   * Foam tint + strength. RGB is the colour (authored in sRGB;
+   * converted to linear in the shader). Alpha is the overall foam
+   * strength multiplier — 1.0 = bold foam-white as authored, 0.3 ≈
+   * subtle suggestion, 0 = no foam at all. Default near-white (mild
+   * blue tint) at full strength reads as ocean foam; warmer tints
+   * read as river silt; cooler/whiter as fresh snowmelt.
+   */
+  foamColor: [number, number, number, number];
 }
 
 /**

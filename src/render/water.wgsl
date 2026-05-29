@@ -45,6 +45,10 @@ struct WaterParams {
   // z = decay (per world unit; intensity = exp(-distance · decay)).
   // z=0 disables the ring effect.
   rings: vec4f,
+  // Foam tint (sRGB) + foam strength (alpha). Alpha multiplies the
+  // foam mix so the user can dial subtlety from a faint suggestion
+  // (alpha ≈ 0.3) to bold foam-white (alpha = 1).
+  foam_color: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -617,9 +621,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
         ripple = max(0.0, sin(phase)) * exp(-h_dist * ring_decay);
       }
 
-      let foam = max(static_foam, ripple);
+      // Alpha on water.foam_color acts as a global foam strength —
+      // multiplies the mix factor so a 30%-alpha foam reads as
+      // suggestion rather than a hard ring. Pulled outside the
+      // `if (foam > 0)` early-out so authoring alpha=0 still
+      // skips the whole branch.
+      let foam = max(static_foam, ripple) * water.foam_color.a;
       if (foam > 0.0) {
-        let foam_color = srgb_to_linear(vec3f(0.75, 0.80, 0.82));
+        let foam_color = srgb_to_linear(water.foam_color.rgb);
         let foam_lit = min(
           foam_color * (uniforms.lightColor * n_dot_l * 0.3 + ambient_color),
           vec3f(0.92),

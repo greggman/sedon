@@ -117,6 +117,12 @@ export const waterPlaneNode: NodeDef = {
       description: 'world-unit shoreline foam falloff. Water tints toward white within this distance of where the terrain pierces the surface',
     },
     {
+      name: 'foam_color',
+      type: 'Color',
+      default: [0.75, 0.80, 0.82, 1],
+      description: 'tint + strength of the shoreline foam and animated ring ripples. RGB picks the colour (default near-white reads as sea foam; warmer = silty river edge; cooler/whiter = fresh snowmelt). ALPHA dials overall foam intensity: 1.0 = bold, 0.3 ≈ subtle suggestion, 0 = no foam at all',
+    },
+    {
       name: 'world_size',
       type: 'Vec2',
       default: [100, 100],
@@ -153,6 +159,7 @@ export const waterPlaneNode: NodeDef = {
     const ringSpeed = inputs.ring_speed as number;
     const ringDecay = inputs.ring_decay as number;
     const foamWidth = inputs.foam_width as number;
+    const foamColor = inputs.foam_color as [number, number, number, number];
     const worldSizeInput = inputs.world_size as [number, number];
     const extentScale = Math.max(1, inputs.extent_scale as number);
     const userSubdivisions = Math.max(1, Math.round(inputs.subdivisions as number));
@@ -257,6 +264,7 @@ export const waterPlaneNode: NodeDef = {
       ringSpeed,
       ringDecay,
       foamWidth,
+      foamColor,
       ...(field !== undefined ? { heightfield: field } : {}),
     };
 
