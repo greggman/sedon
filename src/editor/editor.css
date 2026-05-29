@@ -509,13 +509,47 @@
 
 .sedon-add-node-popup {
   margin-top: 4px;
-  min-width: 200px;
+  min-width: 240px;
   /* `cqh` = % of the canvas panel's height (container-type: size on
    * .sedon-panel--canvas above). 60px headroom covers the button +
    * its top/bottom margins. This auto-updates on splitter drag with
    * no JS measurement. */
   max-height: calc(100cqh - 60px);
+  /* Sticky filter row + scrollable results below — managed inside
+   * .sedon-add-node-results, not the popup itself, so the filter row
+   * stays put when scrolling through long category lists. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.sedon-add-node-filter {
+  margin: 6px 6px 4px;
+  padding: 4px 8px;
+  background: #1a1a1f;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #ddd;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.sedon-add-node-filter:focus {
+  border-color: #88a;
+}
+
+.sedon-add-node-results {
+  flex: 1 1 auto;
   overflow-y: auto;
+  padding: 2px 0 4px;
+}
+
+.sedon-add-node-empty {
+  padding: 8px 14px;
+  color: #888;
+  font-size: 11px;
+  font-style: italic;
 }
 
 .sedon-add-node-category {
@@ -528,6 +562,9 @@
 
 .sedon-add-node-item {
   padding: 4px 14px;
+}
+.sedon-add-node-item--active {
+  background: #3a3a48;
 }
 
 /* ============================================================
