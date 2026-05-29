@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { GeometryValue, HeightfieldValue } from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
@@ -84,17 +85,78 @@ export const heightfieldToMeshNode: NodeDef = {
   id: 'core/heightfield-to-mesh',
   category: 'Heightfield/Convert',
   inputs: [
-    { name: 'heightfield', type: 'Heightfield' },
-    { name: 'divisions', type: 'Vec2i', default: [64, 64] },
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      description: 'source heightfield (from [core/heightfield](../../core/heightfield) or [core/hydraulic-erosion](../../core/hydraulic-erosion))',
+    },
+    {
+      name: 'divisions',
+      type: 'Vec2i',
+      default: [64, 64],
+      description: 'mesh resolution in quads along each axis. 64×64 is the sweet spot for medium terrains; bump to 256+ for close-up detail at the cost of triangle count',
+    },
     {
       name: 'cpu_access',
       type: 'Bool',
       default: false,
-      description:
-        'when true, also reads the heightfield back to CPU so the resulting geometry can be consumed by CPU-only nodes (distribute-on-faces, merge-scene-entities). Costs an async readback and a CPU mesh build — leave off for the pure-rendering path',
+      description: 'when true, also reads the heightfield back to CPU so the resulting geometry can be consumed by CPU-only nodes (distribute-on-faces, merge-scene-entities). Costs an async readback and a CPU mesh build — leave off for the pure-rendering path',
     },
   ],
-  outputs: [{ name: 'geometry', type: 'Geometry' }],
+  outputs: [
+    {
+      name: 'geometry',
+      type: 'Geometry',
+      description: 'a triangulated terrain mesh whose per-vertex Y comes from sampling the heightfield. UVs span [0, 1] across the world footprint',
+    },
+  ],
+  doc: {
+    summary: 'Triangulate a Heightfield into a terrain mesh.',
+    description: `
+GPU-native by default: two compute passes write positions, normals, UVs,
+and indices straight into vertex buffers from the heightfield texture —
+no readback, no CPU build, no async wait. The mesh is renderable the
+same submit tick.
+
+The result is a regular grid of quads (subdivided to two triangles each)
+with vertices snapped to the per-pixel heightfield, so the mesh follows
+every bump in the source texture up to the \`divisions\` resolution.
+UVs span [0, 1] across the whole terrain — for fine surface detail
+(grass close-up), follow with [core/uv-transform](../../core/uv-transform)
+to repeat the texture more densely.
+
+Set \`cpu_access = true\` only when a downstream node needs CPU-side
+vertex data ([core/distribute-on-faces](../../core/distribute-on-faces),
+[core/merge-scene-entities](../../core/merge-scene-entities)); the
+readback is a few hundred ms and async.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const noise = addNode(g, 'core/perlin', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
+      });
+      const hf = addNode(g, 'core/heightfield', {
+        id: 'hf',
+        position: { x: 280, y: 0 },
+        inputValues: { worldSize: [10, 10], heightRange: [0, 2] },
+      });
+      const mesh = addNode(g, 'core/heightfield-to-mesh', {
+        id: 'mesh',
+        position: { x: 560, y: 0 },
+        // cpu_access: true so the docs wireframe preview can read back
+        // the CPU mesh data (the default GPU-native path produces only
+        // GPU buffers, which MeshPreview can't expand into a non-indexed
+        // wireframe). Off in real graphs unless a downstream CPU node
+        // needs it.
+        inputValues: { divisions: [64, 64], cpu_access: true },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
+      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: mesh.id, socket: 'heightfield' });
+      return { graph: g, rootNodeId: 'mesh' };
+    },
+  },
   async evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
     const field = inputs.heightfield as HeightfieldValue;

@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type {
   HeightfieldValue,
@@ -81,7 +82,11 @@ export const hydraulicErosionNode: NodeDef = {
   id: 'terrain/hydraulic-erosion',
   category: 'Terrain',
   inputs: [
-    { name: 'heightfield', type: 'Heightfield' },
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      description: 'source terrain to erode (from [core/heightfield](../../core/heightfield))',
+    },
     {
       name: 'drops',
       type: 'Int',
@@ -150,7 +155,68 @@ export const hydraulicErosionNode: NodeDef = {
       description: 'pixel radius for each erosion event; small brush = sharp channels, larger = broader valleys',
     },
   ],
-  outputs: [{ name: 'heightfield', type: 'Heightfield' }],
+  outputs: [
+    {
+      name: 'heightfield',
+      type: 'Heightfield',
+      description: 'eroded heightfield: same world size and resolution as the input, but with rain-carved channels and deposited sediment',
+    },
+  ],
+  doc: {
+    summary: 'Simulate raindrops carving channels into a heightfield (Beyer/Marák style).',
+    description: `
+A GPU port of the parallel raindrop-erosion algorithm: spawn \`drops\`
+water drops at random positions, let each one flow downhill along the
+height gradient, pick up sediment from steep sections, deposit it
+where the terrain flattens, and stop when the drop runs out of water
+(evaporation) or lifetime. The cumulative effect is realistic-looking
+erosion patterns — dendritic river networks, alluvial fans where the
+terrain levels off, sharpened ridges.
+
+All drops simulate in parallel via compute shaders, so even tens of
+thousands of drops on a 256² heightfield runs in a single frame and
+the result re-evaluates live as you tune the parameters.
+
+Tuning notes:
+- More \`drops\` and \`max_lifetime\` → more pronounced channels but
+  diminishing returns past about 30k drops × 30 steps.
+- Higher \`erosion\` cuts deeper but can blow out the silhouette;
+  balance with \`deposition\` to keep the volume conserved.
+- Small \`brush_radius\` (1–3) gives knife-thin channels; larger
+  values (6–10) give broad meandering valleys.
+- For erosion that looks like wind shaping a desert instead of
+  rivers carving mountains, drop \`gravity\` and crank \`evaporation\`.
+
+Wire the output back into
+[core/heightfield-to-mesh](../../core/heightfield-to-mesh) to render
+the eroded terrain.
+`,
+    sampleGraph: () => {
+      const g = createGraph();
+      const noise = addNode(g, 'core/ridged-noise', {
+        id: 'noise',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
+      });
+      const hf = addNode(g, 'core/heightfield', {
+        id: 'hf',
+        position: { x: 280, y: 0 },
+        inputValues: { worldSize: [10, 10], heightRange: [0, 2] },
+      });
+      const ero = addNode(g, 'terrain/hydraulic-erosion', {
+        id: 'erosion',
+        position: { x: 560, y: 0 },
+        inputValues: {
+          drops: 30000, seed: 1, max_lifetime: 30, inertia: 0.05,
+          capacity: 4, deposition: 0.3, erosion: 0.3, evaporation: 0.01,
+          gravity: 4, min_slope: 0.01, brush_radius: 3,
+        },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
+      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: ero.id, socket: 'heightfield' });
+      return { graph: g, rootNodeId: 'erosion' };
+    },
+  },
   evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
     const inHeightfield = inputs.heightfield as HeightfieldValue;
