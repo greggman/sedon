@@ -1,3 +1,4 @@
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -21,13 +22,63 @@ export const perlinNode: NodeDef = {
       default: [4, 4],
       description: 'tiling frequency per axis. Equal X/Y gives isotropic noise; unequal stretches it (e.g. [2, 12] for vertical wood-grain fibers)',
     },
-    { name: 'octaves', type: 'Int', default: 4 },
-    { name: 'lacunarity', type: 'Float', default: 2 },
-    { name: 'gain', type: 'Float', default: 0.5 },
-    { name: 'seed', type: 'Float', default: 0 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'octaves',
+      type: 'Int',
+      default: 4,
+      description: 'how many noise layers stack on top of each other. Each octave doubles in frequency (via lacunarity) and halves in amplitude (via gain). 1 = pure noise; 4–6 = natural-looking detail; >8 burns GPU for little visible gain',
+    },
+    {
+      name: 'lacunarity',
+      type: 'Float',
+      default: 2,
+      description: 'frequency multiplier between successive octaves. 2 is the classic value (each octave doubles the detail rate); higher values pack finer noise into the same area',
+    },
+    {
+      name: 'gain',
+      type: 'Float',
+      default: 0.5,
+      description: 'amplitude multiplier between successive octaves. <0.5 makes high-frequency layers fade fast (smoother result); >0.5 keeps the fine noise loud (rougher result)',
+    },
+    {
+      name: 'seed',
+      type: 'Float',
+      default: 0,
+      description: 'random seed offset. Change to get a different noise pattern at the same scale/octaves',
+    },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels. Higher values resolve finer detail at the cost of GPU memory and shading time',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'greyscale fractal-Brownian-motion noise in [0, 1], stored in the R channel (G and B are also written for visualisation)',
+    },
+  ],
+  doc: {
+    summary: 'Fractal Brownian Motion noise as a 2D texture.',
+    description:
+      'Layers multiple octaves of classic Perlin noise to produce a smooth, organic ' +
+      'greyscale texture. Higher octave counts add finer detail; lacunarity controls ' +
+      'how fast frequency grows per octave; gain controls how fast amplitude falls off.\n\n' +
+      'Use as a base for terrain heightfields, cloud cover, vein patterns on leaves, ' +
+      'turbulence for water — anything that wants natural irregularity without a ' +
+      'visible grid.',
+    sampleGraph: () => {
+      const g = createGraph();
+      addNode(g, 'core/perlin', {
+        id: 'perlin',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      return { graph: g, rootNodeId: 'perlin' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

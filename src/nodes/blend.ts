@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { ReusableBindGroup, Texture2DValue } from '../core/resources.js';
 import {
@@ -15,9 +16,22 @@ export const blendNode: NodeDef = {
   id: 'core/blend',
   category: 'Texture/Filters',
   inputs: [
-    { name: 'a', type: 'Texture2D' },
-    { name: 'b', type: 'Texture2D' },
-    { name: 'factor', type: 'Float', default: 0.5 },
+    {
+      name: 'a',
+      type: 'Texture2D',
+      description: 'first input texture. For mix mode, this is the value at factor = 0',
+    },
+    {
+      name: 'b',
+      type: 'Texture2D',
+      description: 'second input texture. For mix mode, this is the value at factor = 1',
+    },
+    {
+      name: 'factor',
+      type: 'Float',
+      default: 0.5,
+      description: 'blend amount. Meaning depends on mode: mix uses it as a linear lerp factor; add/multiply/screen treat it as a per-pixel strength multiplier on b',
+    },
     {
       name: 'mode',
       type: 'Int',
@@ -30,9 +44,56 @@ export const blendNode: NodeDef = {
         { value: 3, label: 'screen' },
       ],
     },
-    { name: 'resolution', type: 'Int', default: 512 },
+    {
+      name: 'resolution',
+      type: 'Int',
+      default: 512,
+      description: 'output texture width and height in pixels',
+    },
   ],
-  outputs: [{ name: 'texture', type: 'Texture2D' }],
+  outputs: [
+    {
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'the per-pixel result of combining a and b under the chosen mode',
+    },
+  ],
+  doc: {
+    summary: 'Combine two textures pixelwise under a chosen blend mode.',
+    description:
+      'Blend modes: mix (linear interpolation), add (a + factor·b), multiply ' +
+      '(a · ((1−factor) + factor·b)), screen (1 − (1−a)·(1−factor·b)). The mix mode ' +
+      'is what most users want by default; multiply is the classic "mask" operation ' +
+      '(use a = colour, b = greyscale mask); add brightens; screen brightens while ' +
+      'staying soft at the top end.\n\n' +
+      'Inputs are sampled with linear filtering and repeat addressing, so blending ' +
+      'two textures of different resolutions still works — the smaller one tiles to ' +
+      'cover the output.',
+    sampleGraph: () => {
+      // Perlin (smooth fbm) blended with Worley (cellular distance) so
+      // the mix is visually obvious — pure noise on one side, cell
+      // borders on the other, the result wears both signatures.
+      const g = createGraph();
+      const a = addNode(g, 'core/perlin', {
+        id: 'a',
+        position: { x: 0, y: 0 },
+        inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      const b = addNode(g, 'core/worley', {
+        id: 'b',
+        position: { x: 0, y: 220 },
+        inputValues: { scale: 8, octaves: 1, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
+      });
+      const blend = addNode(g, 'core/blend', {
+        id: 'blend',
+        position: { x: 280, y: 110 },
+        inputValues: { factor: 0.5, mode: 0, resolution: 512 },
+      });
+      addEdge(g, { node: a.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
+      addEdge(g, { node: b.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
+      return { graph: g, rootNodeId: 'blend' };
+    },
+  },
   evaluate(ctx, inputs): {
     texture: Texture2DValue;
     __uniformBuffer?: GPUBuffer;

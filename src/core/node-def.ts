@@ -142,11 +142,56 @@ export interface NodeContext {
 export type NodeInputs = Record<string, unknown>;
 export type NodeOutputs = Record<string, unknown>;
 
+/**
+ * Per-node documentation, surfaced by the static docs page generator
+ * and the [?] icon on each node header.
+ *
+ * The shape intentionally pulls every textual piece off the same
+ * NodeDef the runtime already exposes, so a single source of truth
+ * powers both the editor (tooltips, popover help) and the published
+ * `docs/nodes/<id>/` pages. Inputs/outputs tables fall out of the
+ * existing `description` fields on InputDef/OutputDef — only the
+ * per-node story (summary, longer body, and a worked example) is new.
+ *
+ * `sampleGraph` returns a self-contained graph that demonstrates the
+ * node in a realistic chain (often just the node itself plus a few
+ * upstream defaults + a `core/output`). The docs page mounts the same
+ * editor canvas + preview pipeline against it so the example renders
+ * live, identically to how it'd render inside a project.
+ */
+export interface NodeDoc {
+  /**
+   * One-line headline shown under the node name. Plain text; keep it
+   * short enough to read at a glance in a search-engine snippet.
+   */
+  summary: string;
+  /**
+   * Optional longer body. Paragraphs separated by blank lines. Plain
+   * text only (no markdown processing) so authors aren't tempted to
+   * lean on link/image markup we don't render yet.
+   */
+  description?: string;
+  /**
+   * Builder that returns a worked-example graph and its eval root.
+   * Called once per docs page render. The returned graph should be
+   * fully self-contained — its node ids are unique within the docs
+   * page; no references to outside subgraphs.
+   */
+  sampleGraph?: () => { graph: import('./graph.js').Graph; rootNodeId: string };
+}
+
 export interface NodeDef {
   id: string;
   category: string;
   inputs: InputDef[];
   outputs: OutputDef[];
+  /**
+   * Optional human-facing documentation. When present, the docs build
+   * step emits a static page for this node at `docs/nodes/<id>/`, and
+   * the [?] icon on the node header links to it. Missing-doc nodes
+   * show no icon and are skipped by the generator.
+   */
+  doc?: NodeDoc;
   /**
    * When set, instances of this node may carry per-instance
    * `extraInputs` appended after `inputs`. The UI shows a "+ Add"

@@ -9,6 +9,7 @@ import type {
 } from '../core/resources.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
+import { docsUrlFor } from '../docs/doc-paths.js';
 import { useCanvasPanelId } from './canvas-panel-context.js';
 import { useCanvasNode, useCanvasNodeOutput } from './canvas-data.js';
 import { BoolInput } from './inputs/bool-input.js';
@@ -711,6 +712,19 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           >
             Edit
           </button>
+        )}
+        {def?.doc && (
+          <a
+            className="nodrag nopan sedon-node-help"
+            href={docsUrlFor(def.id)}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open documentation for ${def.id}`}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            onClick={(e) => { e.stopPropagation(); }}
+          >
+            ?
+          </a>
         )}
       </div>
 

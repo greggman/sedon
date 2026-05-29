@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
+import { docsIndexUrl } from '../docs/doc-paths.js';
 import {
   addNodeAtCanvasCenter,
   cleanupActiveGraph,
@@ -130,7 +131,19 @@ export function useAppMenus(): TopMenu[] {
       ],
     };
 
-    return [fileMenu, editMenu, addMenu, viewMenu];
+    // ── Help ─────────────────────────────────────────────
+    const helpMenu: TopMenu = {
+      label: 'Help',
+      items: [
+        {
+          kind: 'item',
+          label: 'Node Documentation',
+          run: () => { window.open(docsIndexUrl(), '_blank', 'noreferrer'); },
+        },
+      ],
+    };
+
+    return [fileMenu, editMenu, addMenu, viewMenu, helpMenu];
   }, [registry, undoLen, redoLen]);
 }
 

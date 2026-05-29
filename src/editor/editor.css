@@ -864,6 +864,32 @@
   border-color: #888;
 }
 
+/* Per-node help icon — links to /docs/nodes/<id>/ in a new tab. Only
+ * appears for nodes whose NodeDef carries a `doc` field. Visually a
+ * subdued circle so it doesn't compete with the title or the
+ * subgraph "Edit" button next to it. */
+.sedon-node-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #2a2a32;
+  color: #aaa;
+  border: 1px solid #555;
+  border-radius: 50%;
+  cursor: help;
+  text-decoration: none;
+  line-height: 1;
+}
+.sedon-node-help:hover {
+  background: #3a3a48;
+  color: #fff;
+  border-color: #88a;
+}
+
 .sedon-node-preview-block {
   background: #22222a;
   border-bottom: 1px solid #555;
