@@ -10,12 +10,14 @@
 //               deposits/erosions; storage textures don't support atomics).
 //   simulate  — one workgroup-per-batch of drops; each thread runs a
 //               single drop for up to max_lifetime steps.
-//   writeback — copy the eroded fixed-point buffer back into an
-//               rgba8unorm texture for downstream nodes.
+//   writeback — copy the eroded fixed-point buffer back into the
+//               output texture (format substituted at compile time so
+//               this shader compiles for both rgba8unorm and rgba16float).
 //
 // Fixed-point: heights stored as i32 with scale 2^20 (one fixed-point
-// unit = 1/1_048_576 of a normalised height). i32 range ±2048 in
-// normalised space is far beyond any plausible erosion accumulation.
+// unit = 1/1_048_576 of a height unit). i32 range therefore covers
+// roughly ±2000 in source units — plenty for [0,1] heightfields and
+// for real-altitude rgba16float terrains under ~2 km tall.
 // Atomic<i32> means atomicAdd handles both deposit (positive) and erode
 // (negative) deltas uniformly.
 
@@ -40,7 +42,7 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> heights: array<atomic<i32>>;
 @group(0) @binding(2) var src: texture_2d<f32>;
 @group(0) @binding(3) var samp: sampler;
-@group(0) @binding(4) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var dst: texture_storage_2d<{{STORAGE_FORMAT}}, write>;
 
 const FIXED_SCALE: f32 = 1048576.0;   // 2^20
 const INV_FIXED_SCALE: f32 = 0.0000009536743;  // 1 / 2^20
@@ -71,19 +73,18 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>) {
   atomicStore(&heights[idx_of(vec2i(i32(gid.x), i32(gid.y)))], to_fixed(h));
 }
 
-// Writeback: store the (possibly negative or >1) fixed-point heights
-// into a clamped rgba8unorm texture. The downstream Heightfield value
-// maps the texture's R channel back to world heights via the worldSize/
-// heightRange metadata; we deliberately preserve [0,1] there and clamp
-// any erosion artefacts (deep deposits or pits) at the boundaries.
+// Writeback: store the (possibly negative or out-of-source-range)
+// fixed-point heights into the output texture. The format is
+// substituted at shader-compile time so this writes the natural value
+// range of the format (rgba8unorm clamps to [0,1]; rgba16float carries
+// the full range).
 @compute @workgroup_size(8, 8, 1)
 fn writeback(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gid.x >= params.resolution.x || gid.y >= params.resolution.y) {
     return;
   }
   let h = from_fixed(atomicLoad(&heights[idx_of(vec2i(i32(gid.x), i32(gid.y)))]));
-  let c = clamp(h, 0.0, 1.0);
-  textureStore(dst, vec2i(i32(gid.x), i32(gid.y)), vec4f(c, c, c, 1.0));
+  textureStore(dst, vec2i(i32(gid.x), i32(gid.y)), vec4f(h, h, h, 1.0));
 }
 
 // Dave Hoskins-style hash for stochastic drop spawn / step jitter.

@@ -84,7 +84,7 @@ function structKey(f: GrassFieldValue): string {
   const cards = f.cards.map((c) => gpuId(c.texture)).join(',');
   const type = f.typeMap ? gpuId(f.typeMap.texture) : 'none';
   const density = gpuId(f.density.texture);
-  const height = gpuId(f.heightfield.texture.texture);
+  const height = gpuId(f.heightTexture.texture);
   return `${cards}|${type}|${density}|${height}|${f.cards.length}`;
 }
 
@@ -428,7 +428,7 @@ export function createGrassSystem(
           { binding: 3, resource: sampler },
           { binding: 4, resource: field.density.texture.createView() },
           { binding: 5, resource: field.typeMap ? field.typeMap.texture.createView() : dummyType.createView() },
-          { binding: 6, resource: field.heightfield.texture.texture.createView() },
+          { binding: 6, resource: field.heightTexture.texture.createView() },
         ],
       });
       slot.renderBindGroup = device.createBindGroup({
@@ -485,8 +485,12 @@ export function createGrassSystem(
       uf.set(viewProj, 0);              // 0..15  mat4
       uf[16] = eye[0]; uf[17] = eye[1]; uf[18] = eye[2]; uf[19] = frame.time; // cameraPos + time
       uf[20] = originCellX; uf[21] = originCellZ; uf[22] = spacing; uf[23] = gridDim;  // grid
-      uf[24] = field.heightfield.worldSize[0]; uf[25] = field.heightfield.worldSize[1];
-      uf[26] = field.heightfield.heightRange[0]; uf[27] = field.heightfield.heightRange[1]; // worldMap
+      uf[24] = field.worldSize[0]; uf[25] = field.worldSize[1];
+      // heightRange is gone: heights live in the texture directly (R =
+      // world Y in metres). The shader reads R as-is so the slots that
+      // used to carry the [min, max] remap are now unused — kept as 0
+      // so the uniform layout stays the same (shader ignores them).
+      uf[26] = 0; uf[27] = 0;
       uf[28] = field.maxDistance; uf[29] = field.densityScale; uf[30] = field.maxSlope; uf[31] = field.cards.length; // params0
       uf[32] = field.bladeSize[0]; uf[33] = field.bladeSize[1]; uf[34] = field.windStrength; uf[35] = field.windSpeed; // blade
       uf[36] = field.baseColor[0]; uf[37] = field.baseColor[1]; uf[38] = field.baseColor[2]; uf[39] = field.colorVariation; // baseColor

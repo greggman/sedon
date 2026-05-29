@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react';
 import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
 import type {
   GeometryValue,
-  HeightfieldValue,
   MaterialValue,
   SceneValue,
   Texture2DValue,
@@ -107,16 +106,6 @@ function isMaterial(v: unknown): v is MaterialValue & { kind: 'pbr' } {
   );
 }
 
-function isHeightfield(v: unknown): v is HeightfieldValue {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    'texture' in v &&
-    'worldSize' in v &&
-    'heightRange' in v
-  );
-}
-
 function isScene(v: unknown): v is SceneValue {
   return (
     typeof v === 'object' &&
@@ -149,7 +138,6 @@ function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget | nul
   if (!outputs) return null;
   for (const v of Object.values(outputs)) {
     if (isMaterial(v)) return { kind: 'material', value: v };
-    if (isHeightfield(v)) return { kind: 'texture', value: v.texture };
     if (isTexture2D(v)) return { kind: 'texture', value: v };
     if (isScene(v)) return { kind: 'scene', value: v };
     // Geometry comes last so a node that emits both a Scene and a
@@ -169,7 +157,6 @@ function hasPreviewSlot(def: NodeDef): boolean {
     if (
       out.type === 'Texture2D' ||
       out.type === 'Material' ||
-      out.type === 'Heightfield' ||
       out.type === 'Scene' ||
       out.type === 'Geometry'
     ) {

@@ -1,9 +1,6 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
-import type {
-  HeightfieldValue,
-  Texture2DValue,
-} from '../core/resources.js';
+import type { Texture2DValue } from '../core/resources.js';
 import {
   requireDevice,
   reusableBuffer,
@@ -13,40 +10,53 @@ import { getSampler } from '../render/gpu-cache.js';
 import shader from './hydraulic-erosion.wgsl';
 
 // GPU hydraulic-erosion sim. Walks N drops in parallel across the input
-// heightfield, atomic-accumulating deposits and erosions into a shared
-// fixed-point buffer, then writes the result back to a fresh
-// rgba8unorm texture. The output is a new Heightfield with the same
-// worldSize / heightRange — only the texture changes.
+// heightfield texture, atomic-accumulating deposits and erosions into a
+// shared fixed-point buffer, then writes the result back to a fresh
+// texture in the SAME format as the input. The output is a filter-style
+// in→out texture; the worldSize the texture represents is owned by the
+// downstream consumer node ([core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+// / [terrain/renderer](../../terrain/renderer)).
 //
 // Notable choices:
 //   • Fixed-point i32 atomics (scale 2^20) — storage textures can't
 //     atomic-store and float accumulation with race conditions visibly
 //     drifts; fixed-point integer atomics are deterministic.
+//   • Two shader variants by string substitution: one for rgba8unorm
+//     output, one for rgba16float, so the filter preserves format.
 //   • Brush radius spreads each erosion event across a small disc so
 //     channels carve smoothly instead of pin-pricked.
 //   • Defaults chosen to look like recognisable erosion at ~30k drops
 //     on a 256² heightfield in <50 ms — feels live under slider scrub.
-const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 const WORKGROUP_SIM = 64;
 const WORKGROUP_TEX = 8;
+
+type SupportedFormat = 'rgba8unorm' | 'rgba16float';
 
 interface CachedState {
   texture?: Texture2DValue;
   __uniformBuffer?: GPUBuffer;
   __heightBuffer?: GPUBuffer;
-  __pipelinesKey?: string;
+  __format?: SupportedFormat;
 }
 
-let pipelineCache: {
+interface PipelineSet {
   initPipeline: GPUComputePipeline;
   simPipeline: GPUComputePipeline;
   writePipeline: GPUComputePipeline;
   layout: GPUBindGroupLayout;
-} | null = null;
-let pipelineCacheDevice: GPUDevice | null = null;
+}
 
-function getPipelines(device: GPUDevice) {
-  if (pipelineCache && pipelineCacheDevice === device) return pipelineCache;
+const pipelineCacheByDevice = new WeakMap<GPUDevice, Map<SupportedFormat, PipelineSet>>();
+
+function getPipelines(device: GPUDevice, format: SupportedFormat): PipelineSet {
+  let byFormat = pipelineCacheByDevice.get(device);
+  if (!byFormat) {
+    byFormat = new Map();
+    pipelineCacheByDevice.set(device, byFormat);
+  }
+  const existing = byFormat.get(format);
+  if (existing) return existing;
+
   const layout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -56,26 +66,30 @@ function getPipelines(device: GPUDevice) {
       {
         binding: 4,
         visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { access: 'write-only', format: TEXTURE_FORMAT, viewDimension: '2d' },
+        storageTexture: { access: 'write-only', format, viewDimension: '2d' },
       },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
-  const module = device.createShaderModule({ code: shader });
+  const code = shader.replace(/\{\{STORAGE_FORMAT\}\}/g, format);
+  const module = device.createShaderModule({ code });
   const make = (entryPoint: string) =>
     device.createComputePipeline({
       layout: pipelineLayout,
       compute: { module, entryPoint },
     });
-  const cache = {
+  const set: PipelineSet = {
     initPipeline: make('init'),
     simPipeline: make('simulate'),
     writePipeline: make('writeback'),
     layout,
   };
-  pipelineCache = cache;
-  pipelineCacheDevice = device;
-  return cache;
+  byFormat.set(format, set);
+  return set;
+}
+
+function pickFormat(srcFormat: GPUTextureFormat): SupportedFormat {
+  return srcFormat === 'rgba16float' ? 'rgba16float' : 'rgba8unorm';
 }
 
 export const hydraulicErosionNode: NodeDef = {
@@ -83,9 +97,9 @@ export const hydraulicErosionNode: NodeDef = {
   category: 'Terrain',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'source terrain to erode (from [core/heightfield](../../core/heightfield))',
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'source heightfield texture to erode. R channel is the height; format is preserved in the output (rgba8unorm or rgba16float). For real altitudes in metres use rgba16float — see [core/texture-convert](../../core/texture-convert)',
     },
     {
       name: 'drops',
@@ -157,13 +171,13 @@ export const hydraulicErosionNode: NodeDef = {
   ],
   outputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'eroded heightfield: same world size and resolution as the input, but with rain-carved channels and deposited sediment',
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'eroded heightfield texture: same resolution and format as the input, but with rain-carved channels and deposited sediment',
     },
   ],
   doc: {
-    summary: 'Simulate raindrops carving channels into a heightfield (Beyer/Marák style).',
+    summary: 'Simulate raindrops carving channels into a heightfield texture (Beyer/Marák style).',
     description: `
 A GPU port of the parallel raindrop-erosion algorithm: spawn \`drops\`
 water drops at random positions, let each one flow downhill along the
@@ -187,9 +201,9 @@ Tuning notes:
 - For erosion that looks like wind shaping a desert instead of
   rivers carving mountains, drop \`gravity\` and crank \`evaporation\`.
 
-Wire the output back into
-[core/heightfield-to-mesh](../../core/heightfield-to-mesh) to render
-the eroded terrain.
+Output format matches the input format. Wire the result into
+[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+or [terrain/renderer](../../terrain/renderer).
 `,
     sampleGraph: () => {
       const g = createGraph();
@@ -198,37 +212,46 @@ the eroded terrain.
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [10, 10], heightRange: [0, 2] },
+        inputValues: { format: 1 },
+      });
+      const remap = addNode(g, 'core/texture-map-range', {
+        id: 'remap',
+        position: { x: 560, y: 0 },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 2, clamp: false },
       });
       const ero = addNode(g, 'terrain/hydraulic-erosion', {
         id: 'erosion',
-        position: { x: 560, y: 0 },
+        position: { x: 840, y: 0 },
         inputValues: {
           drops: 30000, seed: 1, max_lifetime: 30, inertia: 0.05,
           capacity: 4, deposition: 0.3, erosion: 0.3, evaporation: 0.01,
           gravity: 4, min_slope: 0.01, brush_radius: 3,
         },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: ero.id, socket: 'heightfield' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: remap.id, socket: 'texture' });
+      addEdge(g, { node: remap.id, socket: 'texture' }, { node: ero.id, socket: 'texture' });
       return { graph: g, rootNodeId: 'erosion' };
     },
   },
   evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
-    const inHeightfield = inputs.heightfield as HeightfieldValue;
-    const srcTex = inHeightfield.texture;
+    const srcTex = inputs.texture as Texture2DValue;
     const width = srcTex.width;
     const height = srcTex.height;
+    const format = pickFormat(srcTex.format);
 
     const prev = ctx.previousOutput as CachedState | undefined;
-    const out = reusableTexture(device, prev?.texture, {
+    // If the output format changed (because the input format changed),
+    // we have to abandon the cached texture — it has the wrong format.
+    const reusableTexCandidate = prev?.__format === format ? prev?.texture : undefined;
+    const out = reusableTexture(device, reusableTexCandidate, {
       width,
       height,
-      format: TEXTURE_FORMAT,
+      format,
       usage:
         GPUTextureUsage.STORAGE_BINDING |
         GPUTextureUsage.TEXTURE_BINDING |
@@ -255,7 +278,6 @@ the eroded terrain.
     f32[10] = inputs.min_slope as number;
     u32[11] = Math.max(1, Math.round(inputs.max_lifetime as number));
     u32[12] = Math.max(0, Math.round(inputs.brush_radius as number));
-    // u32[13] / u32[14] left as zero padding.
 
     const uniformBuffer = reusableBuffer(
       device,
@@ -277,7 +299,7 @@ the eroded terrain.
       });
     }
 
-    const { initPipeline, simPipeline, writePipeline, layout } = getPipelines(device);
+    const { initPipeline, simPipeline, writePipeline, layout } = getPipelines(device, format);
     const sampler = getSampler(device, {
       magFilter: 'linear',
       minFilter: 'linear',
@@ -321,14 +343,10 @@ the eroded terrain.
     device.queue.submit([encoder.finish()]);
 
     return {
-      heightfield: {
-        texture: out,
-        worldSize: inHeightfield.worldSize,
-        heightRange: inHeightfield.heightRange,
-      },
       texture: out,
       __uniformBuffer: uniformBuffer,
       __heightBuffer: heightBuffer,
+      __format: format,
     };
   },
 };

@@ -28,9 +28,13 @@ export function createMultiLayerTerrainDemo(): {
     position: { x: 0, y: 0 },
     inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 1, resolution: 512 },
   });
-  const heightfield = addNode(g, 'core/heightfield', {
+  const heightFloat = addNode(g, 'core/texture-convert', {
     position: { x: COL, y: 0 },
-    inputValues: { worldSize: [200, 200], heightRange: [0, 30] },
+    inputValues: { format: 1 },
+  });
+  const heightScale = addNode(g, 'core/texture-map-range', {
+    position: { x: COL * 1.25, y: 0 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 30, clamp: false },
   });
   const erosion = addNode(g, 'terrain/hydraulic-erosion', {
     position: { x: COL * 1.5, y: 0 },
@@ -78,7 +82,7 @@ export function createMultiLayerTerrainDemo(): {
   });
   const pathCarve = addNode(g, 'path/carve-heightfield', {
     position: { x: COL * 1.85, y: 0 },
-    inputValues: { depth: 4, falloff: 5 },
+    inputValues: { worldSize: [200, 200], depth: 4, falloff: 5 },
   });
 
   // Four solid-color layer albedos (red / green / blue / white).
@@ -129,6 +133,7 @@ export function createMultiLayerTerrainDemo(): {
   const terrainRenderer = addNode(g, 'terrain/renderer', {
     position: { x: COL * 3, y: 0 },
     inputValues: {
+      worldSize: [200, 200],
       chunk_count: [8, 8],
       base_divisions: 32,
       lod_levels: 4,
@@ -155,11 +160,14 @@ export function createMultiLayerTerrainDemo(): {
   });
 
   // === Edges ============================================================
-  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: erosion.id, socket: 'heightfield' });
-  addEdge(g, { node: erosion.id, socket: 'heightfield' }, { node: pathCarve.id, socket: 'heightfield' });
+  // Heightfield chain: perlin → texture-convert(rgba16f) → texture-map-range
+  // (0..30m metres) → erosion → path/carve → terrain/renderer.
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightFloat.id, socket: 'texture' });
+  addEdge(g, { node: heightFloat.id, socket: 'texture' }, { node: heightScale.id, socket: 'texture' });
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: erosion.id, socket: 'texture' });
+  addEdge(g, { node: erosion.id, socket: 'texture' }, { node: pathCarve.id, socket: 'texture' });
   addEdge(g, { node: pathSpline.id, socket: 'path' }, { node: pathCarve.id, socket: 'path' });
-  addEdge(g, { node: pathCarve.id, socket: 'heightfield' }, { node: terrainRenderer.id, socket: 'heightfield' });
+  addEdge(g, { node: pathCarve.id, socket: 'texture' }, { node: terrainRenderer.id, socket: 'heightTexture' });
 
   addEdge(g, { node: albedo0.id, socket: 'texture' }, { node: layer0.id, socket: 'albedo' });
   addEdge(g, { node: albedo1.id, socket: 'texture' }, { node: layer1.id, socket: 'albedo' });

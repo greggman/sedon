@@ -1,7 +1,6 @@
 import type { NodeDef, NodeOutputs } from '../core/node-def.js';
 import type {
   GeometryValue,
-  HeightfieldValue,
   LightingValue,
   MaterialValue,
   PbrMaterial,
@@ -121,7 +120,7 @@ export function synthesizeTiles(
   // checkerboard background + tonemap off, so authored values are
   // shown WYSIWYG. Material / Geometry previews want lighting (to read
   // roughness and shape) so they stay non-flat.
-  const FLAT_TYPES = new Set(['Texture2D', 'Heightfield']);
+  const FLAT_TYPES = new Set(['Texture2D']);
   const tiles: PreviewTileSpec[] = [];
   for (const out of rootDef.outputs) {
     const value = rootOutputs[out.name];
@@ -167,8 +166,6 @@ function synthesize(
       return value as SceneValue;
     case 'Texture2D':
       return planeWithBasecolor(value as Texture2DValue, res);
-    case 'Heightfield':
-      return planeWithBasecolor((value as HeightfieldValue).texture, res);
     case 'Material':
       // PBR materials are authored to be lit, so a "preview the
       // material" tile keeps lighting on — that's what shows roughness

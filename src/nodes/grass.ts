@@ -2,7 +2,6 @@ import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type {
   GrassFieldValue,
-  HeightfieldValue,
   SceneValue,
   Texture2DValue,
 } from '../core/resources.js';
@@ -23,9 +22,15 @@ export const grassNode: NodeDef = {
   category: 'Scene',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'terrain the grass plants onto. Blades sample their Y from this',
+      name: 'heightTexture',
+      type: 'Texture2D',
+      description: 'heightfield texture (R = world Y in metres). Blades sample their Y from this. Typically the same texture wired into [terrain/renderer](../../terrain/renderer)',
+    },
+    {
+      name: 'worldSize',
+      type: 'Vec2',
+      default: [40, 40],
+      description: 'terrain XZ footprint in metres — matches the worldSize on the terrain renderer the grass sits on',
     },
     {
       name: 'density',
@@ -166,10 +171,15 @@ grass stays on the flats and off the roads.
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [40, 40], heightRange: [0, 4] },
+        inputValues: { format: 1 },
+      });
+      const heightTex = addNode(g, 'core/texture-map-range', {
+        id: 'heightTex',
+        position: { x: 560, y: 0 },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },
       });
       const density = addNode(g, 'core/perlin', {
         id: 'density',
@@ -191,8 +201,9 @@ grass stays on the flats and off the roads.
       });
       const grass = addNode(g, 'core/grass', {
         id: 'grass',
-        position: { x: 560, y: 100 },
+        position: { x: 840, y: 100 },
         inputValues: {
+          worldSize: [40, 40],
           maxDistance: 40, spacing: 0.4,
           bladeWidth: 0.3, bladeHeight: 0.6,
           densityScale: 1, maxSlope: 0.6,
@@ -202,15 +213,16 @@ grass stays on the flats and off the roads.
           colorVariation: 0.25, seed: 0,
         },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: grass.id, socket: 'heightfield' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: heightTex.id, socket: 'texture' });
+      addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: grass.id, socket: 'heightTexture' });
       addEdge(g, { node: density.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
       addEdge(g, { node: card.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
       return { graph: g, rootNodeId: 'grass' };
     },
   },
   evaluate(_ctx, inputs): { scene: SceneValue } {
-    const heightfield = inputs.heightfield as HeightfieldValue | undefined;
+    const heightTexture = inputs.heightTexture as Texture2DValue | undefined;
     const density = inputs.density as Texture2DValue | undefined;
     // Gather card_0, card_1, … in numeric order. Skips gaps/unwired.
     const cards: Texture2DValue[] = [];
@@ -223,7 +235,7 @@ grass stays on the flats and off the roads.
     }
     // Without the essential GPU inputs there's nothing to plant — emit
     // an empty scene so partial wiring during authoring doesn't crash.
-    if (!heightfield || !density || cards.length === 0) {
+    if (!heightTexture || !density || cards.length === 0) {
       return { scene: { entities: [] } };
     }
 
@@ -234,7 +246,8 @@ grass stays on the flats and off the roads.
     const field: GrassFieldValue = {
       cards,
       density,
-      heightfield,
+      heightTexture,
+      worldSize: inputs.worldSize as [number, number],
       maxDistance: inputs.maxDistance as number,
       spacing: inputs.spacing as number,
       bladeSize: [inputs.bladeWidth as number, inputs.bladeHeight as number],

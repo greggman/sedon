@@ -116,14 +116,15 @@ export function createWaterKind(
       // a different heightfield (different texture handle) requires
       // a fresh bind group. Wave / colour / foam-width scalars are
       // rewritten via writeMaterialParams.
-      const htex = material.heightfield ? gpuObjectId(material.heightfield.texture.texture) : 'none';
+      const htex = material.heightTexture ? gpuObjectId(material.heightTexture.texture) : 'none';
       return `water|${htex}`;
     },
     writeMaterialParams(material, paramBuffer) {
       // Layout matches WaterParams in water.wgsl. 128 bytes total.
       //   offset 0   vec4 color
       //   offset 16  vec4 (waveStrength, waveScale, waveSpeed, roughness)
-      //   offset 32  vec4 (worldSizeX, worldSizeZ, heightMin, heightMax)
+      //   offset 32  vec4 (worldSizeX, worldSizeZ, _unused0, _unused1)
+      //                   — heightfield R = world Y in metres directly
       //   offset 48  vec4 (foamWidth, foamEnabled, pad, pad)
       //   offset 64  vec4 (rippleStrength, rippleScale, rippleSpeed, pad)
       //   offset 80  vec4 (absorption, pad, pad, pad)
@@ -138,13 +139,13 @@ export function createWaterKind(
       data[5] = material.waveScale;
       data[6] = material.waveSpeed;
       data[7] = material.roughness;
-      const hf = material.heightfield;
-      data[8]  = hf ? hf.worldSize[0]   : 1;
-      data[9]  = hf ? hf.worldSize[1]   : 1;
-      data[10] = hf ? hf.heightRange[0] : 0;
-      data[11] = hf ? hf.heightRange[1] : 1;
+      const hasField = material.heightTexture !== undefined && material.heightWorldSize !== undefined;
+      data[8]  = hasField ? material.heightWorldSize![0] : 1;
+      data[9]  = hasField ? material.heightWorldSize![1] : 1;
+      data[10] = 0;
+      data[11] = 0;
       data[12] = material.foamWidth;
-      data[13] = hf ? 1 : 0; // foam enabled
+      data[13] = hasField ? 1 : 0; // foam enabled
       data[14] = 0;
       data[15] = 0;
       data[16] = material.rippleStrength;
@@ -171,7 +172,7 @@ export function createWaterKind(
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);
-      const heightTex = material.heightfield?.texture ?? ensureFlatHeight();
+      const heightTex = material.heightTexture ?? ensureFlatHeight();
       const bindGroup = device.createBindGroup({
         layout: materialBindGroupLayout,
         entries: [

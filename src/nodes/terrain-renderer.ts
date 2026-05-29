@@ -1,11 +1,11 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { InputDef, NodeDef } from '../core/node-def.js';
 import type {
-  HeightfieldValue,
   MaterialValue,
   SceneValue,
   TerrainFieldValue,
   TerrainMultiLayerMaterial,
+  Texture2DValue,
 } from '../core/resources.js';
 
 // Chunked-LOD terrain renderer node. Bundles a heightfield + a
@@ -25,9 +25,15 @@ export const terrainRendererNode: NodeDef = {
   category: 'Terrain',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'terrain shape, from [core/heightfield](../../core/heightfield) or [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)',
+      name: 'heightTexture',
+      type: 'Texture2D',
+      description: 'heightfield texture; R channel = world Y in metres. Typically a [core/perlin](../../core/perlin) or eroded noise piped through [core/texture-convert](../../core/texture-convert) + [core/texture-map-range](../../core/texture-map-range), or the output of [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)',
+    },
+    {
+      name: 'worldSize',
+      type: 'Vec2',
+      default: [40, 40],
+      description: 'terrain XZ footprint in metres (centred on origin). Chunks span this footprint divided by `chunk_count`',
     },
     {
       name: 'material',
@@ -103,10 +109,15 @@ Tuning notes:
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [40, 40], heightRange: [0, 6] },
+        inputValues: { format: 1 },
+      });
+      const heightTex = addNode(g, 'core/texture-map-range', {
+        id: 'heightTex',
+        position: { x: 560, y: 0 },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 6, clamp: false },
       });
       // Two-layer material (grass + rock) splat by a separate perlin.
       const grassCol = addNode(g, 'core/solid-color', {
@@ -146,27 +157,30 @@ Tuning notes:
       });
       const renderer = addNode(g, 'terrain/renderer', {
         id: 'renderer',
-        position: { x: 840, y: 150 },
+        position: { x: 1120, y: 150 },
         inputValues: {
+          worldSize: [40, 40],
           chunk_count: [8, 8],
           base_divisions: 32,
           lod_levels: 4,
           lod_distance: 30,
         },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: heightTex.id, socket: 'texture' });
       addEdge(g, { node: grassCol.id, socket: 'texture' }, { node: layerA.id, socket: 'albedo' });
       addEdge(g, { node: rockCol.id, socket: 'texture' }, { node: layerB.id, socket: 'albedo' });
       addEdge(g, { node: layerA.id, socket: 'layer' }, { node: material.id, socket: 'layer_0' });
       addEdge(g, { node: layerB.id, socket: 'layer' }, { node: material.id, socket: 'layer_1' });
       addEdge(g, { node: splat.id, socket: 'texture' }, { node: material.id, socket: 'splat' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: renderer.id, socket: 'heightfield' });
+      addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: renderer.id, socket: 'heightTexture' });
       addEdge(g, { node: material.id, socket: 'material' }, { node: renderer.id, socket: 'material' });
       return { graph: g, rootNodeId: 'renderer' };
     },
   },
   evaluate(_ctx, inputs): { scene: SceneValue } {
-    const heightfield = inputs.heightfield as HeightfieldValue;
+    const heightTexture = inputs.heightTexture as Texture2DValue;
+    const worldSize = inputs.worldSize as [number, number];
     const material = inputs.material as MaterialValue;
     if (material.kind !== 'terrain-multi-layer') {
       throw new Error(
@@ -179,7 +193,8 @@ Tuning notes:
     const lodLevels = Math.max(1, Math.round(inputs.lod_levels as number));
     const lodDistance = Math.max(0.01, inputs.lod_distance as number);
     const field: TerrainFieldValue = {
-      heightfield,
+      heightTexture,
+      worldSize,
       material: material as TerrainMultiLayerMaterial,
       chunkCount: [Math.max(1, Math.round(chunkCount[0])), Math.max(1, Math.round(chunkCount[1]))],
       lodLevels,

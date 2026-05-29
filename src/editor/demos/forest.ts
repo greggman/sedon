@@ -47,16 +47,20 @@ export function createForestDemo(): {
     position: { x: 0, y: 0 },
     inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 512 },
   });
-  const heightfield = addNode(g, 'core/heightfield', {
+  const heightFloat = addNode(g, 'core/texture-convert', {
     position: { x: COL, y: 0 },
-    inputValues: { worldSize: [100, 100], heightRange: [0, 25] },
+    inputValues: { format: 1 },
   });
-  const terrainMesh = addNode(g, 'core/heightfield-to-mesh', {
-    position: { x: COL * 2, y: 0 },
+  const heightScale = addNode(g, 'core/texture-map-range', {
+    position: { x: COL * 1.6, y: 0 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 25, clamp: false },
+  });
+  const terrainMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+    position: { x: COL * 2.2, y: 0 },
     // cpu_access: the terrain mesh feeds core/distribute-on-faces below,
     // which needs CPU-side mesh data to scatter trees and rocks. Without
     // it the GPU-only mesh would be unreadable to that node.
-    inputValues: { divisions: [128, 128], cpu_access: true },
+    inputValues: { worldSize: [100, 100], divisions: [128, 128], cpu_access: true },
   });
   // Density 0.06 per m² over 10000 m² ≈ 600 candidate points. Slope and
   // altitude masks downstream cut this to a few hundred real placements.
@@ -212,6 +216,7 @@ export function createForestDemo(): {
     position: { x: COL * 4, y: ROW * 6 },
     extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
+      worldSize: [100, 100],
       maxDistance: 45, spacing: 0.4, bladeWidth: 0.2, bladeHeight: 0.6,
       densityScale: 1.3, maxSlope: 0.5, windStrength: 0.1, windSpeed: 2.2,
       baseColor: [0.9, 0.95, 0.85, 1], tipColor: [1, 1, 0.95, 1], colorVariation: 0.3, seed: 5,
@@ -227,6 +232,7 @@ export function createForestDemo(): {
     position: { x: COL * 11.5, y: ROW * 1.4 },
     inputValues: {
       water_level: 12,
+      heightWorldSize: [100, 100],
       wave_strength: 0.01,
       wave_scale: 1,
       foam_width: 0.1,
@@ -246,9 +252,12 @@ export function createForestDemo(): {
   });
 
   // === Edges =============================================================
-  // Terrain
-  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: terrainMesh.id, socket: 'heightfield' });
+  // Terrain: perlin → texture-convert(rgba16f) → texture-map-range(0..25m)
+  // → texture-to-heightfield-mesh. The float-format remap is what lets
+  // the heightfield carry real-altitude values (rgba8unorm would clamp).
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightFloat.id, socket: 'texture' });
+  addEdge(g, { node: heightFloat.id, socket: 'texture' }, { node: heightScale.id, socket: 'texture' });
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: terrainMesh.id, socket: 'texture' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: distribute.id, socket: 'geometry' });
 
   // Masks
@@ -308,7 +317,7 @@ export function createForestDemo(): {
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: grassFlatness.id, socket: 'height' });
   addEdge(g, { node: grassFlatness.id, socket: 'texture' }, { node: grassDensity.id, socket: 'a' });
   addEdge(g, { node: trail.id, socket: 'texture' }, { node: grassDensity.id, socket: 'b' });
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: forestGrass.id, socket: 'heightfield' });
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: forestGrass.id, socket: 'heightTexture' });
   addEdge(g, { node: grassDensity.id, socket: 'texture' }, { node: forestGrass.id, socket: 'density' });
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: forestGrass.id, socket: 'typeMap' });
   addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_0' });
@@ -319,11 +328,11 @@ export function createForestDemo(): {
   // terrain's heightfield (via the scene's terrain field), and forwards
   // straight to the output.
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
-  // The forest uses heightfield-to-mesh + scene-entity (no terrain/renderer),
-  // so the heightfield isn't carried implicitly on the merged scene. Wire
-  // it directly into the water node so the shader has terrain Y available
-  // for shoreline foam.
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
+  // The forest uses texture-to-heightfield-mesh + scene-entity (no
+  // terrain/renderer), so the heightfield isn't carried implicitly on
+  // the merged scene. Wire it directly into the water node so the
+  // shader has terrain Y available for shoreline foam.
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: water.id, socket: 'heightTexture' });
   addEdge(g, { node: water.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   // Per-graph initial framings. With the world scaled to meters, the

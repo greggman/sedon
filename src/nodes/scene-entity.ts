@@ -17,7 +17,7 @@ export const sceneEntityNode: NodeDef = {
     {
       name: 'geometry',
       type: 'Geometry',
-      description: 'mesh from any geometry-producing node ([core/sphere](../../core/sphere), [core/heightfield-to-mesh](../../core/heightfield-to-mesh), [core/transform](../../core/transform), …)',
+      description: 'mesh from any geometry-producing node ([core/sphere](../../core/sphere), [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh), [core/transform](../../core/transform), …)',
     },
     {
       name: 'material',

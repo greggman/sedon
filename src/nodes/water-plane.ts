@@ -1,8 +1,8 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type {
-  HeightfieldValue,
   SceneValue,
+  Texture2DValue,
   WaterMaterial,
 } from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
@@ -28,10 +28,17 @@ export const waterPlaneNode: NodeDef = {
       description: 'upstream scene to add the water to. The water entity is appended to the scene\'s entity list; reflection rendering sees every entity that came in through this socket',
     },
     {
-      name: 'heightfield',
-      type: 'Heightfield',
+      name: 'heightTexture',
+      type: 'Texture2D',
       optional: true,
-      description: 'optional heightfield used to drive shoreline foam (water samples terrain Y at each fragment and fades toward foam-white near the waterline). A direct wire takes precedence over any heightfield carried implicitly by an upstream `terrain/renderer` field; pass-throughs that don\'t go through terrain/renderer (e.g. heightfield-to-mesh + scene-entity) need this socket wired explicitly. With nothing wired and no terrain field on the scene, foam is disabled',
+      description: 'optional heightfield texture (R = world Y in metres) used to drive shoreline foam (water samples terrain Y at each fragment and fades toward foam-white near the waterline). A direct wire takes precedence over any heightfield carried implicitly by an upstream `terrain/renderer` field; pass-throughs that don\'t go through terrain/renderer (e.g. texture-to-heightfield-mesh + scene-entity) need this wired explicitly. With nothing wired and no terrain field on the scene, foam is disabled',
+    },
+    {
+      name: 'heightWorldSize',
+      type: 'Vec2',
+      optional: true,
+      default: [40, 40],
+      description: 'terrain XZ footprint in metres — paired with `heightTexture` so the water shader can map world XZ → terrain UVs. Defaulted but only consulted when `heightTexture` is wired',
     },
     {
       name: 'water_level',
@@ -197,15 +204,20 @@ is suppressed past the heightfield bounds automatically.
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [40, 40], heightRange: [0, 4] },
+        inputValues: { format: 1 },
       });
-      const hfMesh = addNode(g, 'core/heightfield-to-mesh', {
-        id: 'hfMesh',
+      const heightTex = addNode(g, 'core/texture-map-range', {
+        id: 'heightTex',
         position: { x: 560, y: 0 },
-        inputValues: { divisions: [64, 64], cpu_access: false },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },
+      });
+      const hfMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+        id: 'hfMesh',
+        position: { x: 840, y: 0 },
+        inputValues: { worldSize: [40, 40], divisions: [64, 64], cpu_access: false },
       });
       const albedo = addNode(g, 'core/solid-color', {
         id: 'albedo',
@@ -224,9 +236,10 @@ is suppressed past the heightfield bounds automatically.
       });
       const water = addNode(g, 'water/plane', {
         id: 'water',
-        position: { x: 1120, y: 100 },
+        position: { x: 1400, y: 100 },
         inputValues: {
           water_level: 1.6,
+          heightWorldSize: [40, 40],
           color: [0.1, 0.35, 0.45, 0.9],
           wave_strength: 0.4, wave_scale: 6, wave_speed: 1,
           roughness: 0.05,
@@ -237,13 +250,14 @@ is suppressed past the heightfield bounds automatically.
           world_size: [40, 40], extent_scale: 5, subdivisions: 64,
         },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: hfMesh.id, socket: 'heightfield' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: heightTex.id, socket: 'texture' });
+      addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: hfMesh.id, socket: 'texture' });
       addEdge(g, { node: albedo.id, socket: 'texture' }, { node: mat.id, socket: 'basecolor' });
       addEdge(g, { node: hfMesh.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
       addEdge(g, { node: mat.id, socket: 'material' }, { node: entity.id, socket: 'material' });
       addEdge(g, { node: entity.id, socket: 'scene' }, { node: water.id, socket: 'scene' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: water.id, socket: 'heightfield' });
+      addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: water.id, socket: 'heightTexture' });
       return { graph: g, rootNodeId: 'water' };
     },
   },
@@ -270,19 +284,21 @@ is suppressed past the heightfield bounds automatically.
     const userSubdivisions = Math.max(1, Math.round(inputs.subdivisions as number));
 
     // Heightfield for shoreline foam + plane sizing. Resolution order:
-    //   1. The `heightfield` input socket if wired (covers the
-    //      heightfield-to-mesh + scene-entity pattern where the
+    //   1. The `heightTexture` input socket if wired (covers the
+    //      texture-to-heightfield-mesh + scene-entity pattern where the
     //      heightfield isn't carried on the scene).
-    //   2. The first terrain field's heightfield (terrain/renderer
+    //   2. The first terrain field's heightTexture (terrain/renderer
     //      adds one to scene.terrain[]).
     //   3. None — foam is disabled and the plane sizes from
     //      `world_size`.
-    const directHeightfield = inputs.heightfield as HeightfieldValue | undefined;
+    const directHeightTex = inputs.heightTexture as Texture2DValue | undefined;
+    const directHeightWorldSize = inputs.heightWorldSize as [number, number] | undefined;
     const terrainField = inputScene.terrain?.[0];
-    const field = directHeightfield ?? terrainField?.heightfield;
-    const baseSize = field
-      ? field.worldSize
-      : worldSizeInput;
+    const heightTexture = directHeightTex ?? terrainField?.heightTexture;
+    const heightWorldSize = directHeightTex
+      ? (directHeightWorldSize ?? worldSizeInput)
+      : terrainField?.worldSize;
+    const baseSize = heightWorldSize ?? worldSizeInput;
 
     // Subdivided plane sized to extentScale × baseSize. The terrain
     // (if any) is centred on the origin; the water plane is centred
@@ -370,7 +386,9 @@ is suppressed past the heightfield bounds automatically.
       ringDecay,
       foamWidth,
       foamColor,
-      ...(field !== undefined ? { heightfield: field } : {}),
+      ...(heightTexture && heightWorldSize
+        ? { heightTexture, heightWorldSize }
+        : {}),
     };
 
     const waterEntity = {

@@ -10,7 +10,7 @@ export const distributeOnFacesNode: NodeDef = {
     {
       name: 'geometry',
       type: 'Geometry',
-      description: 'source mesh to scatter points across. Must carry CPU-side mesh data (primitives do; [core/heightfield-to-mesh](../../core/heightfield-to-mesh) needs `cpu_access: true`)',
+      description: 'source mesh to scatter points across. Must carry CPU-side mesh data (primitives do; [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) needs `cpu_access: true`)',
     },
     {
       name: 'density',
@@ -47,7 +47,7 @@ out of skin.
 The mesh must carry CPU-side data because the scatter happens on the
 CPU (one triangle area sum + N random samples). Primitives have it by
 default. For a heightfield terrain, set
-[core/heightfield-to-mesh](../../core/heightfield-to-mesh)'s
+[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)'s
 \`cpu_access: true\`.
 
 For projecting a flat grid onto terrain (denser at the centre of the

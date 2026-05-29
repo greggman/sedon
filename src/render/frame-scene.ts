@@ -44,17 +44,20 @@ export function frameScene(
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   let any = false;
 
-  // Terrain fields: use the heightfield's full world bounds. The
+  // Terrain fields: use the heightfield's full world XZ bounds. The
   // texture is conventionally centred on the origin so the XZ extent
-  // is ±worldSize/2 and the Y extent is heightRange.
+  // is ±worldSize/2. We don't know the Y extent without reading the
+  // texture back, so we estimate it as a fraction of the horizontal
+  // footprint — this matches typical "mountain ~25% of width" terrain
+  // and gives a good preview framing without an async readback.
   for (const field of scene.terrain ?? []) {
-    const hf = field.heightfield;
-    const halfX = hf.worldSize[0] * 0.5;
-    const halfZ = hf.worldSize[1] * 0.5;
+    const halfX = field.worldSize[0] * 0.5;
+    const halfZ = field.worldSize[1] * 0.5;
+    const estMaxY = 0.25 * Math.max(field.worldSize[0], field.worldSize[1]);
     if (-halfX < minX) minX = -halfX;
     if (halfX > maxX) maxX = halfX;
-    if (hf.heightRange[0] < minY) minY = hf.heightRange[0];
-    if (hf.heightRange[1] > maxY) maxY = hf.heightRange[1];
+    if (0 < minY) minY = 0;
+    if (estMaxY > maxY) maxY = estMaxY;
     if (-halfZ < minZ) minZ = -halfZ;
     if (halfZ > maxZ) maxZ = halfZ;
     any = true;
@@ -76,12 +79,12 @@ export function frameScene(
   // mixed grass+terrain — exactly the right behavior (frame the
   // visible terrain; grass renders in front of the camera anyway).
   for (const field of scene.grass ?? []) {
-    const hf = field.heightfield;
     const halfXZ = field.maxDistance / 8;
+    const estMaxY = 0.25 * Math.max(field.worldSize[0], field.worldSize[1]);
     if (-halfXZ < minX) minX = -halfXZ;
     if (halfXZ > maxX) maxX = halfXZ;
-    if (hf.heightRange[0] < minY) minY = hf.heightRange[0];
-    if (hf.heightRange[1] > maxY) maxY = hf.heightRange[1];
+    if (0 < minY) minY = 0;
+    if (estMaxY > maxY) maxY = estMaxY;
     if (-halfXZ < minZ) minZ = -halfXZ;
     if (halfXZ > maxZ) maxZ = halfXZ;
     any = true;

@@ -73,7 +73,7 @@ export const mergeSceneEntitiesNode: NodeDef = {
     {
       name: 'scene',
       type: 'Scene',
-      description: 'input scene whose entities will be grouped + flattened. Every entity must have CPU-side mesh data — feed [core/heightfield-to-mesh](../../core/heightfield-to-mesh) outputs through with `cpu_access: true`, primitive geometries have it by default',
+      description: 'input scene whose entities will be grouped + flattened. Every entity must have CPU-side mesh data — feed [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) outputs through with `cpu_access: true`, primitive geometries have it by default',
     },
   ],
   outputs: [
@@ -104,7 +104,7 @@ the same material but different tints stay as separate output entities.
 Caveats:
 - Every input entity needs CPU-side mesh data (\`geometry.mesh\` must
   be populated). Primitives have it by default; GPU-native sources
-  like [core/heightfield-to-mesh](../../core/heightfield-to-mesh) need
+  like [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) need
   \`cpu_access: true\`.
 - The merge throws away per-source identity. Picking a merged entity
   routes back to THIS merge node, not the original scene-entity that

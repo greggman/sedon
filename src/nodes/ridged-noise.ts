@@ -77,7 +77,7 @@ concentrating creases along major spines.
 
 Perfect for mountain ridges and rock-fracture patterns when used as a
 heightfield directly, or as the input to a
-[core/heightfield-to-mesh](../../core/heightfield-to-mesh) chain. Invert
+[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) chain. Invert
 (1 − result) and you get a dry-riverbed network of dark grooves on a light
 plateau.
 `,

@@ -23,8 +23,9 @@ import { distanceTransformNode } from './distance-transform.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
-import { heightfieldNode } from './heightfield.js';
-import { heightfieldToMeshNode } from './heightfield-to-mesh.js';
+import { textureConvertNode } from './texture-convert.js';
+import { textureMapRangeNode } from './texture-map-range.js';
+import { textureToHeightfieldMeshNode } from './texture-to-heightfield-mesh.js';
 import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
 import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
 import { leafMeshNode } from './leaf-mesh.js';
@@ -91,8 +92,9 @@ export const CORE_NODES = [
   cloudSlopeNode,
   cloudStepNode,
   cloudMultiplyNode,
-  heightfieldNode,
-  heightfieldToMeshNode,
+  textureConvertNode,
+  textureMapRangeNode,
+  textureToHeightfieldMeshNode,
   solidColorNode,
   gridNode,
   perlinNode,
@@ -173,8 +175,9 @@ export {
   distributeOnFacesNode,
   gridDistributeNode,
   gridNode,
-  heightfieldNode,
-  heightfieldToMeshNode,
+  textureConvertNode,
+  textureMapRangeNode,
+  textureToHeightfieldMeshNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
   leafMeshNode,

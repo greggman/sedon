@@ -219,7 +219,7 @@ export function createTerrainSystem(
       // The wrapped Texture2DValue may be re-allocated even when its
       // underlying GPUTexture is the same; key on the GPUTexture
       // handle, which is stable across reusableTexture re-renders.
-      `htex=${tagOf(f.heightfield.texture.texture)}`,
+      `htex=${tagOf(f.heightTexture.texture)}`,
     ].join('|');
   }
   // Stable per-GPUObject identity tag — gpu-cache provides `gpuObjectId`;
@@ -314,7 +314,7 @@ export function createTerrainSystem(
       layout: fieldComputeLayout,
       entries: [
         { binding: 0, resource: uniformBuffer },
-        { binding: 1, resource: field.heightfield.texture.texture },
+        { binding: 1, resource: field.heightTexture.texture },
         { binding: 2, resource: heightSampler },
         { binding: 3, resource: chunkInstanceBuffer },
         { binding: 4, resource: drawArgsBuffer },
@@ -324,7 +324,7 @@ export function createTerrainSystem(
       layout: fieldRenderLayout,
       entries: [
         { binding: 0, resource: uniformBuffer },
-        { binding: 1, resource: field.heightfield.texture.texture },
+        { binding: 1, resource: field.heightTexture.texture },
         { binding: 2, resource: heightSampler },
       ],
     });
@@ -364,15 +364,16 @@ export function createTerrainSystem(
     const buf = new ArrayBuffer(UNIFORM_BYTES);
     const f32 = new Float32Array(buf);
     const u32 = new Uint32Array(buf);
-    const totalW = field.heightfield.worldSize[0];
-    const totalD = field.heightfield.worldSize[1];
+    const totalW = field.worldSize[0];
+    const totalD = field.worldSize[1];
     const chunkW = totalW / field.chunkCount[0];
     const chunkD = totalD / field.chunkCount[1];
     f32[0]  = -totalW / 2; f32[1] = -totalD / 2;                  // worldOrigin (offset 0)
     f32[2]  = chunkW;      f32[3] = chunkD;                        // chunkSize    (offset 8)
     u32[4]  = field.chunkCount[0]; u32[5] = field.chunkCount[1];   // chunkCount   (offset 16)
-    f32[6]  = field.heightfield.heightRange[0];                    // heightRange.x (offset 24)
-    f32[7]  = field.heightfield.heightRange[1];                    // heightRange.y (offset 28)
+    // _unused0/_unused1 — heightRange is gone (R = world Y in metres).
+    f32[6]  = 0;                                                   // _unused0 (offset 24)
+    f32[7]  = 0;                                                   // _unused1 (offset 28)
     u32[8]  = Math.min(MAX_LODS, Math.max(1, field.lodLevels));    // lodLevels    (offset 32)
     f32[9]  = field.lodDistance;                                   // lodDistance  (offset 36)
     u32[10] = field.baseDivisions;                                 // baseDivisions (offset 40)

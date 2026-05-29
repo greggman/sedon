@@ -61,7 +61,6 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Vec3Cloud', color: '#7986cb', description: 'per-point Vec3 attribute, paired with a PointCloud' },
   { id: 'FloatCloud', color: '#ffb74d', description: 'per-point Float attribute, paired with a PointCloud' },
   { id: 'BranchGraph', color: '#8d6e63', description: 'tree/plant branch skeleton: graph of branch curves with per-vertex radius' },
-  { id: 'Heightfield', color: '#827717', description: '2D scalar field with world bounds + height range' },
   { id: 'Lighting', color: '#fff176', description: 'scene-level sun + ambient lighting params' },
   { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
   { id: 'Path', color: '#a1887f', description: 'polyline through world space (road, river, …)' },

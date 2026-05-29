@@ -28,7 +28,8 @@ struct WaterParams {
   color: vec4f,
   // x = waveStrength, y = waveScale, z = waveSpeed, w = roughness
   waves: vec4f,
-  // x,y = worldSize (heightfield XZ extent), z = heightMin, w = heightMax
+  // x,y = worldSize (heightfield XZ extent). z, w are unused (the
+  // heightfield's R channel now stores world Y in metres directly).
   world: vec4f,
   // x = foamWidth (world units), y = foamEnabled (0/1), z/w = unused
   foam: vec4f,
@@ -576,18 +577,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   // the white surface doesn't trigger the post-process glow halo.
   if (water.foam.x > 0.0 && water.foam.y > 0.5) {
     let worldSize = water.world.xy;
-    let hMin = water.world.z;
-    let hMax = water.world.w;
     let uv = in.world_pos.xz / worldSize + vec2f(0.5);
     let inHeightfield = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
     if (inHeightfield) {
-      let terrainH = sampleHeightBicubic(uv);
-      let terrainY = hMin + terrainH * (hMax - hMin);
+      // R = world Y in metres directly — no remap.
+      let terrainY = sampleHeightBicubic(uv);
       let depth = max(in.world_pos.y - terrainY, 0.0);
       let static_foam = 1.0 - smoothstep(0.0, water.foam.x, depth);
 
       // Slope via bicubic forward differences. Two extra bicubic
-      // taps (centre is already in `terrainH`) give the gradient of
+      // taps (centre is already in `terrainY`) give the gradient of
       // a C2-smooth surface, so slope is itself smooth — no boxy
       // pixelation in the rings even on gradual slopes. The texel
       // step for forward differences uses the heightfield's actual
@@ -595,10 +594,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
       let dims = vec2f(textureDimensions(heightTex, 0));
       let texel = vec2f(1.0) / dims;
       let world_per_texel = worldSize / dims;
-      let terrainH_e = sampleHeightBicubic(uv + vec2f(texel.x, 0.0));
-      let terrainH_n = sampleHeightBicubic(uv + vec2f(0.0, texel.y));
-      let dy_per_world_x = (terrainH_e - terrainH) * (hMax - hMin) / world_per_texel.x;
-      let dy_per_world_z = (terrainH_n - terrainH) * (hMax - hMin) / world_per_texel.y;
+      let terrainY_e = sampleHeightBicubic(uv + vec2f(texel.x, 0.0));
+      let terrainY_n = sampleHeightBicubic(uv + vec2f(0.0, texel.y));
+      let dy_per_world_x = (terrainY_e - terrainY) / world_per_texel.x;
+      let dy_per_world_z = (terrainY_n - terrainY) / world_per_texel.y;
       let slope = length(vec2f(dy_per_world_x, dy_per_world_z));
       // Floor so a perfectly-flat lakebed doesn't divide by zero —
       // the tiny slope is enough to give a finite (large) h_dist

@@ -24,8 +24,8 @@ export const cloudAltitudeNode: NodeDef = {
     description: `
 A trivial value extractor: emits each point's raw Y coordinate (NOT
 normalised). On a sphere centred at origin radius 1 the range is
-[-1, 1]; on a terrain heightfield it's whatever the heightfield's
-\`heightRange\` produces.
+[-1, 1]; on a terrain heightfield it's the altitudes (metres) in the
+texture itself — the per-vertex Y the mesher baked in.
 
 The typical use is altitude-banded scattering: pipe through
 [core/cloud-step](../../core/cloud-step) with a threshold to get a

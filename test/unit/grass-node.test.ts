@@ -17,19 +17,15 @@ function fakeTex(id: string) {
   const texture = { id, destroyed: false, destroy() { (texture as { destroyed: boolean }).destroyed = true; } };
   return { value: { texture, format: 'rgba8unorm' as const, width: 4, height: 4 }, texture };
 }
-function fakeHeightfield(id: string) {
-  const t = fakeTex(id);
-  return { value: { texture: t.value, worldSize: [10, 10] as [number, number], heightRange: [0, 1] as [number, number] }, texture: t.texture };
-}
-
 type Handle = { id: string; destroyed: boolean; destroy(): void };
 const baseInputs = (): { inputs: Record<string, unknown>; handles: Record<string, Handle> } => {
   const density = fakeTex('density');
   const card0 = fakeTex('card0');
-  const hf = fakeHeightfield('hf');
+  const hf = fakeTex('hf');
   return {
     inputs: {
-      heightfield: hf.value,
+      heightTexture: hf.value,
+      worldSize: [10, 10] as [number, number],
       density: density.value,
       card_0: card0.value,
       maxDistance: 40, spacing: 0.4, bladeWidth: 0.3, bladeHeight: 0.6,
@@ -68,7 +64,7 @@ test('core/grass gathers card_0, card_1, … in numeric order for multi-type', (
 });
 
 test('core/grass with missing essential inputs emits an empty scene (partial-wiring safe)', () => {
-  for (const drop of ['heightfield', 'density', 'card_0']) {
+  for (const drop of ['heightTexture', 'density', 'card_0']) {
     const { inputs } = baseInputs();
     delete inputs[drop];
     const out = grassNode.evaluate({}, inputs) as { scene: SceneValue };
@@ -106,6 +102,6 @@ test('walkGpuResources reaches every grass texture (so sweepCache keeps them ali
   walkGpuResources(scene, (r) => visited.add(r as object));
   assert.ok(visited.has(handles.density!), 'density texture walked');
   assert.ok(visited.has(handles.card0!), 'card texture walked');
-  assert.ok(visited.has(handles.hf!), 'heightfield texture walked');
+  assert.ok(visited.has(handles.hf!), 'height texture walked');
   assert.ok(visited.has(handles.typemap!), 'typeMap texture walked');
 });

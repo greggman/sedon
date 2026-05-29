@@ -1,7 +1,7 @@
-// GPU heightfield-to-mesh. Generates a tessellated XZ-plane mesh
-// directly into GPU vertex / index buffers by sampling the input
-// heightfield texture. No CPU readback — the geometry is renderable
-// the same encoder tick it's produced.
+// GPU texture-to-heightfield-mesh. Generates a tessellated XZ-plane
+// mesh directly into GPU vertex / index buffers by sampling a height
+// texture (R channel = world Y in metres). No CPU readback — the
+// geometry is renderable the same encoder tick it's produced.
 //
 // Two entry points:
 //   write_vertices — one thread per vertex; samples height + computes
@@ -11,17 +11,15 @@
 //     this quad's two triangles.
 
 struct Params {
-  // resolution of the source heightfield texture, used to step normal
-  // sampling at "one source-texel" intervals (matches the CPU path's
-  // 1/divX, 1/divZ step in normalized UV space).
+  // resolution of the output vertex grid.
   numX: u32,           // divX + 1 (vertices along X)
   numZ: u32,           // divZ + 1 (vertices along Z)
   worldW: f32,
   worldD: f32,
-  heightMin: f32,
-  heightMax: f32,
   invDivX: f32,        // 1.0 / divX
   invDivZ: f32,        // 1.0 / divZ
+  _pad0: f32,
+  _pad1: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -32,17 +30,10 @@ struct Params {
 @group(0) @binding(5) var heightTex: texture_2d<f32>;
 @group(0) @binding(6) var samp: sampler;
 
-fn sampleHeight01(u: f32, v: f32) -> f32 {
-  // textureSampleLevel with mip 0 = bilinear, matches the CPU
-  // `sampleHeightfield01` exactly (clamp-to-edge sampler keeps the
-  // edge rows from wrapping).
+fn worldHeight(u: f32, v: f32) -> f32 {
+  // R channel IS world Y in metres — no remap.
   let uv = vec2f(clamp(u, 0.0, 1.0), clamp(v, 0.0, 1.0));
   return textureSampleLevel(heightTex, samp, uv, 0.0).r;
-}
-
-fn worldHeight(u: f32, v: f32) -> f32 {
-  let range = params.heightMax - params.heightMin;
-  return params.heightMin + sampleHeight01(u, v) * range;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -61,7 +52,7 @@ fn write_vertices(@builtin(global_invocation_id) gid: vec3<u32>) {
   // Central-difference normal: sample neighbouring vertices one
   // tessellation cell over in U and V, build (∂x/∂u, ∂y/∂u, ∂z/∂u)
   // and the V counterpart, cross-product → normal. Edge cells use
-  // one-sided differences via clamp inside sampleHeight01.
+  // one-sided differences via clamp inside worldHeight.
   let uL = max(0.0, u01 - params.invDivX);
   let uR = min(1.0, u01 + params.invDivX);
   let vD = max(0.0, v   - params.invDivZ);
@@ -72,7 +63,6 @@ fn write_vertices(@builtin(global_invocation_id) gid: vec3<u32>) {
   let hUz = worldHeight(u01, vU);
   let tX = (uR - uL) * params.worldW;
   let tZ = (vU - vD) * params.worldD;
-  // Normal: same formula as the CPU path (heightfield.ts).
   let nx = -(hR - hL) * tZ;
   let ny =  tX * tZ;
   let nz = -(hUz - hDz) * tX;
@@ -88,8 +78,8 @@ fn write_vertices(@builtin(global_invocation_id) gid: vec3<u32>) {
   normals[p3 + 2u] = nz / nlen;
   let u2 = vi * 2u;
   uvs[u2] = u01;
-  // Match the CPU path's V flip so the heightfield's +V (bottom of
-  // texture in screen space) maps to +Z (back of terrain).
+  // V flip so the heightfield's +V (bottom of texture in screen space)
+  // maps to +Z (back of terrain).
   uvs[u2 + 1u] = 1.0 - v;
 }
 

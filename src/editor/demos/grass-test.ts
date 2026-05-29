@@ -26,13 +26,17 @@ export function createGrassTestDemo(): {
     position: { x: 0, y: 0 },
     inputValues: { scale: [2, 2], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.7, resolution: 512 },
   });
-  const heightfield = addNode(g, 'core/heightfield', {
+  const heightFloat = addNode(g, 'core/texture-convert', {
     position: { x: COL, y: 0 },
-    inputValues: { worldSize: [60, 60], heightRange: [0, 6] },
+    inputValues: { format: 1 },
   });
-  const terrainMesh = addNode(g, 'core/heightfield-to-mesh', {
-    position: { x: COL * 2, y: 0 },
-    inputValues: { divisions: [128, 128] },
+  const heightScale = addNode(g, 'core/texture-map-range', {
+    position: { x: COL * 1.6, y: 0 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 6, clamp: false },
+  });
+  const terrainMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+    position: { x: COL * 2.2, y: 0 },
+    inputValues: { worldSize: [60, 60], divisions: [128, 128] },
   });
 
   // Flat terrain material (muted soil so the grass reads against it).
@@ -101,6 +105,7 @@ export function createGrassTestDemo(): {
     // extraInputsSpec namePrefix 'card'); card_0 is the static input.
     extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
+      worldSize: [60, 60],
       maxDistance: 35,
       spacing: 0.3,
       bladeWidth: 0.22,
@@ -131,9 +136,10 @@ export function createGrassTestDemo(): {
     inputValues: { fog_density: 0.012, fog_color: [0.7, 0.78, 0.82, 1] },
   });
 
-  // Terrain wiring.
-  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightfield.id, socket: 'texture' });
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: terrainMesh.id, socket: 'heightfield' });
+  // Terrain wiring. Perlin → float-format → 0..6m metres → mesh.
+  addEdge(g, { node: perlin.id, socket: 'texture' }, { node: heightFloat.id, socket: 'texture' });
+  addEdge(g, { node: heightFloat.id, socket: 'texture' }, { node: heightScale.id, socket: 'texture' });
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: terrainMesh.id, socket: 'texture' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
   addEdge(g, { node: soil.id, socket: 'texture' }, { node: terrainMat.id, socket: 'basecolor' });
   addEdge(g, { node: terrainMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
@@ -143,7 +149,7 @@ export function createGrassTestDemo(): {
   addEdge(g, { node: path.id, socket: 'texture' }, { node: density.id, socket: 'b' });
 
   // Grass wiring.
-  addEdge(g, { node: heightfield.id, socket: 'heightfield' }, { node: grass.id, socket: 'heightfield' });
+  addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: grass.id, socket: 'heightTexture' });
   addEdge(g, { node: density.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
   addEdge(g, { node: typeNoise.id, socket: 'texture' }, { node: grass.id, socket: 'typeMap' });
   addEdge(g, { node: cardGreen.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });

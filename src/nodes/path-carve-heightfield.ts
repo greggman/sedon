@@ -1,7 +1,6 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { InputDef, NodeDef } from '../core/node-def.js';
 import type {
-  HeightfieldValue,
   PathValue,
   Texture2DValue,
 } from '../core/resources.js';
@@ -13,50 +12,72 @@ import {
 import { getSampler } from '../render/gpu-cache.js';
 import shader from './path-carve-heightfield.wgsl';
 
-// Carve a Path into a Heightfield. Lowers the terrain along the path
-// by `depth` world units, smoothly tapering back to the original
-// surface across `falloff` extra extent outside the path's half-
-// width. Output is a new Heightfield with the same worldSize /
-// heightRange (only the texture's R channel changes).
+// Carve a Path into a heightfield Texture2D. Lowers the terrain along
+// the path by `depth` world units, smoothly tapering back to the
+// original surface across `falloff` extra extent outside the path's
+// half-width. Output is a new texture with the same format and
+// dimensions; the worldSize the texture represents is the same as the
+// input (it's a parameter on this node so the carve knows world XZ
+// for distance comparisons).
 //
 // The companion `path-carve-heightfield.wgsl` does the actual work:
 // one compute thread per output texel computes its world XZ,
 // distance-to-nearest-segment, then subtracts a smoothstep'd depth.
 
-const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 const WORKGROUP = 8;
 // Storage buffer size for the path samples, sized to a sensible
 // upper bound so re-evals of the same path-shape reuse the same
 // allocation. ~1024 samples × 12 bytes = 12 KB.
 const MAX_SAMPLES = 1024;
 
+type SupportedFormat = 'rgba8unorm' | 'rgba16float';
+
 interface PrevCache {
   texture?: Texture2DValue;
   __uniformBuffer?: GPUBuffer;
   __samplesBuffer?: GPUBuffer;
+  __format?: SupportedFormat;
 }
 
-let pipelineCache: { device: GPUDevice; layout: GPUBindGroupLayout; pipeline: GPUComputePipeline } | null = null;
-function getPipeline(device: GPUDevice) {
-  if (pipelineCache && pipelineCache.device === device) return pipelineCache;
+interface PipelineSet {
+  layout: GPUBindGroupLayout;
+  pipeline: GPUComputePipeline;
+}
+
+const pipelineCacheByDevice = new WeakMap<GPUDevice, Map<SupportedFormat, PipelineSet>>();
+
+function pickFormat(srcFormat: GPUTextureFormat): SupportedFormat {
+  return srcFormat === 'rgba16float' ? 'rgba16float' : 'rgba8unorm';
+}
+
+function getPipeline(device: GPUDevice, format: SupportedFormat): PipelineSet {
+  let byFormat = pipelineCacheByDevice.get(device);
+  if (!byFormat) {
+    byFormat = new Map();
+    pipelineCacheByDevice.set(device, byFormat);
+  }
+  const existing = byFormat.get(format);
+  if (existing) return existing;
   const layout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
       { binding: 2, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'filtering' } },
-      { binding: 3, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: TEXTURE_FORMAT, viewDimension: '2d' } },
+      { binding: 3, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format, viewDimension: '2d' } },
       { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
     ],
   });
+  const code = shader.replace(/\{\{STORAGE_FORMAT\}\}/g, format);
   const pipeline = device.createComputePipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
     compute: {
-      module: device.createShaderModule({ code: shader }),
+      module: device.createShaderModule({ code }),
       entryPoint: 'carve',
     },
   });
-  pipelineCache = { device, layout, pipeline };
-  return pipelineCache;
+  const set: PipelineSet = { layout, pipeline };
+  byFormat.set(format, set);
+  return set;
 }
 
 export const pathCarveHeightfieldNode: NodeDef = {
@@ -64,9 +85,15 @@ export const pathCarveHeightfieldNode: NodeDef = {
   category: 'Path',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'source terrain to carve into',
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'source heightfield texture (R = world Y in metres). Format is preserved in the output',
+    },
+    {
+      name: 'worldSize',
+      type: 'Vec2',
+      default: [10, 10],
+      description: 'terrain XZ footprint in metres — must match the worldSize the texture represents on the consumer node so the path lands in the right place',
     },
     {
       name: 'path',
@@ -77,7 +104,7 @@ export const pathCarveHeightfieldNode: NodeDef = {
       name: 'depth',
       type: 'Float',
       default: 1.0,
-      description: 'world units of vertical drop inside the path. Output height = clamp(input − depth × falloff(d), 0, 1)',
+      description: 'world units (metres) of vertical drop inside the path. Output height = input − depth × falloff(d)',
     },
     {
       name: 'falloff',
@@ -88,13 +115,13 @@ export const pathCarveHeightfieldNode: NodeDef = {
   ],
   outputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'a new heightfield, same world size and height range as the input, with the path lowered into it',
+      name: 'texture',
+      type: 'Texture2D',
+      description: 'a new heightfield texture, same format and dimensions as the input, with the path lowered into it',
     },
   ],
   doc: {
-    summary: 'Lower a Heightfield along a Path — roads, riverbeds, paved trails.',
+    summary: 'Lower a heightfield texture along a Path — roads, riverbeds, paved trails.',
     description: `
 For each output texel, computes the texel's world XZ, finds the
 distance to the nearest segment of the input path's polyline, and
@@ -102,9 +129,9 @@ subtracts \`depth\` × a smoothstep falloff. Inside the path's half-width
 the full depth is removed (flat-bottomed channel); outside it the depth
 tapers smoothly to zero over an additional \`falloff\` world units.
 
-The result keeps the same world size and height range as the input
-heightfield — only the texture's R channel changes. Wire the output
-straight into [core/heightfield-to-mesh](../../core/heightfield-to-mesh)
+The result keeps the same format and dimensions as the input texture —
+only the R channel changes. Wire the output straight into
+[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
 to render the terrain with the carved road; or feed it into another
 filter stage first (a [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)
 pass after carving will deposit sediment inside the road channel,
@@ -121,10 +148,15 @@ Path from spline samples, so it follows any control-point layout.
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [20, 20], heightRange: [0, 4] },
+        inputValues: { format: 1 },
+      });
+      const heightTex = addNode(g, 'core/texture-map-range', {
+        id: 'heightTex',
+        position: { x: 560, y: 0 },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },
       });
       const extras: InputDef[] = [
         { name: 'point_0', type: 'Vec3' },
@@ -133,7 +165,7 @@ Path from spline samples, so it follows any control-point layout.
       ];
       const spline = addNode(g, 'path/spline', {
         id: 'spline',
-        position: { x: 280, y: 220 },
+        position: { x: 560, y: 220 },
         extraInputs: extras,
         inputValues: {
           width: 3,
@@ -145,54 +177,54 @@ Path from spline samples, so it follows any control-point layout.
       });
       const carve = addNode(g, 'path/carve-heightfield', {
         id: 'carve',
-        position: { x: 560, y: 110 },
-        inputValues: { depth: 1.2, falloff: 2 },
+        position: { x: 840, y: 110 },
+        inputValues: { worldSize: [20, 20], depth: 1.2, falloff: 2 },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: carve.id, socket: 'heightfield' });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: heightTex.id, socket: 'texture' });
+      addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: carve.id, socket: 'texture' });
       addEdge(g, { node: spline.id, socket: 'path' }, { node: carve.id, socket: 'path' });
       return { graph: g, rootNodeId: 'carve' };
     },
   },
   evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
-    const inField = inputs.heightfield as HeightfieldValue;
+    const src = inputs.texture as Texture2DValue;
+    const worldSize = inputs.worldSize as [number, number];
     const path = inputs.path as PathValue;
     const depth = inputs.depth as number;
     const falloff = inputs.falloff as number;
+    const format = pickFormat(src.format);
 
-    const src = inField.texture;
     const width = src.width;
     const height = src.height;
 
     const prev = ctx.previousOutput as PrevCache | undefined;
-    const out = reusableTexture(device, prev?.texture, {
+    const reusableTexCandidate = prev?.__format === format ? prev?.texture : undefined;
+    const out = reusableTexture(device, reusableTexCandidate, {
       width,
       height,
-      format: TEXTURE_FORMAT,
+      format,
       usage:
         GPUTextureUsage.STORAGE_BINDING
         | GPUTextureUsage.TEXTURE_BINDING
         | GPUTextureUsage.COPY_SRC,
     });
 
-    // Uniforms: resolution (vec2u) | worldSize (vec2f) | heightRange
-    // (vec2f) | sampleCount (u32) | width (f32) | depth (f32) |
-    // falloff (f32). Total 40 bytes — pad to 48 for std140-ish
-    // alignment safety.
+    // Uniforms: resolution (vec2u) | worldSize (vec2f) | sampleCount
+    // (u32) | width (f32) | depth (f32) | falloff (f32) | _pad ×2.
+    // Total 40 bytes; pad to 48 for std140-ish alignment safety.
     const uniformData = new ArrayBuffer(48);
     const uf32 = new Float32Array(uniformData);
     const uu32 = new Uint32Array(uniformData);
     uu32[0] = width;
     uu32[1] = height;
-    uf32[2] = inField.worldSize[0];
-    uf32[3] = inField.worldSize[1];
-    uf32[4] = inField.heightRange[0];
-    uf32[5] = inField.heightRange[1];
-    uu32[6] = Math.min(path.count, MAX_SAMPLES);
-    uf32[7] = path.width;
-    uf32[8] = depth;
-    uf32[9] = falloff;
+    uf32[2] = worldSize[0];
+    uf32[3] = worldSize[1];
+    uu32[4] = Math.min(path.count, MAX_SAMPLES);
+    uf32[5] = path.width;
+    uf32[6] = depth;
+    uf32[7] = falloff;
 
     const uniformBuffer = reusableBuffer(
       device,
@@ -226,7 +258,7 @@ Path from spline samples, so it follows any control-point layout.
       addressModeV: 'clamp-to-edge',
     });
 
-    const { layout, pipeline } = getPipeline(device);
+    const { layout, pipeline } = getPipeline(device, format);
     const bindGroup = device.createBindGroup({
       layout,
       entries: [
@@ -247,14 +279,10 @@ Path from spline samples, so it follows any control-point layout.
     device.queue.submit([encoder.finish()]);
 
     return {
-      heightfield: {
-        texture: out,
-        worldSize: inField.worldSize,
-        heightRange: inField.heightRange,
-      },
       texture: out,
       __uniformBuffer: uniformBuffer,
       __samplesBuffer: samplesBuffer,
+      __format: format,
     };
   },
 };

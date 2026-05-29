@@ -46,7 +46,7 @@ Scales the UV coordinates of every vertex by \`scale.x\` and \`scale.y\`.
 Texture sampling already uses repeat addressing, so non-integer scales
 work fine — \`scale = [2.5, 2.5]\` tiles a texture 2.5× across the mesh.
 
-The motivating use: a [core/heightfield-to-mesh](../../core/heightfield-to-mesh)
+The motivating use: a [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
 emits UVs in [0, 1] across the whole terrain. A single grass texture
 stretched across a 200m terrain reads as blurry mud at ground level. Pass
 the mesh through uv-transform with \`scale = [16, 16]\` and the same

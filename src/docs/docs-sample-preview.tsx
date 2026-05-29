@@ -14,7 +14,6 @@ import { evaluateGraph } from '../core/evaluate.js';
 import type { NodeOutputs } from '../core/node-def.js';
 import type {
   GeometryValue,
-  HeightfieldValue,
   MaterialValue,
   PathValue,
   SceneValue,
@@ -80,11 +79,6 @@ const DEFAULT_DOC_CAMERA: CameraState = {
 function isTexture2D(v: unknown): v is Texture2DValue {
   return typeof v === 'object' && v !== null && 'texture' in v && 'format' in v;
 }
-function isHeightfield(v: unknown): v is HeightfieldValue {
-  return (
-    typeof v === 'object' && v !== null && 'texture' in v && 'worldSize' in v && 'heightRange' in v
-  );
-}
 function isMaterial(v: unknown): v is MaterialValue {
   return typeof v === 'object' && v !== null && 'kind' in v;
 }
@@ -112,7 +106,6 @@ type PreviewTarget =
 function previewTargetFor(outputs: NodeOutputs | undefined): PreviewTarget {
   if (!outputs) return { kind: 'none' };
   for (const v of Object.values(outputs)) {
-    if (isHeightfield(v)) return { kind: 'texture', value: v.texture };
     if (isTexture2D(v)) return { kind: 'texture', value: v };
     if (isGeometry(v)) return { kind: 'geometry', value: v };
     if (isPath(v)) return { kind: 'path', value: v };

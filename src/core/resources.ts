@@ -259,12 +259,15 @@ export interface WaterMaterial {
   ringSpeed: number;
   ringDecay: number;
   /**
-   * Optional heightfield reference. When present the shader samples
-   * the underlying terrain Y at each fragment and tints toward white
-   * within `foamWidth` of the shoreline (where water depth → 0).
-   * Without it, foam is disabled.
+   * Optional heightfield texture reference. When present the shader
+   * samples the underlying terrain Y at each fragment (R channel of
+   * `heightTexture`, in metres directly — rgba16float) and tints
+   * toward white within `foamWidth` of the shoreline (where water
+   * depth → 0). Without it, foam is disabled. `heightWorldSize` is
+   * the terrain's XZ footprint in metres, used to map world XZ → UV.
    */
-  heightfield?: HeightfieldValue;
+  heightTexture?: Texture2DValue;
+  heightWorldSize?: [number, number];
   /**
    * World-unit shoreline-foam falloff distance. The water surface
    * fades from foam-white at depth 0 to its base colour at depth
@@ -297,8 +300,13 @@ export interface WaterMaterial {
  * parameters into one of these values.
  */
 export interface TerrainFieldValue {
-  /** Drives the chunk vertex displacement and per-chunk height bounds. */
-  heightfield: HeightfieldValue;
+  /**
+   * Heightfield texture (rgba16float; R = world Y in metres). Drives
+   * the chunk vertex displacement and per-chunk height bounds.
+   */
+  heightTexture: Texture2DValue;
+  /** Terrain XZ footprint in metres (centred on origin). */
+  worldSize: [number, number];
   /**
    * Surface material. Bound via the existing terrain-multi-layer
    * material-kind impl so the same fragment shader serves both regular
@@ -437,12 +445,17 @@ export interface GrassFieldValue {
    */
   density: Texture2DValue;
   /**
-   * The terrain the grass grows on. Gives the compute pass the world
-   * Y (R-channel height remapped through heightRange) and the surface
-   * slope at each candidate, plus the worldSize that maps world XZ ↔
-   * density/height UVs. Grass is skipped where slope exceeds `maxSlope`.
+   * The terrain the grass grows on (rgba16float; R = world Y in
+   * metres). Gives the compute pass the world Y and the surface slope
+   * at each candidate. Grass is skipped where slope exceeds
+   * `maxSlope`.
    */
-  heightfield: HeightfieldValue;
+  heightTexture: Texture2DValue;
+  /**
+   * Terrain XZ footprint in metres, used to map world XZ ↔
+   * density/height UVs.
+   */
+  worldSize: [number, number];
   /** Max draw distance from the camera, metres. Beyond it blades are culled; alpha fades toward it. */
   maxDistance: number;
   /** Candidate-grid spacing, metres. Smaller = denser (and more compute threads). */
@@ -521,18 +534,6 @@ export interface Vec3CloudValue {
 export interface FloatCloudValue {
   count: number;
   values: Float32Array; // length = count
-}
-
-// Heightfield: a Texture2D wrapped with the world-space metadata that makes
-// it a terrain primitive. The texture's R channel is unsigned height in
-// [0, 1]; consumers remap to [heightRange.min, heightRange.max]. `worldSize`
-// is the horizontal XZ extent (centered at origin). Modeling heightfields
-// as Texture2D-plus-metadata means every Texture2D-producing node (Perlin,
-// Worley, Blend, Warp, Colorize, etc.) flows naturally into terrain pipelines.
-export interface HeightfieldValue {
-  texture: Texture2DValue;
-  worldSize: [number, number];   // (width X, depth Z)
-  heightRange: [number, number]; // (min Y, max Y)
 }
 
 /**
@@ -891,9 +892,9 @@ export function walkGpuResources(
       walkGpuResources(ent.geometry, visit, seen, _depth + 1);
       walkGpuResources(ent.material, visit, seen, _depth + 1);
     }
-    // Grass fields hold Texture2D / Heightfield references produced by
-    // upstream texture nodes. They must be walked so sweepCache keeps
-    // them alive while the grass field is in a live cache entry —
+    // Grass fields hold Texture2D references produced by upstream
+    // texture nodes. They must be walked so sweepCache keeps them
+    // alive while the grass field is in a live cache entry —
     // otherwise the density/card/height textures get destroyed out
     // from under the per-frame grass compute pass.
     if (Array.isArray(v.grass)) {
@@ -903,16 +904,16 @@ export function walkGpuResources(
         }
         walkGpuResources(field.typeMap, visit, seen, _depth + 1);
         walkGpuResources(field.density, visit, seen, _depth + 1);
-        walkGpuResources(field.heightfield, visit, seen, _depth + 1);
+        walkGpuResources(field.heightTexture, visit, seen, _depth + 1);
       }
     }
-    // Same story for terrain fields: they reference the input
-    // heightfield + material textures via the field value, and the
+    // Same story for terrain fields: they reference the input height
+    // texture + material textures via the field value, and the
     // renderer reaches for those on every frame's draw. Sweep needs
     // to keep them alive while a terrain field is in the cache.
     if (Array.isArray(v.terrain)) {
       for (const field of v.terrain as Array<Record<string, unknown>>) {
-        walkGpuResources(field.heightfield, visit, seen, _depth + 1);
+        walkGpuResources(field.heightTexture, visit, seen, _depth + 1);
         walkGpuResources(field.material, visit, seen, _depth + 1);
       }
     }
@@ -938,9 +939,9 @@ export function walkGpuResources(
       return;
     }
     if (v.kind === 'water') {
-      // Only the optional heightfield carries GPU resources; the
-      // colour + wave params are scalars.
-      walkGpuResources(v.heightfield, visit, seen, _depth + 1);
+      // Only the optional heightfield texture carries GPU resources;
+      // the colour + wave params are scalars.
+      walkGpuResources(v.heightTexture, visit, seen, _depth + 1);
       return;
     }
     if (v.kind === 'terrain-multi-layer') {
@@ -959,12 +960,6 @@ export function walkGpuResources(
       walkGpuResources(v.splat, visit, seen, _depth + 1);
       return;
     }
-  }
-
-  // HeightfieldValue: { texture: Texture2DValue, worldSize, heightRange }
-  if ('texture' in v && 'worldSize' in v && 'heightRange' in v) {
-    walkGpuResources(v.texture, visit, seen, _depth + 1);
-    return;
   }
 
   // NodeOutputs is a plain Record<string, unknown> — when called with a

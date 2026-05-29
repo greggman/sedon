@@ -1,33 +1,28 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
-import type { GeometryValue, HeightfieldValue } from '../core/resources.js';
+import type { GeometryValue, Texture2DValue } from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
 import { getSampler } from '../render/gpu-cache.js';
 import { heightfieldToMesh, readHeightTexture } from '../render/heightfield.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
-import shader from './heightfield-to-mesh.wgsl';
+import shader from './texture-to-heightfield-mesh.wgsl';
 
-// Heightfield → renderable mesh. Two paths:
+// Texture (heightfield) → renderable mesh. Two paths:
 //
 //   Default (cpu_access = false): GPU-native. Two compute passes write
 //     positions / normals / uvs / indices straight into VERTEX+STORAGE
-//     buffers from the heightfield texture — no readback, no CPU
-//     mesh build, no async wait. The mesh is renderable the same
-//     submit tick it's produced. The returned `GeometryValue` has NO
-//     `mesh` field, so downstream nodes that touch CPU data
-//     (`core/distribute-on-faces`, `core/merge-scene-entities`) will
-//     refuse it.
+//     buffers from the texture's R channel (= world Y in metres) —
+//     no readback, no CPU mesh build, no async wait. The mesh is
+//     renderable the same submit tick it's produced. The returned
+//     `GeometryValue` has NO `mesh` field, so downstream nodes that
+//     touch CPU data (`core/distribute-on-faces`,
+//     `core/merge-scene-entities`) will refuse it.
 //
-//   cpu_access = true: legacy readback path. Copies the heightfield to
+//   cpu_access = true: legacy readback path. Copies the texture to
 //     CPU, builds the mesh on CPU, uploads, and ALSO populates
 //     `geometry.mesh`. Use this when you need to feed the terrain into
 //     a CPU-only node. Slower (a few hundred ms at 256² resolution)
 //     and async.
-//
-// The buffer layout in the GPU path matches uploadMeshToGpu's layout
-// exactly (3-component pos + 3-component normal + 2-component uv,
-// u32 indices) so the renderer's vertex bind groups Just Work without
-// per-path branching.
 interface PrevCache {
   geometry?: GeometryValue;
   __uniformBuffer?: GPUBuffer;
@@ -81,14 +76,20 @@ function allocOrReuseBuffer(
   return device.createBuffer({ size, usage });
 }
 
-export const heightfieldToMeshNode: NodeDef = {
-  id: 'core/heightfield-to-mesh',
-  category: 'Heightfield/Convert',
+export const textureToHeightfieldMeshNode: NodeDef = {
+  id: 'core/texture-to-heightfield-mesh',
+  category: 'Texture/Convert',
   inputs: [
     {
-      name: 'heightfield',
-      type: 'Heightfield',
-      description: 'source heightfield (from [core/heightfield](../../core/heightfield) or [core/hydraulic-erosion](../../core/hydraulic-erosion))',
+      name: 'texture',
+      type: 'Texture2D',
+      description: "height texture; R channel is read as world Y in metres directly. Typically rgba16float — chain [core/texture-convert](../../core/texture-convert) + [core/texture-map-range](../../core/texture-map-range) ahead of this to scale [0,1] noise into real altitudes",
+    },
+    {
+      name: 'worldSize',
+      type: 'Vec2',
+      default: [10, 10],
+      description: 'terrain XZ footprint in metres (centred on origin)',
     },
     {
       name: 'divisions',
@@ -100,30 +101,37 @@ export const heightfieldToMeshNode: NodeDef = {
       name: 'cpu_access',
       type: 'Bool',
       default: false,
-      description: 'when true, also reads the heightfield back to CPU so the resulting geometry can be consumed by CPU-only nodes (distribute-on-faces, merge-scene-entities). Costs an async readback and a CPU mesh build — leave off for the pure-rendering path',
+      description: 'when true, also reads the texture back to CPU so the resulting geometry can be consumed by CPU-only nodes (distribute-on-faces, merge-scene-entities). Costs an async readback and a CPU mesh build — leave off for the pure-rendering path',
     },
   ],
   outputs: [
     {
       name: 'geometry',
       type: 'Geometry',
-      description: 'a triangulated terrain mesh whose per-vertex Y comes from sampling the heightfield. UVs span [0, 1] across the world footprint',
+      description: 'a triangulated terrain mesh whose per-vertex Y comes from sampling the texture. UVs span [0, 1] across the world footprint',
     },
   ],
   doc: {
-    summary: 'Triangulate a Heightfield into a terrain mesh.',
+    summary: 'Triangulate a height texture into a terrain mesh — R channel = world Y in metres.',
     description: `
 GPU-native by default: two compute passes write positions, normals, UVs,
-and indices straight into vertex buffers from the heightfield texture —
-no readback, no CPU build, no async wait. The mesh is renderable the
-same submit tick.
+and indices straight into vertex buffers from the texture — no readback,
+no CPU build, no async wait. The mesh is renderable the same submit tick.
 
 The result is a regular grid of quads (subdivided to two triangles each)
-with vertices snapped to the per-pixel heightfield, so the mesh follows
-every bump in the source texture up to the \`divisions\` resolution.
-UVs span [0, 1] across the whole terrain — for fine surface detail
-(grass close-up), follow with [core/uv-transform](../../core/uv-transform)
-to repeat the texture more densely.
+with vertices snapped to the per-pixel texture value, so the mesh follows
+every bump in the source up to the \`divisions\` resolution. UVs span
+[0, 1] across the whole terrain — for fine surface detail (grass
+close-up), follow with [core/uv-transform](../../core/uv-transform) to
+repeat the texture more densely.
+
+The R channel is treated as **world Y in metres directly**. Typical
+terrain-authoring chain:
+
+  [core/perlin](../../core/perlin) → [core/texture-convert](../../core/texture-convert)(rgba16float) → [core/texture-map-range](../../core/texture-map-range)(0,1 → 0,50) → here
+
+so the noise's [0, 1] values land at altitudes in metres before the
+texture is read as a heightfield.
 
 Set \`cpu_access = true\` only when a downstream node needs CPU-side
 vertex data ([core/distribute-on-faces](../../core/distribute-on-faces),
@@ -137,29 +145,31 @@ readback is a few hundred ms and async.
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const hf = addNode(g, 'core/heightfield', {
-        id: 'hf',
+      const toFloat = addNode(g, 'core/texture-convert', {
+        id: 'toFloat',
         position: { x: 280, y: 0 },
-        inputValues: { worldSize: [10, 10], heightRange: [0, 2] },
+        inputValues: { format: 1 },
       });
-      const mesh = addNode(g, 'core/heightfield-to-mesh', {
-        id: 'mesh',
+      const remap = addNode(g, 'core/texture-map-range', {
+        id: 'remap',
         position: { x: 560, y: 0 },
-        // cpu_access: true so the docs wireframe preview can read back
-        // the CPU mesh data (the default GPU-native path produces only
-        // GPU buffers, which MeshPreview can't expand into a non-indexed
-        // wireframe). Off in real graphs unless a downstream CPU node
-        // needs it.
-        inputValues: { divisions: [64, 64], cpu_access: true },
+        inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 2, clamp: false },
       });
-      addEdge(g, { node: noise.id, socket: 'texture' }, { node: hf.id, socket: 'texture' });
-      addEdge(g, { node: hf.id, socket: 'heightfield' }, { node: mesh.id, socket: 'heightfield' });
+      const mesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+        id: 'mesh',
+        position: { x: 840, y: 0 },
+        inputValues: { worldSize: [10, 10], divisions: [64, 64], cpu_access: true },
+      });
+      addEdge(g, { node: noise.id, socket: 'texture' }, { node: toFloat.id, socket: 'texture' });
+      addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: remap.id, socket: 'texture' });
+      addEdge(g, { node: remap.id, socket: 'texture' }, { node: mesh.id, socket: 'texture' });
       return { graph: g, rootNodeId: 'mesh' };
     },
   },
   async evaluate(ctx, inputs) {
     const device = requireDevice(ctx);
-    const field = inputs.heightfield as HeightfieldValue;
+    const tex = inputs.texture as Texture2DValue;
+    const worldSize = inputs.worldSize as [number, number];
     const divisions = inputs.divisions as [number, number];
     const cpuAccess = inputs.cpu_access as boolean;
     const prev = ctx.previousOutput as PrevCache | undefined;
@@ -168,15 +178,14 @@ readback is a few hundred ms and async.
     const divZ = Math.max(1, Math.round(divisions[1]));
 
     if (cpuAccess) {
-      // Legacy path: CPU readback + CPU mesh build. Same code as before
-      // the GPU rewrite landed.
-      const { heights, width, height } = await readHeightTexture(device, field.texture);
+      // Legacy path: CPU readback + CPU mesh build. R channel of the
+      // texture is read as world Y in metres directly.
+      const { heights, width, height } = await readHeightTexture(device, tex);
       const mesh = heightfieldToMesh({
         heights,
         width,
         height,
-        worldSize: field.worldSize,
-        heightRange: field.heightRange,
+        worldSize,
         divX,
         divZ,
       });
@@ -204,18 +213,16 @@ readback is a few hundred ms and async.
     const uvBuffer = allocOrReuseBuffer(device, prev?.geometry?.uvBuffer, uvBytes, vertexUsage);
     const indexBuffer = allocOrReuseBuffer(device, prev?.geometry?.indexBuffer, idxBytes, indexUsage);
 
-    // Pack params (matches WGSL Params struct).
+    // Pack params (matches WGSL Params struct: 8 × 4 bytes).
     const paramData = new ArrayBuffer(32);
     const pu32 = new Uint32Array(paramData);
     const pf32 = new Float32Array(paramData);
     pu32[0] = numX;
     pu32[1] = numZ;
-    pf32[2] = field.worldSize[0];
-    pf32[3] = field.worldSize[1];
-    pf32[4] = field.heightRange[0];
-    pf32[5] = field.heightRange[1];
-    pf32[6] = 1 / divX;
-    pf32[7] = 1 / divZ;
+    pf32[2] = worldSize[0];
+    pf32[3] = worldSize[1];
+    pf32[4] = 1 / divX;
+    pf32[5] = 1 / divZ;
 
     let uniformBuffer = prev?.__uniformBuffer;
     if (!uniformBuffer || uniformBuffer.size !== paramData.byteLength) {
@@ -243,7 +250,7 @@ readback is a few hundred ms and async.
         { binding: 2, resource: normalBuffer },
         { binding: 3, resource: uvBuffer },
         { binding: 4, resource: indexBuffer },
-        { binding: 5, resource: field.texture.texture },
+        { binding: 5, resource: tex.texture },
         { binding: 6, resource: sampler },
       ],
     });
@@ -265,7 +272,6 @@ readback is a few hundred ms and async.
       indexBuffer,
       indexCount: numIndices,
       indexFormat: 'uint32',
-      // No `mesh` — that's the whole point: GPU-only output.
     };
     return {
       geometry,

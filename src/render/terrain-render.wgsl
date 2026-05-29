@@ -68,7 +68,10 @@ struct TerrainU {
   worldOrigin: vec2f,     // 0
   chunkSize: vec2f,       // 8
   chunkCount: vec2u,      // 16
-  heightRange: vec2f,     // 24  (min, max)
+  // _unused0/_unused1: heightRange is gone; the height texture's R
+  // channel holds world Y in metres directly.
+  _unused0: f32,          // 24
+  _unused1: f32,          // 28
   lodLevels: u32,         // 32
   lodDistance: f32,       // 36
   baseDivisions: u32,     // 40
@@ -111,8 +114,8 @@ fn lod_select(@builtin(global_invocation_id) gid: vec3<u32>) {
   // Approximate Y at chunk center for a better 3D distance.
   let chunkCountF = vec2f(f32(tu.chunkCount.x), f32(tu.chunkCount.y));
   let uv = (vec2f(f32(cx), f32(cz)) + vec2f(0.5)) / chunkCountF;
-  let h01 = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
-  let chunkY = tu.heightRange.x + h01 * (tu.heightRange.y - tu.heightRange.x);
+  // R = world Y in metres directly — no remap.
+  let chunkY = textureSampleLevel(heightTex, heightSamp, uv, 0.0).r;
   let chunkCenter = vec3f(chunkCenterXZ.x, chunkY, chunkCenterXZ.y);
   let dist = length(chunkCenter - tu.cameraPos.xyz);
   // LOD: floor(dist / lodDistance), clamped to [0, lodLevels-1].
@@ -155,10 +158,9 @@ struct VsOut {
   @location(5) @interpolate(flat) lod: u32,
 };
 
-// Sample world Y at a heightfield UV.
+// Sample world Y (metres) at a heightfield UV. R = metres directly.
 fn worldY(uv: vec2f) -> f32 {
-  let h = textureSampleLevel(heightTex, heightSamp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0).r;
-  return tu.heightRange.x + h * (tu.heightRange.y - tu.heightRange.x);
+  return textureSampleLevel(heightTex, heightSamp, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0).r;
 }
 
 @vertex

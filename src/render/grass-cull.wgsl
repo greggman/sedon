@@ -4,16 +4,17 @@
 // counter — so the subsequent drawIndexedIndirect renders exactly the
 // survivors with no CPU readback.
 //
-// World↔UV mapping matches heightfield-to-mesh (src/render/heightfield.ts):
+// World↔UV mapping matches texture-to-heightfield-mesh
+// (src/render/heightfield.ts):
 //   u = worldX / worldSizeX + 0.5,  v = worldZ / worldSizeZ + 0.5
-//   worldY = heightMin + heightTex.r(u,v) * (heightMax - heightMin)
+//   worldY = heightTex.r(u,v)            // R = world Y in metres directly
 // so blades sit exactly on the terrain surface.
 
 struct GrassU {
   viewProj: mat4x4f,
   cameraPos: vec4f,   // xyz camera world pos, w = time (seconds)
   grid: vec4f,        // originCellX, originCellZ (integer cell indices), spacing, gridDim(f32)
-  worldMap: vec4f,    // worldSizeX, worldSizeZ, heightMin, heightMax
+  worldMap: vec4f,    // worldSizeX, worldSizeZ, _unused0, _unused1
   params0: vec4f,     // maxDistance, densityScale, maxSlope(0..1), numTypes
   blade: vec4f,       // bladeW, bladeH, windStrength, windSpeed
   baseColor: vec4f,   // rgb, colorVariation
@@ -104,17 +105,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let keepRand = hash21(vec2f(cellX - 7.0, cellZ + 13.0) + seed);
   if (keepRand > density) { return; }
 
-  // Terrain height + slope (finite-difference normal).
-  let hMin = u.worldMap.z;
-  let hRange = u.worldMap.w - u.worldMap.z;
-  let worldY = hMin + sampleH(uv) * hRange;
+  // Terrain height + slope (finite-difference normal). R = world Y in
+  // metres directly — no remap.
+  let worldY = sampleH(uv);
   let eps = 2.0 / 512.0;
   let hL = sampleH(uv - vec2f(eps, 0.0));
   let hR = sampleH(uv + vec2f(eps, 0.0));
   let hD = sampleH(uv - vec2f(0.0, eps));
   let hU = sampleH(uv + vec2f(0.0, eps));
-  let gx = (hR - hL) * hRange / (2.0 * eps * u.worldMap.x);
-  let gz = (hU - hD) * hRange / (2.0 * eps * u.worldMap.y);
+  let gx = (hR - hL) / (2.0 * eps * u.worldMap.x);
+  let gz = (hU - hD) / (2.0 * eps * u.worldMap.y);
   let n = normalize(vec3f(-gx, 1.0, -gz));
   // params0.z = maxSlope (0 = flat only, 1 = any). Keep where the
   // surface is flatter than that → normal.y ≥ (1 - maxSlope).
