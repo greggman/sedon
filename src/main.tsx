@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './editor/app.js';
 import { DEMOS } from './editor/demos/index.js';
 import { useEditorStore } from './editor/store.js';
-import { decodeProjectFromUrl, getUrlJsonParam } from './editor/url-state.js';
+import { decodeProjectFromUrl, getUrlAnim, getUrlJsonParam } from './editor/url-state.js';
 import 'dockview/dist/styles/dockview.css';
 import './editor/editor.css';
 
@@ -72,6 +72,15 @@ void (async () => {
     } catch (e) {
       console.error('Failed to load project from URL:', e);
     }
+  }
+  // `?anim=true` — start the render-bus animation loop on boot. Done
+  // AFTER any URL-project load (so the loaded scene gets animated
+  // rather than the default), and BEFORE mount (so the first render
+  // already runs in playing mode). Loaded lazily to keep the
+  // bootstrap surface small.
+  if (getUrlAnim()) {
+    const { setAnimating } = await import('./editor/render-bus.js');
+    setAnimating(true);
   }
   createRoot(root).render(<App />);
 })();

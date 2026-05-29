@@ -17,6 +17,7 @@ import { parseSaveFile, serializeSaveFile, type ProjectData, type SaveFile, SAVE
 
 const URL_JSON_PARAM = 'json';
 const URL_SCENE_PARAM = 'scene';
+const URL_ANIM_PARAM = 'anim';
 
 /** Read `?scene=<id>` synchronously; null if missing. */
 export function getUrlSceneId(): string | null {
@@ -28,6 +29,19 @@ export function getUrlSceneId(): string | null {
 export function getUrlJsonParam(): string | null {
   if (typeof window === 'undefined') return null;
   return new URLSearchParams(window.location.search).get(URL_JSON_PARAM);
+}
+
+/**
+ * Read `?anim=true` (or `?anim=1`) synchronously. Returns false for
+ * any other value, including missing. Used by main.tsx to kick off
+ * the render-bus animation loop on boot — so a shared URL can land
+ * the recipient already playing instead of forcing them to click
+ * the toolbar's play button.
+ */
+export function getUrlAnim(): boolean {
+  if (typeof window === 'undefined') return false;
+  const v = new URLSearchParams(window.location.search).get(URL_ANIM_PARAM);
+  return v === 'true' || v === '1';
 }
 
 // URL-safe base64 (RFC 4648 §5) — replace + with -, / with _, drop
