@@ -4,7 +4,7 @@ Procedural 3D content generator built around a node graph. (super alpha)
 
 (sedon = nodes spelled backward - need a better name!)
 
-[Live](https://greggman.github.io/sedon)
+[Live](https://greggman.github.io/sedon/?anim=1)
 
 Warning: Anything you make is not really saveable and the format
 is likely to change. Though, if you make something good looking
