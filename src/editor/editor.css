@@ -1053,13 +1053,216 @@
   cursor: pointer;
 }
 
+/* ============================================================
+ * Colour input — swatch button + popover RGBA picker.
+ * ============================================================ */
+
+/* CSS checkerboard, reused by the swatch button + alpha-track row.
+ * Two crossed gradients build the 4×4 checker; the size below picks
+ * the cell size. Inherit via `background-image: var(--sedon-checker)`
+ * + the matching `background-size`. */
+:root {
+  --sedon-checker:
+    linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%),
+    linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%);
+  --sedon-checker-bg: #222;
+  --sedon-checker-size: 8px 8px;
+  --sedon-checker-pos: 0 0, 4px 4px;
+}
+
+/* Swatch trigger button. Checkerboard background shows through the
+ * `--fill` span when alpha < 1; small border + radius matches other
+ * input controls. */
 .sedon-colorinput {
   width: 100%;
   height: 22px;
   border: 1px solid #555;
-  background: transparent;
+  border-radius: 3px;
   padding: 0;
   cursor: pointer;
+  overflow: hidden;
+  background-color: var(--sedon-checker-bg);
+  background-image: var(--sedon-checker);
+  background-size: var(--sedon-checker-size);
+  background-position: var(--sedon-checker-pos);
+}
+.sedon-colorinput-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Popup container — portalled into <body>, positioned via inline
+ * left/top from the component. High z-index so it floats above
+ * Dockview tabs + ReactFlow handles. */
+.sedon-color-popup {
+  position: fixed;
+  z-index: 10000;
+  width: 220px;
+  background: #1f1f1f;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #ddd;
+  user-select: none;
+}
+
+/* SV (saturation × value) square. Background is set inline (two
+ * stacked gradients — current hue + black overlay). The cursor is
+ * a small ring positioned absolutely from the component. */
+.sedon-color-sv {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.sedon-color-sv-cursor {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* Hue slider — rainbow gradient track + same cursor style as SV. */
+.sedon-color-hue {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    #f00 0%, #ff0 16.66%, #0f0 33.33%, #0ff 50%,
+    #00f 66.66%, #f0f 83.33%, #f00 100%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sedon-color-hue-cursor {
+  position: absolute;
+  width: 4px;
+  height: 18px;
+  top: -2px;
+  margin-left: -2px;
+  border: 1px solid white;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* Alpha row: a 22×22 current-colour swatch on the left, then the
+ * alpha-track filling the rest. The track sits over a checkerboard
+ * so the transparent end actually LOOKS transparent — the gradient
+ * is alpha 0→1 of the current RGB. */
+.sedon-color-alpha-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.sedon-color-current-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  overflow: hidden;
+  background-color: var(--sedon-checker-bg);
+  background-image: var(--sedon-checker);
+  background-size: var(--sedon-checker-size);
+  background-position: var(--sedon-checker-pos);
+  flex: 0 0 22px;
+}
+.sedon-color-current-fill {
+  width: 100%;
+  height: 100%;
+}
+.sedon-color-alpha-checker {
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: 3px;
+  background-color: var(--sedon-checker-bg);
+  background-image: var(--sedon-checker);
+  background-size: var(--sedon-checker-size);
+  background-position: var(--sedon-checker-pos);
+  overflow: hidden;
+}
+.sedon-color-alpha {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sedon-color-alpha-cursor {
+  position: absolute;
+  width: 4px;
+  height: 18px;
+  top: -2px;
+  margin-left: -2px;
+  border: 1px solid white;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* Byte editors (R/G/B/A). Compact 4-column grid; each cell has a
+ * tiny label above a number input. */
+.sedon-color-bytes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.sedon-color-byte {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #aaa;
+}
+.sedon-color-byte input {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 2px;
+  color: #ddd;
+  font-size: 11px;
+  padding: 1px 3px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.sedon-color-byte input::-webkit-inner-spin-button,
+.sedon-color-byte input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Hex input — label on the left, monospace text input filling
+ * the rest. */
+.sedon-color-hex {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #aaa;
+}
+.sedon-color-hex input {
+  flex: 1 1 auto;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 2px;
+  color: #ddd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 2px 4px;
 }
 
 /* ============================================================
