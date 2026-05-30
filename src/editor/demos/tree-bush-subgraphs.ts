@@ -659,9 +659,13 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 9, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const attractors = addNode(g, 'core/distribute-on-faces', {
+  // Volume-fill the sphere instead of just sampling its skin —
+  // distribute-on-faces gave a hollow shell of attractors that left
+  // the space-colonization growth with no interior structure to chase
+  // (Runions's paper canonically uses a volume envelope).
+  const attractors = addNode(g, 'core/distribute-in-volume', {
     position: { x: COL * 2, y: 0 },
-    inputValues: { density: 1, seed: 0.27 },
+    inputValues: { density: 1.5, seed: 123 },
   });
 
   // === Grow toward attractors ==========================================
@@ -722,18 +726,23 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   const leafPoints = addNode(g, 'branch/sample-points', {
     position: { x: COL * 5, y: ROW * 2.3 },
     inputValues: {
-      depthMin: 1,
+      // depthMin 0 keeps trunk segments eligible too — the new radius
+      // taper means only the THIN end of the trunk passes radiusMax
+      // anyway, so this fills out the canopy crown without dressing
+      // the trunk's base.
+      depthMin: 0,
       depthMax: 99,
       radiusMin: 0,
       radiusMax: 0.06,
       onlyTips: false,
-      // Dropped from 50 to match the new radius taper: more sub-branches
-      // qualify for leaves now, so a lower per-branch density adds up to
-      // roughly the same total foliage with cards not overlapping each
-      // other. The earlier "100s of leaves on one branch" wasn't actually
-      // density-driven — it was hundreds of overlapping siblings from a
+      // Dropped from 50 to match the new radius taper + the dedup'd
+      // space-colonization growth: more sub-branches qualify for leaves
+      // now, so a lower per-branch density adds up to roughly the same
+      // total foliage with cards not overlapping each other. The
+      // earlier "100s of leaves on one branch" wasn't density-driven —
+      // it was hundreds of overlapping siblings from a
       // space-colonization cancellation bug, since fixed.
-      density: 15,
+      density: 9,
       tipCount: 1,
       seed: 0.35,
     },
@@ -752,7 +761,12 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   });
   const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
     position: { x: COL * 6, y: ROW * 2.7 },
-    inputValues: { scale: 0.15, align: true, seed: 0.7 },
+    // scale=1: the oak-leaf plane is already authored at a natural
+    // foliage size; the previous 0.15 was a workaround for the dense
+    // bottle-brush packing, which the algorithm-side fixes
+    // (sat_add'd radii + cancellation-dedup'd siblings) made
+    // unnecessary.
+    inputValues: { scale: 1, align: true, seed: 0.7 },
   });
   const leafCard = addNode(g, 'subgraph/oak-leaf', {
     position: { x: COL * 5, y: ROW * 4.2 },
