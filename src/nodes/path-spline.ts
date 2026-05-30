@@ -1,20 +1,22 @@
-import { addNode, createGraph } from '../core/graph.js';
-import type { InputDef, NodeDef } from '../core/node-def.js';
-import type { PathValue } from '../core/resources.js';
+import { addEdge, addNode, createGraph } from '../core/graph.js';
+import type { NodeDef } from '../core/node-def.js';
+import type { PathValue, PointCloudValue } from '../core/resources.js';
 
 // Author a Catmull-Rom spline through world space from a list of
-// control points.
+// control points carried by a PointCloud input. The canonical
+// authoring path:
 //
-// Variadic inputs follow the `core/scene-merge` pattern: declare
-// `point_0`, `point_1`, … extra inputs on the node instance (the
-// demo, or the +Add input button in the canvas) and wire each to a
-// Vec3 source. The first two are the minimum; one isolated point is
-// degenerate, zero points produces an empty path that downstream
-// consumers will treat as a no-op.
+//   core/point-list (drawn in the 2D editor)
+//     → path/spline (this node, smooth the polyline)
+//     → path/carve-heightfield (cut into terrain)
+//
+// Any other PointCloud source works just as well — phyllotaxis-points
+// for spiral garden walls, grid-distribute for a rectilinear maze, a
+// procedurally generated cloud for game-of-life-style river systems.
 //
 // Uniform Catmull-Rom: the curve passes through every control point
-// (which is what you usually want for road/river authoring — you
-// can SEE where you placed the points) with smooth tangents at each
+// (which is what you usually want for road/river authoring — you can
+// SEE where you placed the points) with smooth tangents at each
 // one. The two-point degenerate case collapses to a straight line.
 //
 // Endpoint handling: phantom control points are extrapolated by
@@ -25,10 +27,13 @@ import type { PathValue } from '../core/resources.js';
 export const pathSplineNode: NodeDef = {
   id: 'path/spline',
   category: 'Path',
-  // Variadic. Two implicit control-point inputs are declared so a
-  // fresh node has the minimum to make a path; more come via
-  // extraInputs (demos pre-populate; users add via +).
   inputs: [
+    {
+      name: 'points',
+      type: 'PointCloud',
+      description:
+        'control points for the spline, in the order they should be visited. Typically wired from [core/point-list](../../core/point-list) (drawn in its 2D editor) but any PointCloud-producing node works',
+    },
     {
       name: 'width',
       type: 'Float',
@@ -50,18 +55,12 @@ export const pathSplineNode: NodeDef = {
       description: 'resampled polyline (XYZ samples) plus the authored width. Consume with [path/mask](../../path/mask) or [path/carve-heightfield](../../path/carve-heightfield)',
     },
   ],
-  extraInputsSpec: {
-    type: 'Vec3',
-    namePrefix: 'point',
-    addLabel: '+ Add point',
-  },
   doc: {
-    summary: 'Author a Catmull-Rom spline through world space from a list of control points.',
+    summary: 'Smooth a PointCloud of control points into a resampled Catmull-Rom spline.',
     description: `
-Variadic: the node carries \`point_0\`, \`point_1\`, … inputs (add more via
-the "+ Add point" button on the node). Each wired control point is a Vec3
-in world space; consecutive points get smoothly interpolated by a uniform
-Catmull-Rom spline and resampled at \`samples_per_segment\` per segment.
+Takes a PointCloud (typically authored in [core/point-list](../../core/point-list)\'s
+2D editor) and tessellates a uniform Catmull-Rom curve through every
+point, resampled at \`samples_per_segment\` per segment.
 
 The curve passes through every control point (which is what you usually
 want for road/river authoring — the points mark the corners of the
@@ -80,73 +79,62 @@ sacrificial dummy points outside the desired route.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      // Variadic node: declare three control-point extraInputs at
-      // construction time so the sample graph has a useful S-shape
-      // without needing to click "+" three times.
-      const extras: InputDef[] = [
-        { name: 'point_0', type: 'Vec3' },
-        { name: 'point_1', type: 'Vec3' },
-        { name: 'point_2', type: 'Vec3' },
-      ];
-      addNode(g, 'path/spline', {
-        id: 'spline',
+      // Sample: a point-list with a small S-curve feeding the spline.
+      const pts = addNode(g, 'core/point-list', {
+        id: 'pts',
         position: { x: 0, y: 0 },
-        extraInputs: extras,
         inputValues: {
-          width: 4,
-          samples_per_segment: 16,
-          point_0: [-4, 0, -3],
-          point_1: [0, 0, 1],
-          point_2: [4, 0, -3],
+          points: [[-4, 0, -3], [0, 0, 1], [4, 0, -3]],
         },
       });
+      const spline = addNode(g, 'path/spline', {
+        id: 'spline',
+        position: { x: 240, y: 0 },
+        inputValues: { width: 4, samples_per_segment: 16 },
+      });
+      addEdge(g, { node: pts.id, socket: 'points' }, { node: spline.id, socket: 'points' });
       return { graph: g, rootNodeId: 'spline' };
     },
   },
   evaluate(_ctx, inputs): { path: PathValue } {
     const width = inputs.width as number;
-    const samplesPerSegment = Math.max(1, Math.round(inputs.samples_per_segment as number));
+    const samplesPerSegment = inputs.samples_per_segment as number;
+    const pc = inputs.points as PointCloudValue | undefined;
 
-    // Collect wired control points in order: point_0, point_1, ...
-    // Stops at the first gap so an unwired point_2 between wired
-    // point_1 and point_3 produces a 2-point path, not a broken 4.
-    const controlPoints: [number, number, number][] = [];
-    for (let i = 0; ; i++) {
-      const v = inputs[`point_${i}`] as [number, number, number] | undefined;
-      if (!v) break;
-      controlPoints.push(v);
-    }
-
-    if (controlPoints.length < 2) {
+    const n = pc?.count ?? 0;
+    if (!pc || n < 2) {
       // Nothing to interpolate. Empty polyline is a valid no-op for
       // consumers (carve = identity, extrude = empty geometry).
       return { path: { samples: new Float32Array(0), count: 0, width } };
     }
 
-    // Catmull-Rom resample. Each segment runs between p1 and p2, with
-    // p0 and p3 as the outer-neighbour controls feeding the tangent
-    // calc. At the endpoints we reflect: phantom_prev = 2·first − second
-    // (and symmetrically at the tail), which gives the first/last
-    // segment a sensible tangent without the user having to author
-    // dummy points outside the route.
-    const n = controlPoints.length;
+    // Extract control points by index. Reading from the typed array
+    // directly avoids the per-segment four lookups via an `at(i)`
+    // function; bounds-check + reflection is folded into `at` below.
+    const pos = pc.positions;
     const at = (i: number): [number, number, number] => {
       if (i < 0) {
-        const p0 = controlPoints[0]!;
-        const p1 = controlPoints[1]!;
-        return [2 * p0[0] - p1[0], 2 * p0[1] - p1[1], 2 * p0[2] - p1[2]];
+        return [
+          2 * pos[0]! - pos[3]!,
+          2 * pos[1]! - pos[4]!,
+          2 * pos[2]! - pos[5]!,
+        ];
       }
       if (i >= n) {
-        const pn1 = controlPoints[n - 1]!;
-        const pn2 = controlPoints[n - 2]!;
-        return [2 * pn1[0] - pn2[0], 2 * pn1[1] - pn2[1], 2 * pn1[2] - pn2[2]];
+        const a = (n - 1) * 3;
+        const b = (n - 2) * 3;
+        return [
+          2 * pos[a]! - pos[b]!,
+          2 * pos[a + 1]! - pos[b + 1]!,
+          2 * pos[a + 2]! - pos[b + 2]!,
+        ];
       }
-      return controlPoints[i]!;
+      const o = i * 3;
+      return [pos[o]!, pos[o + 1]!, pos[o + 2]!];
     };
 
     // Uniform Catmull-Rom basis. q(t) = 0.5·((2·p1) + (−p0 + p2)·t +
     // (2·p0 − 5·p1 + 4·p2 − p3)·t² + (−p0 + 3·p1 − 3·p2 + p3)·t³).
-    // Inlined per-axis below for one allocation-free pass per sample.
     const segments = n - 1;
     const total = segments * samplesPerSegment + 1;
     const samples = new Float32Array(total * 3);
@@ -160,21 +148,18 @@ sacrificial dummy points outside the desired route.
         const t = i / samplesPerSegment;
         const t2 = t * t;
         const t3 = t2 * t;
-        // x
         samples[out + 0] = 0.5 * (
           (2 * p1[0]) +
           (-p0[0] + p2[0]) * t +
           (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
           (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
         );
-        // y
         samples[out + 1] = 0.5 * (
           (2 * p1[1]) +
           (-p0[1] + p2[1]) * t +
           (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
           (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
         );
-        // z
         samples[out + 2] = 0.5 * (
           (2 * p1[2]) +
           (-p0[2] + p2[2]) * t +
@@ -187,10 +172,10 @@ sacrificial dummy points outside the desired route.
     // Pin the very last sample to the final control point exactly.
     // (At t=1 of the last segment the formula evaluates to p2, which is
     // the last control point — so this is mostly a fp-cleanup.)
-    const last = controlPoints[n - 1]!;
-    samples[out + 0] = last[0];
-    samples[out + 1] = last[1];
-    samples[out + 2] = last[2];
+    const last = (n - 1) * 3;
+    samples[out + 0] = pos[last]!;
+    samples[out + 1] = pos[last + 1]!;
+    samples[out + 2] = pos[last + 2]!;
 
     return { path: { samples, count: total, width } };
   },

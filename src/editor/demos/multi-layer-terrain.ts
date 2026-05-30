@@ -53,32 +53,29 @@ export function createMultiLayerTerrainDemo(): {
     },
   });
 
-  // A river-shaped path that meanders across the terrain. Each
-  // control point is a Vec3 (Y is unused for carving — it's a 2D
-  // stamp). Wires into a path/carve-heightfield node that lowers
-  // the terrain along the polyline.
+  // A river-shaped path that meanders across the terrain. The
+  // authored control points live on a core/point-list (so the user
+  // can drag them in the 2D editor with the heightfield as a
+  // backdrop); path/spline smooths them into a polyline and
+  // path/carve-heightfield cuts the route into the terrain.
+  const pathPoints = addNode(g, 'core/point-list', {
+    position: { x: COL * 1.55, y: ROW * 1.5 },
+    inputValues: {
+      world_size: [200, 200],
+      points: [
+        [-90, 0, -90],
+        [-50, 0, -60],
+        [-30, 0, 0],
+        [10, 0, 20],
+        [40, 0, -10],
+        [80, 0, 40],
+        [90, 0, 90],
+      ],
+    },
+  });
   const pathSpline = addNode(g, 'path/spline', {
     position: { x: COL * 1.7, y: ROW * 1.5 },
-    inputValues: {
-      width: 6,
-      samples_per_segment: 16,
-      point_0: [-90, 0, -90],
-      point_1: [-50, 0, -60],
-      point_2: [-30, 0, 0],
-      point_3: [10, 0, 20],
-      point_4: [40, 0, -10],
-      point_5: [80, 0, 40],
-      point_6: [90, 0, 90],
-    },
-    extraInputs: [
-      { name: 'point_0', type: 'Vec3', optional: true },
-      { name: 'point_1', type: 'Vec3', optional: true },
-      { name: 'point_2', type: 'Vec3', optional: true },
-      { name: 'point_3', type: 'Vec3', optional: true },
-      { name: 'point_4', type: 'Vec3', optional: true },
-      { name: 'point_5', type: 'Vec3', optional: true },
-      { name: 'point_6', type: 'Vec3', optional: true },
-    ],
+    inputValues: { width: 6, samples_per_segment: 16 },
   });
   const pathCarve = addNode(g, 'path/carve-heightfield', {
     position: { x: COL * 1.85, y: 0 },
@@ -168,6 +165,12 @@ export function createMultiLayerTerrainDemo(): {
   addEdge(g, { node: heightFloat.id, socket: 'texture' }, { node: heightScale.id, socket: 'texture' });
   addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: erosion.id, socket: 'texture' });
   addEdge(g, { node: erosion.id, socket: 'texture' }, { node: pathCarve.id, socket: 'texture' });
+  // Point-list feeds the spline; the eroded heightfield also feeds
+  // the point-list as a `preview_texture` backdrop so the user
+  // editing the road in the 2D popup sees the terrain underneath
+  // and can position the route relative to ridges / valleys.
+  addEdge(g, { node: pathPoints.id, socket: 'points' }, { node: pathSpline.id, socket: 'points' });
+  addEdge(g, { node: erosion.id, socket: 'texture' }, { node: pathPoints.id, socket: 'preview_texture' });
   addEdge(g, { node: pathSpline.id, socket: 'path' }, { node: pathCarve.id, socket: 'path' });
   addEdge(g, { node: pathCarve.id, socket: 'texture' }, { node: terrainRenderer.id, socket: 'heightTexture' });
 
