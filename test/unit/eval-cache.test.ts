@@ -327,7 +327,14 @@ test('bumping subgraph version creates a new wrapper cache entry', async () => {
   const wrapperFp2 = r2.fingerprints.get(wrapper.id)!;
   assert.ok(wrapperFp2);
   assert.notEqual(wrapperFp1, wrapperFp2, 'version bump changes wrapper fingerprint');
-  assert.ok(cache.entries.has(wrapperFp1), 'old wrapper entry still present pre-sweep');
+  // When the new eval consumes the prior-fp entry as `previousOutput`
+  // (the contract that licenses reusableBuffer / reusableTexture to
+  // mutate the existing handles), evaluate() evicts it on the spot.
+  // Otherwise a future hit at wrapperFp1 would return a value whose
+  // GPU resources have been overwritten with wrapperFp2's contents —
+  // see `editor: toggle align off then on in instance-geometry-on-points
+  // leaves leaves unaligned` for the symptom this prevents.
+  assert.ok(!cache.entries.has(wrapperFp1), 'old wrapper entry evicted on consumption');
   assert.ok(cache.entries.has(wrapperFp2), 'new wrapper entry added');
 });
 

@@ -315,7 +315,24 @@ export async function evaluateGraph(
       const prevFp = cache.lastFingerprintByNodeId.get(trackerKey);
       if (prevFp !== undefined) {
         const prev = cache.entries.get(prevFp);
-        if (prev !== undefined) callCtx.previousOutput = prev as NodeOutputs;
+        if (prev !== undefined) {
+          callCtx.previousOutput = prev as NodeOutputs;
+          // Passing prev to evaluate() licenses the node to mutate its
+          // GPU resources (reusableBuffer/reusableTexture overwrite the
+          // existing handle's contents). The cached entry at prevFp
+          // would still point at those handles, so a future hit at
+          // prevFp would silently return a "previous-config" value
+          // whose buffer now holds the NEW config's contents — the
+          // "toggle align off then on, leaves stay unaligned" bug.
+          // sweep can't save us because it's rAF-deferred; the next
+          // hit may arrive in the same frame. Evict here so the
+          // contract is "one live cache entry per shared GPU
+          // resource." Skip when prevFp === fp because the same-fp
+          // case went through the cache-hit branch above; this branch
+          // only runs on a miss where prevFp belongs to a *different*
+          // config.
+          if (prevFp !== fp) cache.entries.delete(prevFp);
+        }
       }
       // Surface previousOutput resolution per cache-miss eval so we
       // can see when nodes from different consumer contexts end up
