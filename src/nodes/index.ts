@@ -20,6 +20,7 @@ import { coneNode } from './cone.js';
 import { cubeNode } from './cube.js';
 import { cylinderNode } from './cylinder.js';
 import { distanceTransformNode } from './distance-transform.js';
+import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
@@ -82,6 +83,7 @@ export const CORE_NODES = [
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
+  distributeInVolumeNode,
   distributeOnFacesNode,
   gridDistributeNode,
   instanceGeometryOnPointsNode,
@@ -172,6 +174,7 @@ export {
   coneNode,
   cubeNode,
   cylinderNode,
+  distributeInVolumeNode,
   distributeOnFacesNode,
   gridDistributeNode,
   gridNode,

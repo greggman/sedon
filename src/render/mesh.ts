@@ -310,6 +310,109 @@ export function distributeOnFaces(
   };
 }
 
+// Scatter points uniformly through the INTERIOR of a closed triangle
+// mesh. The pattern is AABB-rejection-sampling: generate `density ×
+// AABB_volume` candidate points uniformly in the mesh's bounding box,
+// then keep only the ones that test as inside via a +X-ray-cast parity
+// test (Möller–Trumbore against every triangle, odd crossings = inside).
+// Expected output ≈ density × mesh_interior_volume.
+//
+// Use cases: volume-filling attractor clouds for `branch/space-colonization`
+// (a sphere of points pulls branches into the interior of a canopy
+// shape, vs. surface-only attractors which pin growth to a shell);
+// generic volumetric scattering for instance-on-points (rocks
+// distributed inside a quarry box, fish inside a swim volume).
+//
+// Requirements on the input mesh:
+//   • Closed, manifold, consistent winding. Holes or flipped triangles
+//     produce wrong parity → false negatives or false positives.
+//   • CPU-side mesh data present (`geom.mesh` not undefined).
+// Cost is O(candidates × triangles). For the canonical sphere @ ~140
+// triangles + density ~10 / unit³, this runs in single-digit ms.
+export function distributeInVolume(
+  mesh: CpuMesh,
+  density: number,
+  seed: number,
+): PointCloudValue {
+  const rand = mulberry32(Math.floor(seed * 1_000_000) || 1);
+
+  // AABB of the mesh.
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  const p = mesh.positions;
+  for (let i = 0; i < p.length; i += 3) {
+    const x = p[i]!, y = p[i + 1]!, z = p[i + 2]!;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const spanZ = maxZ - minZ;
+  const aabbVolume = Math.max(spanX * spanY * spanZ, 1e-12);
+
+  // Generate ~density × aabb candidates; after rejection ~density ×
+  // mesh-interior-volume make it out. Round half-up via `rand` so
+  // fractional densities (e.g. 0.5 / unit³) still produce a sensible
+  // count without biasing toward zero on small AABBs.
+  const exact = density * aabbVolume;
+  let candidateCount = Math.floor(exact);
+  if (rand() < exact - candidateCount) candidateCount++;
+  if (candidateCount === 0) {
+    return { count: 0, positions: new Float32Array(0) };
+  }
+
+  const ix = mesh.indices;
+  const outPositions: number[] = [];
+
+  // +X ray, Möller–Trumbore parity test. Ray-direction is (1, 0, 0)
+  // so pvec = ray_dir × e2 = (0, -e2z, e2y) — many terms vanish, the
+  // inner loop is ~10 multiplies per triangle.
+  function isInside(px: number, py: number, pz: number): boolean {
+    let crossings = 0;
+    for (let t = 0; t < ix.length; t += 3) {
+      const i0 = ix[t]!, i1 = ix[t + 1]!, i2 = ix[t + 2]!;
+      const ax = p[i0 * 3]!, ay = p[i0 * 3 + 1]!, az = p[i0 * 3 + 2]!;
+      const bx = p[i1 * 3]!, by = p[i1 * 3 + 1]!, bz = p[i1 * 3 + 2]!;
+      const cx = p[i2 * 3]!, cy = p[i2 * 3 + 1]!, cz = p[i2 * 3 + 2]!;
+      const e1y = by - ay, e1z = bz - az;
+      const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      // det = e1 · (ray_dir × e2) where ray_dir=(1,0,0)
+      //     = e1.y * (-e2z) + e1.z * e2y
+      const det = -e1y * e2z + e1z * e2y;
+      if (Math.abs(det) < 1e-9) continue; // ray parallel to triangle plane
+      const invDet = 1 / det;
+      const tvx = px - ax, tvy = py - ay, tvz = pz - az;
+      const u = (-tvy * e2z + tvz * e2y) * invDet;
+      if (u < 0 || u > 1) continue;
+      const e1x = bx - ax;
+      // qvec = tv × e1
+      const qx = tvy * e1z - tvz * e1y;
+      const qy = tvz * e1x - tvx * e1z;
+      const qz = tvx * e1y - tvy * e1x;
+      const v = qx * invDet; // ray_dir · q = qx
+      if (v < 0 || u + v > 1) continue;
+      const tHit = (e2x * qx + e2y * qy + e2z * qz) * invDet;
+      if (tHit > 0) crossings++;
+    }
+    return (crossings & 1) === 1;
+  }
+
+  for (let k = 0; k < candidateCount; k++) {
+    const px = minX + rand() * spanX;
+    const py = minY + rand() * spanY;
+    const pz = minZ + rand() * spanZ;
+    if (isInside(px, py, pz)) {
+      outPositions.push(px, py, pz);
+    }
+  }
+
+  return {
+    count: outPositions.length / 3,
+    positions: new Float32Array(outPositions),
+  };
+}
+
 export interface InstanceOnPointsOptions {
   /** Base scale applied to every instance, multiplied by per-point scale if provided. */
   scale: number;
