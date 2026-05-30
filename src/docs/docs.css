@@ -129,32 +129,35 @@ html, body, #root {
  * showdown emits — paragraphs, links, inline code, lists, emphasis.
  * Inherits the section's max-width / centering, so prose stays
  * readable. */
-.sedon-doc-description p {
-  margin: 0 0 12px;
+.sedon-doc-description,
+.sedon-doc-cell-desc {
+  p {
+    margin: 0 0 12px;
+  }
+  p:last-child {
+    margin-bottom: 0;
+  }
+  a {
+    color: var(--doc-accent);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  code {
+    background: var(--doc-code-bg);
+    color: #cfcfd6;
+  }
+  ul,
+  ol {
+    margin: 0 0 12px;
+    padding-left: 22px;
+  }
+  li {
+    margin: 2px 0;
+  }
+  strong { color: #fff; }
 }
-.sedon-doc-description p:last-child {
-  margin-bottom: 0;
-}
-.sedon-doc-description a {
-  color: var(--doc-accent);
-  text-decoration: none;
-}
-.sedon-doc-description a:hover {
-  text-decoration: underline;
-}
-.sedon-doc-description code {
-  background: var(--doc-code-bg);
-  color: #cfcfd6;
-}
-.sedon-doc-description ul,
-.sedon-doc-description ol {
-  margin: 0 0 12px;
-  padding-left: 22px;
-}
-.sedon-doc-description li {
-  margin: 2px 0;
-}
-.sedon-doc-description strong { color: #fff; }
 
 .sedon-doc-muted {
   color: var(--doc-muted);

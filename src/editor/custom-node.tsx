@@ -1,6 +1,6 @@
 import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
 import { useMemo, useState } from 'react';
-import type { InputDef, NodeDef, NodeOutputs } from '../core/node-def.js';
+import type { InputDef, NodeDef, NodeOutputs, OutputDef } from '../core/node-def.js';
 import type {
   GeometryValue,
   MaterialValue,
@@ -29,6 +29,24 @@ import { LeafSkeletonPreview } from './leaf-skeleton-preview.js';
 import { TexturePreview } from './texture-preview.js';
 
 const types = createCoreTypeRegistry();
+
+// Tooltip text for an input/output socket row. First line is the type
+// plus any declared numeric bounds; description (if authored) follows
+// on a new line. Newlines in `title` render as multi-line tooltips in
+// every browser we care about — keeps short cases compact while still
+// surfacing long descriptions where they matter most.
+function socketTooltip(def: InputDef | OutputDef): string {
+  const isInput = (d: InputDef | OutputDef): d is InputDef => 'min' in d || 'max' in d || 'default' in d;
+  let header = def.type;
+  if (isInput(def)) {
+    const hasMin = def.min !== undefined;
+    const hasMax = def.max !== undefined;
+    if (hasMin && hasMax) header += ` (${def.min}–${def.max})`;
+    else if (hasMin) header += ` (min: ${def.min})`;
+    else if (hasMax) header += ` (max: ${def.max})`;
+  }
+  return def.description ? `${header}\n\n${def.description}` : header;
+}
 
 // Two-line stacked title (user name on top, kind label below). Fixed so
 // the inputsTop math stays simple regardless of whether the user has
@@ -886,7 +904,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             key={`row-in-${input.name}`}
             className="sedon-node-row"
             style={{ height: ROW_HEIGHT }}
-            title={input.type}
+            title={socketTooltip(input)}
           >
             {isSubgraphWrapper && (
               <button
@@ -989,7 +1007,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             key={`row-out-${output.name}`}
             className="sedon-node-row sedon-node-row--output"
             style={{ height: ROW_HEIGHT }}
-            title={output.type}
+            title={socketTooltip(output)}
           >
             {editableOutputs && boundary && (
               <button

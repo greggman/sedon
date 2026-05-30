@@ -31,6 +31,15 @@ interface DocConfig {
    * markdown parser. Empty string when the node had no description.
    */
   descriptionHtml?: string;
+  /**
+   * Pre-rendered HTML for each input's `description`, keyed by input
+   * name. Build time runs each through showdown and strips the outer
+   * `<p>` wrapper for the common single-paragraph case so table cells
+   * stay compact. Missing entries / empty strings render as "no
+   * description" in the docs page.
+   */
+  inputDescriptionsHtml?: Record<string, string>;
+  outputDescriptionsHtml?: Record<string, string>;
 }
 
 function readConfig(): DocConfig {
@@ -92,7 +101,13 @@ if (config.kind === 'node' && config.nodeId) {
     }
     reactRoot.render(
       <StrictMode>
-        <DocsPage def={def} descriptionHtml={config.descriptionHtml ?? ''} defs={defs} />
+        <DocsPage
+          def={def}
+          descriptionHtml={config.descriptionHtml ?? ''}
+          inputDescriptionsHtml={config.inputDescriptionsHtml ?? {}}
+          outputDescriptionsHtml={config.outputDescriptionsHtml ?? {}}
+          defs={defs}
+        />
       </StrictMode>,
     );
   }

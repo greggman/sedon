@@ -108,6 +108,14 @@ async function listDocumentedNodes() {
       .map((n) => ({
         id: n.id,
         descriptionMarkdown: n.doc.description ?? '',
+        inputs: n.inputs.map((i) => ({
+          name: i.name,
+          descriptionMarkdown: i.description ?? '',
+        })),
+        outputs: n.outputs.map((o) => ({
+          name: o.name,
+          descriptionMarkdown: o.description ?? '',
+        })),
       }));
   `;
   const result = await esbuild.build({
@@ -123,7 +131,7 @@ async function listDocumentedNodes() {
   await writeFile(tmp, result.outputFiles[0].text, 'utf8');
   try {
     const mod = await import(pathToFileURL(tmp).href);
-    return /** @type {Array<{id: string; descriptionMarkdown: string}>} */ (mod.nodes);
+    return /** @type {Array<{id: string; descriptionMarkdown: string; inputs: Array<{name: string; descriptionMarkdown: string}>; outputs: Array<{name: string; descriptionMarkdown: string}>}>} */ (mod.nodes);
   } finally {
     await unlink(tmp).catch(() => {});
   }
@@ -143,6 +151,19 @@ const markdownConverter = new showdown.Converter({
   openLinksInNewWindow: false,
   strikethrough: true,
 });
+
+// Render markdown for use INSIDE a table cell. Showdown wraps every
+// block in `<p>`, which would push every cell into block layout with
+// margins; for the typical single-paragraph input/output description
+// we strip the outer wrapper so the cell stays compact. Multi-paragraph
+// or list-bearing descriptions keep their structure.
+function renderInlineMarkdown(md) {
+  if (!md.trim()) return '';
+  const html = markdownConverter.makeHtml(md);
+  const m = html.match(/^<p>([\s\S]*)<\/p>\s*$/);
+  if (m && !m[1].includes('<p>')) return m[1];
+  return html;
+}
 
 // Embed an arbitrary string into a `<script type="application/json">`
 // block safely: JSON.stringify covers most edge cases, but the resulting
@@ -204,10 +225,18 @@ async function writeDocsHtml() {
     const descriptionHtml = node.descriptionMarkdown.trim()
       ? markdownConverter.makeHtml(node.descriptionMarkdown)
       : '';
+    const inputDescriptionsHtml = Object.fromEntries(
+      node.inputs.map((i) => [i.name, renderInlineMarkdown(i.descriptionMarkdown)]),
+    );
+    const outputDescriptionsHtml = Object.fromEntries(
+      node.outputs.map((o) => [o.name, renderInlineMarkdown(o.descriptionMarkdown)]),
+    );
     const config = safeJsonForScriptTag({
       kind: 'node',
       nodeId: node.id,
       descriptionHtml,
+      inputDescriptionsHtml,
+      outputDescriptionsHtml,
     });
     await writeFile(
       path.join(dir, 'index.html'),

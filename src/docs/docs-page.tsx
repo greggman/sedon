@@ -16,6 +16,13 @@ interface DocsPageProps {
   def: NodeDef;
   descriptionHtml: string;
   /**
+   * Pre-rendered HTML for each input / output description, keyed by
+   * name. Build-time showdown pass; empty / missing entries fall back
+   * to a muted "no description" placeholder.
+   */
+  inputDescriptionsHtml: Record<string, string>;
+  outputDescriptionsHtml: Record<string, string>;
+  /**
    * Every node def the registry knows about — used by the bottom-of-
    * page "All nodes" mini-TOC so users can jump category-to-category
    * without scrolling back to the main index. Same list main.tsx
@@ -63,7 +70,7 @@ function ColorSwatch({ value }: { value: unknown }): React.JSX.Element | null {
   );
 }
 
-function InputRow({ input }: { input: InputDef }) {
+function InputRow({ input, descriptionHtml }: { input: InputDef; descriptionHtml: string }) {
   const isColor = input.type === 'Color';
   return (
     <tr>
@@ -74,7 +81,9 @@ function InputRow({ input }: { input: InputDef }) {
         {formatDefault(input.default)}
       </td>
       <td className="sedon-doc-cell-desc">
-        {input.description ?? <span className="sedon-doc-muted">no description</span>}
+        {descriptionHtml
+          ? <span dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
+          : <span className="sedon-doc-muted">no description</span>}
         {input.enumOptions && (
           <ul className="sedon-doc-enum">
             {input.enumOptions.map((o) => (
@@ -89,13 +98,15 @@ function InputRow({ input }: { input: InputDef }) {
   );
 }
 
-function OutputRow({ output }: { output: OutputDef }) {
+function OutputRow({ output, descriptionHtml }: { output: OutputDef; descriptionHtml: string }) {
   return (
     <tr>
       <td className="sedon-doc-cell-name">{output.label ?? output.name}</td>
       <td className="sedon-doc-cell-type">{output.type}</td>
       <td className="sedon-doc-cell-desc">
-        {output.description ?? <span className="sedon-doc-muted">no description</span>}
+        {descriptionHtml
+          ? <span dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
+          : <span className="sedon-doc-muted">no description</span>}
       </td>
     </tr>
   );
@@ -147,7 +158,7 @@ function BottomTOC({ defs, currentId }: { defs: NodeDef[]; currentId: string }) 
   );
 }
 
-export function DocsPage({ def, descriptionHtml, defs }: DocsPageProps) {
+export function DocsPage({ def, descriptionHtml, inputDescriptionsHtml, outputDescriptionsHtml, defs }: DocsPageProps) {
   const doc = def.doc;
   if (!doc) {
     return (
@@ -210,7 +221,7 @@ export function DocsPage({ def, descriptionHtml, defs }: DocsPageProps) {
               </thead>
               <tbody>
                 {def.inputs.map((i) => (
-                  <InputRow key={i.name} input={i} />
+                  <InputRow key={i.name} input={i} descriptionHtml={inputDescriptionsHtml[i.name] ?? ''} />
                 ))}
               </tbody>
             </table>
@@ -232,7 +243,7 @@ export function DocsPage({ def, descriptionHtml, defs }: DocsPageProps) {
               </thead>
               <tbody>
                 {def.outputs.map((o) => (
-                  <OutputRow key={o.name} output={o} />
+                  <OutputRow key={o.name} output={o} descriptionHtml={outputDescriptionsHtml[o.name] ?? ''} />
                 ))}
               </tbody>
             </table>
