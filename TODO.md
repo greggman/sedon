@@ -3,11 +3,7 @@
 - [ ] should zoom level in canvas be reset on load? is graph position saved?
   currently if I start with the scene=leaf it's zoomed in. When I load the forest it's also zoomed in.
 - [ ] what is core/palette?
-- [ ] what is the point of heightfield - why is it not just a texture (f16)?
 - [ ] document subscene-input/subscene-output
-- [ ] geometry nodes should have a preview?
-- [ ] mesh and scene preview should fill the preview element
-- [ ] why does erosion turn return a heightfield
 - [ ] what is carve-heightfield, why not just a texture with subtract?
 - [ ] no points on split (even defaults) 
 - [ ] split doesn't work (delete point, add point, new point is not used)
@@ -16,7 +12,6 @@
 - [ ] cleanup graph needs to frame the graph (though maybe not change zoom? Just go to
  middle at same zoom level?)
 - [ ] make dragging asset to tab bar tab, make that asset that tab, off tab, edit that asset in new tab
-- [ ] Add node needs filter at top (or removed)
 - [ ] in preview spline editor
 - [ ] in preview TRS editor
 - [ ] grass blades should be made with leaf nodes
@@ -46,14 +41,11 @@ based on distance from the camera.
 - [ ] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
 - [ ] need to be able to set default on subgraph-input
-- [ ] leaf/skeleton needs better preview
 - [ ] future nodes
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
 - [ ] left/skeleton needs to start from bottom center?
 - [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
-- [ ] divider between folders and content needs to be slidable
-use asset view
 - [ ] design should not be "extra inputs". It should be "array of input name,type"
 - [ ] move the WebGPU parts to a worker
 - [ ] need a better UI than 3 numbers for setting a direction 
@@ -122,6 +114,14 @@ use asset view
 
 ## --- done ---
 
+- [*] divider between folders and content needs to be slidable
+use asset view
+- [*] leaf/skeleton needs better preview
+- [*] Add node needs filter at top (or removed)
+- [*] what is the point of heightfield - why is it not just a texture (f16)?
+- [*] geometry nodes should have a preview?
+- [*] mesh and scene preview should fill the preview element
+- [*] why does erosion turn return a heightfield
 - [x] in the docs, when an input is a color, insert a small square div in the value cell, before the numerical value
 - [*] terrain-renderer has a bad camera - needs to move up (it's under terrain)
 - [*] grass has a bad camera - needs to move up (it's under terrain)
