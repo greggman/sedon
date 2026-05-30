@@ -1,8 +1,22 @@
 # TODOs
 
+- [ ] import png, jpg, webp (use URL where # is local)
+  - [ ] drag and drop
+    issue, what does it mean? Drag and drop is for local files os this would
+    have to add data that needs to be serialized on save.
+    - [ ] drag and drop image in canvas
+    - [ ] drag and drop image on node
+- [ ] import gltf
+  Need to decide how to import. Seems like rather than the entire scene
+  you should be able to reference individual assets (models, textures, materials).
+  That suggests the output from a subscene should maybe be more complex?
+  Or, it should import the gLTF as the collection of its parts as well as a scene
+  that uses all of them. So they'd show up in the asset tree as like folders
 - [ ] should zoom level in canvas be reset on load? is graph position saved?
   currently if I start with the scene=leaf it's zoomed in. When I load the forest it's also zoomed in.
 - [ ] what is core/palette?
+- [ ] prevent 2nd subscene/input, subscene/output?
+- [ ] add previews for point nodes (they exist in docs)
 - [ ] document subscene-input/subscene-output
 - [ ] what is carve-heightfield, why not just a texture with subtract?
 - [ ] no points on split (even defaults) 
@@ -93,19 +107,11 @@ based on distance from the camera.
   It would show all the inputs in a node, some with better
   UIs?
 
-- [ ] nodes should be nameable - and searchable
+- [ ] search for nodes
 - [ ] material previews should use track camera, not orbit
 - [ ] preview sphere should be larger 
 - [ ] touch support? (iPad) - maybe iphone
 - [ ] support HDR output
-- [ ] import png, jpg, webp (use URL where # is local)
-- [ ] import gltf
-  Need to decide how to import. Seems like rather than the entire scene
-  you should be able to reference individual assets (models, textures, materials).
-  That suggests the output from a subscene should maybe be more complex?
-  Or, it should import the gLTF as the collection of its parts as well as a scene
-  that uses all of them. So they'd show up in the asset tree as like folders
-
 - [ ] camera
   - [ ] orbit vs track control (option)
   - [*] frame
@@ -114,8 +120,16 @@ based on distance from the camera.
 
 ## --- done ---
 
+- [*] replace space-colonization's distrubute-on-faces with distribute-in-volume
+- [*] input tool tips should have description?
+- [*] favicon.ico
+- [*] save selected
+- [*] save subgraph
+- [*] import
+- [*] cut/copy/paste nodes
 - [*] divider between folders and content needs to be slidable
 use asset view
+- [*] nodes should be nameable
 - [*] leaf/skeleton needs better preview
 - [*] Add node needs filter at top (or removed)
 - [*] what is the point of heightfield - why is it not just a texture (f16)?
