@@ -1470,26 +1470,56 @@ export function generateSpaceColonizationBranchGraph(
     if (attractors.length === 0) break;
   }
 
-  // Murray radii, bottom-up. Topological order = reverse insertion order
-  // since parent < child by construction.
+  // Radii: distance-to-deepest-tip taper.
+  //
+  // Each node gets `depth = max path-length from this node to any tip
+  // in its subtree`. The root's depth is the longest root-to-tip path.
+  // Map depth ∈ [0, maxDepth] → radius ∈ [tipRadius, rootRadius] via
+  // linear interpolation. Every root-to-tip path therefore tapers
+  // continuously from rootRadius at the base to tipRadius at the tip
+  // — no flat-trunk-then-step-down at a fork.
+  //
+  // We deliberately drop the strict Murray's-law pipe model here. Pipe
+  // model says radius is CONSTANT between branching points (because
+  // cross-sectional area = sum of downstream tip areas, which doesn't
+  // change without a fork). Visually that produces a club-shaped trunk
+  // on low-branch-count trees: the trunk holds rootRadius all the way
+  // up to the first fork, then steps down sharply. Distance-based
+  // taper matches what we see in real wood with secondary growth and
+  // is what the user can actually shape via the rootRadius / tipRadius
+  // inputs — `radiusExponent` is now unused by this generator
+  // (retained on the input list for backwards compat with saved
+  // projects; future Murray-mode toggle could reactivate it).
+  const depths = new Float32Array(nodes.length);
   for (let idx = nodes.length - 1; idx >= 0; idx--) {
     const node = nodes[idx]!;
     if (node.children.length === 0) {
-      node.radius = opts.tipRadius;
+      depths[idx] = 0;
     } else {
-      let sumP = 0;
+      let maxDeep = 0;
       for (const ci of node.children) {
-        sumP += Math.pow(nodes[ci]!.radius, opts.radiusExponent);
+        const child = nodes[ci]!;
+        const dx = child.pos[0] - node.pos[0];
+        const dy = child.pos[1] - node.pos[1];
+        const dz = child.pos[2] - node.pos[2];
+        const seg = Math.hypot(dx, dy, dz);
+        const d = seg + depths[ci]!;
+        if (d > maxDeep) maxDeep = d;
       }
-      node.radius = Math.pow(sumP, 1 / opts.radiusExponent);
+      depths[idx] = maxDeep;
     }
   }
 
-  // Rescale so root.radius = rootRadius. Murray gives ratios; user gives
-  // the absolute scale.
-  if (nodes[0]!.radius > 1e-9) {
-    const scale = opts.rootRadius / nodes[0]!.radius;
-    for (const n of nodes) n.radius *= scale;
+  const maxDepth = depths[0]!;
+  if (maxDepth > 1e-9) {
+    const range = opts.rootRadius - opts.tipRadius;
+    for (let i = 0; i < nodes.length; i++) {
+      const t = depths[i]! / maxDepth;
+      nodes[i]!.radius = opts.tipRadius + t * range;
+    }
+  } else {
+    // Degenerate: single root node, nothing to taper.
+    for (const n of nodes) n.radius = opts.rootRadius;
   }
 
   return nodeTreeToBranchGraph(nodes);

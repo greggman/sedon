@@ -1004,13 +1004,19 @@ export function Preview({ panelId }: PreviewProps = {}) {
     return () => {
       cancelled = true;
     };
-    // registry + evalCache + subgraphs deliberately omitted: registry
-    // is held via ref so an unrelated subgraph edit (any setInputValue
-    // anywhere) doesn't re-fire this preview's eval. The Preview's
-    // `graph` reference IS its true invalidation key — when the
-    // currently-pinned subgraph changes, `graph` becomes a new ref.
+    // registry + evalCache held via ref so we don't re-fire when only
+    // those identities flip. `subgraphs` IS in the dep list though:
+    // when this preview is showing a graph that contains wrapper
+    // instances of edited subgraphs, the subgraph defs are part of the
+    // dependency chain — `graph` alone (e.g. mainGraph when previewing
+    // main) doesn't change ref on a subgraph edit, but the wrapper's
+    // output IS stale. Without this dep, "preview main, edit inside
+    // a subgraph instanced by main" left the preview frozen on the
+    // pre-edit canopy. The eval cache makes the extra re-eval cheap
+    // when nothing the current graph references actually changed
+    // (every node's fingerprint stays put → cache hits all the way).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gpu, graph, rootNodeId, rootDef, reportWorking]);
+  }, [gpu, graph, rootNodeId, rootDef, reportWorking, subgraphs]);
 
   return (
     <div
