@@ -46,6 +46,7 @@ import { paletteNode } from './palette.js';
 import { rampNode } from './ramp.js';
 import { phyllotaxisPointsNode } from './phyllotaxis-points.js';
 import { planeNode } from './plane.js';
+import { pointListNode } from './point-list.js';
 import { radialPointsNode } from './radial-points.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
@@ -120,6 +121,7 @@ export const CORE_NODES = [
   singlePointNode,
   radialPointsNode,
   phyllotaxisPointsNode,
+  pointListNode,
   stemPointsNode,
   distanceTransformNode,
   warpNode,
@@ -203,6 +205,7 @@ export {
   rampNode,
   phyllotaxisPointsNode,
   planeNode,
+  pointListNode,
   radialPointsNode,
   randomFloatCloudNode,
   randomVec3CloudNode,

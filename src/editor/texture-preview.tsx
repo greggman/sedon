@@ -86,7 +86,15 @@ function getAutoLevel(device: GPUDevice, format: GPUTextureFormat): AutoLevelCac
 interface TexturePreviewProps {
   device: GPUDevice;
   value: Texture2DValue;
+  /**
+   * Square size in CSS px. Mutually exclusive with `width` / `height`;
+   * defaults to 128 when none are provided. Use the explicit
+   * `width` / `height` pair for non-square canvases (e.g. a flexible
+   * popup backdrop).
+   */
   size?: number;
+  width?: number;
+  height?: number;
 }
 
 interface AutoLevelResources {
@@ -102,7 +110,9 @@ interface PlainResources {
   blitBindGroup: GPUBindGroup;
 }
 
-export function TexturePreview({ device, value, size = 128 }: TexturePreviewProps) {
+export function TexturePreview({ device, value, size, width, height }: TexturePreviewProps) {
+  const w = width ?? size ?? 128;
+  const h = height ?? size ?? 128;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
@@ -261,9 +271,9 @@ export function TexturePreview({ device, value, size = 128 }: TexturePreviewProp
     <canvas
       ref={canvasRef}
       className="sedon-texture-preview"
-      width={Math.round(size * dpr)}
-      height={Math.round(size * dpr)}
-      style={{ width: size, height: size }}
+      width={Math.round(w * dpr)}
+      height={Math.round(h * dpr)}
+      style={{ width: w, height: h }}
     />
   );
 }

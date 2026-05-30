@@ -18,6 +18,7 @@ import { GradientInput } from './inputs/gradient-editor.js';
 import type { GradientStop } from '../nodes/ramp.js';
 import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
+import { PointListInput } from './inputs/point-list-editor.js';
 import { StringInput } from './inputs/string-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { useLayoutStore } from './layout-store.js';
@@ -253,10 +254,18 @@ function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
   );
 }
 
+type InlineEditorOnChange = (v: unknown, opts?: { coalesce?: boolean }) => void;
+
 function inlineEditor(
   input: InputDef,
   value: unknown,
-  onChange: (v: unknown) => void,
+  onChange: InlineEditorOnChange,
+  // Custom widgets that need to read sibling inputs / upstream outputs
+  // (e.g. point-list reads the wired Texture2D for its backdrop) get
+  // the node + panel context. Optional because most widgets are
+  // self-contained.
+  nodeId?: string,
+  panelId?: string | null,
 ): React.ReactNode {
   // Widget override comes first: an input may declare a `widget`
   // (e.g. 'gradient') that maps to a special editor regardless of
@@ -268,6 +277,16 @@ function inlineEditor(
       <GradientInput
         value={asStops(value)}
         onChange={onChange as (n: GradientStop[]) => void}
+      />
+    );
+  }
+  if (input.widget === 'point-list' && nodeId !== undefined) {
+    return (
+      <PointListInput
+        value={asPoints(value)}
+        onChange={onChange as (n: [number, number, number][]) => void}
+        nodeId={nodeId}
+        panelId={panelId ?? null}
       />
     );
   }
@@ -326,6 +345,18 @@ function asNumber(v: unknown, fallback: number): number {
 }
 function asString(v: unknown): string {
   return typeof v === 'string' ? v : '';
+}
+function asPoints(v: unknown): [number, number, number][] {
+  if (!Array.isArray(v)) return [];
+  const out: [number, number, number][] = [];
+  for (const p of v) {
+    if (!Array.isArray(p) || p.length < 3) continue;
+    const x = typeof p[0] === 'number' && Number.isFinite(p[0]) ? p[0] : 0;
+    const y = typeof p[1] === 'number' && Number.isFinite(p[1]) ? p[1] : 0;
+    const z = typeof p[2] === 'number' && Number.isFinite(p[2]) ? p[2] : 0;
+    out.push([x, y, z]);
+  }
+  return out;
 }
 function asBool(v: unknown): boolean {
   return v === true;
@@ -911,7 +942,13 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       {visibleInputs.map((input) => {
         const connected = connectedSockets.includes(input.name);
         const editor = !connected
-          ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
+          ? inlineEditor(
+              input,
+              valueOf(input),
+              (v, opts) => setInputValue(id, input.name, v, opts),
+              id,
+              canvasPanelId,
+            )
           : null;
         const displayLabel = input.label ?? input.name;
         // Override-dot is a subgraph-wrapper concept only. Wrappers

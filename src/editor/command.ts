@@ -31,6 +31,17 @@ export type Command =
       name: string;
       before: unknown; // captured at dispatch time so undo can restore it
       after: unknown;
+      /**
+       * Opt out of the dispatcher's per-(nodeId, name) coalescing rule
+       * when this command is its own discrete user action rather than
+       * one step of a continuous scrub. NumberInput drag-edit relies on
+       * coalescing to collapse hundreds of micro-edits into a single
+       * undo entry; widgets that commit only on a deliberate user
+       * action (point-list add / drag-end / paste / delete) set this
+       * to `false` so each one is its own undo step. Defaults to
+       * coalescing-enabled when omitted.
+       */
+      coalesce?: boolean;
     }
   | { kind: 'replaceGraph'; before: GraphState; after: GraphState }
   | { kind: 'replaceProject'; before: ProjectSnapshot; after: ProjectSnapshot };

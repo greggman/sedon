@@ -231,7 +231,7 @@ export interface EditorState {
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
-  setInputValue: (nodeId: string, name: string, value: unknown) => void;
+  setInputValue: (nodeId: string, name: string, value: unknown, opts?: { coalesce?: boolean }) => void;
   /**
    * Set or clear the cosmetic name of a node (shown in the node header).
    * An empty / whitespace-only string clears the name back to the kind
@@ -587,14 +587,23 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // emits one command per pixel; without coalescing the undo stack fills
     // with hundreds of micro-edits. Merge them into a single entry whose
     // `before` is the original value and `after` is the latest.
-    if (cmd.kind === 'setInputValue') {
+    //
+    // Opt-out: widgets that commit on discrete user actions (point-list
+    // add/drag-end/paste/delete) pass `coalesce: false`; each command is
+    // its own undo entry, and a non-coalescing command also prevents
+    // the NEXT setInputValue from merging into it (acts as a barrier).
+    if (
+      cmd.kind === 'setInputValue'
+      && cmd.coalesce !== false
+    ) {
       const stack = get().undoStack;
       const last = stack[stack.length - 1];
       if (
         last !== undefined &&
         last.kind === 'setInputValue' &&
         last.nodeId === cmd.nodeId &&
-        last.name === cmd.name
+        last.name === cmd.name &&
+        last.coalesce !== false
       ) {
         const merged: Command = { ...last, after: cmd.after };
         const next = applyForward(state, cmd);
@@ -1434,12 +1443,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
       dispatch({ kind: 'removeNodes', nodes, edges, prevRootNodeId: state.rootNodeId });
     },
 
-    setInputValue: (nodeId, name, value) => {
+    setInputValue: (nodeId, name, value, opts) => {
       const node = get().graph.nodes.find((n) => n.id === nodeId);
       if (!node) return;
       const before = node.inputValues?.[name];
       if (before === value) return;
-      dispatch({ kind: 'setInputValue', nodeId, name, before, after: value });
+      const cmd: import('./command.js').Command = { kind: 'setInputValue', nodeId, name, before, after: value };
+      if (opts?.coalesce === false) cmd.coalesce = false;
+      dispatch(cmd);
     },
 
     renameNode: (nodeId, name) => {

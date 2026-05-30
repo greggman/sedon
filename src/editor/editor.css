@@ -1387,6 +1387,153 @@
   outline: none;
 }
 
+/* ── point-list editor ───────────────────────────────────────────── */
+
+.sedon-pointlist-trigger {
+  width: 100%;
+  background: #1a1a1f;
+  border: 1px solid #444;
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 12px;
+  padding: 3px 6px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.sedon-pointlist-trigger:hover { border-color: #666; }
+
+.sedon-pointlist-popup {
+  position: fixed;
+  z-index: 10000;
+  background: #1f1f1f;
+  border: 1px solid #444;
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.sedon-pointlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #bbb;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2c2c2c;
+  cursor: move;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.sedon-pointlist-header-actions {
+  display: flex;
+  gap: 4px;
+}
+.sedon-pointlist-clear,
+.sedon-pointlist-close {
+  background: #2a2a2f;
+  border: 1px solid #555;
+  color: #ddd;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.sedon-pointlist-clear:hover,
+.sedon-pointlist-close:hover { border-color: #888; }
+.sedon-pointlist-close {
+  padding: 0 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+.sedon-pointlist-canvas {
+  position: relative;
+  background: #111;
+  overflow: hidden;
+  margin: 8px;
+  flex: 1 0 auto;
+}
+.sedon-pointlist-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sedon-pointlist-backdrop--empty {
+  background:
+    linear-gradient(45deg, #1a1a1a 25%, transparent 25%),
+    linear-gradient(-45deg, #1a1a1a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1a1a1a 75%),
+    linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-color: #222;
+}
+.sedon-pointlist-svg {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+.sedon-pointlist-axis {
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.sedon-pointlist-segments {
+  fill: none;
+  stroke: rgba(255, 255, 0, 0.7);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.sedon-pointlist-segment-hit {
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: copy;
+}
+.sedon-pointlist-handle {
+  fill: #ffeb3b;
+  stroke: #1a1a1a;
+  stroke-width: 2;
+  cursor: grab;
+}
+.sedon-pointlist-handle:hover {
+  fill: #fff;
+}
+.sedon-pointlist-handle--selected {
+  fill: #ff5722;
+  stroke: #fff;
+}
+.sedon-pointlist-handle--dragging {
+  cursor: grabbing;
+}
+.sedon-pointlist-marquee {
+  fill: rgba(100, 180, 255, 0.15);
+  stroke: rgba(100, 180, 255, 0.85);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+.sedon-pointlist-footer {
+  color: #888;
+  font-size: 10px;
+  text-align: center;
+  padding: 4px 8px;
+  border-top: 1px solid #2c2c2c;
+  flex: 0 0 auto;
+  user-select: none;
+}
+.sedon-pointlist-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 0%, transparent 50%, #666 50%, #666 60%, transparent 60%, transparent 70%, #666 70%, #666 80%, transparent 80%);
+}
+
 .sedon-gradient-editor {
   position: relative;
   width: 100%;

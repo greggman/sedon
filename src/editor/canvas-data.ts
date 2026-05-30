@@ -148,3 +148,36 @@ export function useCanvasNodeOutput(panelId: string | null, nodeId: string): Nod
     () => (panelId ? panels.get(panelId)?.outputs?.get(nodeId) : undefined),
   );
 }
+
+/**
+ * Returns the output value flowing into the given (node, input) pair —
+ * i.e., for a node whose `inputName` socket has an incoming edge, the
+ * source node's matching output. Returns undefined when no edge exists
+ * or the source node hasn't produced its output yet. Used by custom
+ * widgets that need to render their input's upstream value (e.g.
+ * point-list's editor backdropping with whatever Texture2D is wired
+ * into its `preview_texture` input).
+ *
+ * Recomputed on every panel notify, so the snapshot picks up edge
+ * changes (rewire), graph changes, and re-eval-produced new outputs.
+ */
+export function useUpstreamOutput(
+  panelId: string | null,
+  nodeId: string,
+  inputName: string,
+): unknown {
+  return useSyncExternalStore(
+    panelId ? (cb) => subscribe(panelId, cb) : EMPTY_SUBSCRIBE,
+    () => {
+      if (!panelId) return undefined;
+      const p = panels.get(panelId);
+      if (!p || !p.graph || !p.outputs) return undefined;
+      const edge = p.graph.edges.find(
+        (e) => e.to.node === nodeId && e.to.socket === inputName,
+      );
+      if (!edge) return undefined;
+      const srcOutputs = p.outputs.get(edge.from.node);
+      return srcOutputs?.[edge.from.socket];
+    },
+  );
+}
