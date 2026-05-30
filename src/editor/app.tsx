@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useAppMenus } from './app-menus.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
+import { copySelection, pasteFromClipboard } from './clipboard-ops.js';
 import { CommandPalette } from './command-palette.js';
 import { GithubLink } from './github-link.js';
 import { getDockviewApi, setDockviewApi } from './dockview-handle.js';
@@ -188,6 +189,52 @@ export function App() {
         // has no select-all of its own yet, but the page-wide highlight
         // is worse than nothing.
         e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Cmd/Ctrl+C / +V : copy / paste node selection in the active
+  // canvas. Mirrors the Cmd+A handler above — bails when focus is in
+  // a text field (the browser handles text copy/paste there), only
+  // fires when the active DockView panel is a node-canvas. Failures
+  // surface through alert(); silent no-ops would leave the user
+  // wondering whether the shortcut was bound at all.
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.shiftKey || e.altKey) return;
+      const isCopy = e.key === 'c' || e.key === 'C';
+      const isPaste = e.key === 'v' || e.key === 'V';
+      if (!isCopy && !isPaste) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        if (t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+        if (t.tagName === 'INPUT') {
+          const tt = (t as HTMLInputElement).type;
+          if (
+            tt === 'text' || tt === 'search' || tt === 'url'
+            || tt === 'tel' || tt === 'email' || tt === 'password' || tt === 'number'
+          ) {
+            return;
+          }
+        }
+      }
+      const api = getDockviewApi();
+      const active = api?.activePanel;
+      if (!active || active.view.contentComponent !== 'node-canvas') return;
+      e.preventDefault();
+      try {
+        if (isCopy) {
+          await copySelection();
+        } else {
+          await pasteFromClipboard();
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-alert
+        alert(`Clipboard ${isCopy ? 'copy' : 'paste'} failed: ${msg}`);
       }
     };
     window.addEventListener('keydown', onKey);

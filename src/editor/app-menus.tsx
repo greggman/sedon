@@ -12,6 +12,12 @@ import {
   splitActivePanel,
 } from './commands.js';
 import { DEMOS } from './demos/index.js';
+import {
+  copySelection,
+  mergeFromFile,
+  pasteFromClipboard,
+  saveSelectionToFile,
+} from './clipboard-ops.js';
 import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
@@ -44,6 +50,22 @@ export function useAppMenus(): TopMenu[] {
         { kind: 'item', label: 'Load…', shortcut: '⌘O', run: () => loadProject() },
         { kind: 'item', label: 'Save to URL', run: () => { void saveProjectToUrl(); } },
         { kind: 'separator' },
+        {
+          kind: 'item',
+          label: 'Save Selected…',
+          run: () => {
+            if (!saveSelectionToFile()) {
+              // eslint-disable-next-line no-alert
+              alert('Nothing selected. Click nodes in the canvas first.');
+            }
+          },
+        },
+        {
+          kind: 'item',
+          label: 'Merge…',
+          run: () => { void mergeFromFile(); },
+        },
+        { kind: 'separator' },
         { kind: 'submenu', label: 'Demos', items: demoEntries },
       ],
     };
@@ -65,6 +87,31 @@ export function useAppMenus(): TopMenu[] {
           shortcut: '⇧⌘Z',
           disabled: redoLen === 0,
           run: () => useEditorStore.getState().redo(),
+        },
+        { kind: 'separator' },
+        {
+          kind: 'item',
+          label: 'Copy',
+          shortcut: '⌘C',
+          run: () => { void copySelection(); },
+        },
+        {
+          kind: 'item',
+          label: 'Paste',
+          shortcut: '⌘V',
+          // Default reuse-deps semantics: another reference to the
+          // thing you copied, sharing dependencies with the target.
+          run: () => { void pasteFromClipboard(); },
+        },
+        {
+          kind: 'item',
+          label: 'Paste and Copy Deps',
+          // rename-all mode — every transitive subgraph dep is
+          // duplicated with a fresh id, so the pasted graph is fully
+          // independent of the target's existing defs. Useful when
+          // you intend to edit the deps without affecting the
+          // original.
+          run: () => { void pasteFromClipboard({ mode: 'rename-all' }); },
         },
       ],
     };

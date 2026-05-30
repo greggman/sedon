@@ -3,7 +3,7 @@ import { debug } from '../core/debug.js';
 import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
-import type { Graph, GraphNode, SocketRef } from '../core/graph.js';
+import type { Graph, GraphEdge, GraphNode, SocketRef } from '../core/graph.js';
 import type { InputDef } from '../core/node-def.js';
 import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
 import {
@@ -160,6 +160,24 @@ export interface EditorState {
    * dangling on purpose; undo restores everything.
    */
   deleteAssets: (selection: AssetSelection) => void;
+
+  /**
+   * Atomically merge a fragment import (nodes + edges into the
+   * currently-edited graph, new subgraph defs into the project's
+   * subgraph list) as ONE undoable step. Backs Paste, Merge, and
+   * any future "drop a .sedon onto the canvas" gesture.
+   *
+   * The caller is responsible for running the fragment through
+   * `importFragment` first — that's where id remapping and
+   * collision-avoidance live. This action just splats the result
+   * into the right places via the existing project-snapshot
+   * pipeline so undo/redo and version-bumping work for free.
+   */
+  mergeImportedFragment: (imported: {
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+    subgraphs: SubgraphDef[];
+  }) => void;
 
   /**
    * Deep-clone a mix of subgraphs + folders into their original parent
@@ -874,6 +892,46 @@ export const useEditorStore = create<EditorState>((set, get) => {
         ...projectSnapshot(),
         folders,
         subgraphs,
+      });
+    },
+
+    mergeImportedFragment: (imported) => {
+      const state = get();
+      // Nodes + edges land in WHATEVER GRAPH is currently being
+      // edited. Subgraph defs are project-level — appended verbatim
+      // (their ids were already de-collided by importFragment, so we
+      // don't risk overwriting existing defs).
+      const subgraphs = state.subgraphs.concat(imported.subgraphs);
+      let mainGraph = state.mainGraph;
+      let editedSubgraphs = subgraphs;
+      if (state.currentEditingId === 'main') {
+        mainGraph = {
+          ...state.mainGraph,
+          nodes: [...state.mainGraph.nodes, ...imported.nodes],
+          edges: [...state.mainGraph.edges, ...imported.edges],
+        };
+      } else {
+        editedSubgraphs = subgraphs.map((sg) =>
+          sg.id === state.currentEditingId
+            ? {
+                ...sg,
+                graph: {
+                  ...sg.graph,
+                  nodes: [...sg.graph.nodes, ...imported.nodes],
+                  edges: [...sg.graph.edges, ...imported.edges],
+                },
+              }
+            : sg,
+        );
+      }
+      const graph = state.currentEditingId === 'main'
+        ? mainGraph
+        : editedSubgraphs.find((s) => s.id === state.currentEditingId)?.graph ?? state.graph;
+      dispatchProject({
+        ...projectSnapshot(),
+        mainGraph,
+        subgraphs: editedSubgraphs,
+        graph,
       });
     },
 
