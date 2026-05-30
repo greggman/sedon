@@ -26,11 +26,6 @@ export function DocsIndex({ defs }: DocsIndexProps) {
 
       <main className="sedon-doc-main">
         <h1 className="sedon-doc-title">Node reference</h1>
-        <p className="sedon-doc-summary">
-          {documented.length} of {defs.length} nodes documented. Click a node to read its
-          inputs, outputs, and a worked example.
-        </p>
-
         {categories.length === 0 ? (
           <div className="sedon-doc-muted">No nodes have documentation yet.</div>
         ) : (
