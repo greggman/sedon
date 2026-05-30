@@ -25,6 +25,7 @@ export const coneNode: NodeDef = {
       name: 'segments',
       type: 'Int',
       default: 16,
+      min: 2,
       description: 'number of radial subdivisions around the base. Same smoothness vs. cost tradeoff as [core/cylinder](../../core/cylinder)',
     },
   ],

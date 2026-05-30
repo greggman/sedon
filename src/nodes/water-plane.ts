@@ -146,6 +146,7 @@ export const waterPlaneNode: NodeDef = {
       name: 'subdivisions',
       type: 'Int',
       default: 64,
+      min: 1,
       description: 'minimum mesh tessellation per edge. The plane is auto-tessellated to ~2 vertices per wave wavelength so the displacement reads as waves rather than noise; this input is the floor — increase it for extra smoothness, decrease for cheaper renders',
     },
   ],

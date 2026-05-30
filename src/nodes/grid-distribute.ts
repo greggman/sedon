@@ -23,8 +23,8 @@ export const gridDistributeNode: NodeDef = {
   id: 'core/grid-distribute',
   category: 'Geometry/Distribution',
   inputs: [
-    { name: 'cols', type: 'Int', default: 10, description: 'columns along X' },
-    { name: 'rows', type: 'Int', default: 10, description: 'rows along Z' },
+    { name: 'cols', type: 'Int', default: 10, min: 1, description: 'columns along X' },
+    { name: 'rows', type: 'Int', default: 10, min: 1, description: 'rows along Z' },
     { name: 'spacing', type: 'Float', default: 1, description: 'distance between adjacent grid cells' },
     {
       name: 'jitter',

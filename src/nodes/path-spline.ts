@@ -39,6 +39,7 @@ export const pathSplineNode: NodeDef = {
       name: 'samples_per_segment',
       type: 'Int',
       default: 16,
+      min: 1,
       description: 'resample resolution between consecutive control points; higher = smoother distance queries downstream',
     },
   ],

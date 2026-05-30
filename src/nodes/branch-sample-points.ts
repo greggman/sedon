@@ -26,12 +26,14 @@ export const branchSamplePointsNode: NodeDef = {
       name: 'depthMin',
       type: 'Int',
       default: 1,
+      min: 0,
       description: 'minimum branch depth (0=trunk, 1=primary, 2=secondary…); inclusive',
     },
     {
       name: 'depthMax',
       type: 'Int',
       default: 99,
+      min: 0,
       description: 'maximum branch depth; inclusive',
     },
     {
@@ -62,6 +64,7 @@ export const branchSamplePointsNode: NodeDef = {
       name: 'tipCount',
       type: 'Int',
       default: 1,
+      min: 1,
       description:
         'points emitted per tip when onlyTips is true. 1 = oriented along tangent (flowers); N>1 = fanned radially around the tangent (palm fronds, needle clusters)',
     },

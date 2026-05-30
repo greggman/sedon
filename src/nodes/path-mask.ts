@@ -36,6 +36,7 @@ export const pathMaskNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 256,
+      min: 1,
       description: 'output texture width and height in pixels',
     },
   ],

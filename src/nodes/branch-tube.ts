@@ -32,6 +32,7 @@ export const branchTubeNode: NodeDef = {
       name: 'sides',
       type: 'Int',
       default: 8,
+      min: 3,
       description: 'cross-section segment count. 6–8 for distant trees; 16+ for hero close-ups',
     },
     {

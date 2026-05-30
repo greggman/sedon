@@ -31,6 +31,7 @@ export const ridgedNoiseNode: NodeDef = {
       name: 'octaves',
       type: 'Int',
       default: 5,
+      min: 1,
       description: 'how many ridged layers stack on top of each other. More octaves add finer crease detail; 1 gives a single set of broad ridges',
     },
     {
@@ -55,6 +56,7 @@ export const ridgedNoiseNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 512,
+      min: 1,
       description: 'output texture width and height in pixels',
     },
   ],

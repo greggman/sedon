@@ -45,6 +45,7 @@ export const phyllotaxisPointsNode: NodeDef = {
       name: 'count',
       type: 'Int',
       default: 50,
+      min: 0,
       description: 'how many points to emit',
     },
     {

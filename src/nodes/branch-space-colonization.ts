@@ -45,7 +45,7 @@ export const branchSpaceColonizationNode: NodeDef = {
       description: 'attractors within this distance of any node are consumed and removed (~ segmentLength)',
     },
     { name: 'segmentLength', type: 'Float', default: 0.4 },
-    { name: 'maxIterations', type: 'Int', default: 200 },
+    { name: 'maxIterations', type: 'Int', default: 200, min: 1 },
     {
       name: 'upBias',
       type: 'Float',

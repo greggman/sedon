@@ -25,6 +25,7 @@ export const cylinderNode: NodeDef = {
       name: 'segments',
       type: 'Int',
       default: 16,
+      min: 2,
       description: 'number of radial subdivisions around the circumference. 8 reads octagonal, 16 is the smoothness sweet spot, 32+ for close-up renders',
     },
   ],

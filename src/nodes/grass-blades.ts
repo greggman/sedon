@@ -26,6 +26,7 @@ export const grassBladesNode: NodeDef = {
       name: 'bladeCount',
       type: 'Int',
       default: 5,
+      min: 0,
       description: 'how many blades draw inside the card. 3 reads as sparse tufts; 8+ as a tight clump',
     },
     {
@@ -62,6 +63,7 @@ export const grassBladesNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 256,
+      min: 1,
       description: 'output texture width and height. 256 is fine for distance grass; 512 for hero close-ups',
     },
   ],

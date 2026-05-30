@@ -47,6 +47,7 @@ export const levelsNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 512,
+      min: 1,
       description: 'output texture width and height in pixels',
     },
   ],

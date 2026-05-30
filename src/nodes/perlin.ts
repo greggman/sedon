@@ -26,6 +26,7 @@ export const perlinNode: NodeDef = {
       name: 'octaves',
       type: 'Int',
       default: 4,
+      min: 1,
       description: 'how many noise layers stack on top of each other. Each octave doubles in frequency (via lacunarity) and halves in amplitude (via gain). 1 = pure noise; 4–6 = natural-looking detail; >8 burns GPU for little visible gain',
     },
     {
@@ -50,6 +51,7 @@ export const perlinNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 512,
+      min: 1,
       description: 'output texture width and height in pixels. Higher values resolve finer detail at the cost of GPU memory and shading time',
     },
   ],

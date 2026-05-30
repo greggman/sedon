@@ -50,12 +50,14 @@ export const terrainRendererNode: NodeDef = {
       name: 'base_divisions',
       type: 'Int',
       default: 32,
+      min: 1,
       description: 'vertex count per edge at LOD 0 (finest LOD). Each LOD level halves this',
     },
     {
       name: 'lod_levels',
       type: 'Int',
       default: 4,
+      min: 1,
       description: 'number of LOD levels; vertex count at level i = base_divisions / 2^i',
     },
     {

@@ -13,17 +13,19 @@ export const branchRecursiveNode: NodeDef = {
   inputs: [
     { name: 'trunkHeight', type: 'Float', default: 6 },
     { name: 'trunkRadius', type: 'Float', default: 0.25 },
-    { name: 'trunkSegments', type: 'Int', default: 10 },
+    { name: 'trunkSegments', type: 'Int', default: 10, min: 1 },
     {
       name: 'maxDepth',
       type: 'Int',
       default: 3,
+      min: 0,
       description: 'recursion depth — 0 = trunk only, 3–5 typical',
     },
     {
       name: 'branchesPerSegment',
       type: 'Int',
       default: 1,
+      min: 0,
       description: 'children spawned at each parent segment in the branching zone',
     },
     {
@@ -69,7 +71,7 @@ export const branchRecursiveNode: NodeDef = {
       default: 0.75,
       description: 'child segments ÷ parent segments',
     },
-    { name: 'minSegmentsPerBranch', type: 'Int', default: 3 },
+    { name: 'minSegmentsPerBranch', type: 'Int', default: 3, min: 1 },
     {
       name: 'tipRadiusFraction',
       type: 'Float',

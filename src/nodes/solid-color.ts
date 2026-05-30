@@ -26,6 +26,7 @@ export const solidColorNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 512,
+      min: 1,
       description: 'output texture width and height in pixels. Keep small (32) when only the colour matters; bump up only if a downstream filter actually needs more pixels',
     },
   ],

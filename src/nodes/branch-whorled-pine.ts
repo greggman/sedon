@@ -17,14 +17,14 @@ export const branchWhorledPineNode: NodeDef = {
     { name: 'trunkHeight', type: 'Float', default: 12 },
     { name: 'trunkRadiusBase', type: 'Float', default: 0.32 },
     { name: 'trunkRadiusTip', type: 'Float', default: 0.04 },
-    { name: 'trunkSegments', type: 'Int', default: 16 },
+    { name: 'trunkSegments', type: 'Int', default: 16, min: 1 },
     {
       name: 'trunkLean',
       type: 'Float',
       default: 0,
       description: 'overall trunk tilt from vertical (degrees)',
     },
-    { name: 'whorlCount', type: 'Int', default: 8 },
+    { name: 'whorlCount', type: 'Int', default: 8, min: 0 },
     {
       name: 'whorlStart',
       type: 'Float',
@@ -37,7 +37,7 @@ export const branchWhorledPineNode: NodeDef = {
       default: 0.95,
       description: 'fraction of trunk height where the topmost whorl sits (0..1)',
     },
-    { name: 'branchesPerWhorl', type: 'Int', default: 6 },
+    { name: 'branchesPerWhorl', type: 'Int', default: 6, min: 0 },
     {
       name: 'whorlPhaseOffset',
       type: 'Float',
@@ -62,7 +62,7 @@ export const branchWhorledPineNode: NodeDef = {
       default: 80,
       description: 'tilt from trunk tangent (degrees); 90 = horizontal, <90 = upswept',
     },
-    { name: 'branchSegments', type: 'Int', default: 6 },
+    { name: 'branchSegments', type: 'Int', default: 6, min: 1 },
     {
       name: 'branchRadiusFraction',
       type: 'Float',
@@ -79,6 +79,7 @@ export const branchWhorledPineNode: NodeDef = {
       name: 'subBranchCount',
       type: 'Int',
       default: 0,
+      min: 0,
       description: 'sub-branches per whorl branch (0 = none, typical for young firs)',
     },
     { name: 'subBranchLengthRatio', type: 'Float', default: 0.45 },

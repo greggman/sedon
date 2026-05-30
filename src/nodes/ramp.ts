@@ -187,6 +187,7 @@ export const rampNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 256,
+      min: 1,
       description: 'output texture width in pixels (height is always 1). Higher = smoother gradient at the cost of upload size; 256 covers smooth lerps; 16 is enough for hand-stepped palettes',
     },
   ],

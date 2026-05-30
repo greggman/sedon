@@ -52,6 +52,7 @@ export const stemPointsNode: NodeDef = {
       name: 'nodes',
       type: 'Int',
       default: 5,
+      min: 0,
       description: 'number of attachment levels along the stem',
     },
     {
@@ -64,6 +65,7 @@ export const stemPointsNode: NodeDef = {
       name: 'whorlCount',
       type: 'Int',
       default: 3,
+      min: 1,
       description: 'leaves per node when mode=whorled. Ignored otherwise',
     },
     {

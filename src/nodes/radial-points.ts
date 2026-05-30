@@ -39,6 +39,7 @@ export const radialPointsNode: NodeDef = {
       name: 'count',
       type: 'Int',
       default: 5,
+      min: 0,
       description: 'how many points to emit',
     },
     {

@@ -60,6 +60,7 @@ export const leafSkeletonNode: NodeDef = {
       name: 'branchCount',
       type: 'Int',
       default: 5,
+      min: 0,
       description: 'number of side-vein pairs along the midrib',
     },
     {
@@ -84,6 +85,7 @@ export const leafSkeletonNode: NodeDef = {
       name: 'subBranchCount',
       type: 'Int',
       default: 8,
+      min: 0,
       description: 'sub-veins (ladder ribs) per primary, evenly spaced; 0 disables sub-branching',
     },
     {
@@ -102,6 +104,7 @@ export const leafSkeletonNode: NodeDef = {
       name: 'lobeCount',
       type: 'Int',
       default: 0,
+      min: 0,
       description:
         'pinnate lobe pairs along the leaf. 0 = smooth profile (default ovate). Real-world references: oak ≈ 4, pin-oak ≈ 6, sweetgum ≈ 5. For palmate (maple) we don\'t have a primitive yet — use 3 here for a rough approximation',
     },
@@ -113,7 +116,7 @@ export const leafSkeletonNode: NodeDef = {
         '0..1, how deep the sinuses cut between lobes. 0 = no effect regardless of lobeCount; 1 = sinuses reach the midrib (deeply lobed, like pin-oak). Around 0.5 is a typical oak',
     },
     { name: 'seed', type: 'Float', default: 0 },
-    { name: 'resolution', type: 'Int', default: 512 },
+    { name: 'resolution', type: 'Int', default: 512, min: 1 },
   ],
   outputs: [
     {

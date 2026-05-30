@@ -26,6 +26,7 @@ export const worleyNode: NodeDef = {
       name: 'octaves',
       type: 'Int',
       default: 1,
+      min: 1,
       description: 'how many cellular layers stack together. 1 = pure Worley cells; >1 mixes finer cells on top of coarser ones for fractal cell patterns',
     },
     {
@@ -50,6 +51,7 @@ export const worleyNode: NodeDef = {
       name: 'resolution',
       type: 'Int',
       default: 512,
+      min: 1,
       description: 'output texture width and height in pixels',
     },
   ],

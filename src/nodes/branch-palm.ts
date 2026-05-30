@@ -15,7 +15,7 @@ export const branchPalmNode: NodeDef = {
     { name: 'height', type: 'Float', default: 8 },
     { name: 'trunkRadiusBase', type: 'Float', default: 0.18 },
     { name: 'trunkRadiusTip', type: 'Float', default: 0.12 },
-    { name: 'trunkSegments', type: 'Int', default: 14 },
+    { name: 'trunkSegments', type: 'Int', default: 14, min: 1 },
     {
       name: 'leanAngle',
       type: 'Float',

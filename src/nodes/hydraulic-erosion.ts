@@ -105,6 +105,7 @@ export const hydraulicErosionNode: NodeDef = {
       name: 'drops',
       type: 'Int',
       default: 30000,
+      min: 0,
       description:
         'total number of water drops simulated in parallel. Higher = more pronounced erosion features and more compute. ~30k feels live at 256² resolution',
     },
@@ -118,6 +119,7 @@ export const hydraulicErosionNode: NodeDef = {
       name: 'max_lifetime',
       type: 'Int',
       default: 30,
+      min: 1,
       description: 'maximum simulation steps per drop. Higher = longer streams, more pronounced channels',
     },
     {
@@ -166,6 +168,7 @@ export const hydraulicErosionNode: NodeDef = {
       name: 'brush_radius',
       type: 'Int',
       default: 3,
+      min: 0,
       description: 'pixel radius for each erosion event; small brush = sharp channels, larger = broader valleys',
     },
   ],
