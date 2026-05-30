@@ -1,10 +1,53 @@
 import { createRoot } from 'react-dom/client';
+import type { GraphNode } from './core/graph.js';
 import { App } from './editor/app.js';
 import { DEMOS } from './editor/demos/index.js';
 import { useEditorStore } from './editor/store.js';
 import { decodeProjectFromUrl, getUrlAnim, getUrlJsonParam } from './editor/url-state.js';
+import { setImageLoadedListener } from './nodes/image.js';
 import 'dockview/dist/styles/dockview.css';
 import './editor/editor.css';
+
+// When a `core/image` node's fetch lands, record the bitmap's natural
+// dimensions back into the matching node's hidden inputValues so a
+// future graph reload's placeholder texture comes up at the right size
+// instead of the 256×256 default. Bypasses dispatchProject so the
+// auto-update doesn't show up in the undo stack — undoing the URL
+// change separately is the user-visible action.
+setImageLoadedListener(({ url, width, height }) => {
+  useEditorStore.setState((state) => {
+    const updateNodes = (nodes: GraphNode[]): GraphNode[] => {
+      let changed = false;
+      const next = nodes.map((n) => {
+        if (n.kind !== 'core/image') return n;
+        if (n.inputValues?.url !== url) return n;
+        const cur = n.inputValues;
+        if (cur.width === width && cur.height === height) return n;
+        changed = true;
+        return { ...n, inputValues: { ...cur, width, height } };
+      });
+      return changed ? next : nodes;
+    };
+    const nextMain = { ...state.mainGraph, nodes: updateNodes(state.mainGraph.nodes) };
+    const mainChanged = nextMain.nodes !== state.mainGraph.nodes;
+    let subgraphsChanged = false;
+    const nextSubgraphs = state.subgraphs.map((s) => {
+      const nextNodes = updateNodes(s.graph.nodes);
+      if (nextNodes === s.graph.nodes) return s;
+      subgraphsChanged = true;
+      return { ...s, graph: { ...s.graph, nodes: nextNodes } };
+    });
+    if (!mainChanged && !subgraphsChanged) return {};
+    const nextGraph = state.currentEditingId === 'main'
+      ? (mainChanged ? nextMain : state.graph)
+      : (nextSubgraphs.find((s) => s.id === state.currentEditingId)?.graph ?? state.graph);
+    return {
+      mainGraph: nextMain,
+      subgraphs: nextSubgraphs,
+      graph: nextGraph,
+    };
+  });
+});
 
 const root = document.getElementById('root');
 if (!root) {

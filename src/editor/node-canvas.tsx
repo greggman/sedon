@@ -21,6 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
+import { useImageLoadGeneration } from '../nodes/image.js';
 import { canonicalJson } from '../core/eval-cache.js';
 import { findNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
@@ -212,6 +213,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   registryRef.current = registry;
   const evalCacheRef = useRef(evalCache);
   evalCacheRef.current = evalCache;
+  const imageLoadGen = useImageLoadGeneration();
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -258,7 +260,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     // canvas must re-run when the subgraph's input defaults change,
     // even though `panelGraph` (the inner graph) stays the same.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey]);
+  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey, imageLoadGen]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-

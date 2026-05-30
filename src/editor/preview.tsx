@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Graph } from '../core/graph.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
+import { useImageLoadGeneration } from '../nodes/image.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
@@ -949,6 +950,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
   registryRef.current = registry;
   const evalCacheRef = useRef(evalCache);
   evalCacheRef.current = evalCache;
+  // Bumps when any core/image's async fetch lands; in this effect's
+  // dep list so the eval re-fires with the new bitmap-cache state.
+  // The image node's dynamicFingerprintExtra contributes a per-URL
+  // version so the eval cache misses just for that node, not the
+  // whole graph — cheap re-eval that swaps the placeholder for the
+  // real texture.
+  const imageLoadGen = useImageLoadGeneration();
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
@@ -1016,7 +1024,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     // when nothing the current graph references actually changed
     // (every node's fingerprint stays put → cache hits all the way).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gpu, graph, rootNodeId, rootDef, reportWorking, subgraphs]);
+  }, [gpu, graph, rootNodeId, rootDef, reportWorking, subgraphs, imageLoadGen]);
 
   return (
     <div

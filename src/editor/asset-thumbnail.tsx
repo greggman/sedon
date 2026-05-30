@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
+import { useImageLoadGeneration } from '../nodes/image.js';
 import { defaultLighting, type SceneValue } from '../core/resources.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
@@ -94,6 +95,7 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
   registryRef.current = registry;
   const evalCacheRef = useRef(evalCache);
   evalCacheRef.current = evalCache;
+  const imageLoadGen = useImageLoadGeneration();
 
   useEffect(() => {
     if (!device || !resolved) {
@@ -151,7 +153,7 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
     // registry + evalCache deliberately omitted — see the ref pattern
     // above. reportWorking is useCallback-stable so it's a no-op dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device, resolved, reportWorking]);
+  }, [device, resolved, reportWorking, imageLoadGen]);
 
   if (!device || !scene) {
     return <>{fallback}</>;

@@ -1066,7 +1066,8 @@
 /* ============================================================
  * Inputs
  * ============================================================ */
-.sedon-numinput-edit {
+.sedon-numinput-edit,
+.sedon-stringinput {
   width: 100%;
   background: #1a1a1f;
   border: 1px solid #666;

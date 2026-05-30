@@ -240,6 +240,10 @@ export async function evaluateGraph(
     // coarse version counter (which would cascade-invalidate every
     // inner node on any inner edit — drag-a-colour-picker == 5fps).
     if (def.fingerprintExtra !== undefined) extraParts.push(def.fingerprintExtra);
+    // Per-instance dynamic extra — see NodeDef.dynamicFingerprintExtra.
+    // Used by `core/image` to mix in a per-URL "loaded version" so the
+    // cache misses on the eval that follows an async fetch landing.
+    if (def.dynamicFingerprintExtra) extraParts.push(def.dynamicFingerprintExtra(inputs));
     // Provenance-stamping nodes (scene-entity et al.) write the calling
     // subgraph path into their output, so two contexts produce
     // different VALUES even though their inputs match. Mix the path

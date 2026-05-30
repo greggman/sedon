@@ -18,6 +18,7 @@ import { GradientInput } from './inputs/gradient-editor.js';
 import type { GradientStop } from '../nodes/ramp.js';
 import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
+import { StringInput } from './inputs/string-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { useLayoutStore } from './layout-store.js';
 import { MaterialPreview } from './material-preview.js';
@@ -293,6 +294,8 @@ function inlineEditor(
       return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} {...numBounds} />;
     case 'Bool':
       return <BoolInput value={asBool(value)} onChange={onChange} />;
+    case 'String':
+      return <StringInput value={asString(value)} onChange={onChange as (n: string) => void} />;
     case 'Color':
       return (
         <ColorInput value={asRgba(value)} onChange={onChange as (n: number[]) => void} />
@@ -320,6 +323,9 @@ function inlineEditor(
 
 function asNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+function asString(v: unknown): string {
+  return typeof v === 'string' ? v : '';
 }
 function asBool(v: unknown): boolean {
   return v === true;
@@ -722,6 +728,13 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     return v !== undefined ? v : input.default;
   };
 
+  // Inputs flagged `hidden` are part of the data model (inputValues
+  // round-trip through serialize / undo / fragment paste / eval) but
+  // produce no inspector row and no socket. Layout indexing — handle
+  // top positions, row order, output-handle offset — uses this filtered
+  // list so hidden inputs don't leave invisible gaps in the node UI.
+  const visibleInputs = def.inputs.filter((i) => !i.hidden);
+
   // Which socket array is the "subgraph I/O list" view of this boundary?
   const editableInputs = boundary?.side === 'output';
   const editableOutputs = boundary?.side === 'input';
@@ -874,7 +887,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
        * Inputs flagged `hideSocket` skip the handle entirely — they're
        * authored-only (no wire can target them); the row's inline editor
        * still renders below. */}
-      {def.inputs.map((input, i) => (
+      {visibleInputs.map((input, i) => (
         input.hideSocket ? null : (
           <TypedHandle
             key={`h-in-${input.name}`}
@@ -891,11 +904,11 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           socketName={input.name}
           socketType={input.type}
           side="input"
-          top={inputsTop + (def.inputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
+          top={inputsTop + (visibleInputs.length + i) * ROW_HEIGHT + ROW_HEIGHT / 2}
         />
       ))}
 
-      {def.inputs.map((input) => {
+      {visibleInputs.map((input) => {
         const connected = connectedSockets.includes(input.name);
         const editor = !connected
           ? inlineEditor(input, valueOf(input), (v) => setInputValue(id, input.name, v))
@@ -935,7 +948,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             {editableInputs && boundary ? (
               <EditableSocketLabel
                 label={displayLabel}
-                otherLabels={def.inputs
+                otherLabels={visibleInputs
                   .filter((x) => x.name !== input.name)
                   .map((x) => x.label ?? x.name)}
                 onCommit={(newLabel) =>
@@ -989,7 +1002,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           side="output"
           top={
             inputsTop +
-            (def.inputs.length + extraInputs.length + i) * ROW_HEIGHT +
+            (visibleInputs.length + extraInputs.length + i) * ROW_HEIGHT +
             ROW_HEIGHT / 2
           }
         />
@@ -1058,7 +1071,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             existingLabels={
               boundary.side === 'input'
                 ? def.outputs.map((o) => o.label ?? o.name)
-                : def.inputs.map((i) => i.label ?? i.name)
+                : visibleInputs.map((i) => i.label ?? i.name)
             }
             onSubmit={(label, type) => {
               addSubgraphSocket(boundary.subgraphId, boundary.side, { label, type });
@@ -1070,7 +1083,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           <>
             <AddBoundaryHandle
               side={boundary.side}
-              top={inputsTop + (def.inputs.length + def.outputs.length) * ROW_HEIGHT + ROW_HEIGHT / 2}
+              top={inputsTop + (visibleInputs.length + def.outputs.length) * ROW_HEIGHT + ROW_HEIGHT / 2}
             />
             <button
               type="button"
@@ -1093,7 +1106,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           <AddExtraInputHandle
             top={
               inputsTop +
-              (def.inputs.length + extraInputs.length + def.outputs.length) * ROW_HEIGHT +
+              (visibleInputs.length + extraInputs.length + def.outputs.length) * ROW_HEIGHT +
               ROW_HEIGHT / 2
             }
           />

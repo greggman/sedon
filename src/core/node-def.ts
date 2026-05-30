@@ -59,6 +59,15 @@ export interface InputDef {
    */
   hideSocket?: boolean;
   /**
+   * Skip rendering the inspector row for this input entirely — no
+   * label, no editor, no socket. The value still lives in
+   * `inputValues` and flows through evaluate/serialize/copy-paste like
+   * any other input. Used for internal state the node author maintains
+   * programmatically (e.g. cached image dimensions on `core/image`)
+   * that needs to persist with the graph but isn't user-facing.
+   */
+  hidden?: boolean;
+  /**
    * Inclusive numeric bounds for Int / Float inputs. The evaluator
    * clamps incoming values (from any source — upstream wire, user-set
    * inputValue, or default) into [min, max] before calling the node's
@@ -247,6 +256,23 @@ export interface NodeDef {
   // a fence, mapAsync, fetch, etc. — e.g. heightfield-to-mesh reading back a
   // GPU texture). Returning a Promise is opt-in per node.
   evaluate(ctx: NodeContext, inputs: NodeInputs): NodeOutputs | Promise<NodeOutputs>;
+  /**
+   * Per-instance dynamic fingerprint contribution. Called once per
+   * evaluation with the resolved inputs; the returned string is mixed
+   * into the cache key alongside the declared inputs.
+   *
+   * Use for nodes whose output depends on STATE OUTSIDE the input
+   * graph that can change between evals — e.g. `core/image` reads an
+   * external URL into a module-level bitmap cache; the URL alone
+   * fingerprints the input, but a per-URL "loaded version" counter
+   * forces the cache to miss on the eval that follows the fetch
+   * landing.
+   *
+   * Most nodes shouldn't implement this — declare your inputs and let
+   * the evaluator hash them. The escape hatch is for genuine
+   * out-of-band state.
+   */
+  dynamicFingerprintExtra?(inputs: NodeInputs): string;
   /**
    * Opt-in: the node's output value depends on the calling subgraph
    * context (specifically `ctx.subgraphPath`), so the evaluator must

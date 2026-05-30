@@ -24,6 +24,7 @@ import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
+import { imageNode } from './image.js';
 import { textureConvertNode } from './texture-convert.js';
 import { textureMapRangeNode } from './texture-map-range.js';
 import { textureToHeightfieldMeshNode } from './texture-to-heightfield-mesh.js';
@@ -99,6 +100,7 @@ export const CORE_NODES = [
   textureToHeightfieldMeshNode,
   solidColorNode,
   gridNode,
+  imageNode,
   perlinNode,
   paletteNode,
   rampNode,
@@ -178,6 +180,7 @@ export {
   distributeOnFacesNode,
   gridDistributeNode,
   gridNode,
+  imageNode,
   textureConvertNode,
   textureMapRangeNode,
   textureToHeightfieldMeshNode,
