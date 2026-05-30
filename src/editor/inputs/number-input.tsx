@@ -4,6 +4,21 @@ interface NumberInputProps {
   value: number;
   onChange: (next: number) => void;
   integer?: boolean;
+  /**
+   * Inclusive declared bounds from the InputDef. The widget clamps
+   * drag-end / typed-commit values into [min, max] so the UI never
+   * presents a value the evaluator would silently clip. Either side
+   * is optional — pass only what's declared.
+   */
+  min?: number;
+  max?: number;
+}
+
+function clamp(v: number, min: number | undefined, max: number | undefined): number {
+  let out = v;
+  if (min !== undefined && out < min) out = min;
+  if (max !== undefined && out > max) out = max;
+  return out;
 }
 
 const DRAG_THRESHOLD = 3;
@@ -24,7 +39,7 @@ function format(v: number, integer: boolean): string {
   return str.replace(/\.?0+$/, '');
 }
 
-export function NumberInput({ value, onChange, integer = false }: NumberInputProps) {
+export function NumberInput({ value, onChange, integer = false, min, max }: NumberInputProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(() => format(value, integer));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,8 +61,9 @@ export function NumberInput({ value, onChange, integer = false }: NumberInputPro
 
   const commit = () => {
     const n = integer ? parseInt(text, 10) : parseFloat(text);
-    if (Number.isFinite(n) && n !== value) {
-      onChange(integer ? Math.round(n) : n);
+    if (Number.isFinite(n)) {
+      const clamped = clamp(integer ? Math.round(n) : n, min, max);
+      if (clamped !== value) onChange(clamped);
     }
     setEditing(false);
   };
@@ -104,7 +120,7 @@ export function NumberInput({ value, onChange, integer = false }: NumberInputPro
             : 'normal';
         const step = stepFor(startValueRef.current, integer, modifier);
         const raw = startValueRef.current + dx * step;
-        const next = integer ? Math.round(raw) : raw;
+        const next = clamp(integer ? Math.round(raw) : raw, min, max);
         if (next !== value) onChange(next);
       }}
       onPointerUp={(e) => {

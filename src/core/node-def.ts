@@ -58,6 +58,19 @@ export interface InputDef {
    * could produce one anyway, so the handle would only mislead.
    */
   hideSocket?: boolean;
+  /**
+   * Inclusive numeric bounds for Int / Float inputs. The evaluator
+   * clamps incoming values (from any source — upstream wire, user-set
+   * inputValue, or default) into [min, max] before calling the node's
+   * `evaluate`, so node code can rely on the declared range and skip
+   * defensive clamping. The inspector also clamps on commit so the UI
+   * never shows a value the runtime would silently clip.
+   *
+   * Either bound is independent: declaring only `min` leaves the
+   * upper end unconstrained. Ignored for non-numeric input types.
+   */
+  min?: number;
+  max?: number;
 }
 
 export interface OutputDef {

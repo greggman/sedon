@@ -239,9 +239,15 @@ function inlineEditor(
       />
     );
   }
+  // Optional numeric bounds are forwarded to NumberInput when present —
+  // the widget clamps drag-end / typed-commit values so the UI never
+  // shows a number the evaluator would silently clip.
+  const numBounds: { min?: number; max?: number } = {};
+  if (input.min !== undefined) numBounds.min = input.min;
+  if (input.max !== undefined) numBounds.max = input.max;
   switch (input.type) {
     case 'Float':
-      return <NumberInput value={asNumber(value, 0)} onChange={onChange} />;
+      return <NumberInput value={asNumber(value, 0)} onChange={onChange} {...numBounds} />;
     case 'Int':
       // Enum-typed Int gets a dropdown instead of a number scrubber.
       if (input.enumOptions && input.enumOptions.length > 0) {
@@ -253,7 +259,7 @@ function inlineEditor(
           />
         );
       }
-      return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} />;
+      return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} {...numBounds} />;
     case 'Bool':
       return <BoolInput value={asBool(value)} onChange={onChange} />;
     case 'Color':

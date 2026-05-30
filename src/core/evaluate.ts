@@ -2,7 +2,21 @@ import { debug } from './debug.js';
 import type { EvalCache } from './eval-cache.js';
 import { canonicalJson, nodeFingerprint } from './eval-cache.js';
 import type { Graph, GraphEdge } from './graph.js';
-import type { NodeContext, NodeOutputs, NodeRegistry } from './node-def.js';
+import type { InputDef, NodeContext, NodeOutputs, NodeRegistry } from './node-def.js';
+
+// Clamp a numeric input into the bounds declared by its InputDef.
+// Returns the value unchanged when it isn't a finite number (vectors,
+// textures, undefined for optional inputs all fall through), or when
+// the input declares no bounds. Used as the single point of constraint
+// enforcement so node code can trust its declared range.
+function clampNumericInput(value: unknown, def: InputDef): unknown {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return value;
+  if (def.type !== 'Int' && def.type !== 'Float') return value;
+  let v = value;
+  if (def.min !== undefined && v < def.min) v = def.min;
+  if (def.max !== undefined && v > def.max) v = def.max;
+  return v;
+}
 
 export interface EvaluateOptions {
   rootNodeId: string;
@@ -203,6 +217,11 @@ export async function evaluateGraph(
         canEvaluate = false;
         break;
       }
+      // Single point of constraint enforcement: declared `min`/`max`
+      // clamp the value regardless of its source (wire, inputValue,
+      // or default). Node code can rely on the declared range and
+      // skip defensive clamping. No-op for non-numeric values.
+      inputs[input.name] = clampNumericInput(inputs[input.name], input);
     }
     if (!canEvaluate) continue;
 
