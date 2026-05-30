@@ -129,8 +129,8 @@ export const hydraulicErosionNode: NodeDef = {
     {
       name: 'capacity',
       type: 'Float',
-      default: 4,
-      description: 'sediment-carrying capacity multiplier. Higher = drops carry more before depositing — deeper channels',
+      default: 0.5,
+      description: 'sediment-carrying capacity multiplier. Higher = drops carry more before depositing — deeper channels. Default tuned for typical metres-scale heightfields (e.g. heights in [0, ~100 m]); for a heightfield in [0, 1] (legacy / normalised) you\'d want ~30× this value to get comparable carving',
     },
     {
       name: 'deposition',

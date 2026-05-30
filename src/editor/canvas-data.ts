@@ -118,6 +118,21 @@ export function clearCanvasData(panelId: string): void {
   notify(panelId);
 }
 
+/**
+ * Debug-only: read a node's eval outputs by panel + id without going
+ * through React hooks. Exposed on window in debug mode for headless
+ * repros that need to inspect texture content for diagnostics. Returns
+ * undefined if the panel or node aren't present.
+ */
+export function debugGetOutputs(panelId: string, nodeId: string): NodeOutputs | undefined {
+  return panels.get(panelId)?.outputs?.get(nodeId);
+}
+
+/** Debug-only: list panel ids that currently have eval outputs. */
+export function debugListPanelIds(): string[] {
+  return [...panels.keys()];
+}
+
 const EMPTY_SUBSCRIBE = () => () => {};
 
 export function useCanvasNode(panelId: string | null, nodeId: string): CanvasNodeView | undefined {

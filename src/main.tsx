@@ -48,6 +48,19 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   void import('./editor/render-bus.js').then((m) => {
     (window as unknown as { __sedonSetAnimating__: typeof m.setAnimating }).__sedonSetAnimating__ = m.setAnimating;
   });
+  // Canvas-data getters so headless repros can inspect per-node eval
+  // outputs (textures, scenes, …) by node id without going through
+  // React. Used for texture-readback diagnostics.
+  void import('./editor/canvas-data.js').then((m) => {
+    (window as unknown as {
+      __sedonGetOutputs__: typeof m.debugGetOutputs;
+      __sedonListPanelIds__: typeof m.debugListPanelIds;
+    }).__sedonGetOutputs__ = m.debugGetOutputs;
+    (window as unknown as {
+      __sedonGetOutputs__: typeof m.debugGetOutputs;
+      __sedonListPanelIds__: typeof m.debugListPanelIds;
+    }).__sedonListPanelIds__ = m.debugListPanelIds;
+  });
 }
 
 // Bootstrap from URL before rendering. If `?json=<base64url>` is

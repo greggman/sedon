@@ -82,7 +82,7 @@ export function createMultiLayerTerrainDemo(): {
   });
   const pathCarve = addNode(g, 'path/carve-heightfield', {
     position: { x: COL * 1.85, y: 0 },
-    inputValues: { worldSize: [200, 200], depth: 4, falloff: 5 },
+    inputValues: { worldSize: [200, 200], depth: 8, falloff: 10 },
   });
 
   // Four solid-color layer albedos (red / green / blue / white).
@@ -153,6 +153,8 @@ export function createMultiLayerTerrainDemo(): {
       wave_scale: 6,
       wave_speed: 1.0,
       roughness: 0.05,
+      absorption: 1,
+      foam_width: 1.5,
     },
   });
   const output = addNode(g, 'core/output', {
