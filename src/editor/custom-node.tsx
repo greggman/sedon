@@ -35,6 +35,17 @@ const types = createCoreTypeRegistry();
 // on a new line. Newlines in `title` render as multi-line tooltips in
 // every browser we care about — keeps short cases compact while still
 // surfacing long descriptions where they matter most.
+//
+// The native `title` attribute can't render HTML, so we strip the only
+// markdown shape that appears commonly in descriptions: `[text](url)`
+// → `text`. Backticks / asterisks read fine as-is in plain text. Full
+// markdown rendering would need a custom popover; this is the cheap
+// path that gets the worst case (cross-node links displayed as raw
+// markdown source) looking sane.
+function stripInlineMarkdown(s: string): string {
+  return s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+
 function socketTooltip(def: InputDef | OutputDef): string {
   const isInput = (d: InputDef | OutputDef): d is InputDef => 'min' in d || 'max' in d || 'default' in d;
   let header = def.type;
@@ -45,7 +56,9 @@ function socketTooltip(def: InputDef | OutputDef): string {
     else if (hasMin) header += ` (min: ${def.min})`;
     else if (hasMax) header += ` (max: ${def.max})`;
   }
-  return def.description ? `${header}\n\n${def.description}` : header;
+  return def.description
+    ? `${header}\n\n${stripInlineMarkdown(def.description)}`
+    : header;
 }
 
 // Two-line stacked title (user name on top, kind label below). Fixed so
