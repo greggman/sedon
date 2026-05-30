@@ -7,7 +7,7 @@ import {
 } from '../render/branch-graph.js';
 
 // Runions-style space-colonization canopy grower. Takes a PointCloud of
-// attractor positions (typically `core/sphere` → `core/distribute-on-faces`
+// attractor positions (typically `core/sphere` → `core/distribute-in-volume`
 // for a spherical canopy envelope; any mesh works), grows a tree from
 // `trunkStart` toward those attractors, then assigns radii via Murray's
 // law. Best naturalism for big-canopy deciduous trees — oak, maple, beech.
@@ -22,7 +22,7 @@ export const branchSpaceColonizationNode: NodeDef = {
     {
       name: 'attractors',
       type: 'PointCloud',
-      description: 'attractor points the tree grows toward (typically distribute-on-faces of a canopy mesh)',
+      description: 'attractor points the tree grows toward (typically distribute-in-volume of a canopy mesh)',
     },
     { name: 'trunkStart', type: 'Vec3', default: [0, 0, 0] },
     {
@@ -87,7 +87,7 @@ naturalistic).
 
 For the attractor cloud, the canonical pattern is
 [core/sphere](../../core/sphere) →
-[core/distribute-on-faces](../../core/distribute-on-faces) for a
+[core/distribute-in-volume](../../core/distribute-in-volume) for a
 spherical envelope. Any mesh works — distribute on an ellipsoid for a
 flame-shaped tree, on a stretched cube for hedgerow.
 
@@ -97,7 +97,7 @@ hundreds for interactive editing; bump for hero shots.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      // Sphere → distribute-on-faces → canopy attractors for the
+      // Sphere → distribute-in-volume → canopy attractors for the
       // space-colonization grower → tube. The sphere is offset upward
       // to act as the crown above the trunk-start.
       const sphere = addNode(g, 'core/sphere', {
@@ -110,7 +110,7 @@ hundreds for interactive editing; bump for hero shots.
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
       });
-      const attractors = addNode(g, 'core/distribute-on-faces', {
+      const attractors = addNode(g, 'core/distribute-in-volume', {
         id: 'attractors',
         position: { x: 560, y: 0 },
         inputValues: { density: 8, seed: 0.5 },
