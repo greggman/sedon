@@ -330,3 +330,62 @@ code {
   border-radius: 2px;
   font-size: 0.92em;
 }
+
+/* Bottom-of-node-page mini-TOC. Categories laid out as 300 px columns
+   so they reflow on narrow viewports without breaking. Each column is
+   compact (name-only) — the full descriptions live on the main /docs/
+   index, this is just for lateral navigation. */
+.sedon-doc-bottom-toc {
+  max-width: 100%;
+}
+.sedon-doc-bottom-toc h2 {
+    border-top: 3px solid;
+    padding-top: 0.5em;
+    text-align: center;
+}
+.sedon-doc-bottom-toc-grid {
+  columns: 240px;
+  gap: 24px 28px;
+}
+.sedon-doc-bottom-toc-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 1em;
+}
+.sedon-doc-bottom-toc-cat {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--doc-muted);
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--doc-border);
+}
+.sedon-doc-bottom-toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sedon-doc-bottom-toc-list li {
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.sedon-doc-bottom-toc-list a {
+  color: var(--doc-accent);
+  text-decoration: none;
+}
+.sedon-doc-bottom-toc-list a:hover {
+  text-decoration: underline;
+}
+/* Highlight the page's own node so readers can locate themselves
+   inside the grid without having to scan all categories. */
+.sedon-doc-bottom-toc-current code {
+  background: var(--doc-accent);
+  color: var(--doc-bg, #1a1a1f);
+}

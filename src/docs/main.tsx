@@ -92,7 +92,7 @@ if (config.kind === 'node' && config.nodeId) {
     }
     reactRoot.render(
       <StrictMode>
-        <DocsPage def={def} descriptionHtml={config.descriptionHtml ?? ''} />
+        <DocsPage def={def} descriptionHtml={config.descriptionHtml ?? ''} defs={defs} />
       </StrictMode>,
     );
   }

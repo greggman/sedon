@@ -1,5 +1,5 @@
 import type { InputDef, NodeDef, OutputDef } from '../core/node-def.js';
-import { docsIndexUrl } from './doc-paths.js';
+import { docsIndexUrl, docsUrlFor } from './doc-paths.js';
 import { DocsSamplePreview } from './docs-sample-preview.js';
 
 // Single-node documentation page. The build script (scripts/build.mjs)
@@ -15,6 +15,13 @@ import { DocsSamplePreview } from './docs-sample-preview.js';
 interface DocsPageProps {
   def: NodeDef;
   descriptionHtml: string;
+  /**
+   * Every node def the registry knows about — used by the bottom-of-
+   * page "All nodes" mini-TOC so users can jump category-to-category
+   * without scrolling back to the main index. Same list main.tsx
+   * passes to DocsIndex.
+   */
+  defs: NodeDef[];
 }
 
 function formatDefault(value: unknown): string {
@@ -94,7 +101,53 @@ function OutputRow({ output }: { output: OutputDef }) {
   );
 }
 
-export function DocsPage({ def, descriptionHtml }: DocsPageProps) {
+// Compact bottom-of-page mini-TOC. Categories laid out in a responsive
+// grid of 300 px columns, each listing its nodes by id only (no
+// summaries — the main /docs/ index has those). Lets a reader jump
+// laterally to any other node from inside any node's page.
+function BottomTOC({ defs, currentId }: { defs: NodeDef[]; currentId: string }) {
+  const documented = defs.filter((d) => d.doc);
+  const byCategory = new Map<string, NodeDef[]>();
+  for (const d of documented) {
+    const list = byCategory.get(d.category) ?? [];
+    list.push(d);
+    byCategory.set(d.category, list);
+  }
+  const categories = [...byCategory.entries()].sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <section className="sedon-doc-section sedon-doc-bottom-toc">
+      <h2 className="sedon-doc-h2">All nodes</h2>
+      <div className="sedon-doc-bottom-toc-grid">
+        {categories.map(([category, list]) => (
+          <div key={category} className="sedon-doc-bottom-toc-col">
+            <h3 className="sedon-doc-bottom-toc-cat">{category}</h3>
+            <ul className="sedon-doc-bottom-toc-list">
+              {list
+                .slice()
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map((d) => (
+                  <li
+                    key={d.id}
+                    className={d.id === currentId ? 'sedon-doc-bottom-toc-current' : ''}
+                  >
+                    {d.id === currentId ? (
+                      <code>{d.id}</code>
+                    ) : (
+                      <a href={docsUrlFor(d.id, { kind: 'docs-node', id: currentId }, 'index')}>
+                        <code>{d.id}</code>
+                      </a>
+                    )}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function DocsPage({ def, descriptionHtml, defs }: DocsPageProps) {
   const doc = def.doc;
   if (!doc) {
     return (
@@ -185,6 +238,8 @@ export function DocsPage({ def, descriptionHtml }: DocsPageProps) {
             </table>
           )}
         </section>
+
+        <BottomTOC defs={defs} currentId={def.id} />
       </main>
     </div>
   );
