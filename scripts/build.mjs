@@ -185,6 +185,7 @@ const HTML_TEMPLATE = (title, configJson, depthToRoot) => `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
+    <link rel="icon" href="${depthToRoot}favicon.ico" />
     <link rel="stylesheet" href="${depthToRoot}dist/docs/main.css" />
   </head>
   <body>

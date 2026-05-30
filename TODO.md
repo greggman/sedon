@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] need LODs so trees work?
 - [ ] import png, jpg, webp (use URL where # is local)
   - [ ] drag and drop
     issue, what does it mean? Drag and drop is for local files os this would
