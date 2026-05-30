@@ -217,7 +217,7 @@ export function createForestDemo(): {
     extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
       worldSize: [100, 100],
-      maxDistance: 45, spacing: 0.4, bladeWidth: 0.2, bladeHeight: 0.6,
+      maxDistance: 45, spacing: 0.2, bladeWidth: 0.2, bladeHeight: 0.6,
       densityScale: 1.3, maxSlope: 0.5, windStrength: 0.1, windSpeed: 2.2,
       baseColor: [0.9, 0.95, 0.85, 1], tipColor: [1, 1, 0.95, 1], colorVariation: 0.3, seed: 5,
     },
