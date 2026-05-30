@@ -1414,6 +1414,32 @@ export function generateSpaceColonizationBranchGraph(
       continue;
     }
 
+    // Growth step. Each node with attractor influence emits ONE child
+    // toward the average of its influencers' directions. The two ugly
+    // edge cases the dedupe checks below guard against:
+    //
+    //   1. Cancellation: a node surrounded by attractors on opposite
+    //      sides averages to ~(0, 0, 0). With `upBias`, the direction
+    //      degenerates to straight-up regardless of what's actually
+    //      pulling — the new child lands at exactly the same position
+    //      iteration after iteration (the parent stays nearest to the
+    //      side attractors because they're further from the up-child).
+    //      Each iteration stacks another sibling at the SAME world
+    //      position, ending with hundreds of duplicate children. The
+    //      BranchGraph treats each as a separate sibling branch and
+    //      branch/sample-points scatters leaves on each — that's where
+    //      the "100s of leaves on one branch" bottle-brush comes from.
+    //
+    //   2. Even when the parent's new child would NOT exactly match an
+    //      existing sibling's position, a near-duplicate child (within
+    //      half a segment) adds visual clutter without contributing
+    //      coverage. Skip those too.
+    //
+    // Dedup threshold = segmentLength * 0.25: well below "this is a
+    // real new branch" (which would be at least segmentLength * cos(big
+    // fork angle) away from any sibling), well above "floating-point
+    // noise" cases.
+    const DEDUP_DIST_SQ = (opts.segmentLength * 0.25) * (opts.segmentLength * 0.25);
     const newStart = nodes.length;
     for (const [nodeIdx, attrs] of influence) {
       const node = nodes[nodeIdx]!;
@@ -1436,6 +1462,23 @@ export function generateSpaceColonizationBranchGraph(
         node.pos[1] + dy * opts.segmentLength,
         node.pos[2] + dz * opts.segmentLength,
       ];
+
+      // Dedupe against existing siblings. With a 0.25 × segmentLength
+      // threshold, legitimate Y-forks (children pointing in noticeably
+      // different directions) stay; near-duplicates are skipped.
+      let duplicate = false;
+      for (const sibIdx of node.children) {
+        const sib = nodes[sibIdx]!;
+        const ddx = sib.pos[0] - newPos[0];
+        const ddy = sib.pos[1] - newPos[1];
+        const ddz = sib.pos[2] - newPos[2];
+        if (ddx * ddx + ddy * ddy + ddz * ddz < DEDUP_DIST_SQ) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (duplicate) continue;
+
       const newIdx = nodes.length;
       nodes.push({ pos: newPos, parent: nodeIdx, radius: 0, children: [] });
       node.children.push(newIdx);

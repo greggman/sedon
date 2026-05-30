@@ -727,7 +727,13 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
       radiusMin: 0,
       radiusMax: 0.06,
       onlyTips: false,
-      density: 50,
+      // Dropped from 50 to match the new radius taper: more sub-branches
+      // qualify for leaves now, so a lower per-branch density adds up to
+      // roughly the same total foliage with cards not overlapping each
+      // other. The earlier "100s of leaves on one branch" wasn't actually
+      // density-driven — it was hundreds of overlapping siblings from a
+      // space-colonization cancellation bug, since fixed.
+      density: 15,
       tipCount: 1,
       seed: 0.35,
     },
