@@ -111,7 +111,7 @@ export function saveProject(): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `sedon-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+  a.download = `sedon-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.sedon`;
   a.click();
   URL.revokeObjectURL(url);
   useEditorStore.getState().markClean();
@@ -154,7 +154,8 @@ export function loadProject(): void {
   if (!confirmDiscardIfDirty()) return;
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'application/json,.json';
+  // `.sedon` is our canonical extension; 
+  input.accept = '.sedon';
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
