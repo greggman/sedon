@@ -42,7 +42,7 @@ export function DocsIndex({ defs }: DocsIndexProps) {
                   .sort((a, b) => a.id.localeCompare(b.id))
                   .map((def) => (
                     <li key={def.id}>
-                      <a href={docsUrlFor(def.id, 'index')}>
+                      <a href={docsUrlFor(def.id, 'docs-index', 'index')}>
                         <code>{def.id}</code>
                       </a>
                       {def.doc?.summary && (

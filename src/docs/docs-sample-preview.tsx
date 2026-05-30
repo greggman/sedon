@@ -60,6 +60,11 @@ interface DocsSamplePreviewProps {
   // Keep the prop so the typed shape conveys "this component needs a
   // sample graph to function" at the call site.
   sampleGraph: { graph: import('../core/graph.js').Graph; rootNodeId: string };
+  // The node id of the doc page hosting this preview, e.g.
+  // 'core/perlin'. Plumbed into CanvasPanelContext.docsLocation so
+  // CustomNode's [?] icons emit URLs relative to THIS page (the page
+  // hosting the preview), not the site root.
+  hostNodeId: string;
 }
 
 const DOCS_PANEL_ID = 'docs-sample';
@@ -123,7 +128,7 @@ export function DocsSamplePreview(props: DocsSamplePreviewProps) {
   );
 }
 
-function DocsSamplePreviewInner(_props: DocsSamplePreviewProps) {
+function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
   const rf = useReactFlow();
   const [device, setDevice] = useState<GPUDevice | null>(null);
   const [rootOutputs, setRootOutputs] = useState<NodeOutputs | null>(null);
@@ -327,7 +332,15 @@ function DocsSamplePreviewInner(_props: DocsSamplePreviewProps) {
           transition: 'opacity 0.15s ease-out',
         }}
       >
-        <CanvasPanelContext.Provider value={{ panelId: DOCS_PANEL_ID }}>
+        <CanvasPanelContext.Provider
+          value={{
+            panelId: DOCS_PANEL_ID,
+            // This preview lives at /docs/nodes/<hostNodeId>/index.html.
+            // CustomNode's [?] icon reads docsLocation off the context to
+            // build URLs relative to this page (not the site root).
+            docsLocation: { kind: 'docs-node', id: props.hostNodeId },
+          }}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}

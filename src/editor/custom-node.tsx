@@ -10,7 +10,7 @@ import type {
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
-import { useCanvasPanelId } from './canvas-panel-context.js';
+import { useCanvasPanelId, useDocsLocation } from './canvas-panel-context.js';
 import { useCanvasNode, useCanvasNodeOutput } from './canvas-data.js';
 import { BoolInput } from './inputs/bool-input.js';
 import { ColorInput } from './inputs/color-input.js';
@@ -576,6 +576,9 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // and triggering "scene_0 handle not found" / error 008.
   // panelId of the canvas this node renders inside (stable context).
   const canvasPanelId = useCanvasPanelId();
+  // Where this canvas is hosted on the deployed site — used below to
+  // build the [?] doc-link URL relative to the current page.
+  const docsLocation = useDocsLocation();
   // This node's data (GraphNode + connected input sockets), subscribed
   // PER-NODE from the canvas-data store — so an edit elsewhere in the
   // graph doesn't re-render this CustomNode. The view object is
@@ -724,7 +727,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         {def?.doc && (
           <a
             className="nodrag nopan sedon-node-help"
-            href={docsUrlFor(def.id)}
+            href={docsUrlFor(def.id, docsLocation)}
             target="_blank"
             rel="noreferrer"
             title={`Open documentation for ${def.id}`}

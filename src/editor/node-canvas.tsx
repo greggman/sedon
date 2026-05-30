@@ -757,10 +757,15 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   }, [panelId, panelGraph]);
   useEffect(() => () => clearCanvasData(panelId), [panelId]);
 
-  // Context now carries ONLY the (stable) panelId — never changes for
-  // this panel, so it triggers no re-renders. Per-node data flows
-  // through the canvas-data store instead.
-  const canvasPanelInfo = useMemo(() => ({ panelId }), [panelId]);
+  // Context carries the (stable) panelId — never changes for this
+  // panel, so it triggers no re-renders — plus docsLocation, which
+  // tells in-canvas [?] icons how to build URLs into the docs (the
+  // editor lives at the site root). Per-node data flows through the
+  // canvas-data store instead.
+  const canvasPanelInfo = useMemo(
+    () => ({ panelId, docsLocation: 'site-root' as const }),
+    [panelId],
+  );
 
   // F-key: frame selected nodes, or fit-all if nothing is selected. Lives
   // on the wrapper div so it only fires when focus is somewhere inside

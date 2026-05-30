@@ -109,7 +109,10 @@ export function DocsPage({ def, descriptionHtml }: DocsPageProps) {
   return (
     <div className="sedon-doc-shell">
       <header className="sedon-doc-header">
-        <a href={docsIndexUrl()} className="sedon-doc-breadcrumb">← Sedon documentation</a>
+        <a
+          href={docsIndexUrl({ kind: 'docs-node', id: def.id })}
+          className="sedon-doc-breadcrumb"
+        >← Sedon documentation</a>
       </header>
 
       <main className="sedon-doc-main">
@@ -132,7 +135,7 @@ export function DocsPage({ def, descriptionHtml }: DocsPageProps) {
 
         <section className="sedon-doc-section sedon-doc-section--wide">
           {sampleGraph ? (
-            <DocsSamplePreview sampleGraph={sampleGraph} />
+            <DocsSamplePreview sampleGraph={sampleGraph} hostNodeId={def.id} />
           ) : (
             <div className="sedon-doc-muted">No sample graph provided.</div>
           )}
