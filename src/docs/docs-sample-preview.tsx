@@ -28,6 +28,7 @@ import { PathPreview } from '../editor/path-preview.js';
 import { graphToRfEdges, graphToRfNodes } from '../editor/rf-conversion.js';
 import { ScenePreview } from '../editor/scene-preview.js';
 import { useEditorStore, type CameraState } from '../editor/store.js';
+import { useImageLoadGeneration } from '../nodes/image.js';
 import { TexturePreview } from '../editor/texture-preview.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { acquireGpuDevice } from '../render/device.js';
@@ -176,6 +177,12 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
   // otherwise a sample graph with a wiring mistake (e.g. forgetting
   // to feed a material's basecolor) leaves the preview pane stuck on
   // "Evaluating…" forever with the only signal being a console warn.
+  // Re-eval when any core/image's fetch lands so the docs sample shows
+  // the loaded image instead of the placeholder. The image node's
+  // dynamicFingerprintExtra is what actually invalidates the per-node
+  // eval-cache entry; this hook just makes sure the effect re-fires
+  // so eval gets to recompute the image node with the new version.
+  const imageLoadGen = useImageLoadGeneration();
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -207,7 +214,7 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
     return () => {
       cancelled = true;
     };
-  }, [device, liveGraph, liveRootNodeId, registry]);
+  }, [device, liveGraph, liveRootNodeId, registry, imageLoadGen]);
 
   // RF nodes/edges. Generated from the live graph so a setInputValue
   // mutation triggers re-render here too (the rf node `data.kind` is

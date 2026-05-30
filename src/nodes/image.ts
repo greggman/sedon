@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
 import { requireDevice, reusableTexture } from '../core/resources.js';
@@ -188,6 +189,35 @@ export const imageNode: NodeDef = {
   ],
   doc: {
     summary: 'Load a PNG / JPG / WEBP image from a URL as a Texture2D.',
+    description: `
+Pulls an image off the network via \`fetch\` + \`createImageBitmap\`,
+uploads it to a GPU texture, and emits a \`Texture2D\` you can wire
+anywhere a generated texture would go. While the fetch is in flight
+(or has failed) the node outputs a magenta placeholder at the
+hidden \`width\` / \`height\` it remembers from the previous load —
+so downstream consumers see a stable size and the graph doesn't
+structurally break during the loading flash.
+
+**CORS**: only servers that send \`Access-Control-Allow-Origin\` are
+usable. The easy options: GitHub raw (\`raw.githubusercontent.com\`),
+imgur direct CDN URLs, githack. Most random web hosts don't send
+CORS headers and will fail to load — failed loads stamp the magenta
+placeholder.
+`,
+    sampleGraph: () => {
+      // The docs page for this node lives at `docs/nodes/core/image/`,
+      // so four `../` reaches the site root where `images/` sits
+      // (alongside `dist/`, `docs/`). Same-origin so no CORS dance.
+      const g = createGraph();
+      addNode(g, 'core/image', {
+        id: 'image',
+        position: { x: 0, y: 0 },
+        inputValues: {
+          url: '../../../../images/sedon.png',
+        },
+      });
+      return { graph: g, rootNodeId: 'image' };
+    },
   },
   // Mix the per-URL load version into the cache key so the eval cache
   // misses on the round after the fetch lands. Without this, the
