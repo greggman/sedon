@@ -734,6 +734,17 @@
     0 0 8px 1px rgba(255, 165, 38, 0.45);
 }
 
+/* core/for-each-point lights up cyan while a subgraph asset is being
+ * dragged over it, so the user can see this node will catch the drop
+ * (instead of the drop falling through to the canvas-level handler
+ * and spawning a wrapper next to it). */
+.sedon-node--drop-target {
+  border-color: rgba(80, 200, 240, 1);
+  box-shadow:
+    0 0 0 1px rgba(80, 200, 240, 1) inset,
+    0 0 12px 2px rgba(80, 200, 240, 0.55);
+}
+
 /* The output color bar at the top: height comes from JS (OUTPUT_BAR_HEIGHT)
  * and the gradient `background` is set inline because it's data-driven from
  * the node's output types. */

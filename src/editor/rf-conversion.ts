@@ -25,7 +25,13 @@ export function edgeColor(
   registry: NodeRegistry,
 ): string {
   const node = graph.nodes.find((n) => n.id === sourceNodeId);
-  const def = node ? registry.get(node.kind) : undefined;
+  if (!node) return '#888';
+  // Per-instance extraOutputs (for-each-point) REPLACE the static
+  // def.outputs when present, so check those first. Falling back to
+  // the def keeps regular nodes unchanged.
+  const fromExtras = node.extraOutputs?.find((o) => o.name === sourceSocket);
+  if (fromExtras) return typeColor(fromExtras.type);
+  const def = registry.get(node.kind);
   const out = def?.outputs.find((o) => o.name === sourceSocket);
   return out ? typeColor(out.type) : '#888';
 }

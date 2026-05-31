@@ -85,12 +85,21 @@ inputs). To place this entity at many positions, feed the output into
     },
   },
   evaluate(ctx, inputs): { scene: SceneValue } {
+    const geometry = inputs.geometry as GeometryValue | undefined;
+    const material = inputs.material as MaterialValue | undefined;
+    // Emit an empty scene when either required value is missing rather
+    // than building a half-formed entity. Happens when a subgraph that
+    // takes Material as an input is asset-thumbnailed standalone (no
+    // wrapper, so the boundary supplies no Material — there's no static
+    // default for it). Without this guard the renderer's batching path
+    // crashes on `entity.material.kind`.
+    if (!geometry || !material) return { scene: { entities: [] } };
     return {
       scene: {
         entities: [
           {
-            geometry: inputs.geometry as GeometryValue,
-            material: inputs.material as MaterialValue,
+            geometry,
+            material,
             transform: identity(),
             tint: identityTint(),
             // Provenance for GPU picking. Top-level scene-entity is the

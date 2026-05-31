@@ -74,6 +74,16 @@ export const CORE_CONVERSIONS: readonly [string, string][] = [
   ['Float', 'Vec4'],
   ['Color', 'Vec4'],
   ['Vec4', 'Color'],
+  // Scalar-to-cloud broadcasting. The for-each-point node mirrors its
+  // body subgraph's Float / Vec3 inputs as `*Cloud` sockets so each
+  // iteration can read a per-point value, but a constant scalar should
+  // still wire cleanly ("every iteration uses this colour / scale /
+  // material"). These conversions make a plain Float wire connect to a
+  // FloatCloud socket and broadcast at eval time. Compositions cascade:
+  // Int → Float → FloatCloud lets an Int source feed a Float-broadcast
+  // cloud socket too.
+  ['Float', 'FloatCloud'],
+  ['Vec3', 'Vec3Cloud'],
 ];
 
 export function createCoreTypeRegistry(): TypeRegistry {

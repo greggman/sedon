@@ -1,4 +1,4 @@
-import type { InputDef, NodeRegistry } from './node-def.js';
+import type { InputDef, NodeRegistry, OutputDef } from './node-def.js';
 import type { TypeRegistry } from './types.js';
 
 export const GRAPH_VERSION = 1;
@@ -18,8 +18,10 @@ export interface GraphNode {
   /**
    * Per-instance dynamic inputs appended to whatever the NodeDef
    * declares. Only meaningful for node kinds whose def has an
-   * `extraInputsSpec` (variadic nodes like `core/scene-merge`). The
-   * evaluator and validator gather inputs from
+   * `extraInputsSpec` (variadic nodes like `core/scene-merge`) or
+   * whose extras are populated programmatically (`core/for-each-point`
+   * mirrors the body subgraph's inputs here). The evaluator and
+   * validator gather inputs from
    * `def.inputs.concat(node.extraInputs ?? [])`.
    *
    * Stored on the node (not the def) so each instance keeps its own
@@ -27,6 +29,21 @@ export interface GraphNode {
    * graph JSON.
    */
   extraInputs?: InputDef[];
+  /**
+   * Per-instance dynamic outputs that REPLACE whatever the NodeDef
+   * declares when non-empty. Currently used only by
+   * `core/for-each-point` to mirror (and lift) the body subgraph's
+   * outputs — a body `Float` becomes a for-each `FloatCloud`, a body
+   * `Vec3` becomes `Vec3Cloud`, a body `Scene` stays `Scene` (merged
+   * across iterations). When `extraOutputs` is undefined or empty,
+   * the static `def.outputs` list is used as the source of truth.
+   *
+   * Override (not concat) semantics: a for-each-point with no body
+   * has no outputs at all; once the body is dropped, `extraOutputs`
+   * fully determines the output socket set. This matches scene-merge's
+   * input-only-when-wired posture but for the output side.
+   */
+  extraOutputs?: OutputDef[];
 }
 
 export interface SocketRef {
@@ -65,6 +82,8 @@ export interface AddNodeOptions {
    * up front instead of clicking the "+ Add" button at runtime.
    */
   extraInputs?: InputDef[];
+  /** See {@link GraphNode.extraOutputs}. */
+  extraOutputs?: OutputDef[];
 }
 
 export function addNode(graph: Graph, kind: string, opts: AddNodeOptions = {}): GraphNode {
@@ -74,9 +93,29 @@ export function addNode(graph: Graph, kind: string, opts: AddNodeOptions = {}): 
     ...(opts.position !== undefined ? { position: opts.position } : {}),
     ...(opts.inputValues !== undefined ? { inputValues: opts.inputValues } : {}),
     ...(opts.extraInputs !== undefined ? { extraInputs: opts.extraInputs } : {}),
+    ...(opts.extraOutputs !== undefined ? { extraOutputs: opts.extraOutputs } : {}),
   };
   graph.nodes.push(node);
   return node;
+}
+
+/**
+ * Look up an output socket by name on a graph node, consulting the
+ * per-instance `extraOutputs` (for-each-point's lifted body outputs)
+ * before falling back to the static `def.outputs`. Returns the
+ * matching OutputDef or undefined when neither list has a socket of
+ * the given name. Used by the editor's type-compat checker and edge-
+ * color computation so for-each-point's `FloatCloud` / `Vec3Cloud` /
+ * merged-`Scene` outputs colour and validate correctly.
+ */
+export function findOutputOnNode(
+  node: GraphNode,
+  def: { outputs: ReadonlyArray<OutputDef> } | undefined,
+  socketName: string,
+): OutputDef | undefined {
+  const fromExtras = node.extraOutputs?.find((o) => o.name === socketName);
+  if (fromExtras) return fromExtras;
+  return def?.outputs.find((o) => o.name === socketName);
 }
 
 export function addEdge(graph: Graph, from: SocketRef, to: SocketRef): GraphEdge {

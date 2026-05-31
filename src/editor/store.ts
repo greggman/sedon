@@ -4,9 +4,15 @@ import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
 import type { Graph, GraphEdge, GraphNode, SocketRef } from '../core/graph.js';
-import type { InputDef } from '../core/node-def.js';
+import type { InputDef, OutputDef } from '../core/node-def.js';
+import {
+  isImplicitForEachInputName,
+  liftForEachInputType,
+  liftForEachOutputType,
+} from '../nodes/for-each-point.js';
 import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
 import {
+  cleanupForEachBodyReferences,
   cloneFolderSubtree,
   cloneSubgraphDef,
   countBrokenRefs as countBrokenRefsImpl,
@@ -239,6 +245,18 @@ export interface EditorState {
    * commit (Enter / blur), not per keystroke.
    */
   renameNode: (nodeId: string, name: string) => void;
+
+  /**
+   * Attach (or clear) the body subgraph of a `core/for-each-point`
+   * node. Atomically: sets `__body` to the wrapper kind, rebuilds the
+   * node's `extraInputs` to mirror the body subgraph's inputs (with
+   * `Float → FloatCloud` / `Vec3 → Vec3Cloud` lifting, and skipping
+   * the implicit `__position` / `__index` names), and drops any
+   * incoming edges that target a socket which is no longer present
+   * by name. One undoable command. Passing an empty string clears
+   * the body — extraInputs become `[]` and every per-body wire drops.
+   */
+  setForEachBody: (nodeId: string, bodyKind: string) => void;
 
   /**
    * Append a new per-instance dynamic input socket on a variadic node.
@@ -774,17 +792,42 @@ export const useEditorStore = create<EditorState>((set, get) => {
           const next = resolveParent(f.parentFolderId);
           return next === f.parentFolderId ? f : { ...f, parentFolderId: next };
         });
-      const subgraphs = state.subgraphs
+      const reparentedSubgraphs = state.subgraphs
         .filter((s) => !deletedSubgraphs.has(s.id))
         .map((s) => {
           const cur = s.parentFolderId ?? null;
           const next = resolveParent(cur);
           return next === cur ? s : { ...s, parentFolderId: next };
         });
+
+      // Auto-cleanup: any `core/for-each-point` whose `__body`
+      // references one of the deleted subgraphs gets its body cleared
+      // (and extraInputs / dangling edges pruned). Without this the
+      // node would stick around with a dead reference, the inspector
+      // showing a non-existent kind. Wrapper instances aren't touched —
+      // those have a long-standing "leave it for the user to delete"
+      // behaviour we don't want to change here.
+      const deletedBodyKinds = new Set<string>();
+      for (const id of pruned.subgraphIds) deletedBodyKinds.add(`subgraph/${id}`);
+      const cleanedMainGraph = cleanupForEachBodyReferences(state.mainGraph, deletedBodyKinds);
+      const cleanedSubgraphs = reparentedSubgraphs.map((s) => {
+        const cleanedInner = cleanupForEachBodyReferences(s.graph, deletedBodyKinds);
+        return cleanedInner === s.graph ? s : { ...s, graph: cleanedInner };
+      });
+
+      // `graph` is whichever inner graph is currently being edited —
+      // keep it in sync with the cleaned mainGraph / subgraphs so the
+      // canvas doesn't render against a stale reference.
+      const nextGraph = state.currentEditingId === 'main'
+        ? cleanedMainGraph
+        : cleanedSubgraphs.find((s) => s.id === state.currentEditingId)?.graph ?? state.graph;
+
       dispatchProject({
         ...projectSnapshot(),
         folders,
-        subgraphs,
+        subgraphs: cleanedSubgraphs,
+        mainGraph: cleanedMainGraph,
+        graph: nextGraph,
       });
     },
 
@@ -1471,6 +1514,95 @@ export const useEditorStore = create<EditorState>((set, get) => {
         graph: {
           ...state.graph,
           nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
+        },
+        rootNodeId: state.rootNodeId,
+      };
+      dispatch({ kind: 'replaceGraph', before, after });
+    },
+
+    setForEachBody: (nodeId, bodyKind) => {
+      const state = get();
+      const node = state.graph.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      if (node.kind !== 'core/for-each-point') return;
+
+      // Resolve the body's input + output declarations directly off
+      // the project's subgraphs — avoids needing the registry built
+      // here. An empty bodyKind clears the body (extras become []).
+      let bodyInputs: ReadonlyArray<InputDef> | undefined;
+      let bodyOutputs: ReadonlyArray<OutputDef> | undefined;
+      if (bodyKind && bodyKind.startsWith('subgraph/')) {
+        const id = bodyKind.slice('subgraph/'.length);
+        const sg = state.subgraphs.find((s) => s.id === id);
+        bodyInputs = sg?.inputs;
+        bodyOutputs = sg?.outputs;
+      }
+
+      // Compute mirrored extraInputs (Float → FloatCloud, Vec3 →
+      // Vec3Cloud, skip implicit names). Inputs are flagged optional
+      // so an un-wired socket falls back to the body's declared
+      // default at eval time rather than blocking the node.
+      const mirroredInputs: InputDef[] = [];
+      if (bodyInputs) {
+        for (const bi of bodyInputs) {
+          if (isImplicitForEachInputName(bi.name)) continue;
+          mirroredInputs.push({
+            name: bi.name,
+            type: liftForEachInputType(bi.type),
+            optional: true,
+          });
+        }
+      }
+
+      // Mirrored extraOutputs (Scene→Scene merged, Float→FloatCloud,
+      // Vec3→Vec3Cloud, others omitted). `liftForEachOutputType`
+      // returns null for non-cloudable types — those outputs simply
+      // don't appear on the for-each-point.
+      const mirroredOutputs: OutputDef[] = [];
+      if (bodyOutputs) {
+        for (const bo of bodyOutputs) {
+          const lifted = liftForEachOutputType(bo.type);
+          if (lifted === null) continue;
+          mirroredOutputs.push({ name: bo.name, type: lifted });
+        }
+      }
+
+      // Drop edges whose target / source sockets disappear from the
+      // new mirror. Incoming: `points` and `__body` are static and
+      // always survive; extras must be in the new input mirror.
+      // Outgoing: any edge whose `from.socket` is no longer one of
+      // the new output names drops too (Phase C: outputs can change
+      // wholesale when the body swaps).
+      const survivingInputNames = new Set(mirroredInputs.map((m) => m.name));
+      const survivingOutputNames = new Set(mirroredOutputs.map((m) => m.name));
+      const staticInputNames = new Set(['points', '__body']);
+      const edges: GraphEdge[] = state.graph.edges.filter((e) => {
+        if (e.to.node === nodeId) {
+          if (staticInputNames.has(e.to.socket)) return true;
+          return survivingInputNames.has(e.to.socket);
+        }
+        if (e.from.node === nodeId) {
+          return survivingOutputNames.has(e.from.socket);
+        }
+        return true;
+      });
+
+      const nextInputValues: Record<string, unknown> = { ...node.inputValues };
+      nextInputValues.__body = bodyKind;
+
+      const updatedNode: GraphNode = {
+        ...node,
+        inputValues: nextInputValues,
+        extraInputs: mirroredInputs,
+        extraOutputs: mirroredOutputs,
+      };
+
+      const before = { graph: state.graph, rootNodeId: state.rootNodeId };
+      const after = {
+        graph: {
+          ...state.graph,
+          nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
+          edges,
         },
         rootNodeId: state.rootNodeId,
       };

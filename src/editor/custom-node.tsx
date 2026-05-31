@@ -27,6 +27,7 @@ import { MeshPreview } from './mesh-preview.js';
 import { useRegistry } from './registry.js';
 import { ScenePreview } from './scene-preview.js';
 import { useEditorStore, type CameraState } from './store.js';
+import { ASSET_DND_TYPE, type AssetDndItem } from './assets-panel.js';
 import { LeafSkeletonPreview } from './leaf-skeleton-preview.js';
 import { TexturePreview } from './texture-preview.js';
 
@@ -116,7 +117,18 @@ function getSocketType(
   if (!graphNode) return undefined;
   const def = registry.get(graphNode.kind);
   if (!def) return undefined;
-  if (side === 'source') return def.outputs.find((o) => o.name === socketName)?.type;
+  if (side === 'source') {
+    // Per-instance extraOutputs (for-each-point) REPLACE the static
+    // def.outputs when non-empty — look there first, then fall back
+    // to the static list.
+    const fromExtras = graphNode.extraOutputs?.find((o) => o.name === socketName)?.type;
+    if (fromExtras !== undefined) return fromExtras;
+    return def.outputs.find((o) => o.name === socketName)?.type;
+  }
+  // Inputs: def.inputs + per-instance extraInputs (concat semantics —
+  // scene-merge / variadic + for-each-point both work this way).
+  const fromInputExtras = graphNode.extraInputs?.find((i) => i.name === socketName)?.type;
+  if (fromInputExtras !== undefined) return fromInputExtras;
   return def.inputs.find((i) => i.name === socketName)?.type;
 }
 
@@ -677,6 +689,19 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const renameNode = useEditorStore((s) => s.renameNode);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
   const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
+  const setForEachBody = useEditorStore((s) => s.setForEachBody);
+  // for-each-point looks up its body subgraph's label by the kind it
+  // stores in `__body`. Subscribed here so the header subtitle stays
+  // in sync if the body is renamed in the Assets panel.
+  const isForEachPoint = kind === 'core/for-each-point';
+  const forEachBodyKind = isForEachPoint
+    ? (inputValues?.__body as string | undefined) ?? ''
+    : '';
+  const forEachBodyLabel = useEditorStore((s) => {
+    if (!forEachBodyKind || !forEachBodyKind.startsWith('subgraph/')) return undefined;
+    const id = forEachBodyKind.slice('subgraph/'.length);
+    return s.subgraphs.find((sg) => sg.id === id)?.label;
+  });
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
   // the subgraph's I/O list: outputs for the input-boundary, inputs for
@@ -710,6 +735,14 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     subgraphId ? s.subgraphs.find((g) => g.id === subgraphId)?.label : undefined,
   );
 
+  // for-each-point's "drag a subgraph asset onto this node" hover state.
+  // Lives above the `if (!def)` bail-out below so the hook count stays
+  // constant — without this, an unknown-kind frame skips the useState
+  // and the next valid-def render throws "rendered fewer hooks than
+  // expected." Could only matter for for-each-point nodes, but the hook
+  // ALWAYS runs; cost is one boolean cell.
+  const [forEachDragOver, setForEachDragOver] = useState(false);
+
   if (!def) {
     return <div className={selected ? 'sedon-node sedon-node--unknown sedon-node--selected' : 'sedon-node sedon-node--unknown'}>unknown: {kind ?? '(no kind)'}</div>;
   }
@@ -727,7 +760,53 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // perlins each named whatever the user wants ("base", "ridges", "fbm")
   // without affecting any other perlin in the project.
   const isSubgraphWrapper = subgraphId !== null;
-  const typeLabel = isSubgraphWrapper ? 'subgraph' : def.id;
+  // for-each-point's "drop a subgraph asset to set the body" affordance.
+  // The root div opts into HTML5 drop targeting (onDragOver +
+  // preventDefault registers it as a drop zone); on a successful drop
+  // we stop propagation so the canvas-level handler in panels.tsx
+  // doesn't ALSO spawn a wrapper next to this node. Hover state lights
+  // up the node so the drop target is unambiguous mid-drag. The
+  // useState itself lives ABOVE the `if (!def) return` bail-out so the
+  // hook count stays constant; see there.
+  const onForEachDragOver = isForEachPoint
+    ? (e: React.DragEvent<HTMLDivElement>) => {
+        if (!e.dataTransfer.types.includes(ASSET_DND_TYPE)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'link';
+        if (!forEachDragOver) setForEachDragOver(true);
+      }
+    : undefined;
+  const onForEachDragLeave = isForEachPoint
+    ? () => { if (forEachDragOver) setForEachDragOver(false); }
+    : undefined;
+  const onForEachDrop = isForEachPoint
+    ? (e: React.DragEvent<HTMLDivElement>) => {
+        const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
+        if (!raw) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setForEachDragOver(false);
+        let items: AssetDndItem[];
+        try { items = JSON.parse(raw) as AssetDndItem[]; }
+        catch { return; }
+        // First subgraph item wins. Multi-asset drops onto a single
+        // for-each-point don't really have a sensible interpretation —
+        // a for-each has exactly one body.
+        const sg = items.find((it) => it.kind === 'subgraph');
+        if (!sg) return;
+        setForEachBody(id, `subgraph/${sg.id}`);
+      }
+    : undefined;
+  // for-each-point shows "for-each: <body label>" (or "drop a subgraph
+  // here" before a body is dropped) instead of the bare
+  // `core/for-each-point`, so the canvas at a glance tells you which
+  // subgraph each instance is iterating without opening the inspector.
+  const typeLabel = isSubgraphWrapper
+    ? 'subgraph'
+    : isForEachPoint
+      ? `for-each: ${forEachBodyLabel ?? (forEachBodyKind ? forEachBodyKind : 'drop a subgraph here')}`
+      : def.id;
   // What the editor shows + commits on. For wrappers we always have a
   // label (SubgraphDef requires one), so wrappers are always "named".
   // For regular nodes, name is the optional per-node annotation.
@@ -765,13 +844,29 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // top positions, row order, output-handle offset — uses this filtered
   // list so hidden inputs don't leave invisible gaps in the node UI.
   const visibleInputs = def.inputs.filter((i) => !i.hidden);
+  // Per-instance dynamic outputs (currently only set by
+  // `core/for-each-point` after a body is dropped) REPLACE the static
+  // def.outputs. Falls back to def.outputs when extraOutputs is
+  // undefined or empty so regular nodes keep their static output
+  // socket list.
+  const effectiveOutputs = (myNode?.extraOutputs && myNode.extraOutputs.length > 0)
+    ? myNode.extraOutputs
+    : def.outputs;
 
   // Which socket array is the "subgraph I/O list" view of this boundary?
   const editableInputs = boundary?.side === 'output';
   const editableOutputs = boundary?.side === 'input';
 
   return (
-    <div className={selected ? 'sedon-node sedon-node--selected' : 'sedon-node'}>
+    <div
+      className={
+        (selected ? 'sedon-node sedon-node--selected' : 'sedon-node')
+        + (forEachDragOver ? ' sedon-node--drop-target' : '')
+      }
+      onDragOver={onForEachDragOver}
+      onDragLeave={onForEachDragLeave}
+      onDrop={onForEachDrop}
+    >
       <div
         className="sedon-node-output-bar"
         style={{
@@ -1031,7 +1126,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         </div>
       ))}
 
-      {def.outputs.map((output, i) => (
+      {effectiveOutputs.map((output, i) => (
         <TypedHandle
           key={`h-out-${output.name}`}
           socketName={output.name}
@@ -1044,7 +1139,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
           }
         />
       ))}
-      {def.outputs.map((output) => {
+      {effectiveOutputs.map((output) => {
         const displayLabel = output.label ?? output.name;
         // Input-boundary output rows show an inline editor for the
         // subgraph input's `default`. The OutputDef itself doesn't
@@ -1085,7 +1180,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             {editableOutputs && boundary ? (
               <EditableSocketLabel
                 label={displayLabel}
-                otherLabels={def.outputs
+                otherLabels={effectiveOutputs
                   .filter((x) => x.name !== output.name)
                   .map((x) => x.label ?? x.name)}
                 onCommit={(newLabel) =>

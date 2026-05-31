@@ -94,6 +94,16 @@ export interface OutputDef {
 export interface NodeContext {
   device?: GPUDevice;
   /**
+   * The node registry the evaluator is dispatching against. Threaded
+   * into the context so nodes whose evaluate() needs to look up other
+   * node-kinds at runtime — `core/for-each-point` invokes a body
+   * subgraph wrapper N times — can do so without each NodeDef having
+   * to capture the registry in closure. Subgraph wrappers still capture
+   * their own registry reference in closure (predates this field);
+   * either source works.
+   */
+  registry?: NodeRegistry;
+  /**
    * When the evaluator is recursing into a subgraph, this carries the
    * input values from the wrapping subgraph-instance. The subgraph-input
    * boundary node reads from this to expose them to the inner graph.

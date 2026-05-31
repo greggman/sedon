@@ -23,7 +23,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
 import { canonicalJson } from '../core/eval-cache.js';
-import { findNode, type Graph } from '../core/graph.js';
+import { findNode, findOutputOnNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { CanvasPanelContext } from './canvas-panel-context.js';
@@ -579,8 +579,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         const boundary = subgraphIdFromBoundaryKind(boundaryNode?.kind);
         if (!boundary || boundary.side !== 'output') return;
         const fromNode = findNode(graph, params.source);
-        const fromDef = fromNode ? registry.get(fromNode.kind) : undefined;
-        const fromOut = fromDef?.outputs.find((o) => o.name === params.sourceHandle);
+        if (!fromNode) return;
+        const fromDef = registry.get(fromNode.kind);
+        const fromOut = findOutputOnNode(fromNode, fromDef, params.sourceHandle ?? '');
         if (!fromOut) return;
         // Use the source socket's label (or name) as the preferred
         // label for the new boundary output so wiring `worley.cells`
@@ -644,8 +645,9 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         const spec = toDef?.extraInputsSpec;
         if (!toDef || !spec) return;
         const fromNode = findNode(graph, params.source);
-        const fromDef = fromNode ? registry.get(fromNode.kind) : undefined;
-        const fromOut = fromDef?.outputs.find((o) => o.name === params.sourceHandle);
+        if (!fromNode) return;
+        const fromDef = registry.get(fromNode.kind);
+        const fromOut = findOutputOnNode(fromNode, fromDef, params.sourceHandle ?? '');
         if (!fromOut) return;
         if (!types.isCompatible(fromOut.type, spec.type)) return;
         addNodeExtraInputWithEdge(
@@ -706,7 +708,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       if (targetHandle === ADD_OUTPUT_HANDLE_ID) {
         const boundary = subgraphIdFromBoundaryKind(toNode.kind);
         if (!boundary || boundary.side !== 'output') return false;
-        return !!fromDef.outputs.find((o) => o.name === sourceHandle);
+        return !!findOutputOnNode(fromNode, fromDef, sourceHandle);
       }
       if (sourceHandle === ADD_INPUT_HANDLE_ID) {
         const boundary = subgraphIdFromBoundaryKind(fromNode.kind);
@@ -721,12 +723,12 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       if (targetHandle === ADD_EXTRA_INPUT_HANDLE_ID) {
         const spec = toDef.extraInputsSpec;
         if (!spec) return false;
-        const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
+        const fromOut = findOutputOnNode(fromNode, fromDef, sourceHandle);
         if (!fromOut) return false;
         return types.isCompatible(fromOut.type, spec.type);
       }
 
-      const fromOut = fromDef.outputs.find((o) => o.name === sourceHandle);
+      const fromOut = findOutputOnNode(fromNode, fromDef, sourceHandle);
       const toIn =
         toDef.inputs.find((i) => i.name === targetHandle) ??
         toNode.extraInputs?.find((i) => i.name === targetHandle);

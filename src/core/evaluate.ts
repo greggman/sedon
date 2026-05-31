@@ -154,6 +154,12 @@ export async function evaluateGraph(
   const sharedCtx: NodeContext = { ...baseCtx };
   if (cache !== undefined) sharedCtx.evalCache = cache;
   if (touched !== undefined) sharedCtx.evalTouched = touched;
+  // Always thread the registry — nodes whose evaluate() looks up other
+  // node-kinds at runtime (for-each-point invokes its body subgraph
+  // wrapper) read it here. Inherited from baseCtx when an outer
+  // evaluator already set it; otherwise stamped from the explicit
+  // `registry` arg.
+  if (sharedCtx.registry === undefined) sharedCtx.registry = registry;
 
   const outputs = new Map<string, NodeOutputs>();
   const fingerprints = new Map<string, string>();

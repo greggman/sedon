@@ -4,6 +4,7 @@ import { createBasicScene } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
 import { createCityDemo } from './city.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
+import { createForEachPointDemo } from './for-each-point.js';
 import { createForestDemo } from './forest.js';
 import { createGrassTestDemo } from './grass-test.js';
 import { createLeafDemo } from './leaf.js';
@@ -36,4 +37,5 @@ export const DEMOS: Demo[] = [
   { id: 'grass-test', label: 'Grass Test', build: createGrassTestDemo },
   { id: 'multi-layer-terrain', label: 'Terrain Layers (test)', build: createMultiLayerTerrainDemo },
   { id: 'cube-on-water', label: 'Cube on Water (reflection test)', build: createCubeOnWaterDemo },
+  { id: 'for-each-point', label: 'For-Each-Point (cabinet test)', build: createForEachPointDemo },
 ];

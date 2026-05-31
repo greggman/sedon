@@ -22,6 +22,7 @@ import { cylinderNode } from './cylinder.js';
 import { distanceTransformNode } from './distance-transform.js';
 import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
+import { forEachPointNode } from './for-each-point.js';
 import { gridDistributeNode } from './grid-distribute.js';
 import { gridNode } from './grid.js';
 import { imageNode } from './image.js';
@@ -87,6 +88,7 @@ export const CORE_NODES = [
   mergeGeometryNode,
   distributeInVolumeNode,
   distributeOnFacesNode,
+  forEachPointNode,
   gridDistributeNode,
   instanceGeometryOnPointsNode,
   instanceSceneOnPointsNode,
@@ -180,6 +182,7 @@ export {
   cylinderNode,
   distributeInVolumeNode,
   distributeOnFacesNode,
+  forEachPointNode,
   gridDistributeNode,
   gridNode,
   imageNode,
