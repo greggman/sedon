@@ -216,5 +216,25 @@ export function parseSubgraphDef(raw: unknown): SubgraphDef {
   if (o.parentFolderId !== undefined) {
     result.parentFolderId = o.parentFolderId;
   }
+  // `owner` marks node-owned bridge subgraphs (for-each-point's
+  // private iteration wiring). Dropping it on load turns the bridge
+  // into a free-standing subgraph wrapper: it leaks into the Assets
+  // panel (the filter keys off `owner`), and the registry registers
+  // it as `subgraph/<id>` instead of `bridge-eval/<id>`, so the
+  // owning for-each-point's evaluate can't find its bridge and
+  // returns an empty Scene. Preserve verbatim.
+  if (o.owner && typeof o.owner === 'object') {
+    result.owner = o.owner;
+  }
+  if (typeof o.iterationKind === 'string') {
+    result.iterationKind = o.iterationKind;
+  }
+  // `version` is the wrapper-cache key the editor bumps on each
+  // edit. Missing means "treat as 0" (the eval cache's existing
+  // fallback). Carry it forward verbatim when present so a loaded
+  // project starts at the version it was saved at, not 0.
+  if (typeof o.version === 'number') {
+    result.version = o.version;
+  }
   return result;
 }
