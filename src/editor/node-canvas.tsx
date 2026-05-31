@@ -356,25 +356,22 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       // positions via the position-only effect, so there's nothing to
       // do here.
       if (structUnchanged) return;
-      // Incremental case: same graph, edits applied to it. Existing RF
-      // nodes already have measured handles; any new handle on an
-      // existing node can be measured synchronously since its node
-      // element is in the DOM.
+      // Incremental case: same graph, edits applied to it. The naive
+      // path of "setRfNodes → updateNodeInternals → setRfEdges in
+      // one tick" looks like it should work because RF nodes already
+      // exist in the DOM — but it fails when an existing node grows
+      // a new handle (e.g. `addNodeExtraInputWithEdge` adds a new
+      // socket and wires an edge to it atomically). React batches
+      // the setRfNodes update, so updateNodeInternals runs against
+      // the PRE-commit DOM where the new handle isn't rendered yet.
+      // setRfEdges then hands RF an edge whose target handle has no
+      // measurement → "Couldn't create edge for target handle id"
+      // error 008. Route through the same two-phase pendingEdgeSync
+      // dance the swap path uses: queue node update, let React
+      // commit, then Effect 2 measures + sets edges. Old edges keep
+      // rendering against still-valid nodes in the meantime.
       setRfNodes((current) => mergeRfNodes(current, panelGraph, panelPositions));
-      const { domNode, updateNodeInternals } = rfStore.getState();
-      const updates = new Map<string, { id: string; nodeElement: HTMLDivElement; force: boolean }>();
-      for (const node of panelGraph.nodes) {
-        const nodeElement = domNode?.querySelector(
-          `.react-flow__node[data-id="${node.id}"]`,
-        ) as HTMLDivElement | null;
-        if (nodeElement) {
-          updates.set(node.id, { id: node.id, nodeElement, force: true });
-        }
-      }
-      if (updates.size > 0) {
-        updateNodeInternals(updates, { triggerFitView: false });
-      }
-      setRfEdges(graphToRfEdges(panelGraph, registry));
+      setPendingEdgeSync({ panelGraph, registry });
       return;
     }
 
