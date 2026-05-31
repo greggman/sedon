@@ -26,6 +26,7 @@ import {
 } from './command.js';
 import { createInitialGraph } from './initial-graph.js';
 import { useLayoutStore } from './layout-store.js';
+import { wrapActionsSlice } from './recording.js';
 
 // Orbit camera state. `target` is the world-space point the camera orbits
 // around; yaw/pitch/distance describe its position relative to that point.
@@ -814,7 +815,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     });
   }
 
-  return {
+  const slice: EditorState = {
     // Project-derived fields (graph, root, subgraphs, cameras,
     // viewports, folders, nodePositions, currentEditingId, undo/redo,
     // dirty) all come from the same helper as `setGraph` uses for
@@ -2048,4 +2049,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
     },
   };
+  // Wrap every action with the macro-recording shim so the Macro menu
+  // (Record / Stop / Load) and the `?log-commands=1` console hook see
+  // every user-initiated mutation pass through one place. Non-function
+  // fields (graph, syncCounter, evalCache, device, …) pass through
+  // unchanged. Wrapping happens here, BEFORE the create()'s return,
+  // so React selectors capture the wrapped functions on first render
+  // — no aliasing of stale function references.
+  return wrapActionsSlice(slice);
 });

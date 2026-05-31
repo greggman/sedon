@@ -19,6 +19,7 @@ import {
   saveSelectionToFile,
 } from './clipboard-ops.js';
 import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
+import { startRecording, stopRecording, loadRecordingFromFile, recordingActive } from './recording.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
@@ -178,6 +179,39 @@ export function useAppMenus(): TopMenu[] {
       ],
     };
 
+    // ── Macro ────────────────────────────────────────────
+    // NOT a user-facing feature — exists so bug reports can ship a
+    // `.sedon-rec` file (a strict replay of every store-action call
+    // since Record was clicked) instead of writing out manual repro
+    // steps. The recording captures the starting project snapshot up
+    // front, so replay reconstructs exactly the state the recording
+    // was made against. See src/editor/recording.ts.
+    const recording = recordingActive();
+    const macroMenu: TopMenu = {
+      label: 'Macro',
+      items: [
+        {
+          kind: 'item',
+          label: 'Record',
+          disabled: recording,
+          run: () => startRecording(),
+        },
+        {
+          kind: 'item',
+          label: 'Stop Recording',
+          disabled: !recording,
+          run: () => stopRecording(),
+        },
+        { kind: 'separator' },
+        {
+          kind: 'item',
+          label: 'Load…',
+          disabled: recording,
+          run: () => loadRecordingFromFile(),
+        },
+      ],
+    };
+
     // ── Help ─────────────────────────────────────────────
     const helpMenu: TopMenu = {
       label: 'Help',
@@ -190,7 +224,7 @@ export function useAppMenus(): TopMenu[] {
       ],
     };
 
-    return [fileMenu, editMenu, addMenu, viewMenu, helpMenu];
+    return [fileMenu, editMenu, addMenu, viewMenu, macroMenu, helpMenu];
   }, [registry, undoLen, redoLen]);
 }
 

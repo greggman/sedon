@@ -47,7 +47,7 @@ function withPositions<G extends { nodes: { id: string; position?: { x: number; 
 // encode) so both export exactly what the user sees on screen and
 // they can't drift in shape. Returns the FULL SaveFile including the
 // layout block; callers that don't want layout (URL share) drop it.
-function snapshotProject(): { project: ProjectData; layout: LayoutData | undefined } {
+export function snapshotProject(): { project: ProjectData; layout: LayoutData | undefined } {
   const state = useEditorStore.getState();
   // Pans / zooms / orbit gestures during this session go to the layout
   // store's per-graph LRU maps (so multi-pane viewport state stays

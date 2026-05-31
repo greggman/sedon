@@ -104,6 +104,24 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
       __sedonListPanelIds__: typeof m.debugListPanelIds;
     }).__sedonListPanelIds__ = m.debugListPanelIds;
   });
+  // Recording: start / stop / play exposed so headless repros can
+  // round-trip a .sedon-rec without going through the menu / file
+  // picker. Same paths the menu uses internally.
+  void import('./editor/recording.js').then((m) => {
+    (window as unknown as {
+      __sedonRecording__: {
+        start: typeof m.startRecording;
+        stop: typeof m.stopRecording;
+        play: typeof m.playRecording;
+        active: typeof m.recordingActive;
+      };
+    }).__sedonRecording__ = {
+      start: m.startRecording,
+      stop: m.stopRecording,
+      play: m.playRecording,
+      active: m.recordingActive,
+    };
+  });
 }
 
 // Bootstrap from URL before rendering. If `?json=<base64url>` is
