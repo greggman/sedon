@@ -331,6 +331,22 @@ function inlineEditor(
       return (
         <ColorInput value={asRgba(value)} onChange={onChange as (n: number[]) => void} />
       );
+    case 'Texture2D':
+      // Inline color picker for Texture2D inputs that opted into the
+      // color-fallback affordance by declaring an `[r,g,b,a]` default
+      // on the InputDef (or where an inputValue has been written as
+      // an `[r,g,b,a]`). evaluate.ts auto-promotes that array into a
+      // 1×1 cached Texture2DValue at eval time, so node code sees a
+      // normal Texture2D and the user gets to skip the
+      // `core/solid-color → core/material.basecolor` boilerplate.
+      // Texture2D inputs without a color default render nothing
+      // inline — they're "wire a real texture in" sockets only.
+      if (isRgbaArray(value)) {
+        return (
+          <ColorInput value={asRgba(value)} onChange={onChange as (n: number[]) => void} />
+        );
+      }
+      return null;
     case 'Vec2':
       return (
         <VecInput value={asVec(value, 2)} onChange={onChange as (n: number[]) => void} />
@@ -354,6 +370,20 @@ function inlineEditor(
 
 function asNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+// Matches the shape evaluate.ts auto-promotes to a 1×1 cached
+// Texture2DValue: a 3- or 4-element numeric array. Texture2D inputs
+// whose value (default OR inputValue) has this shape render an
+// inline color picker — the picker writes a fresh array back through
+// setInputValue, eval sees it, promotes to a texture.
+function isRgbaArray(v: unknown): boolean {
+  if (!Array.isArray(v)) return false;
+  if (v.length < 3 || v.length > 4) return false;
+  for (let i = 0; i < v.length; i++) {
+    if (typeof v[i] !== 'number' || !Number.isFinite(v[i])) return false;
+  }
+  return true;
 }
 function asString(v: unknown): string {
   return typeof v === 'string' ? v : '';

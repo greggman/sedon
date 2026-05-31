@@ -100,9 +100,13 @@ test('a node with required-but-missing inputs is skipped, not fatal', async () =
   const nodes = createRegistryForTests();
   const g = createGraph();
   const red = addNode(g, 'test/color-source', { inputValues: { value: [1, 0, 0, 1] } });
-  // core/material has a required Texture2D input (basecolor). Leaving it
-  // unconnected used to throw; now we skip it and let the rest evaluate.
-  const orphan = addNode(g, 'core/material');
+  // core/distance-transform has a required Texture2D input with no
+  // default. Leaving it unconnected used to throw; now we skip it
+  // and let the rest evaluate. (core/material used to be the choice
+  // here, but its `basecolor` now declares an `[r,g,b,a]` default
+  // that evaluate.ts auto-promotes — material no longer skips on a
+  // missing basecolor wire.)
+  const orphan = addNode(g, 'core/distance-transform');
 
   const result = await evaluateGraph(g, nodes, { rootNodeId: red.id });
   assert.ok(result.allOutputs.has(red.id));

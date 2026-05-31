@@ -287,23 +287,42 @@ by re-wiring its bridge.
       // values get index-deref'd to a per-iteration scalar; broadcast
       // values pass through unchanged (every iteration sees the same).
       //
-      // Per-input fingerprints reflect the PICKED value, not the
-      // outer cloud. The bridge's subgraph-input boundary mixes
-      // `subgraphInputFingerprints` (which the bridgeEval forwards
-      // from this iteration's `inputFingerprints`) into its own fp,
-      // so without per-iteration picked-value fps every iteration
-      // would cache-hit on iteration 0's broadcast value. The
-      // user-visible symptom was "wiring a random-vec3-cloud to
-      // for-each-point.size makes every cell the same size".
+      // Per-input fingerprints reflect the PICKED value. Two cases:
+      //
+      //   1. Cloud-deref'd (picked !== wired): a primitive scalar /
+      //      vec extracted from the outer cloud. Fingerprint via
+      //      canonicalJson on the picked value — content is plain
+      //      JSON, varies per iteration.
+      //
+      //   2. Broadcast (picked === wired): the whole upstream value
+      //      passes through unchanged every iteration. The CORRECT
+      //      fingerprint is the upstream node's already-computed fp
+      //      (sitting on `ctx.inputFingerprints[bIn.name]`).
+      //      Content-fingerprinting via canonicalJson is WRONG here
+      //      for GPU-bearing values like MaterialValue: a GPUTexture
+      //      stringifies to `{}`, so a white-basecolor and a red-
+      //      basecolor material produce the same canonical JSON and
+      //      the bridge cache hits on the stale entry — visible
+      //      symptom: changing material colour didn't update the
+      //      rendered cabinets.
+      //
+      // Outer fps don't move per iteration (broadcast is constant
+      // across iters by definition), but they DO move across
+      // re-evals when the upstream value changes — which is exactly
+      // what the cache needs.
       const broadcastInputs: NodeInputs = {};
       const broadcastFingerprints: Record<string, string> = {};
+      const outerFps = ctx.inputFingerprints ?? {};
       for (const bIn of bridgeEval.inputs) {
         const wired = inputs[bIn.name];
         const picked = wired === undefined
           ? bIn.default
           : pickForIteration(wired, i, n);
         broadcastInputs[bIn.name] = picked;
-        broadcastFingerprints[bIn.name] = canonicalJson(picked);
+        const upstreamFp = outerFps[bIn.name];
+        broadcastFingerprints[bIn.name] = picked === wired && upstreamFp !== undefined
+          ? upstreamFp
+          : canonicalJson(picked);
       }
 
       const iterCtx: NodeContext = {

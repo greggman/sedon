@@ -74,6 +74,14 @@ export const CORE_CONVERSIONS: readonly [string, string][] = [
   ['Float', 'Vec4'],
   ['Color', 'Vec4'],
   ['Vec4', 'Color'],
+  // Color → Texture2D: a flat colour wired into a texture socket is
+  // auto-promoted to a 1×1 texture at eval time (see evaluate.ts's
+  // input-resolution loop + getColorTexture in resources.ts). Lets
+  // the user skip the boilerplate `core/solid-color` node for the
+  // common "this material slot should just be this colour" case.
+  // Same machinery powers the inline color picker on unwired
+  // Texture2D inputs whose InputDef declares an `[r,g,b,a]` default.
+  ['Color', 'Texture2D'],
   // Scalar-to-cloud broadcasting. The for-each-point node mirrors its
   // body subgraph's Float / Vec3 inputs as `*Cloud` sockets so each
   // iteration can read a per-point value, but a constant scalar should

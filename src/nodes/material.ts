@@ -9,7 +9,14 @@ export const materialNode: NodeDef = {
     {
       name: 'basecolor',
       type: 'Texture2D',
-      description: 'albedo texture. Required — wire a [core/solid-color](../../core/solid-color) for a flat colour, or any other Texture2D-producing chain for patterned surfaces',
+      // [r,g,b,a] default → evaluate.ts auto-promotes to a 1×1
+      // texture. Unwired basecolor inputs show an inline color
+      // picker (custom-node.tsx routes Texture2D-with-color-default
+      // through ColorInput); wiring a Color edge or a real
+      // Texture2D works as before. Saves the user a `core/solid-color`
+      // node for the "I just want a flat colour here" case.
+      default: [1, 1, 1, 1],
+      description: 'albedo texture. Unwired: shows a color picker (the colour becomes a 1×1 texture). Wire any Texture2D-producing chain for patterned surfaces',
     },
     {
       name: 'roughness',

@@ -3,6 +3,7 @@ import type { EvalCache } from './eval-cache.js';
 import { canonicalJson, nodeFingerprint } from './eval-cache.js';
 import type { Graph, GraphEdge } from './graph.js';
 import type { InputDef, NodeContext, NodeOutputs, NodeRegistry } from './node-def.js';
+import { getColorTexture } from './resources.js';
 
 // Clamp a numeric input into the bounds declared by its InputDef.
 // Returns the value unchanged when it isn't a finite number (vectors,
@@ -16,6 +17,19 @@ function clampNumericInput(value: unknown, def: InputDef): unknown {
   if (def.min !== undefined && v < def.min) v = def.min;
   if (def.max !== undefined && v > def.max) v = def.max;
   return v;
+}
+
+// True for the `[r,g,b,a]` shape stored as a Color value (or as a
+// color-fallback InputDef.default). Used by the Color → Texture2D
+// promotion in the input-resolution loop. 3-component arrays are
+// also accepted (alpha defaults to 1 in getColorTexture).
+function isRgbaArray(v: unknown): boolean {
+  if (!Array.isArray(v)) return false;
+  if (v.length < 3 || v.length > 4) return false;
+  for (let i = 0; i < v.length; i++) {
+    if (typeof v[i] !== 'number' || !Number.isFinite(v[i])) return false;
+  }
+  return true;
 }
 
 export interface EvaluateOptions {
@@ -228,6 +242,20 @@ export async function evaluateGraph(
       // or default). Node code can rely on the declared range and
       // skip defensive clamping. No-op for non-numeric values.
       inputs[input.name] = clampNumericInput(inputs[input.name], input);
+      // Color → Texture2D promotion. A Texture2D input can receive a
+      // colour from three places: a wired Color edge (allowed by the
+      // type-compat table), an `[r,g,b,a]` `inputValue` (set via the
+      // inline picker on an unwired socket), or an `[r,g,b,a]` static
+      // default in the InputDef. Whichever path produced an array
+      // value, materialise it to a cached 1×1 Texture2DValue here so
+      // the node sees a normal Texture2D and doesn't need its own
+      // promotion branch. The cache is keyed (device, packed RGBA8),
+      // so 100 nodes asking for the same colour share one GPUTexture.
+      if (input.type === 'Texture2D' && isRgbaArray(inputs[input.name])) {
+        if (sharedCtx.device) {
+          inputs[input.name] = getColorTexture(sharedCtx.device, inputs[input.name] as number[]);
+        }
+      }
     }
     if (!canEvaluate) continue;
 

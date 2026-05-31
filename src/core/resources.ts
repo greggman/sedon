@@ -674,23 +674,60 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
  * automatically and a future multi-device renderer doesn't share GPU
  * objects between devices.
  */
-const previewTexture2DCache = new WeakMap<GPUDevice, Texture2DValue>();
+// Per-device, per-RGBA cache of 1×1 textures. Two consumers:
+//   • Texture2D inputs with a color default / color-via-inputValue —
+//     evaluate.ts auto-promotes an `[r,g,b,a]` value into a 1×1
+//     texture at eval time, so the user can wire a Color (or pick a
+//     color in the inspector) anywhere a Texture2D is expected.
+//   • The subgraph-input boundary's standalone-preview path for
+//     unwired Texture2D / Material inputs.
+//
+// Keyed by GPUDevice (WeakMap so a device loss + recreate cleans up
+// automatically) then by a packed RGBA8 integer key. Sharing means
+// 16 cabinets with the same albedo color use the same GPUTexture
+// handle — important because the renderer batches by (geometry,
+// material) and a fresh texture handle for each entity would defeat
+// the batching.
+const colorTextureCache = new WeakMap<GPUDevice, Map<number, Texture2DValue>>();
 const previewMaterialCache = new WeakMap<GPUDevice, MaterialValue>();
 
-export function getPreviewTexture2D(device: GPUDevice): Texture2DValue {
-  const cached = previewTexture2DCache.get(device);
+function packRgba8(rgba: readonly number[]): number {
+  // Clamp each component to [0, 1], scale to [0, 255]. Out-of-range
+  // (HDR) values are clamped at write — the texture format is 8-bit.
+  const r = Math.max(0, Math.min(255, Math.round((rgba[0] ?? 0) * 255)));
+  const g = Math.max(0, Math.min(255, Math.round((rgba[1] ?? 0) * 255)));
+  const b = Math.max(0, Math.min(255, Math.round((rgba[2] ?? 0) * 255)));
+  const a = Math.max(0, Math.min(255, Math.round((rgba[3] ?? 1) * 255)));
+  return (r << 24) | (g << 16) | (b << 8) | a;
+}
+
+/**
+ * 1×1 Texture2DValue of a given RGBA color, cached per device. Used
+ * by evaluate.ts's auto-promotion path for Color → Texture2D wires
+ * and inline-picker color defaults on Texture2D inputs.
+ */
+export function getColorTexture(device: GPUDevice, rgba: readonly number[]): Texture2DValue {
+  let perDevice = colorTextureCache.get(device);
+  if (!perDevice) {
+    perDevice = new Map();
+    colorTextureCache.set(device, perDevice);
+  }
+  const key = packRgba8(rgba);
+  const cached = perDevice.get(key);
   if (cached) return cached;
   const texture = device.createTexture({
     size: [1, 1],
     format: 'rgba8unorm',
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
-  // Mid-grey: opaque, neutral, doesn't tint geometry preview.
   device.queue.writeTexture(
     { texture },
-    new Uint8Array([200, 200, 200, 255]),
+    new Uint8Array([
+      (key >>> 24) & 0xff,
+      (key >>> 16) & 0xff,
+      (key >>> 8) & 0xff,
+      key & 0xff,
+    ]),
     { bytesPerRow: 4 },
     [1, 1],
   );
@@ -701,8 +738,17 @@ export function getPreviewTexture2D(device: GPUDevice): Texture2DValue {
     height: 1,
     revision: 0,
   };
-  previewTexture2DCache.set(device, value);
+  perDevice.set(key, value);
   return value;
+}
+
+/**
+ * Standalone-preview fallback used by the subgraph-input boundary
+ * when a Texture2D input is unwired AND has no color default. A
+ * neutral grey so the geometry preview isn't tinted.
+ */
+export function getPreviewTexture2D(device: GPUDevice): Texture2DValue {
+  return getColorTexture(device, [200 / 255, 200 / 255, 200 / 255, 1]);
 }
 
 export function getPreviewMaterial(device: GPUDevice): MaterialValue {
