@@ -57,6 +57,26 @@ if (!root) {
   throw new Error('#root element not found in docs page');
 }
 
+// Match the editor entry's `?debug=1` posture: expose the store +
+// canvas-data so headless repros can inspect the rendered sample on
+// each per-node docs page. Useful for verifying that a node's
+// `doc.sampleGraph` evaluates correctly in the docs context (the
+// editor demo path is a different mount; bugs can show up here that
+// don't surface there).
+if (new URLSearchParams(window.location.search).get('debug') === '1') {
+  (window as unknown as { __sedonStore__: typeof useEditorStore }).__sedonStore__ = useEditorStore;
+  void import('../editor/canvas-data.js').then((m) => {
+    (window as unknown as {
+      __sedonGetOutputs__: typeof m.debugGetOutputs;
+      __sedonListPanelIds__: typeof m.debugListPanelIds;
+    }).__sedonGetOutputs__ = m.debugGetOutputs;
+    (window as unknown as {
+      __sedonGetOutputs__: typeof m.debugGetOutputs;
+      __sedonListPanelIds__: typeof m.debugListPanelIds;
+    }).__sedonListPanelIds__ = m.debugListPanelIds;
+  });
+}
+
 const config = readConfig();
 const registry = createCoreNodeRegistry();
 const defs = registry.list();
@@ -93,6 +113,12 @@ if (config.kind === 'node' && config.nodeId) {
         rootNodeId: sample.rootNodeId,
         mainGraph: sample.graph,
         mainRootNodeId: sample.rootNodeId,
+        // Samples that reference subgraph wrapper kinds (e.g.
+        // core/for-each-point's body) provide them here; the editor
+        // store's `subgraphs` slice feeds the registry build, so the
+        // wrapper kind is in the registry by the time the sample
+        // evaluates.
+        ...(sample.subgraphs ? { subgraphs: sample.subgraphs } : {}),
         currentEditingId: 'main',
         nodePositions: { main: {} },
         undoStack: [],

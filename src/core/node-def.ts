@@ -209,7 +209,21 @@ export interface NodeDoc {
    * fully self-contained — its node ids are unique within the docs
    * page; no references to outside subgraphs.
    */
-  sampleGraph?: () => { graph: import('./graph.js').Graph; rootNodeId: string };
+  sampleGraph?: () => {
+    graph: import('./graph.js').Graph;
+    rootNodeId: string;
+    /**
+     * Optional subgraph defs the sample graph references. Required for
+     * nodes whose sample meaningfully uses subgraph wrapper kinds —
+     * `core/for-each-point` is the canonical case: the iteration body
+     * IS a subgraph, so the sample has to author one and register it
+     * alongside the main graph. Threaded through the docs page entry
+     * (src/docs/main.tsx) into the store's `subgraphs` slice before
+     * mount so the registry includes the wrapper kind by the time the
+     * sample evaluates.
+     */
+    subgraphs?: import('./subgraph.js').SubgraphDef[];
+  };
 }
 
 export interface NodeDef {

@@ -30,7 +30,7 @@ import { ScenePreview } from '../editor/scene-preview.js';
 import { useEditorStore, type CameraState } from '../editor/store.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
 import { TexturePreview } from '../editor/texture-preview.js';
-import { createCoreNodeRegistry } from '../nodes/index.js';
+import { useRegistry } from '../editor/registry.js';
 import { acquireGpuDevice } from '../render/device.js';
 
 // Embedded sample graph + live preview for the per-node docs pages.
@@ -135,7 +135,13 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
   const [rootOutputs, setRootOutputs] = useState<NodeOutputs | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const registry = useMemo(() => createCoreNodeRegistry(), []);
+  // Source the registry from the editor store's subgraphs slice (same
+  // path the in-editor canvas uses). Without this, sample graphs whose
+  // body references a subgraph wrapper kind (`core/for-each-point` is
+  // the canonical case) would fail to evaluate because the wrapper
+  // kind isn't in the registry — `createCoreNodeRegistry()` only knows
+  // about static core nodes.
+  const registry = useRegistry();
 
   // Live graph + root from the editor store. setInputValue (called by
   // CustomNode value editors) mutates this; every change re-fires the

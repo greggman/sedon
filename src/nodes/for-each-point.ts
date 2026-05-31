@@ -1,3 +1,4 @@
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef, NodeInputs } from '../core/node-def.js';
 import type {
   FloatCloudValue,
@@ -7,6 +8,7 @@ import type {
   TerrainFieldValue,
   Vec3CloudValue,
 } from '../core/resources.js';
+import type { SubgraphDef } from '../core/subgraph.js';
 
 // core/for-each-point — invoke a body subgraph once per point.
 //
@@ -170,6 +172,7 @@ export const forEachPointNode: NodeDef = {
   doc: {
     summary:
       'Invoke a body subgraph once per point in a PointCloud and merge the result.',
+    sampleGraph: buildForEachPointSample,
     description: `
 Iterates a body subgraph N times — once per point in the wired
 \`points\` cloud — and merges every iteration\'s scene output into a
@@ -185,10 +188,6 @@ mirror as-is and broadcast — the same value flows into every
 iteration. A scalar wired to a \`FloatCloud\` / \`Vec3Cloud\` socket
 broadcasts to all iterations (see the \`Float → FloatCloud\` and
 \`Vec3 → Vec3Cloud\` rules in core/types.ts).
-
-Phase A: the body is picked by setting \`__body\` to a wrapper kind
-(e.g. \`subgraph/drawer\`) via the inspector. Phase B will replace
-this with a drag-an-asset-onto-the-node affordance.
 `,
   },
   async evaluate(ctx, inputs): Promise<Record<string, unknown>> {
@@ -345,3 +344,78 @@ this with a drag-an-asset-onto-the-node affordance.
     return out;
   },
 };
+
+// Docs sample: a 3×3 grid of small red cubes, each stamped by a tiny
+// `docs-fep-cube` body subgraph that takes only the implicit
+// `__position` input. Kept self-contained — the body builds its own
+// material from a solid-color so the sample needs no external wires
+// AND demonstrates the "body is a subgraph with its own internal
+// machinery" point of the node. Defined as a function so the sample
+// allocates fresh objects per render (matches how other sampleGraph
+// callbacks behave).
+function buildForEachPointSampleBody(): SubgraphDef {
+  const id = 'docs-fep-cube';
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+
+  const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW } });
+  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW } });
+
+  const cube = addNode(g, 'core/cube', { position: { x: COL, y: 0 }, inputValues: { size: 0.3 } });
+  const place = addNode(g, 'core/transform', { position: { x: COL * 2, y: 0 } });
+  const colour = addNode(g, 'core/solid-color', {
+    position: { x: COL, y: ROW * 2 },
+    inputValues: { color: [0.85, 0.32, 0.22, 1], resolution: 16 },
+  });
+  const material = addNode(g, 'core/material', {
+    position: { x: COL * 2, y: ROW * 2 },
+    inputValues: { roughness: 0.7, metallic: 0 },
+  });
+  const entity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW } });
+
+  addEdge(g, { node: cube.id, socket: 'geometry' }, { node: place.id, socket: 'geometry' });
+  addEdge(g, { node: inputNode.id, socket: '__position' }, { node: place.id, socket: 'translate' });
+  addEdge(g, { node: place.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+  addEdge(g, { node: colour.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
+  addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
+  addEdge(g, { node: entity.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'Docs cube cell',
+    category: 'Docs',
+    inputs: [{ name: '__position', type: 'Vec3' }],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
+}
+
+function buildForEachPointSample(): {
+  graph: ReturnType<typeof createGraph>;
+  rootNodeId: string;
+  subgraphs: SubgraphDef[];
+} {
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+  const grid = addNode(g, 'core/grid-distribute', {
+    id: 'grid',
+    position: { x: 0, y: ROW },
+    inputValues: { cols: 3, rows: 3, spacing: 0.6 },
+  });
+  const fep = addNode(g, 'core/for-each-point', {
+    id: 'fep',
+    position: { x: COL, y: ROW },
+    inputValues: { __body: 'subgraph/docs-fep-cube' },
+    extraOutputs: [{ name: 'scene', type: 'Scene' }],
+  });
+  addEdge(g, { node: grid.id, socket: 'points' }, { node: fep.id, socket: 'points' });
+  return {
+    graph: g,
+    rootNodeId: fep.id,
+    subgraphs: [buildForEachPointSampleBody()],
+  };
+}
