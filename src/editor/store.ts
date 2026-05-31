@@ -1777,11 +1777,32 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // Bridge's broadcast inputs: mirror the body's REGULAR inputs
       // (ones the iteration kind doesn't provide). These get
       // surfaced on the for-each-point as cloud-lifted extras.
+      //
+      // Defaults carry forward from the body's InputDef: if the body
+      // declares `size: Vec3, default: [1,1,1]`, the bridge's
+      // subgraph-input gets the same default so a freshly-attached
+      // for-each-point evaluates with sensible values even before
+      // the user wires anything into its extras. Skip GPU-bearing
+      // types (Material / Texture2D / etc.) — the boundary supplies
+      // a lazy preview default at eval time for those instead, and
+      // copying a runtime GPU handle into an InputDef would corrupt
+      // save / copy-paste.
       const bridgeInputs: InputDef[] = [];
       const mirroredOuterInputs: InputDef[] = [];
+      const nonSerializableTypes = new Set([
+        'Material', 'Texture2D', 'Geometry', 'Heightfield',
+      ]);
       for (const bIn of bodySg.inputs) {
         if (contextNames.has(bIn.name)) continue; // wired via iteration-input
-        bridgeInputs.push({ name: bIn.name, type: bIn.type, optional: true });
+        const carryDefault =
+          bIn.default !== undefined && !nonSerializableTypes.has(bIn.type);
+        const bridgeInput: InputDef = {
+          name: bIn.name,
+          type: bIn.type,
+          optional: true,
+          ...(carryDefault ? { default: bIn.default } : {}),
+        };
+        bridgeInputs.push(bridgeInput);
         mirroredOuterInputs.push({
           name: bIn.name,
           type: liftForEachInputType(bIn.type),

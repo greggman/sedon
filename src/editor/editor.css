@@ -924,6 +924,18 @@
   user-select: none;
 }
 
+/* Drop-hint variant: smaller font for a multi-word message, dashed
+ * border so the slot reads as "a target", and a slightly brighter
+ * text colour so the message is legible against the black fill.
+ * Used by core/for-each-point before a body is attached. */
+.sedon-node-preview-placeholder--hint {
+  font-size: 24px;
+  color: #888;
+  border: 1px dashed #555;
+  text-align: center;
+  padding: 0 12px;
+}
+
 .sedon-node-row {
   /* height inline (ROW_HEIGHT, layout constant) */
   padding: 0 12px;
@@ -1121,6 +1133,16 @@
   text-align: center;
   box-sizing: border-box;
   line-height: 13px;
+}
+
+/* Stable wrapper around a NumberInput. The inner element swaps between
+ * `.sedon-numinput-drag` (display) and `.sedon-numinput-edit` (typing),
+ * which would change the DOM index across edits if the swap happened
+ * at the row's flex level. Wrapping in a `display: contents` span keeps
+ * the visual layout identical to before while giving the cross-input
+ * Tab navigation a stable DOM landmark to register against. */
+.sedon-numinput-root {
+  display: contents;
 }
 
 .sedon-vecinput {

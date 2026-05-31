@@ -14,6 +14,30 @@ interface NumberInputProps {
   max?: number;
 }
 
+// Cross-instance "start editing this NumberInput" registry. Keyed by
+// the wrapper span's DOM element so Tab handlers can hop from one
+// input to the next without prop-drilling a callback chain through
+// VecInput → custom-node.tsx → every parent row. Scope of a Tab
+// traversal is the nearest `.sedon-node` ancestor (i.e. one canvas
+// node). Each NumberInput registers on mount, unregisters on
+// unmount.
+const numberInputStarters = new WeakMap<HTMLElement, () => void>();
+
+function findSiblingNumberInput(
+  current: HTMLElement,
+  direction: 1 | -1,
+): HTMLElement | null {
+  // Scope: the nearest .sedon-node so Tab walks the inputs on this
+  // node and stops at the boundary (rather than jumping into the
+  // next node in document order, which would feel disorienting on
+  // a dense canvas).
+  const root = current.closest('.sedon-node') ?? document.body;
+  const all = Array.from(root.querySelectorAll<HTMLElement>('[data-sedon-numinput]'));
+  const idx = all.indexOf(current);
+  if (idx < 0) return null;
+  return all[idx + direction] ?? null;
+}
+
 function clamp(v: number, min: number | undefined, max: number | undefined): number {
   let out = v;
   if (min !== undefined && out < min) out = min;
@@ -43,6 +67,12 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(() => format(value, integer));
   const inputRef = useRef<HTMLInputElement>(null);
+  // Stable wrapper element — registered in `numberInputStarters` so
+  // sibling NumberInputs can move Tab focus across without prop-
+  // drilling. The wrapper stays mounted across the editing/display
+  // toggle, so the DOM index used by `findSiblingNumberInput` is
+  // stable too.
+  const rootRef = useRef<HTMLSpanElement>(null);
 
   const startXRef = useRef(0);
   const startValueRef = useRef(value);
@@ -59,6 +89,21 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
     }
   }, [editing]);
 
+  // Register this instance's "start editing" callback so a sibling's
+  // Tab handler can flip us into edit mode. Re-run on mount; cleanup
+  // on unmount.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    numberInputStarters.set(el, () => {
+      setText(format(value, integer));
+      setEditing(true);
+    });
+    return () => {
+      numberInputStarters.delete(el);
+    };
+  }, [value, integer]);
+
   const commit = () => {
     const n = integer ? parseInt(text, 10) : parseFloat(text);
     if (Number.isFinite(n)) {
@@ -68,28 +113,87 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
     setEditing(false);
   };
 
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            commit();
-          } else if (e.key === 'Escape') {
-            setText(format(value, integer));
-            setEditing(false);
-          }
-        }}
-        className="sedon-numinput-edit"
-      />
-    );
-  }
+  const handleTabNavigation = (shift: boolean) => {
+    commit();
+    const el = rootRef.current;
+    if (!el) return;
+    const sibling = findSiblingNumberInput(el, shift ? -1 : 1);
+    if (sibling) {
+      const start = numberInputStarters.get(sibling);
+      if (start) start();
+    }
+  };
 
+  return (
+    <span ref={rootRef} data-sedon-numinput="" className="sedon-numinput-root">
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            } else if (e.key === 'Tab') {
+              // Manual Tab handling: commit + advance to the next
+              // NumberInput on this node (or the previous one with
+              // Shift+Tab). preventDefault stops the browser from
+              // also moving focus elsewhere after our commit.
+              e.preventDefault();
+              handleTabNavigation(e.shiftKey);
+            } else if (e.key === 'Escape') {
+              setText(format(value, integer));
+              setEditing(false);
+            }
+          }}
+          className="sedon-numinput-edit"
+        />
+      ) : (
+        <NumberInputSlider
+          value={value}
+          integer={integer}
+          min={min}
+          max={max}
+          onChange={onChange}
+          onStartEditing={() => {
+            setText(format(value, integer));
+            setEditing(true);
+          }}
+          startXRef={startXRef}
+          startValueRef={startValueRef}
+          draggedRef={draggedRef}
+        />
+      )}
+    </span>
+  );
+}
+
+interface NumberInputSliderProps {
+  value: number;
+  integer: boolean;
+  min: number | undefined;
+  max: number | undefined;
+  onChange: (n: number) => void;
+  onStartEditing: () => void;
+  startXRef: React.MutableRefObject<number>;
+  startValueRef: React.MutableRefObject<number>;
+  draggedRef: React.MutableRefObject<boolean>;
+}
+
+function NumberInputSlider({
+  value,
+  integer,
+  min,
+  max,
+  onChange,
+  onStartEditing,
+  startXRef,
+  startValueRef,
+  draggedRef,
+}: NumberInputSliderProps) {
   return (
     <div
       role="slider"
@@ -128,8 +232,7 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
           e.currentTarget.releasePointerCapture(e.pointerId);
         }
         if (!draggedRef.current) {
-          setText(format(value, integer));
-          setEditing(true);
+          onStartEditing();
         }
       }}
     >

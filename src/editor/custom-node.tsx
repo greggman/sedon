@@ -1042,6 +1042,20 @@ export function CustomNode({ id, data, selected }: NodeProps) {
                 size={PREVIEW_SIZE}
               />
             )
+          ) : isForEachPoint && !forEachBodyLabel ? (
+            // for-each-point with no body attached: the preview slot
+            // doubles as the drop hint so the user knows what to do
+            // with the node. The drop-target outline (cyan border via
+            // `.sedon-node--drop-target`) appears the moment a
+            // subgraph asset hovers over the node.
+            <div
+              className="sedon-node-preview-placeholder sedon-node-preview-placeholder--hint"
+              style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
+            >
+              drop<br/>
+              subgraph<br/>
+              here
+            </div>
           ) : (
             <div
               className="sedon-node-preview-placeholder"

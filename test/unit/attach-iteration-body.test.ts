@@ -31,7 +31,7 @@ import type { SubgraphDef } from '../../src/core/subgraph.js';
 
 function makeBodySubgraph(opts: {
   id: string;
-  inputs: { name: string; type: string }[];
+  inputs: { name: string; type: string; default?: unknown }[];
   outputs: { name: string; type: string }[];
 }): SubgraphDef {
   const g = createGraph();
@@ -220,6 +220,70 @@ test('non-cloudable body outputs are dropped from the bridge entirely', () => {
   const fe = feNode();
   const outerNames = (fe?.extraOutputs ?? []).map((o) => o.name);
   assert.deepEqual(outerNames, ['scene']);
+});
+
+test('body defaults propagate to the bridge subgraph-input on attach (Vec3 [1,1,1] carries through)', () => {
+  // The cabinet-cell body declares `size: Vec3, default: [1,1,1]` so
+  // its standalone preview shows a unit-scaled cube. When dropped on
+  // a fresh for-each-point, the bridge's subgraph-input.size socket
+  // must inherit that [1,1,1] default — otherwise the unwired
+  // for-each-point.size extra falls back to systemDefaultForType
+  // ([0,0,0] for Vec3), the body's place.scale collapses to zero,
+  // and the iteration emits degenerate geometry.
+  const body = makeBodySubgraph({
+    id: 'b1',
+    inputs: [
+      { name: 'position', type: 'Vec3', default: [0, 0, 0] },
+      { name: 'size', type: 'Vec3', default: [1, 1, 1] },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+  });
+  const { feNodeId } = seedWithForEachAndBody(body);
+  useEditorStore.getState().attachIterationBody(feNodeId, 'subgraph/b1');
+  const bridge = getBridge(feNodeId);
+  const sizeInput = bridge.inputs.find((i) => i.name === 'size');
+  assert.ok(sizeInput, 'bridge has a size input');
+  assert.deepEqual(sizeInput?.default, [1, 1, 1]);
+});
+
+test('body defaults for context-name-matched inputs (position) do NOT leak to the bridge — those are wired via iteration-input, not broadcast', () => {
+  // `position` is in `providedIterationContext`, so it doesn't appear
+  // as a broadcast input on the bridge — it flows via iteration-input
+  // instead. No bridge socket means no default to carry.
+  const body = makeBodySubgraph({
+    id: 'b1',
+    inputs: [
+      { name: 'position', type: 'Vec3', default: [9, 9, 9] },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+  });
+  const { feNodeId } = seedWithForEachAndBody(body);
+  useEditorStore.getState().attachIterationBody(feNodeId, 'subgraph/b1');
+  const bridge = getBridge(feNodeId);
+  assert.equal(bridge.inputs.length, 0);
+});
+
+test('GPU-bearing body input defaults (Material) are NOT propagated to the bridge — would corrupt save', () => {
+  // The save-load guard rejects Material values in InputDef.default
+  // because they carry GPUTexture handles that don't round-trip. The
+  // boundary supplies a lazy preview Material at eval time instead.
+  // attachIterationBody must respect that: even if a body somehow
+  // declared a Material default (unsupported today, but defensive),
+  // don't copy it into the bridge socket.
+  const fakeMat = { kind: 'pbr', basecolor: { texture: {} } };
+  const body = makeBodySubgraph({
+    id: 'b1',
+    inputs: [
+      { name: 'material', type: 'Material', default: fakeMat },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+  });
+  const { feNodeId } = seedWithForEachAndBody(body);
+  useEditorStore.getState().attachIterationBody(feNodeId, 'subgraph/b1');
+  const bridge = getBridge(feNodeId);
+  const materialInput = bridge.inputs.find((i) => i.name === 'material');
+  assert.ok(materialInput);
+  assert.equal(materialInput?.default, undefined);
 });
 
 test('marks the bridge node-owned (owner.kind === iteration-bridge) and tags iterationKind', () => {
