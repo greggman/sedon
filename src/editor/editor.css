@@ -715,7 +715,11 @@
   color: #ddd;
   font-size: 12px;
   font-family: system-ui, sans-serif;
-  min-width: 240px;
+  /* Fixed width — a long title (e.g. a boundary kind with an embedded
+   * subgraph id) MUST ellipsize via `.sedon-node-title-kind`, not
+   * stretch the whole node. min-width alone left RF nodes free to grow
+   * to fit content; locking width keeps the canvas grid uniform. */
+  width: 240px;
 }
 
 .sedon-node--unknown {

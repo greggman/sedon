@@ -107,7 +107,7 @@ export function AssetsPanel() {
   // wiring graphs). They live in `state.subgraphs` alongside
   // user-authored subgraphs because they share the same eval +
   // serialize machinery, but they're not user assets — only the
-  // owning for-each-point's "Edit iteration" affordance navigates
+  // owning for-each-point's "Edit" affordance navigates
   // into them.
   const subgraphs = useEditorStore(useShallow((s) =>
     s.subgraphs.filter((sg) => sg.owner?.kind !== 'iteration-bridge'),

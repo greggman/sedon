@@ -690,7 +690,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
   const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
   const attachIterationBody = useEditorStore((s) => s.attachIterationBody);
-  // for-each-point's "Edit iteration" navigation needs the bridge id
+  // for-each-point's "Edit" navigation needs the bridge id
   // to step into. Header label looks up the body subgraph wrapper
   // currently placed inside the bridge so the canvas tells you which
   // body is bound at a glance.
@@ -811,16 +811,33 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // here" before a body is dropped) instead of the bare
   // `core/for-each-point`, so the canvas at a glance tells you which
   // subgraph each instance is iterating without opening the inspector.
+  //
+  // Boundary kinds are registered per-subgraph as `<role>/<subgraphId>`
+  // (e.g. `subgraph-input/cabinet-cell`, `iteration-output/bridge-abc…`)
+  // so the registry can distinguish boundaries from different subgraphs.
+  // The user doesn't need to see the id — there's only ever one of each
+  // boundary kind inside any given subgraph, and the id is just the
+  // subgraph they're already editing. Show the role half only.
+  const boundaryRole =
+    def.id.startsWith('subgraph-input/') ? 'subgraph-input'
+    : def.id.startsWith('subgraph-output/') ? 'subgraph-output'
+    : def.id.startsWith('iteration-input/') ? 'iteration-input'
+    : def.id.startsWith('iteration-output/') ? 'iteration-output'
+    : null;
   const typeLabel = isSubgraphWrapper
     ? 'subgraph'
     : isForEachPoint
       ? `for-each: ${forEachBodyLabel ?? (forEachBridgeId ? '(empty bridge)' : 'drop a subgraph here')}`
-      : def.id;
+      : boundaryRole ?? def.id;
   // What the editor shows + commits on. For wrappers we always have a
   // label (SubgraphDef requires one), so wrappers are always "named".
   // For regular nodes, name is the optional per-node annotation.
   const headerName = isSubgraphWrapper ? subgraphLabel : myNode?.name;
-  const defaultName = def.id; // only used for the regular-node unnamed placeholder
+  // Only used for the unnamed placeholder. Use typeLabel here too so
+  // boundary kinds render as their short role ("subgraph-input"
+  // instead of "subgraph-input/<sgid>") even when the user hasn't
+  // named the node — which is the common case for boundaries.
+  const defaultName = typeLabel;
 
   const previewTarget = previewTargetFor(myOutputs);
   const hasSlot = hasPreviewSlot(def);
@@ -926,7 +943,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             title="Edit this for-each-point's bridge graph (wires iteration context onto body inputs)"
             onClick={onEditIteration}
           >
-            Edit iteration
+            Edit
           </button>
         )}
         {def?.doc && (

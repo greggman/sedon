@@ -158,13 +158,13 @@ export const forEachPointNode: NodeDef = {
       // Owned bridge subgraph id (e.g. `bridge-<for-each-point-uuid>`).
       // Set by the editor's drag-drop / attach-body action. The user
       // never edits this directly; they edit the bridge graph via the
-      // "Edit iteration" affordance on the node.
+      // "Edit" affordance on the node.
       name: '__bridgeId',
       type: 'String',
       default: '',
       hidden: true,
       description:
-        'internal: the owned bridge SubgraphDef id (set by drag-drop, edited via "Edit iteration")',
+        'internal: the owned bridge SubgraphDef id (set by drag-drop, edited via "Edit")',
     },
   ],
   outputs: [
@@ -189,7 +189,7 @@ once per point in the wired \`points\` cloud, with iteration context
 (\`position\`, \`index\`) flowing through a private "bridge" graph the
 node owns.
 
-The bridge graph is editable via the "Edit iteration" affordance.
+The bridge graph is editable via the "Edit" affordance.
 Inside it you see three boundary nodes — broadcast inputs from outside
 (\`subgraph-input\`), per-iteration context from the iteration kind
 (\`iteration-input\`), and per-iteration outputs the for-each-point
