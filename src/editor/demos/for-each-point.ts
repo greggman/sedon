@@ -3,11 +3,12 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
 import { buildCabinetCellSubgraph } from './cabinet-cell-subgraph.js';
 
-// `core/for-each-point` test scene. A 4×4 grid of cabinet boxes laid
-// out by `core/grid-distribute`, each one a per-cell-sized cube
-// produced by the `cabinet-cell` subgraph body. Per-cell sizes come
-// from `core/random-vec3-cloud` keyed off the same point cloud — wire
-// flow is:
+// `core/for-each-point` test scene. A 4×4 grid of cabinet boxes, each
+// placed by a private BRIDGE subgraph that maps per-iteration context
+// (position, index) and per-cell broadcast values (size, material)
+// onto the `cabinet-cell` body subgraph's regular inputs.
+//
+// Wire flow on the main canvas:
 //
 //   grid-distribute ──┬─→ for-each-point.points
 //                     └─→ random-vec3-cloud.points
@@ -18,17 +19,20 @@ import { buildCabinetCellSubgraph } from './cabinet-cell-subgraph.js';
 //                         ├─→ scene-merge → output
 //   ground.scene ─────────┘
 //
-// Things this exercises end-to-end:
-//   • The body subgraph's `__position` (auto-fed from the cloud) and
-//     `size` (Vec3 → Vec3Cloud broadcast, derefs per iteration).
-//   • Broadcast of a single Material to every iteration.
-//   • A second scene (ground plane) merged with the for-each output.
+// Inside the for-each-point's owned bridge subgraph:
 //
-// To play with: bump `cols` or `rows` on the grid-distribute and watch
-// cabinets auto-multiply. Tweak the random-vec3-cloud's `min` / `max`
-// to vary the per-cell aspect ratios. Drop a different subgraph onto
-// the for-each-point (from the Assets panel) to swap the body — same
-// grid, different stamped geometry.
+//   iteration-input.position  ──→ cabinet-cell.position
+//   subgraph-input.size       ──→ cabinet-cell.size
+//   subgraph-input.material   ──→ cabinet-cell.material
+//   cabinet-cell.scene        ──→ iteration-output.scene
+//
+// What this exercises end-to-end:
+//   • The for-each-point's outer-input mirroring (`size` is
+//     Vec3Cloud-typed → per-cell deref; `material` is broadcast).
+//   • Bridge graph composition — iteration-input.position is wired
+//     to body.position by NAME, demonstrating the polymorphism
+//     contract (body is generic; bridge does the mapping).
+//   • Multi-source Scene merge.
 export function createForEachPointDemo(): {
   graph: Graph;
   rootNodeId: string;
@@ -47,10 +51,9 @@ export function createForEachPointDemo(): {
     inputValues: { cols: 4, rows: 4, spacing: 0.55, jitter: 0, seed: 0 },
   });
 
-  // Per-cell size: each cabinet gets a slightly different aspect ratio
-  // so the grid reads as a row of differently-proportioned units
-  // rather than a clone field. min/max chosen so cells stay readable
-  // at the 0.55m spacing.
+  // Per-cell size: each cabinet gets a slightly different aspect
+  // ratio so the grid reads as a row of differently-proportioned
+  // units rather than a clone field.
   const sizes = addNode(g, 'core/random-vec3-cloud', {
     position: { x: COL, y: ROW * 1.5 },
     inputValues: { min: [0.3, 0.4, 0.2], max: [0.5, 0.8, 0.4], seed: 5 },
@@ -66,14 +69,16 @@ export function createForEachPointDemo(): {
     inputValues: { roughness: 0.7, metallic: 0 },
   });
 
-  // for-each-point: body is the `cabinet-cell` subgraph (`__body`
-  // points at its wrapper kind). Its `extraInputs` mirror the body's
-  // declared inputs — `size` lifted to Vec3Cloud, `material` broadcast.
-  // The `__position` / `__index` body inputs are auto-fed by the
-  // evaluator so they don't appear as sockets on the for-each side.
+  // Stable for-each-point id so the bridge id (`bridge-<forEachId>`)
+  // stays deterministic for this demo. extras are pre-populated so
+  // the demo loads with the bridge already wired without going
+  // through the editor's drag-drop attach action.
+  const forEachId = 'fep-cabinets';
+  const bridgeId = `bridge-${forEachId}`;
   const forEach = addNode(g, 'core/for-each-point', {
+    id: forEachId,
     position: { x: COL * 2, y: ROW },
-    inputValues: { __body: 'subgraph/cabinet-cell' },
+    inputValues: { __bridgeId: bridgeId },
     extraInputs: [
       { name: 'size', type: 'Vec3Cloud', optional: true },
       { name: 'material', type: 'Material', optional: true },
@@ -82,9 +87,7 @@ export function createForEachPointDemo(): {
   });
 
   // Ground plane: a flat 4×4m board tinted grey-green so the cabinets
-  // have something to stand on. Sits at y=0 (cabinets' bases also at
-  // y=0, no z-fighting because the plane is single-sided and the cubes
-  // sit ABOVE it).
+  // have something to stand on.
   const ground = addNode(g, 'core/plane', {
     position: { x: 0, y: ROW * 2.5 },
     inputValues: { size: [4, 4], divisions: [1, 1] },
@@ -110,22 +113,17 @@ export function createForEachPointDemo(): {
   });
   const output = addNode(g, 'core/output', { position: { x: COL * 4, y: ROW * 1.7 } });
 
-  // Grid → for-each.points and also → random-vec3-cloud.points (so the
-  // cloud's `count` matches the grid count and indexing stays aligned).
   addEdge(g, { node: grid.id, socket: 'points' }, { node: forEach.id, socket: 'points' });
   addEdge(g, { node: grid.id, socket: 'points' }, { node: sizes.id, socket: 'points' });
   addEdge(g, { node: sizes.id, socket: 'values' }, { node: forEach.id, socket: 'size' });
 
-  // Wood material to for-each (broadcast).
   addEdge(g, { node: woodColor.id, socket: 'texture' }, { node: woodMaterial.id, socket: 'basecolor' });
   addEdge(g, { node: woodMaterial.id, socket: 'material' }, { node: forEach.id, socket: 'material' });
 
-  // Ground chain.
   addEdge(g, { node: groundColor.id, socket: 'texture' }, { node: groundMaterial.id, socket: 'basecolor' });
   addEdge(g, { node: ground.id, socket: 'geometry' }, { node: groundEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMaterial.id, socket: 'material' }, { node: groundEntity.id, socket: 'material' });
 
-  // Merge for-each + ground → output.
   addEdge(g, { node: forEach.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
   addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
@@ -133,8 +131,57 @@ export function createForEachPointDemo(): {
   return {
     graph: g,
     rootNodeId: output.id,
-    subgraphs: [buildCabinetCellSubgraph()],
-    // Camera angled down on the grid so all 16 cabinets are visible.
+    subgraphs: [buildCabinetCellSubgraph(), buildCabinetBridgeSubgraph(forEachId)],
     cameras: { main: { yaw: 0.6, pitch: 0.55, distance: 4.5, target: [0, 0.3, 0] } },
+  };
+}
+
+// The for-each-point's private bridge subgraph: maps per-iteration
+// context (position, index) and broadcast inputs (size, material)
+// onto the cabinet-cell body's named inputs. Authored by hand here
+// so the demo loads end-to-end without going through the editor's
+// `attachIterationBody` action — same shape that action produces.
+function buildCabinetBridgeSubgraph(forEachId: string): SubgraphDef {
+  const id = `bridge-${forEachId}`;
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+
+  const inputBoundary = addNode(g, `subgraph-input/${id}`, {
+    position: { x: 0, y: 0 },
+  });
+  const iterInputBoundary = addNode(g, `iteration-input/${id}`, {
+    position: { x: 0, y: ROW },
+  });
+  const iterOutputBoundary = addNode(g, `iteration-output/${id}`, {
+    position: { x: COL * 3, y: ROW / 2 },
+  });
+  const body = addNode(g, 'subgraph/cabinet-cell', {
+    position: { x: COL * 1.5, y: ROW / 2 },
+  });
+
+  // Iteration context → body input by name match.
+  addEdge(g, { node: iterInputBoundary.id, socket: 'position' }, { node: body.id, socket: 'position' });
+  // Broadcast inputs the for-each-point exposes on its outer surface.
+  addEdge(g, { node: inputBoundary.id, socket: 'size' }, { node: body.id, socket: 'size' });
+  addEdge(g, { node: inputBoundary.id, socket: 'material' }, { node: body.id, socket: 'material' });
+  // Body's scene output → bridge's iteration-output, which the
+  // for-each-point gathers + merges across iterations.
+  addEdge(g, { node: body.id, socket: 'scene' }, { node: iterOutputBoundary.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'for-each-point body (cabinet-cell)',
+    category: 'Subgraphs',
+    inputs: [
+      { name: 'size', type: 'Vec3', optional: true },
+      { name: 'material', type: 'Material', optional: true },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputBoundary.id,
+    outputNodeId: iterOutputBoundary.id,
+    owner: { kind: 'iteration-bridge', nodeId: forEachId },
+    iterationKind: 'core/for-each-point',
   };
 }

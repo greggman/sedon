@@ -50,17 +50,17 @@ export function pruneNestedSelection(
   };
 }
 
-// Count references that would break if every subgraph in `ids` were
-// removed. Two kinds of reference:
-//   • Wrapper nodes (`kind === 'subgraph/<id>'`) — these dangle in
-//     place after delete; the user has to clean them up by hand.
-//   • for-each-point bodies (`__body === 'subgraph/<id>'`) — these
-//     auto-clear on delete (see `cleanupForEachBodyReferences`), but
-//     they're still "use sites" the user authored and probably wants
-//     to be warned about.
-// Returns `refs` (total reference count) and `graphs` (distinct graphs
-// containing at least one reference). Used by the delete-confirm
-// dialog so the user knows the blast radius before proceeding.
+// Count wrapper-node references that would break if every subgraph in
+// `ids` were removed. Scans the main graph and every other subgraph's
+// inner graph for nodes whose `kind` is `subgraph/<id>` for an `id`
+// in the set. Returns `refs` (wrapper nodes pointing in) and `graphs`
+// (distinct graphs containing such wrappers). Used by the
+// delete-confirm dialog so the user knows the blast radius.
+//
+// For-each-point bridges are scanned just like any other subgraph
+// inner graph (bridges are SubgraphDefs in state.subgraphs), so a
+// body wrapper placed inside a bridge gets counted automatically
+// when the body's subgraph is in `ids`.
 export function countBrokenRefs(
   ids: ReadonlySet<string>,
   mainGraph: Graph,
@@ -72,73 +72,21 @@ export function countBrokenRefs(
   const scan = (graph: Graph): boolean => {
     let touched = false;
     for (const node of graph.nodes) {
-      if (node.kind.startsWith('subgraph/')) {
-        const refId = node.kind.slice('subgraph/'.length);
-        if (ids.has(refId)) {
-          refs++;
-          touched = true;
-        }
-        continue;
-      }
-      if (node.kind === 'core/for-each-point') {
-        const body = node.inputValues?.__body;
-        if (typeof body === 'string' && body.startsWith('subgraph/')) {
-          const refId = body.slice('subgraph/'.length);
-          if (ids.has(refId)) {
-            refs++;
-            touched = true;
-          }
-        }
+      if (!node.kind.startsWith('subgraph/')) continue;
+      const refId = node.kind.slice('subgraph/'.length);
+      if (ids.has(refId)) {
+        refs++;
+        touched = true;
       }
     }
     return touched;
   };
   if (scan(mainGraph)) graphsTouched++;
   for (const sg of subgraphs) {
-    // Skip subgraphs being deleted themselves — their inner graphs are
-    // also going away, so references inside them aren't "broken"
-    // anywhere the user can see.
     if (ids.has(sg.id)) continue;
     if (scan(sg.graph)) graphsTouched++;
   }
   return { refs, graphs: graphsTouched };
-}
-
-/**
- * Walk a graph and clear every `core/for-each-point` whose `__body`
- * references a deleted subgraph kind: set `__body` to '', drop
- * `extraInputs` (since they mirrored the now-gone body's inputs), and
- * drop any incoming edges that pointed at those vanished sockets.
- * Returns the same graph reference when nothing changed (so callers can
- * skip allocating a new SubgraphDef wrapper); otherwise a new Graph.
- */
-export function cleanupForEachBodyReferences(
-  graph: Graph,
-  deletedBodyKinds: ReadonlySet<string>,
-): Graph {
-  if (deletedBodyKinds.size === 0) return graph;
-  const clearedIds = new Set<string>();
-  const nextNodes: GraphNode[] = graph.nodes.map((n) => {
-    if (n.kind !== 'core/for-each-point') return n;
-    const body = n.inputValues?.__body;
-    if (typeof body !== 'string' || !deletedBodyKinds.has(body)) return n;
-    clearedIds.add(n.id);
-    const nextIv: Record<string, unknown> = { ...(n.inputValues ?? {}), __body: '' };
-    const next: GraphNode = { ...n, inputValues: nextIv, extraInputs: [] };
-    return next;
-  });
-  if (clearedIds.size === 0) return graph;
-  // Drop edges targeting any cleared for-each-point's now-vanished
-  // extra sockets. Static inputs `points` and `__body` survive
-  // (`__body` has hideSocket: true so an edge there is impossible in
-  // practice, but defensively keeping the static-name allow-list
-  // matches setForEachBody's edge-pruning rule).
-  const staticInputNames = new Set(['points', '__body']);
-  const nextEdges = graph.edges.filter((e) => {
-    if (!clearedIds.has(e.to.node)) return true;
-    return staticInputNames.has(e.to.socket);
-  });
-  return { ...graph, nodes: nextNodes, edges: nextEdges };
 }
 
 // Generate "Foo copy" / "Foo copy 2" / … against the labels already in

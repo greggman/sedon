@@ -111,6 +111,26 @@ export interface NodeContext {
    */
   subgraphInputs?: NodeInputs;
   /**
+   * Per-iteration context values, set by `core/for-each-point` (and
+   * future for-each-* nodes) when invoking their bridge subgraph N
+   * times. Keyed by the names declared in the iteration kind's
+   * `providedIterationContext` (e.g. `position`, `index` for
+   * for-each-point). The `iteration-input/<id>` boundary node inside
+   * the bridge reads from this. Parallel to `subgraphInputs` but
+   * scoped to the iteration body — outer broadcast values still flow
+   * via `subgraphInputs`.
+   */
+  iterationContext?: NodeInputs;
+  /**
+   * Fingerprints of the iteration kind's per-iteration values for
+   * THIS iteration. Mixed into the `iteration-input/<id>` boundary's
+   * fingerprint so each iteration's inner eval has a distinct cache
+   * key (without this every iteration cache-hits on the same
+   * fingerprint and returns the same output — see the per-iter ctx
+   * setup in for-each-point.evaluate).
+   */
+  iterationContextFingerprints?: Record<string, string>;
+  /**
    * Recursion depth, incremented on each subgraph entry to bound
    * accidental cycles (subgraph A → subgraph B → subgraph A → ...).
    */
@@ -317,6 +337,25 @@ export interface NodeDef {
    * geometry and textures.
    */
   provenanceDependent?: boolean;
+  /**
+   * For iteration nodes (`core/for-each-point` and future for-each-*
+   * kinds): the per-iteration context values this kind PROVIDES to
+   * its bridge subgraph. Drives:
+   *   • The output sockets of the `iteration-input/<id>` boundary
+   *     node placed inside the owned bridge subgraph (one output per
+   *     entry, name + type matching).
+   *   • The keys stamped into `ctx.iterationContext` per iteration
+   *     by the iteration node's evaluate.
+   *
+   * By convention `position: Vec3` and `index: Int` are the
+   * iteration-locator pair every iteration kind that walks a list
+   * of "spots" provides; specialty kinds add their own (a future
+   * for-each-face would add `normal`, `face_index`; for-each-segment
+   * `tangent`, `length`, `start`, `end`; etc.).
+   *
+   * Undefined / empty when this NodeDef isn't an iteration node.
+   */
+  providedIterationContext?: ReadonlyArray<InputDef>;
 }
 
 export interface NodeRegistry {

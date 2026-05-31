@@ -51,7 +51,15 @@ export function GraphSwitcher() {
           >
             Main
           </button>
-          {subgraphs.map((sg) => (
+          {subgraphs
+            // Hide for-each-point bridges from the switcher dropdown
+            // (private node-owned graphs; reached via "Edit iteration"
+            // on the for-each-point itself, not via a global picker).
+            // The currentLabel lookup above DOES still find them by
+            // id so the toolbar shows the right context when the user
+            // is editing one.
+            .filter((sg) => sg.owner?.kind !== 'iteration-bridge')
+            .map((sg) => (
             <button
               key={sg.id}
               type="button"

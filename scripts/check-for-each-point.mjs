@@ -49,11 +49,12 @@ try {
     }
     return {
       feNodeId: feNode.id,
-      bodyKind: feNode.inputValues?.__body,
+      bridgeId: feNode.inputValues?.__bridgeId,
       extraInputs: (feNode.extraInputs ?? []).map((i) => `${i.name}:${i.type}`),
       extraOutputs: (feNode.extraOutputs ?? []).map((o) => `${o.name}:${o.type}`),
       subgraphCount: state.subgraphs.length,
       cabinetCellRegistered: state.subgraphs.some((s) => s.id === 'cabinet-cell'),
+      bridgeRegistered: state.subgraphs.some((s) => s.id === feNode.inputValues?.__bridgeId),
       sceneEntityCount: outputs?.scene?.entities?.length ?? null,
       // Distinct geometry refs across iterations? A regression where
       // the eval cache returns the same Geometry for every iteration
@@ -70,7 +71,8 @@ try {
   const failures = [];
   if (errors.length > 0) failures.push(`console / page errors: ${errors.length}`);
   if (!summary.cabinetCellRegistered) failures.push('cabinet-cell subgraph not registered');
-  if (summary.bodyKind !== 'subgraph/cabinet-cell') failures.push(`__body=${JSON.stringify(summary.bodyKind)}`);
+  if (!summary.bridgeRegistered) failures.push('bridge subgraph not registered alongside body');
+  if (!summary.bridgeId) failures.push(`__bridgeId=${JSON.stringify(summary.bridgeId)}`);
   if (summary.sceneEntityCount === null) failures.push('for-each-point produced no eval output');
   if (summary.sceneEntityCount !== 16) failures.push(`expected 16 merged entities (4×4 grid), got ${summary.sceneEntityCount}`);
   if (summary.distinctGeometryRefs !== summary.sceneEntityCount) {

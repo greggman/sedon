@@ -51,7 +51,7 @@ try {
     return {
       mainNodeKinds: state.graph.nodes.map((n) => n.kind),
       subgraphIds: state.subgraphs.map((s) => s.id),
-      feBody: feNode?.inputValues?.__body,
+      feBridgeId: feNode?.inputValues?.__bridgeId,
       sceneEntityCount: outputs?.scene?.entities?.length ?? null,
       distinctGeometryRefs: outputs?.scene?.entities
         ? new Set(outputs.scene.entities.map((e) => e.geometry)).size
@@ -70,7 +70,11 @@ try {
   const failures = [];
   if (errors.length > 0) failures.push(`console / page errors: ${errors.length}`);
   if (!summary.subgraphIds.includes('docs-fep-cube')) failures.push('body subgraph docs-fep-cube not in state.subgraphs');
-  if (summary.feBody !== 'subgraph/docs-fep-cube') failures.push(`__body=${JSON.stringify(summary.feBody)}`);
+  if (typeof summary.feBridgeId !== 'string' || summary.feBridgeId === '') {
+    failures.push(`__bridgeId=${JSON.stringify(summary.feBridgeId)}`);
+  } else if (!summary.subgraphIds.includes(summary.feBridgeId)) {
+    failures.push(`bridge subgraph ${summary.feBridgeId} not in state.subgraphs`);
+  }
   if (summary.sceneEntityCount !== 9) failures.push(`expected 9 entities, got ${summary.sceneEntityCount}`);
   if (summary.distinctGeometryRefs !== summary.sceneEntityCount) {
     failures.push(`expected ${summary.sceneEntityCount} distinct geometry refs, got ${summary.distinctGeometryRefs}`);

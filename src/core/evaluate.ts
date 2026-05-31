@@ -241,6 +241,15 @@ export async function evaluateGraph(
     if (def.id.startsWith('subgraph-input/')) {
       extraParts.push(JSON.stringify(sharedCtx.subgraphInputFingerprints ?? {}));
     }
+    // Iteration bridges: the `iteration-input` boundary's outputs come
+    // from `ctx.iterationContext` (set per-iteration by the owning
+    // for-each-* node), so its fp has to incorporate per-iteration
+    // fingerprints to keep cache entries from colliding across
+    // iterations. Without this every iteration's downstream nodes
+    // would share one cache slot and return the same output.
+    if (def.id.startsWith('iteration-input/')) {
+      extraParts.push(JSON.stringify(sharedCtx.iterationContextFingerprints ?? {}));
+    }
     // def.fingerprintExtra is used by subgraph boundaries to fingerprint
     // their interface shape without piggy-backing on the subgraph's
     // coarse version counter (which would cascade-invalidate every

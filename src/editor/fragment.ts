@@ -300,10 +300,26 @@ export function importFragment(
   const mode: ImportMode = options?.mode ?? 'rename-all';
   const primary = new Set(fragment.primarySubgraphIds ?? []);
 
+  // Step 0: node id remap. Built up front because bridges are tied to
+  // specific for-each-point nodes — when the node id changes, the
+  // bridge's id (`bridge-<nodeId>` convention) and the for-each
+  // node's `__bridgeId` inputValue both need to follow.
+  const nodeIdRemap = new Map<string, string>();
+  for (const n of fragment.nodes) {
+    nodeIdRemap.set(n.id, freshId());
+  }
+
   // Step 1: per-def decision — keep the original id (and skip adding
   // the def if it already exists in the target), or rename to dodge a
   // collision. Build the full id remap up front so cross-references
   // among incoming defs resolve consistently in step 2.
+  //
+  // Bridges (defs marked `owner.kind === 'iteration-bridge'`) follow
+  // a tighter rename rule than user-authored subgraphs: the bridge id
+  // must always derive from the owner for-each-point's CURRENT node
+  // id, so the convention `bridge-<nodeId>` holds even when the
+  // owning node was renamed during step 0. Mode flags don't apply —
+  // a bridge with no surviving owner in the import is dropped.
   //
   // "Skip" is the signal that a wrapper kind referencing this def
   // should bind to the TARGET's existing def with that id (no rewrite
@@ -313,7 +329,23 @@ export function importFragment(
   const usedIds = new Set(existingSubgraphIds);
   const defRename = new Map<string, string>(); // old id → final id
   const skippedIds = new Set<string>();        // defs reused-from-target, not imported
+  const ownerNodeRemap = new Map<string, string>(); // old bridge id → new owner nodeId
   for (const sg of fragment.subgraphs) {
+    if (sg.owner?.kind === 'iteration-bridge') {
+      const newOwnerNodeId = nodeIdRemap.get(sg.owner.nodeId);
+      if (newOwnerNodeId === undefined) {
+        // Owner for-each-point isn't part of this fragment — orphan
+        // bridge. Drop it (skipping registers it as "don't emit");
+        // the import wouldn't be useful without the owning node.
+        skippedIds.add(sg.id);
+        continue;
+      }
+      const newBridgeId = `bridge-${newOwnerNodeId}`;
+      defRename.set(sg.id, newBridgeId);
+      ownerNodeRemap.set(sg.id, newOwnerNodeId);
+      usedIds.add(newBridgeId);
+      continue;
+    }
     const collides = existingSubgraphIds.has(sg.id);
     const shouldRename =
       mode === 'rename-all' ||
@@ -343,22 +375,37 @@ export function importFragment(
   const subgraphs: SubgraphDef[] = [];
   for (const sg of fragment.subgraphs) {
     if (skippedIds.has(sg.id)) continue;
-    subgraphs.push({
+    const nextId = defRename.get(sg.id) ?? sg.id;
+    const emitted: SubgraphDef = {
       ...sg,
-      id: defRename.get(sg.id) ?? sg.id,
+      id: nextId,
       graph: {
         ...sg.graph,
-        nodes: sg.graph.nodes.map((n) => remapWrapperKind(n, defRename)),
+        // Bridge boundary-node kinds embed the bridge's id
+        // (`subgraph-input/<bridgeId>`, etc.). When the bridge gets
+        // a new id, those embedded ids must update too — otherwise
+        // the boundary nodes reference a registry kind that no
+        // longer matches the bridge.
+        nodes: sg.graph.nodes.map((n) => {
+          const rewrittenKind = rewriteBoundaryKindForBridge(n.kind, sg.id, nextId);
+          const remapped = remapWrapperKind(
+            rewrittenKind === n.kind ? n : { ...n, kind: rewrittenKind },
+            defRename,
+          );
+          return remapped;
+        }),
         edges: sg.graph.edges.map((e) => ({ ...e, from: { ...e.from }, to: { ...e.to } })),
       },
-    });
-  }
-
-  // Step 3: remap top-level node ids and wrapper kinds. Build the
-  // node-id remap up front so edges can be rewritten in one pass.
-  const nodeIdRemap = new Map<string, string>();
-  for (const n of fragment.nodes) {
-    nodeIdRemap.set(n.id, freshId());
+    };
+    // Patch the bridge's owner.nodeId to the imported for-each-point's
+    // new node id, and update inputNodeId / outputNodeId references
+    // (these point to specific nodes inside sg.graph and survived the
+    // node clone above unchanged).
+    const newOwnerNodeId = ownerNodeRemap.get(sg.id);
+    if (newOwnerNodeId !== undefined && emitted.owner) {
+      emitted.owner = { kind: 'iteration-bridge', nodeId: newOwnerNodeId };
+    }
+    subgraphs.push(emitted);
   }
   const dx = options?.pasteAt
     ? options.pasteAt.x - (fragment.bbox.x + fragment.bbox.w / 2)
@@ -371,6 +418,14 @@ export function importFragment(
     const out: GraphNode = { ...remapped, id: nodeIdRemap.get(n.id)! };
     if (remapped.position) {
       out.position = { x: remapped.position.x + dx, y: remapped.position.y + dy };
+    }
+    // for-each-point's `__bridgeId` references its owned bridge,
+    // whose id we just renamed to `bridge-<newNodeId>` above. Patch
+    // the inputValue to match — otherwise the imported for-each
+    // would point at the OLD bridge id and fail to look up its body.
+    if (out.kind === 'core/for-each-point' && out.inputValues?.__bridgeId !== undefined) {
+      const newBridgeId = `bridge-${out.id}`;
+      out.inputValues = { ...out.inputValues, __bridgeId: newBridgeId };
     }
     return out;
   });
@@ -428,6 +483,22 @@ function freshId(): string {
 // def got renamed. Non-wrapper nodes pass through unchanged. Returns
 // a shallow-cloned node so callers can keep mutating without affecting
 // the input.
+// Rewrite a boundary node's kind when its parent bridge gets renamed
+// during import. Boundary kinds embed the bridge id directly —
+// `subgraph-input/<bridgeId>`, `iteration-input/<bridgeId>`, etc. —
+// so the embedded id has to track the bridge's new id, otherwise the
+// boundary node references a registry kind that no longer matches.
+// Non-boundary nodes (and boundaries belonging to unrelated
+// subgraphs) pass through unchanged.
+function rewriteBoundaryKindForBridge(kind: string, oldBridgeId: string, newBridgeId: string): string {
+  if (oldBridgeId === newBridgeId) return kind;
+  const prefixes = ['subgraph-input/', 'subgraph-output/', 'iteration-input/', 'iteration-output/'];
+  for (const p of prefixes) {
+    if (kind === `${p}${oldBridgeId}`) return `${p}${newBridgeId}`;
+  }
+  return kind;
+}
+
 function remapWrapperKind(node: GraphNode, defRename: Map<string, string>): GraphNode {
   if (!isSubgraphInstanceKind(node.kind)) return { ...node };
   const oldDefId = subgraphIdFromKind(node.kind);
@@ -470,6 +541,15 @@ function computeBbox(nodes: GraphNode[]): Fragment['bbox'] {
 // BFS the subgraph dependency tree starting from any wrappers in
 // `seedNodes`. Returns the unique defs in stable seed order so a
 // re-serialize of the same selection produces identical bytes.
+//
+// Two reference kinds the walker follows:
+//   • Wrapper-instance kinds (`subgraph/<id>`) — standard subgraph
+//     references via a node's `kind`.
+//   • For-each-point bridges — referenced by `__bridgeId` on a
+//     `core/for-each-point` node's inputValues. Bridges are private
+//     to their owning node so they must travel with it; without
+//     this, copy-pasting a for-each-point would lose its iteration
+//     wiring on the import side.
 function collectSubgraphClosure(
   seedNodes: ReadonlyArray<GraphNode>,
   allSubgraphs: ReadonlyArray<SubgraphDef>,
@@ -478,7 +558,7 @@ function collectSubgraphClosure(
   const visited = new Set<string>();
   const ordered: SubgraphDef[] = [];
   const queue: string[] = [];
-  for (const n of seedNodes) {
+  const enqueueRefsFromNode = (n: GraphNode): void => {
     if (isSubgraphInstanceKind(n.kind)) {
       const id = subgraphIdFromKind(n.kind);
       if (id && !visited.has(id)) {
@@ -486,7 +566,15 @@ function collectSubgraphClosure(
         queue.push(id);
       }
     }
-  }
+    if (n.kind === 'core/for-each-point') {
+      const bridgeId = n.inputValues?.__bridgeId;
+      if (typeof bridgeId === 'string' && bridgeId !== '' && !visited.has(bridgeId)) {
+        visited.add(bridgeId);
+        queue.push(bridgeId);
+      }
+    }
+  };
+  for (const n of seedNodes) enqueueRefsFromNode(n);
   while (queue.length > 0) {
     const id = queue.shift()!;
     const def = byId.get(id);
@@ -498,15 +586,9 @@ function collectSubgraphClosure(
       continue;
     }
     ordered.push(def);
-    for (const inner of def.graph.nodes) {
-      if (isSubgraphInstanceKind(inner.kind)) {
-        const innerId = subgraphIdFromKind(inner.kind);
-        if (innerId && !visited.has(innerId)) {
-          visited.add(innerId);
-          queue.push(innerId);
-        }
-      }
-    }
+    // Bridges have body wrappers inside; walking those pulls the body
+    // subgraph def along as a transitive dependency.
+    for (const inner of def.graph.nodes) enqueueRefsFromNode(inner);
   }
   return ordered;
 }

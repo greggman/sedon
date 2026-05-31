@@ -52,9 +52,59 @@ export interface SubgraphDef {
    * missing means "treat as version 0" — first edit will bump to 1.
    */
   version?: number;
+  /**
+   * Marks this SubgraphDef as private node-owned state rather than a
+   * user-authored asset. Set for the iteration bridge subgraphs that
+   * `core/for-each-point` (and future for-each-* nodes) own — one
+   * bridge per for-each-* instance, lifecycle bound to that instance.
+   * Bridges:
+   *   • are filtered out of the Assets panel (user never sees them
+   *     listed alongside their authored subgraphs)
+   *   • aren't reachable as wrappers in any parent graph (no
+   *     `subgraph/<bridge-id>` wrapper instance is added externally)
+   *   • are reached for editing only via the owning node's "Edit
+   *     iteration" affordance
+   * Absent on user-authored subgraphs.
+   */
+  owner?: {
+    kind: 'iteration-bridge';
+    /** The for-each-* node whose `__bridgeId` references this subgraph. */
+    nodeId: string;
+  };
+  /**
+   * The "iteration kind" this bridge is wired against — e.g.
+   * `core/for-each-point`. Determines which iteration-context outputs
+   * appear on the `iteration-input/<id>` boundary inside the bridge
+   * (sourced from that NodeDef's `providedIterationContext`). Only
+   * meaningful when `owner.kind === 'iteration-bridge'`.
+   */
+  iterationKind?: string;
 }
 
 const MAX_SUBGRAPH_DEPTH = 16;
+
+// Per-key fallback for a subgraph-input boundary. Distinct from the
+// raw `ctx.subgraphInputs ?? standaloneDefaults` that used to live in
+// each boundary's evaluate: that was all-or-nothing, but real callers
+// pass {name: undefined} for any unwired-and-undefaulted input on the
+// outer surface (e.g. a for-each-point with a bridge-input the user
+// hasn't wired). Without per-key fallback, that undefined sails into
+// the inner graph and any node reading the value crashes (transform's
+// scale[0], material's basecolor.kind, etc.). Boundary docstring at
+// the top of defineSubgraph describes this fallback order — this is
+// just the function that actually implements it.
+function resolveBoundaryInputs(
+  provided: Record<string, unknown> | undefined,
+  standaloneDefaults: Record<string, unknown>,
+): Record<string, unknown> {
+  if (provided === undefined) return standaloneDefaults;
+  const out: Record<string, unknown> = { ...standaloneDefaults };
+  for (const k of Object.keys(provided)) {
+    const v = provided[k];
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
 
 // Picked so the most common parent-supplied input shapes preview as
 // "one thing at origin" when no parent is present: a scatter subgraph
@@ -124,6 +174,9 @@ function systemDefaultForType(type: string): unknown {
  * the bundles for every subgraph first, then register them all).
  */
 export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef[] {
+  if (def.owner?.kind === 'iteration-bridge') {
+    return defineBridgeSubgraph(def, registry);
+  }
   const wrapperKind = `subgraph/${def.id}`;
   const inputKind = `subgraph-input/${def.id}`;
   const outputKind = `subgraph-output/${def.id}`;
@@ -187,7 +240,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
     })),
     fingerprintExtra: inputShape,
     evaluate(ctx) {
-      return ctx.subgraphInputs ?? standaloneDefaults;
+      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults);
     },
   };
 
@@ -283,13 +336,207 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   return [wrapper, inputBoundary, outputBoundary];
 }
 
+/**
+ * Compile a BRIDGE SubgraphDef — the private node-owned graph held by
+ * `core/for-each-point` (and future for-each-* nodes). Produces 3
+ * NodeDefs, NONE of them a regular `subgraph/<id>` wrapper (bridges
+ * are never instanced from a user-authored graph; they're invoked
+ * directly by for-each-* nodes' evaluate via `ctx.iterationContext`):
+ *
+ *   1. `subgraph-input/<bridge-id>` — same as a regular subgraph's
+ *      input boundary: its outputs are the bridge's declared inputs,
+ *      carrying broadcast (non-iterated) values FROM the owning
+ *      for-each-* node into the bridge graph.
+ *   2. `iteration-input/<bridge-id>` — outputs are the iteration
+ *      kind's `providedIterationContext` (e.g. `position`, `index`
+ *      for for-each-point). Reads per-iteration values from
+ *      `ctx.iterationContext`; user wires from these into body
+ *      wrappers and any conversion / transform nodes inside the
+ *      bridge.
+ *   3. `iteration-output/<bridge-id>` — inputs are the bridge's
+ *      declared outputs (i.e. what gets gathered each iteration and
+ *      lifted by the for-each-* node into its outer outputs). Same
+ *      shape and pass-through evaluate as a regular subgraph-output
+ *      boundary, just a different kind so the editor renders it
+ *      distinctly.
+ *
+ * The iteration kind's NodeDef must already be in the registry when
+ * this runs; bridges only exist alongside their owning iteration
+ * node, and the registry build order (core nodes first, then
+ * subgraphs) guarantees this.
+ */
+function defineBridgeSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef[] {
+  const inputKind = `subgraph-input/${def.id}`;
+  const iterInputKind = `iteration-input/${def.id}`;
+  const iterOutputKind = `iteration-output/${def.id}`;
+  const bridgeEvalKind = `bridge-eval/${def.id}`;
+
+  // Look up what the iteration kind provides per-iteration. Falls
+  // back to empty when the kind isn't registered — a bridge whose
+  // iteration kind disappeared (deleted node-def, schema migration)
+  // still loads cleanly with no per-iteration outputs rather than
+  // throwing during registry build.
+  const iterKindDef = registry.get(def.iterationKind ?? '');
+  const providedContext = iterKindDef?.providedIterationContext ?? [];
+
+  // Broadcast subgraph-input — identical to a regular subgraph's
+  // input boundary. Same standalone-defaults fallback chain.
+  const standaloneDefaults: Record<string, unknown> = {};
+  for (const i of def.inputs) {
+    if (i.default !== undefined) {
+      standaloneDefaults[i.name] = i.default;
+    } else {
+      const sys = systemDefaultForType(i.type);
+      if (sys !== undefined) standaloneDefaults[i.name] = sys;
+    }
+  }
+  const inputShape = canonicalJson(
+    def.inputs.map((i) => ({ name: i.name, type: i.type, default: i.default ?? null })),
+  );
+  const inputBoundary: NodeDef = {
+    id: inputKind,
+    category: '__internal__',
+    inputs: [],
+    outputs: def.inputs.map<OutputDef>((i) => ({
+      name: i.name,
+      type: i.type,
+      ...(i.description !== undefined ? { description: i.description } : {}),
+      ...(i.label !== undefined ? { label: i.label } : {}),
+    })),
+    fingerprintExtra: inputShape,
+    evaluate(ctx) {
+      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults);
+    },
+  };
+
+  // Iteration-input boundary — outputs come from the iteration kind's
+  // declared context. Reads per-iter values from ctx.iterationContext;
+  // standalone (no for-each-* invoking) falls back to type defaults so
+  // the bridge previews as a "first iteration" snapshot without
+  // crashing.
+  const iterStandaloneDefaults: Record<string, unknown> = {};
+  for (const c of providedContext) {
+    const sys = systemDefaultForType(c.type);
+    if (sys !== undefined) iterStandaloneDefaults[c.name] = sys;
+  }
+  const iterInputBoundary: NodeDef = {
+    id: iterInputKind,
+    category: '__internal__',
+    inputs: [],
+    outputs: providedContext.map<OutputDef>((c) => ({
+      name: c.name,
+      type: c.type,
+      ...(c.description !== undefined ? { description: c.description } : {}),
+    })),
+    // Shape hash: iteration kind + provided-context interface. Edits
+    // INSIDE the bridge graph mustn't bump this (we don't want a body
+    // wrapper edit to cascade-invalidate every iteration's eval); only
+    // the iteration kind itself changing does.
+    fingerprintExtra: canonicalJson({
+      iterationKind: def.iterationKind ?? null,
+      provided: providedContext.map((c) => ({ name: c.name, type: c.type })),
+    }),
+    evaluate(ctx) {
+      return ctx.iterationContext ?? iterStandaloneDefaults;
+    },
+  };
+
+  // Iteration-output boundary — same shape + pass-through evaluate as
+  // a regular subgraph-output boundary. The for-each-* node sets
+  // rootNodeId to this boundary's id and reads its outputs for each
+  // iteration, then merges/lifts into the for-each-* node's own
+  // outer outputs.
+  const iterOutputBoundary: NodeDef = {
+    id: iterOutputKind,
+    category: '__internal__',
+    inputs: def.outputs.map<InputDef>((o) => ({
+      name: o.name,
+      type: o.type,
+      optional: true,
+      ...(o.description !== undefined ? { description: o.description } : {}),
+      ...(o.label !== undefined ? { label: o.label } : {}),
+    })),
+    outputs: def.outputs.map<OutputDef>((o) => ({
+      name: o.name,
+      type: o.type,
+      ...(o.description !== undefined ? { description: o.description } : {}),
+      ...(o.label !== undefined ? { label: o.label } : {}),
+    })),
+    fingerprintExtra: canonicalJson(
+      def.outputs.map((o) => ({ name: o.name, type: o.type })),
+    ),
+    evaluate(_ctx, inputs) {
+      return inputs;
+    },
+  };
+
+  // Internal "evaluator" NodeDef for the bridge — analogous to a
+  // regular subgraph's wrapper, but it's never instanced into any
+  // user-authored graph. The owning for-each-* node looks this up by
+  // kind (`bridge-eval/<id>`) from `ctx.registry` and calls its
+  // evaluate per iteration with the broadcast inputs in hand and
+  // `ctx.iterationContext` / `iterationContextFingerprints` already
+  // populated. We capture def.graph + def.outputNodeId in closure so
+  // the for-each-* node doesn't need any other handle to the bridge.
+  const bridgeEval: NodeDef = {
+    id: bridgeEvalKind,
+    category: '__internal__',
+    inputs: def.inputs,
+    outputs: def.outputs,
+    version: def.version ?? 0,
+    async evaluate(ctx, inputs) {
+      const depth = (ctx.subgraphDepth ?? 0) + 1;
+      if (depth > MAX_SUBGRAPH_DEPTH) {
+        throw new Error(
+          `bridge recursion depth exceeded (${MAX_SUBGRAPH_DEPTH}) at ${bridgeEvalKind} — for-each-* invoking itself directly or transitively?`,
+        );
+      }
+      const innerCtx: typeof ctx = {
+        ...ctx,
+        subgraphInputs: inputs,
+        subgraphInputFingerprints: ctx.inputFingerprints ?? {},
+        // `iterationContext` + `iterationContextFingerprints` stay on
+        // ctx as the for-each-* node set them; forwarded unchanged.
+        subgraphDepth: depth,
+      };
+      const innerOptions: Parameters<typeof evaluateGraph>[2] = {
+        rootNodeId: def.outputNodeId,
+        context: innerCtx,
+        scope: 'rootAncestors',
+      };
+      if (ctx.evalCache !== undefined) innerOptions.cache = ctx.evalCache;
+      if (ctx.evalTouched !== undefined) innerOptions.touched = ctx.evalTouched;
+      const result = await evaluateGraph(def.graph, registry, innerOptions);
+      return result.outputs;
+    },
+  };
+
+  return [inputBoundary, iterInputBoundary, iterOutputBoundary, bridgeEval];
+}
+
 /** True for node kinds generated by defineSubgraph (filter out of menus). */
 export function isSubgraphInternalKind(kind: string): boolean {
-  return kind.startsWith('subgraph-input/') || kind.startsWith('subgraph-output/');
+  return (
+    kind.startsWith('subgraph-input/')
+    || kind.startsWith('subgraph-output/')
+    || kind.startsWith('iteration-input/')
+    || kind.startsWith('iteration-output/')
+    || kind.startsWith('bridge-eval/')
+  );
 }
 
 export function isSubgraphInstanceKind(kind: string): boolean {
   return kind.startsWith('subgraph/');
+}
+
+/** True for the per-iteration input boundary inside a for-each-* bridge. */
+export function isIterationInputKind(kind: string): boolean {
+  return kind.startsWith('iteration-input/');
+}
+
+/** True for the per-iteration output boundary inside a for-each-* bridge. */
+export function isIterationOutputKind(kind: string): boolean {
+  return kind.startsWith('iteration-output/');
 }
 
 /** Given a wrapper kind `subgraph/<id>`, return `<id>`. */

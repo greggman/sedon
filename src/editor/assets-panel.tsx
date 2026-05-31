@@ -103,7 +103,15 @@ function selectionToAssetSelection(selection: ReadonlySet<SelectionKey>): AssetS
 // =========================================================================
 export function AssetsPanel() {
   const folders = useEditorStore(useShallow((s) => s.folders));
-  const subgraphs = useEditorStore(useShallow((s) => s.subgraphs));
+  // Filter out node-owned bridges (for-each-point's private iteration
+  // wiring graphs). They live in `state.subgraphs` alongside
+  // user-authored subgraphs because they share the same eval +
+  // serialize machinery, but they're not user assets — only the
+  // owning for-each-point's "Edit iteration" affordance navigates
+  // into them.
+  const subgraphs = useEditorStore(useShallow((s) =>
+    s.subgraphs.filter((sg) => sg.owner?.kind !== 'iteration-bridge'),
+  ));
   const createFolder = useEditorStore((s) => s.createFolder);
   const renameFolder = useEditorStore((s) => s.renameFolder);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);

@@ -689,18 +689,27 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const renameNode = useEditorStore((s) => s.renameNode);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
   const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
-  const setForEachBody = useEditorStore((s) => s.setForEachBody);
-  // for-each-point looks up its body subgraph's label by the kind it
-  // stores in `__body`. Subscribed here so the header subtitle stays
-  // in sync if the body is renamed in the Assets panel.
+  const attachIterationBody = useEditorStore((s) => s.attachIterationBody);
+  // for-each-point's "Edit iteration" navigation needs the bridge id
+  // to step into. Header label looks up the body subgraph wrapper
+  // currently placed inside the bridge so the canvas tells you which
+  // body is bound at a glance.
   const isForEachPoint = kind === 'core/for-each-point';
-  const forEachBodyKind = isForEachPoint
-    ? (inputValues?.__body as string | undefined) ?? ''
+  const forEachBridgeId = isForEachPoint
+    ? (inputValues?.__bridgeId as string | undefined) ?? ''
     : '';
   const forEachBodyLabel = useEditorStore((s) => {
-    if (!forEachBodyKind || !forEachBodyKind.startsWith('subgraph/')) return undefined;
-    const id = forEachBodyKind.slice('subgraph/'.length);
-    return s.subgraphs.find((sg) => sg.id === id)?.label;
+    if (!forEachBridgeId) return undefined;
+    const bridge = s.subgraphs.find((sg) => sg.id === forEachBridgeId);
+    if (!bridge) return undefined;
+    // The body wrapper is whichever `subgraph/<id>` node lives inside
+    // the bridge inner graph. There can only ever be at most one
+    // body in the auto-wired default, but the user could place more
+    // by hand; we pick the first as the "label."
+    const bodyNode = bridge.graph.nodes.find((n) => n.kind.startsWith('subgraph/'));
+    if (!bodyNode) return undefined;
+    const bodyId = bodyNode.kind.slice('subgraph/'.length);
+    return s.subgraphs.find((sg) => sg.id === bodyId)?.label;
   });
 
   // Subgraph-boundary handling. The "editable side" is the one carrying
@@ -795,7 +804,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         // a for-each has exactly one body.
         const sg = items.find((it) => it.kind === 'subgraph');
         if (!sg) return;
-        setForEachBody(id, `subgraph/${sg.id}`);
+        attachIterationBody(id, `subgraph/${sg.id}`);
       }
     : undefined;
   // for-each-point shows "for-each: <body label>" (or "drop a subgraph
@@ -805,7 +814,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const typeLabel = isSubgraphWrapper
     ? 'subgraph'
     : isForEachPoint
-      ? `for-each: ${forEachBodyLabel ?? (forEachBodyKind ? forEachBodyKind : 'drop a subgraph here')}`
+      ? `for-each: ${forEachBodyLabel ?? (forEachBridgeId ? '(empty bridge)' : 'drop a subgraph here')}`
       : def.id;
   // What the editor shows + commits on. For wrappers we always have a
   // label (SubgraphDef requires one), so wrappers are always "named".
@@ -831,6 +840,16 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       useLayoutStore.getState().setCanvasGraphId(canvasPanelId, subgraphId);
     }
     setActiveEditing(subgraphId);
+  };
+  // for-each-point's bridge is just a subgraph the user can drill
+  // into the same way as a regular wrapper, but reached via the
+  // owning node instead of an Assets-panel pick.
+  const onEditIteration = () => {
+    if (!forEachBridgeId) return;
+    if (canvasPanelId) {
+      useLayoutStore.getState().setCanvasGraphId(canvasPanelId, forEachBridgeId);
+    }
+    setActiveEditing(forEachBridgeId);
   };
 
   const valueOf = (input: InputDef) => {
@@ -898,6 +917,16 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             onClick={onEditSubgraph}
           >
             Edit
+          </button>
+        )}
+        {isForEachPoint && forEachBridgeId && (
+          <button
+            type="button"
+            className="nodrag nopan sedon-subgraph-edit"
+            title="Edit this for-each-point's bridge graph (wires iteration context onto body inputs)"
+            onClick={onEditIteration}
+          >
+            Edit iteration
           </button>
         )}
         {def?.doc && (

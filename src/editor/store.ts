@@ -3,16 +3,14 @@ import { debug } from '../core/debug.js';
 import { createEvalCache, type EvalCache } from '../core/eval-cache.js';
 import type { Folder } from '../core/folder.js';
 import { wouldCreateFolderCycle } from '../core/folder.js';
-import type { Graph, GraphEdge, GraphNode, SocketRef } from '../core/graph.js';
+import { addEdge, addNode, createGraph, type Graph, type GraphEdge, type GraphNode, type SocketRef } from '../core/graph.js';
 import type { InputDef, OutputDef } from '../core/node-def.js';
 import {
-  isImplicitForEachInputName,
   liftForEachInputType,
   liftForEachOutputType,
 } from '../nodes/for-each-point.js';
-import { createEmptySubgraph, type SubgraphDef } from '../core/subgraph.js';
+import { createEmptySubgraph, isSubgraphInternalKind, type SubgraphDef } from '../core/subgraph.js';
 import {
-  cleanupForEachBodyReferences,
   cloneFolderSubtree,
   cloneSubgraphDef,
   countBrokenRefs as countBrokenRefsImpl,
@@ -247,16 +245,27 @@ export interface EditorState {
   renameNode: (nodeId: string, name: string) => void;
 
   /**
-   * Attach (or clear) the body subgraph of a `core/for-each-point`
-   * node. Atomically: sets `__body` to the wrapper kind, rebuilds the
-   * node's `extraInputs` to mirror the body subgraph's inputs (with
-   * `Float → FloatCloud` / `Vec3 → Vec3Cloud` lifting, and skipping
-   * the implicit `__position` / `__index` names), and drops any
-   * incoming edges that target a socket which is no longer present
-   * by name. One undoable command. Passing an empty string clears
-   * the body — extraInputs become `[]` and every per-body wire drops.
+   * Attach a body subgraph to a `core/for-each-point` instance.
+   * Atomically:
+   *   • Builds (or rebuilds) the node's private bridge SubgraphDef,
+   *     placing the body wrapper inside between the bridge's
+   *     iteration-input and iteration-output boundaries.
+   *   • Auto-wires iteration-input.<name> → body.<name> for any body
+   *     inputs that match the iteration kind's provided context names
+   *     (`position`, `index`).
+   *   • Auto-wires body.<name> → iteration-output.<name> for the body
+   *     outputs whose types lift cleanly (Scene / Float / Vec3).
+   *   • Mirrors the body's REGULAR (non-context-name) inputs onto the
+   *     for-each-point's `extraInputs` as cloud-lifted broadcast
+   *     sockets (Float→FloatCloud, Vec3→Vec3Cloud, else broadcast).
+   *   • Mirrors the bridge's outputs onto the for-each-point's
+   *     `extraOutputs` (lifted same way as input mirroring).
+   *   • Drops edges to/from now-stale sockets on the for-each-point.
+   *
+   * Replacing an existing body: the prior bridge is discarded in
+   * favour of a fresh one. One undoable command.
    */
-  setForEachBody: (nodeId: string, bodyKind: string) => void;
+  attachIterationBody: (nodeId: string, bodyKind: string) => void;
 
   /**
    * Append a new per-instance dynamic input socket on a variadic node.
@@ -545,6 +554,104 @@ export const useEditorStore = create<EditorState>((set, get) => {
     };
   }
 
+  // Walk `snapshot.subgraphs` for iteration bridges whose IO changed
+  // versus `beforeById`, then rebuild each owning for-each-point's
+  // outer `extraInputs` / `extraOutputs` from the new bridge IO
+  // (lifted through `liftForEachInputType` / `liftForEachOutputType`).
+  // Also drops edges that point at extras which just vanished from
+  // the for-each-point's surface.
+  //
+  // Lives in dispatchProject so EVERY mutation path (add socket,
+  // rename socket, remove socket, replaceProject from undo / redo
+  // / load) gets the sync for free — without it the user can edit a
+  // bridge and the changes won't reach the parent graph.
+  function syncForEachExtrasFromBridges(
+    snapshot: ProjectSnapshot,
+    beforeById: Map<string, SubgraphDef>,
+  ): ProjectSnapshot {
+    const changedBridges = snapshot.subgraphs.filter((sg) => {
+      if (sg.owner?.kind !== 'iteration-bridge') return false;
+      const prev = beforeById.get(sg.id);
+      if (!prev) return true; // newly added → first sync
+      return prev.inputs !== sg.inputs || prev.outputs !== sg.outputs;
+    });
+    if (changedBridges.length === 0) return snapshot;
+
+    // Map of for-each-point node id → desired extras + surviving
+    // socket names (used by the edge-prune step).
+    const updates = new Map<string, {
+      extraInputs: InputDef[];
+      extraOutputs: OutputDef[];
+      survivingInputs: Set<string>;
+      survivingOutputs: Set<string>;
+    }>();
+    for (const bridge of changedBridges) {
+      const ownerNodeId = bridge.owner!.nodeId;
+      const extraInputs: InputDef[] = bridge.inputs.map((i) => ({
+        name: i.name,
+        type: liftForEachInputType(i.type),
+        optional: true,
+      }));
+      const extraOutputs: OutputDef[] = [];
+      for (const o of bridge.outputs) {
+        const lifted = liftForEachOutputType(o.type);
+        if (lifted !== null) extraOutputs.push({ name: o.name, type: lifted });
+      }
+      updates.set(ownerNodeId, {
+        extraInputs,
+        extraOutputs,
+        survivingInputs: new Set(extraInputs.map((i) => i.name)),
+        survivingOutputs: new Set(extraOutputs.map((o) => o.name)),
+      });
+    }
+
+    // Static input names on for-each-point that must always survive
+    // (not extras — part of the NodeDef.inputs declaration).
+    const STATIC_FOR_EACH_INPUTS = new Set(['points', '__bridgeId']);
+    const sameList = <T extends { name: string; type: string }>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean => {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i]!.name !== b[i]!.name || a[i]!.type !== b[i]!.type) return false;
+      }
+      return true;
+    };
+    const applyToGraph = (graph: Graph): Graph => {
+      let nodesChanged = false;
+      const nextNodes = graph.nodes.map((n) => {
+        const u = updates.get(n.id);
+        if (!u || n.kind !== 'core/for-each-point') return n;
+        if (sameList(n.extraInputs ?? [], u.extraInputs)
+          && sameList(n.extraOutputs ?? [], u.extraOutputs)) return n;
+        nodesChanged = true;
+        return { ...n, extraInputs: u.extraInputs, extraOutputs: u.extraOutputs };
+      });
+      if (!nodesChanged) return graph;
+      const nextEdges = graph.edges.filter((e) => {
+        const toU = updates.get(e.to.node);
+        if (toU && !STATIC_FOR_EACH_INPUTS.has(e.to.socket) && !toU.survivingInputs.has(e.to.socket)) return false;
+        const fromU = updates.get(e.from.node);
+        if (fromU && !fromU.survivingOutputs.has(e.from.socket)) return false;
+        return true;
+      });
+      return { ...graph, nodes: nextNodes, edges: nextEdges };
+    };
+
+    const nextMain = applyToGraph(snapshot.mainGraph);
+    const nextSubgraphs = snapshot.subgraphs.map((sg) => {
+      const nextGraph = applyToGraph(sg.graph);
+      return nextGraph === sg.graph ? sg : { ...sg, graph: nextGraph };
+    });
+    const nextEditedGraph = snapshot.currentEditingId === 'main'
+      ? nextMain
+      : nextSubgraphs.find((s) => s.id === snapshot.currentEditingId)?.graph ?? snapshot.graph;
+    return {
+      ...snapshot,
+      mainGraph: nextMain,
+      subgraphs: nextSubgraphs,
+      graph: nextEditedGraph,
+    };
+  }
+
   // Project-scoped dispatch: capture the current snapshot as `before`,
   // apply `after`, push a replaceProject command onto the undo stack.
   // Everything goes through one set() so React renders once. syncCounter
@@ -566,7 +673,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!prev || prev === s) return s;
       return { ...s, version: (prev.version ?? 0) + 1 };
     });
-    const bumped: ProjectSnapshot = { ...after, subgraphs: bumpedSubgraphs };
+    let bumped: ProjectSnapshot = { ...after, subgraphs: bumpedSubgraphs };
+    // Bridge → for-each-point extras sync. When a user edits a
+    // bridge subgraph's IO (adds a `subgraph-input` socket on its
+    // input boundary, or adds an output on its iteration-output
+    // boundary), the owning for-each-point's outer extras need to
+    // update to match — otherwise the new sockets only exist inside
+    // the bridge and the user can't wire anything from the outside.
+    // Detection: bridges whose inputs/outputs reference changed
+    // versus the same id in `before`. Comparing object references is
+    // sufficient because the existing dispatchProject callers
+    // construct fresh subgraph objects only when they mutate.
+    bumped = syncForEachExtrasFromBridges(bumped, beforeById);
     // Reconcile the live position map against every graph in the
     // snapshot. Existing live positions win (so any pending drag isn't
     // clobbered by a save-format carrier); new nodes pick up their
@@ -800,34 +918,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
           return next === cur ? s : { ...s, parentFolderId: next };
         });
 
-      // Auto-cleanup: any `core/for-each-point` whose `__body`
-      // references one of the deleted subgraphs gets its body cleared
-      // (and extraInputs / dangling edges pruned). Without this the
-      // node would stick around with a dead reference, the inspector
-      // showing a non-existent kind. Wrapper instances aren't touched —
-      // those have a long-standing "leave it for the user to delete"
-      // behaviour we don't want to change here.
-      const deletedBodyKinds = new Set<string>();
-      for (const id of pruned.subgraphIds) deletedBodyKinds.add(`subgraph/${id}`);
-      const cleanedMainGraph = cleanupForEachBodyReferences(state.mainGraph, deletedBodyKinds);
-      const cleanedSubgraphs = reparentedSubgraphs.map((s) => {
-        const cleanedInner = cleanupForEachBodyReferences(s.graph, deletedBodyKinds);
-        return cleanedInner === s.graph ? s : { ...s, graph: cleanedInner };
-      });
-
-      // `graph` is whichever inner graph is currently being edited —
-      // keep it in sync with the cleaned mainGraph / subgraphs so the
-      // canvas doesn't render against a stale reference.
-      const nextGraph = state.currentEditingId === 'main'
-        ? cleanedMainGraph
-        : cleanedSubgraphs.find((s) => s.id === state.currentEditingId)?.graph ?? state.graph;
-
+      // No special cleanup for for-each-point body references: a
+      // body wrapper now lives inside the for-each-point's owned
+      // bridge subgraph (a regular `subgraph/<id>` node placed in
+      // bridge.graph). When the body's source subgraph is deleted,
+      // that wrapper's kind becomes a dead reference — same as any
+      // other wrapper instance pointing at a deleted subgraph, which
+      // Sedon's long-standing behaviour leaves in place for the user
+      // to fix or remove.
       dispatchProject({
         ...projectSnapshot(),
         folders,
-        subgraphs: cleanedSubgraphs,
-        mainGraph: cleanedMainGraph,
-        graph: nextGraph,
+        subgraphs: reparentedSubgraphs,
       });
     },
 
@@ -1478,11 +1580,61 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (ids.size === 0) return;
       const state = get();
       const graph = state.graph;
-      const nodes = graph.nodes.filter((n) => ids.has(n.id));
+      // Boundary nodes (subgraph-input / subgraph-output /
+      // iteration-input / iteration-output / bridge-eval) are
+      // load-bearing: a subgraph's inner-graph evaluator looks them
+      // up by id, and deleting one would leave the subgraph
+      // un-evaluatable with no UI to add it back. Silently skip
+      // them — the canvas treats Delete on a boundary node as a
+      // no-op rather than as a footgun.
+      const removable = new Set<string>();
+      for (const id of ids) {
+        const node = graph.nodes.find((n) => n.id === id);
+        if (!node) continue;
+        if (isSubgraphInternalKind(node.kind)) continue;
+        removable.add(id);
+      }
+      if (removable.size === 0) return;
+      const nodes = graph.nodes.filter((n) => removable.has(n.id));
       const edges = graph.edges.filter(
-        (e) => ids.has(e.from.node) || ids.has(e.to.node),
+        (e) => removable.has(e.from.node) || removable.has(e.to.node),
       );
       if (nodes.length === 0) return;
+      // Rest of the action treats the filtered set as the canonical
+      // "ids to delete" — rename for clarity.
+      ids = removable;
+
+      // If any removed node owns a bridge subgraph (for-each-point and
+      // future for-each-* nodes), clean up the orphans atomically. The
+      // bridges live in `state.subgraphs`; once their owner is gone
+      // they're unreachable and would otherwise leak into the saved
+      // project. Done via dispatchProject so the cleanup is part of
+      // the same undo entry as the node removal.
+      const orphanedBridgeIds = new Set<string>();
+      for (const sg of state.subgraphs) {
+        if (sg.owner?.kind === 'iteration-bridge' && ids.has(sg.owner.nodeId)) {
+          orphanedBridgeIds.add(sg.id);
+        }
+      }
+      if (orphanedBridgeIds.size > 0) {
+        const nextGraph: Graph = {
+          ...graph,
+          nodes: graph.nodes.filter((n) => !ids.has(n.id)),
+          edges: graph.edges.filter((e) => !ids.has(e.from.node) && !ids.has(e.to.node)),
+        };
+        const nextMainGraph = state.currentEditingId === 'main'
+          ? nextGraph
+          : state.mainGraph;
+        const nextSubgraphs = state.subgraphs.filter((s) => !orphanedBridgeIds.has(s.id));
+        dispatchProject({
+          ...projectSnapshot(),
+          mainGraph: nextMainGraph,
+          graph: nextGraph,
+          subgraphs: nextSubgraphs,
+        });
+        return;
+      }
+
       dispatch({ kind: 'removeNodes', nodes, edges, prevRootNodeId: state.rootNodeId });
     },
 
@@ -1520,62 +1672,119 @@ export const useEditorStore = create<EditorState>((set, get) => {
       dispatch({ kind: 'replaceGraph', before, after });
     },
 
-    setForEachBody: (nodeId, bodyKind) => {
+    attachIterationBody: (nodeId, bodyKind) => {
       const state = get();
       const node = state.graph.nodes.find((n) => n.id === nodeId);
       if (!node) return;
       if (node.kind !== 'core/for-each-point') return;
+      if (!bodyKind.startsWith('subgraph/')) return;
+      const bodySubgraphId = bodyKind.slice('subgraph/'.length);
+      const bodySg = state.subgraphs.find((s) => s.id === bodySubgraphId);
+      if (!bodySg) return;
 
-      // Resolve the body's input + output declarations directly off
-      // the project's subgraphs — avoids needing the registry built
-      // here. An empty bodyKind clears the body (extras become []).
-      let bodyInputs: ReadonlyArray<InputDef> | undefined;
-      let bodyOutputs: ReadonlyArray<OutputDef> | undefined;
-      if (bodyKind && bodyKind.startsWith('subgraph/')) {
-        const id = bodyKind.slice('subgraph/'.length);
-        const sg = state.subgraphs.find((s) => s.id === id);
-        bodyInputs = sg?.inputs;
-        bodyOutputs = sg?.outputs;
-      }
+      // Resolve iteration context names this kind provides (for the
+      // bridge's iteration-input boundary's outputs + the auto-wire
+      // step below).
+      const ITERATION_KIND = 'core/for-each-point';
+      const providedContext = [
+        { name: 'position', type: 'Vec3' },
+        { name: 'index', type: 'Int' },
+      ];
 
-      // Compute mirrored extraInputs (Float → FloatCloud, Vec3 →
-      // Vec3Cloud, skip implicit names). Inputs are flagged optional
-      // so an un-wired socket falls back to the body's declared
-      // default at eval time rather than blocking the node.
-      const mirroredInputs: InputDef[] = [];
-      if (bodyInputs) {
-        for (const bi of bodyInputs) {
-          if (isImplicitForEachInputName(bi.name)) continue;
-          mirroredInputs.push({
-            name: bi.name,
-            type: liftForEachInputType(bi.type),
-            optional: true,
-          });
+      // Build the bridge SubgraphDef from scratch — its three
+      // boundary nodes plus one wrapper instance of the body. Default
+      // outputs: the body's lifted outputs (or just a placeholder
+      // `scene: Scene` when the body emits Scene).
+      const bridgeId = `bridge-${nodeId}`;
+      const bridgeGraph = createGraph();
+      const inputBoundary = addNode(bridgeGraph, `subgraph-input/${bridgeId}`, {
+        position: { x: 0, y: 0 },
+      });
+      const iterInputBoundary = addNode(bridgeGraph, `iteration-input/${bridgeId}`, {
+        position: { x: 0, y: 200 },
+      });
+      const iterOutputBoundary = addNode(bridgeGraph, `iteration-output/${bridgeId}`, {
+        position: { x: 800, y: 100 },
+      });
+      const bodyWrapper = addNode(bridgeGraph, bodyKind, {
+        position: { x: 400, y: 100 },
+      });
+
+      // Auto-wire iteration-input.<name> → body.<name> for every
+      // body input whose name matches a provided-context name.
+      // Bodies declare regular inputs; the matching happens by name.
+      // Anything the body needs that the iteration kind doesn't
+      // provide stays unwired (user can hand-wire later inside the
+      // bridge editor).
+      const contextNames = new Set(providedContext.map((c) => c.name));
+      for (const bIn of bodySg.inputs) {
+        if (contextNames.has(bIn.name)) {
+          addEdge(bridgeGraph,
+            { node: iterInputBoundary.id, socket: bIn.name },
+            { node: bodyWrapper.id, socket: bIn.name });
         }
       }
 
-      // Mirrored extraOutputs (Scene→Scene merged, Float→FloatCloud,
-      // Vec3→Vec3Cloud, others omitted). `liftForEachOutputType`
-      // returns null for non-cloudable types — those outputs simply
-      // don't appear on the for-each-point.
-      const mirroredOutputs: OutputDef[] = [];
-      if (bodyOutputs) {
-        for (const bo of bodyOutputs) {
-          const lifted = liftForEachOutputType(bo.type);
-          if (lifted === null) continue;
-          mirroredOutputs.push({ name: bo.name, type: lifted });
-        }
+      // Auto-wire body.<name> → iteration-output.<name> for every
+      // body output that's a cloudable type (Scene / Float / Vec3).
+      const bridgeOutputs: OutputDef[] = [];
+      for (const bOut of bodySg.outputs) {
+        if (liftForEachOutputType(bOut.type) === null) continue;
+        bridgeOutputs.push({ name: bOut.name, type: bOut.type });
+        addEdge(bridgeGraph,
+          { node: bodyWrapper.id, socket: bOut.name },
+          { node: iterOutputBoundary.id, socket: bOut.name });
       }
 
-      // Drop edges whose target / source sockets disappear from the
-      // new mirror. Incoming: `points` and `__body` are static and
-      // always survive; extras must be in the new input mirror.
-      // Outgoing: any edge whose `from.socket` is no longer one of
-      // the new output names drops too (Phase C: outputs can change
-      // wholesale when the body swaps).
-      const survivingInputNames = new Set(mirroredInputs.map((m) => m.name));
-      const survivingOutputNames = new Set(mirroredOutputs.map((m) => m.name));
-      const staticInputNames = new Set(['points', '__body']);
+      // Bridge's broadcast inputs: mirror the body's REGULAR inputs
+      // (ones the iteration kind doesn't provide). These get
+      // surfaced on the for-each-point as cloud-lifted extras.
+      const bridgeInputs: InputDef[] = [];
+      const mirroredOuterInputs: InputDef[] = [];
+      for (const bIn of bodySg.inputs) {
+        if (contextNames.has(bIn.name)) continue; // wired via iteration-input
+        bridgeInputs.push({ name: bIn.name, type: bIn.type, optional: true });
+        mirroredOuterInputs.push({
+          name: bIn.name,
+          type: liftForEachInputType(bIn.type),
+          optional: true,
+        });
+        // Wire bridge's subgraph-input → body for broadcast inputs.
+        addEdge(bridgeGraph,
+          { node: inputBoundary.id, socket: bIn.name },
+          { node: bodyWrapper.id, socket: bIn.name });
+      }
+
+      // for-each-point's outer outputs: lift each bridge output.
+      const mirroredOuterOutputs: OutputDef[] = bridgeOutputs.map((o) => ({
+        name: o.name,
+        type: liftForEachOutputType(o.type)!,
+      }));
+
+      const newBridge: SubgraphDef = {
+        id: bridgeId,
+        label: `for-each-point body (${bodySg.label})`,
+        category: 'Subgraphs',
+        inputs: bridgeInputs,
+        outputs: bridgeOutputs,
+        graph: bridgeGraph,
+        inputNodeId: inputBoundary.id,
+        outputNodeId: iterOutputBoundary.id,
+        owner: { kind: 'iteration-bridge', nodeId },
+        iterationKind: ITERATION_KIND,
+      };
+
+      // Replace any existing bridge for this node (re-attaching a
+      // different body discards the previous bridge wholesale). The
+      // existing bridge can be identified by owner.nodeId.
+      const subgraphs = state.subgraphs
+        .filter((s) => !(s.owner?.kind === 'iteration-bridge' && s.owner.nodeId === nodeId))
+        .concat(newBridge);
+
+      // Drop edges to/from now-stale extra sockets on the for-each-point.
+      const survivingInputNames = new Set(mirroredOuterInputs.map((m) => m.name));
+      const survivingOutputNames = new Set(mirroredOuterOutputs.map((m) => m.name));
+      const staticInputNames = new Set(['points', '__bridgeId']);
       const edges: GraphEdge[] = state.graph.edges.filter((e) => {
         if (e.to.node === nodeId) {
           if (staticInputNames.has(e.to.socket)) return true;
@@ -1588,25 +1797,28 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
 
       const nextInputValues: Record<string, unknown> = { ...node.inputValues };
-      nextInputValues.__body = bodyKind;
+      nextInputValues.__bridgeId = bridgeId;
 
       const updatedNode: GraphNode = {
         ...node,
         inputValues: nextInputValues,
-        extraInputs: mirroredInputs,
-        extraOutputs: mirroredOutputs,
+        extraInputs: mirroredOuterInputs,
+        extraOutputs: mirroredOuterOutputs,
       };
 
-      const before = { graph: state.graph, rootNodeId: state.rootNodeId };
-      const after = {
-        graph: {
-          ...state.graph,
-          nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
-          edges,
-        },
-        rootNodeId: state.rootNodeId,
-      };
-      dispatch({ kind: 'replaceGraph', before, after });
+      const nextMainGraph = state.currentEditingId === 'main'
+        ? { ...state.mainGraph, nodes: state.mainGraph.nodes.map((n) => n.id === nodeId ? updatedNode : n), edges: state.mainGraph === state.graph ? edges : state.mainGraph.edges }
+        : state.mainGraph;
+      const nextGraph = state.currentEditingId === 'main'
+        ? nextMainGraph
+        : { ...state.graph, nodes: state.graph.nodes.map((n) => n.id === nodeId ? updatedNode : n), edges };
+
+      dispatchProject({
+        ...projectSnapshot(),
+        subgraphs,
+        mainGraph: nextMainGraph,
+        graph: nextGraph,
+      });
     },
 
     addNodeExtraInput: (nodeId, socketType, namePrefix, baseInputCount) => {

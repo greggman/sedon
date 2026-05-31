@@ -1,5 +1,6 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
-import type { NodeDef, NodeInputs } from '../core/node-def.js';
+import { canonicalJson } from '../core/eval-cache.js';
+import type { InputDef, NodeContext, NodeDef, NodeInputs } from '../core/node-def.js';
 import type {
   FloatCloudValue,
   GrassFieldValue,
@@ -10,63 +11,75 @@ import type {
 } from '../core/resources.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 
-// core/for-each-point — invoke a body subgraph once per point.
+// core/for-each-point — invoke a private BRIDGE subgraph once per
+// point in a PointCloud, then merge the bridge's per-iteration
+// outputs.
 //
-// The point of this node: instance a SUBGRAPH (with full per-iteration
-// parameters) at every point in a PointCloud, then merge the result.
-// Where `core/instance-geometry-on-points` only stamps a fixed mesh
-// and `core/instance-scene-on-points` only stamps a fixed scene, this
-// node lets each iteration's body run a real graph with per-iteration
-// inputs — so you can grow legs as a table widens, place drawers /
-// shelves on per-cell variants of a bookshelf grid, drop pipe-elbow
-// segments at every vertex of a spline, and so on.
+// The bridge graph:
+//   • Owned by this for-each-point instance (1:1, hidden from
+//     Assets). Created on first body attach; lifecycle bound to the
+//     owning node.
+//   • Contains three boundary nodes the user CAN see while editing
+//     the bridge:
+//       - `subgraph-input/<bridgeId>`  ← broadcast values (one per
+//         this node's `extraInputs`, the same value every iteration)
+//       - `iteration-input/<bridgeId>` ← per-iteration context
+//         (outputs named after `providedIterationContext` below —
+//         `position` and `index`)
+//       - `iteration-output/<bridgeId>` → per-iteration outputs that
+//         this node will merge / lift into its own outer outputs
+//   • The user wires the iteration-input outputs into any node they
+//     want — usually a body subgraph wrapper, but conversion /
+//     transform nodes are also fair game. That explicit mapping
+//     keeps bodies independent of the iteration kind: a "place a
+//     thing at a position" body declaring `position: Vec3` works
+//     with for-each-point, for-each-face, for-each-segment, etc.
+//     because each kind exposes a `position` in its
+//     `providedIterationContext`.
 //
-// Body picking: the body is the wrapper kind of a subgraph (e.g.
-// `subgraph/drawer`), stored on each for-each-point instance as the
-// hidden `__body` inputValue. The runtime call is then just
-// `ctx.registry.get(__body).evaluate(ctx, perIterationInputs)` — the
-// body's wrapper handles the inner-graph recursion exactly as a
-// regular wrapper would, so eval-cache fingerprinting and nested
-// subgraphs work for free.
+// Per-iteration eval (this NodeDef):
+//   for each point i in `points`:
+//     ctx.iterationContext            = { position: pc.positions[i], index: i }
+//     ctx.iterationContextFingerprints = { ...same map fingerprinted }
+//     result = bridgeEval.evaluate(ctx, broadcastInputsForIter)
+//     accumulate result into per-output accumulators
+//   build merged / lifted outputs
 //
-// Per-iteration inputs:
-//   • `__position` (Vec3) and `__index` (Int) are AUTO-FED from the
-//     points cloud + the iteration counter. If the body subgraph
-//     declares inputs of these literal names, the for-each-point
-//     hides them from its mirrored socket list and supplies them
-//     directly. Other names pass through.
-//   • Inputs declared as Float / Vec3 on the body are mirrored as
-//     FloatCloud / Vec3Cloud on the for-each-point. A scalar wired
-//     to a *Cloud socket broadcasts (every iteration gets the same
-//     value); a cloud wire delivers `cloud.values[i]` per iteration.
-//     See CORE_CONVERSIONS in core/types.ts for the broadcast rules.
-//   • Inputs of any other type (Texture2D, Material, Scene, …) are
-//     mirrored as-is and always broadcast.
+// Output lifting matches the bridge's declared `iteration-output`
+// types (which become the bridge's SubgraphDef.outputs):
+//   Scene → Scene  (entities concatenated, grass / terrain /
+//                   waterLevel sidecars carried through)
+//   Float → FloatCloud
+//   Vec3  → Vec3Cloud
+//   anything else → omitted (no cloud variant)
 //
-// Output (Phase A): a single Scene merged from every iteration's
-// scene output. Sidecar fields (grass, terrain, waterLevel) are
-// carried through identically to core/scene-merge.
+// Broadcast input typing (mirrored onto this node's surface as
+// extraInputs):
+//   bridge.subgraph-input declares `size: Vec3`  →  for-each-point
+//     extra `size: Vec3Cloud` (so a Vec3Cloud wire indexes per
+//     iteration; a plain Vec3 wire broadcasts via the
+//     Vec3→Vec3Cloud edge-compat rule).
 
-const IMPLICIT_INPUT_NAMES = new Set(['__position', '__index']);
+const PROVIDED_CONTEXT: ReadonlyArray<InputDef> = [
+  { name: 'position', type: 'Vec3', description: 'world-space position of the current point' },
+  { name: 'index', type: 'Int', description: 'zero-based iteration index' },
+];
 
 /**
- * The set of input names that the for-each-point auto-fills per
- * iteration — so the body-input mirroring on the for-each side
- * should skip them. Exposed for the editor's setForEachBody action
- * (and any future drag-drop integration) to use the same allow-list
- * as evaluate().
+ * The per-iteration context names + types this iteration kind
+ * provides. Shared with `defineBridgeSubgraph` so the bridge's
+ * `iteration-input` boundary's outputs match what this node's
+ * evaluate stamps into `ctx.iterationContext`.
  */
-export function isImplicitForEachInputName(name: string): boolean {
-  return IMPLICIT_INPUT_NAMES.has(name);
+export function providedIterationContextFor(): ReadonlyArray<InputDef> {
+  return PROVIDED_CONTEXT;
 }
 
 /**
- * Translate one of the body's declared input types into the
- * matching socket type used on the for-each-point's mirrored input.
- * Float → FloatCloud, Vec3 → Vec3Cloud, everything else passes
- * through unchanged (broadcast-only). The Float→FloatCloud /
- * Vec3→Vec3Cloud edge-compatibility rules let plain scalar sources
- * still wire cleanly to the cloud-typed sockets.
+ * Translate one of the bridge's declared broadcast-input types into
+ * the matching socket type used on the for-each-point's mirrored
+ * input. Float → FloatCloud, Vec3 → Vec3Cloud, everything else
+ * passes through (broadcast-only, no cloud variant exists).
  */
 export function liftForEachInputType(bodyInputType: string): string {
   if (bodyInputType === 'Float') return 'FloatCloud';
@@ -75,25 +88,18 @@ export function liftForEachInputType(bodyInputType: string): string {
 }
 
 /**
- * Translate a body output's type into the type the for-each-point
- * emits on its mirrored output socket. The lifting differs from the
- * INPUT side because outputs accumulate per iteration rather than
- * broadcast:
- *   • `Scene`  → `Scene`  (merged: entity lists concatenated)
- *   • `Float`  → `FloatCloud`  (one value per iteration)
- *   • `Vec3`   → `Vec3Cloud`   (one Vec3 per iteration)
- *   • anything else → null     (no sensible lift — a "cloud of textures"
- *                              isn't a type we model; outputs of those
- *                              types simply aren't surfaced on the
- *                              for-each-point)
- *
- * Returning null means "skip this body output when building the
- * for-each-point's mirrored outputs."
+ * Translate a bridge `iteration-output` type into the for-each-point's
+ * lifted outer-output type. Different from input lifting because
+ * outputs accumulate per iteration rather than broadcast:
+ *   • Scene → Scene  (merged)
+ *   • Float → FloatCloud
+ *   • Vec3  → Vec3Cloud
+ *   • anything else → null (no socket emitted on the for-each-point)
  */
-export function liftForEachOutputType(bodyOutputType: string): string | null {
-  if (bodyOutputType === 'Scene') return 'Scene';
-  if (bodyOutputType === 'Float') return 'FloatCloud';
-  if (bodyOutputType === 'Vec3') return 'Vec3Cloud';
+export function liftForEachOutputType(bridgeOutputType: string): string | null {
+  if (bridgeOutputType === 'Scene') return 'Scene';
+  if (bridgeOutputType === 'Float') return 'FloatCloud';
+  if (bridgeOutputType === 'Vec3') return 'Vec3Cloud';
   return null;
 }
 
@@ -122,11 +128,9 @@ function isSceneValue(v: unknown): v is SceneValue {
   );
 }
 
-// Deref a per-iteration value from whatever the for-each socket
-// received. Clouds are indexed; scalars / textures / materials pass
-// through as broadcasts. Vec3 outputs are emitted as plain
-// `[x, y, z]` arrays since that's how the eval-time representation
-// of a Vec3 input is shaped elsewhere.
+// Convert whatever value the user wired into a broadcast input to a
+// per-iteration scalar/array. Clouds index; everything else passes
+// through (every iteration sees the same value).
 function pickForIteration(value: unknown, i: number, count: number): unknown {
   if (isFloatCloud(value)) {
     return i < count ? value.values[i] : 0;
@@ -142,83 +146,98 @@ function pickForIteration(value: unknown, i: number, count: number): unknown {
 export const forEachPointNode: NodeDef = {
   id: 'core/for-each-point',
   category: 'Iteration',
+  providedIterationContext: PROVIDED_CONTEXT,
   inputs: [
     {
       name: 'points',
       type: 'PointCloud',
       description:
-        'one iteration per point in this cloud. Per-iteration position is auto-fed to the body subgraph as `__position` (and the iteration index as `__index`)',
+        'one iteration per point in this cloud. Per-iteration `position` (Vec3) and `index` (Int) are exposed inside the bridge graph via the iteration-input boundary',
     },
     {
-      // Wrapper kind of the body subgraph (e.g. `subgraph/drawer`).
-      // Phase A: edited as a plain text input. Phase B will replace
-      // this with a drag-an-asset-onto-the-node affordance.
-      name: '__body',
+      // Owned bridge subgraph id (e.g. `bridge-<for-each-point-uuid>`).
+      // Set by the editor's drag-drop / attach-body action. The user
+      // never edits this directly; they edit the bridge graph via the
+      // "Edit iteration" affordance on the node.
+      name: '__bridgeId',
       type: 'String',
       default: '',
       hidden: true,
       description:
-        'internal: the body subgraph wrapper kind (drop an asset onto the node to set this)',
+        'internal: the owned bridge SubgraphDef id (set by drag-drop, edited via "Edit iteration")',
     },
   ],
   outputs: [
+    // Static fallback: an empty Scene output when no bridge is bound
+    // yet. Once a bridge is attached, node.extraOutputs replaces this
+    // with the lifted iteration-output set (one socket per Scene /
+    // Float / Vec3 declared on the bridge's iteration-output boundary).
     {
       name: 'scene',
       type: 'Scene',
       description:
-        'merged scene: every iteration\'s body output, concatenated. Grass / terrain / waterLevel sidecars are carried through like core/scene-merge',
+        'placeholder Scene output when no bridge is attached. Once a body is dropped, the for-each-point\'s outputs are derived from the bridge\'s iteration-output boundary',
     },
   ],
   doc: {
     summary:
-      'Invoke a body subgraph once per point in a PointCloud and merge the result.',
+      'Invoke a body subgraph once per point in a PointCloud, with an explicit bridge graph wiring iteration context to body inputs.',
     sampleGraph: buildForEachPointSample,
     description: `
-Iterates a body subgraph N times — once per point in the wired
-\`points\` cloud — and merges every iteration\'s scene output into a
-single \`Scene\`. Each iteration\'s body receives the per-iteration
-\`__position\` (Vec3) and \`__index\` (Int) implicitly, plus any
-mirrored body inputs from the for-each-point\'s wired sockets.
+Drop a subgraph onto a for-each-point: it becomes the body, invoked
+once per point in the wired \`points\` cloud, with iteration context
+(\`position\`, \`index\`) flowing through a private "bridge" graph the
+node owns.
 
-Mirrored sockets: when a body is set, the for-each-point exposes one
-extra socket per body input. \`Float\` body inputs mirror as
-\`FloatCloud\` (per-iteration value); \`Vec3\` body inputs mirror as
-\`Vec3Cloud\`. Other types (\`Texture2D\`, \`Material\`, \`Scene\`, …)
-mirror as-is and broadcast — the same value flows into every
-iteration. A scalar wired to a \`FloatCloud\` / \`Vec3Cloud\` socket
-broadcasts to all iterations (see the \`Float → FloatCloud\` and
-\`Vec3 → Vec3Cloud\` rules in core/types.ts).
+The bridge graph is editable via the "Edit iteration" affordance.
+Inside it you see three boundary nodes — broadcast inputs from outside
+(\`subgraph-input\`), per-iteration context from the iteration kind
+(\`iteration-input\`), and per-iteration outputs the for-each-point
+will merge / lift (\`iteration-output\`) — plus any body wrappers /
+conversion nodes you place between them. The default drop wires
+context names to body inputs of the same name automatically; deeper
+customization (rename, transform, fork into two body branches) lives
+inside the bridge.
+
+Output lifting on the for-each-point's outer surface:
+- Bridge \`Scene\` output  → for-each-point \`Scene\` (merged across
+  iterations, with grass / terrain / waterLevel sidecars carried
+  through).
+- Bridge \`Float\` output  → \`FloatCloud\` (one value per iteration).
+- Bridge \`Vec3\` output   → \`Vec3Cloud\`.
+
+Bodies stay generic — they declare regular inputs by whatever name
+fits the body's job (\`position\`, \`pos\`, \`worldPos\`, …). The
+bridge graph is where iteration context gets mapped onto the body's
+inputs explicitly, so the same body works under different iteration
+kinds (for-each-point, future for-each-face, for-each-segment) just
+by re-wiring its bridge.
 `,
   },
   async evaluate(ctx, inputs): Promise<Record<string, unknown>> {
     const pc = inputs.points as PointCloudValue | undefined;
-    const bodyKind = (inputs.__body as string | undefined) ?? '';
-    if (!pc || pc.count === 0 || !bodyKind) {
-      // The fallback output shape — `scene: {entities:[]}` — covers
-      // the "no body wired yet" case the static def.outputs declares.
-      // Once a body IS set, extraOutputs replaces def.outputs and
-      // downstream consumers read whatever the body's outputs were
-      // lifted to. The empty fallback here doesn't conflict because
-      // an empty-body for-each can't have any wired outgoing edges
-      // anyway.
+    const bridgeId = (inputs.__bridgeId as string | undefined) ?? '';
+    if (!pc || pc.count === 0 || !bridgeId) {
+      // No bridge attached yet, or no points to iterate. Empty Scene
+      // matches the static default-output declaration so consumers
+      // can still wire optimistically.
       return { scene: { entities: [] } };
     }
 
-    const bodyDef = ctx.registry?.get(bodyKind);
-    if (!bodyDef) {
-      // Body wrapper isn't in the registry (renamed / deleted
-      // subgraph, or a typo in __body). Emit empty values rather
-      // than throw — partial / mid-edit graphs should still preview.
+    const bridgeEval = ctx.registry?.get(`bridge-eval/${bridgeId}`);
+    if (!bridgeEval) {
+      // Bridge isn't in the registry — happens transiently during a
+      // registry rebuild after the bridge subgraph was added, and
+      // permanently if the bridge was deleted from outside. Either
+      // way, empty Scene is the safe fallback.
       return { scene: { entities: [] } };
     }
 
     const n = pc.count;
 
-    // One accumulator per body output, typed by what the output
-    // lifts to. Each output is built up independently per iteration
-    // so a body with multiple outputs (e.g. `result_scene` plus a
-    // computed `area: Float`) lifts each one to the right cloud /
-    // merged type without conflating them.
+    // Accumulators keyed by the bridge's iteration-output names.
+    // Type-derived from the bridge's declared outputs (Scene merged,
+    // Float / Vec3 collected per iteration into a cloud).
     interface SceneAcc {
       kind: 'Scene';
       entities: SceneValue['entities'];
@@ -230,76 +249,73 @@ broadcasts to all iterations (see the \`Float → FloatCloud\` and
     interface Vec3Acc { kind: 'Vec3'; values: Float32Array }
     type Acc = SceneAcc | FloatAcc | Vec3Acc;
     const accumulators = new Map<string, Acc>();
-    for (const o of bodyDef.outputs) {
+    for (const o of bridgeEval.outputs) {
       if (o.type === 'Scene') {
         accumulators.set(o.name, {
-          kind: 'Scene',
-          entities: [],
-          grass: [],
-          terrain: [],
-          waterLevel: undefined,
+          kind: 'Scene', entities: [],
+          grass: [], terrain: [], waterLevel: undefined,
         });
       } else if (o.type === 'Float') {
         accumulators.set(o.name, { kind: 'Float', values: new Float32Array(n) });
       } else if (o.type === 'Vec3') {
         accumulators.set(o.name, { kind: 'Vec3', values: new Float32Array(n * 3) });
       }
-      // Non-cloudable output types (Texture2D, Material, …) silently
-      // skipped: their "cloud of N textures" lift doesn't exist as a
-      // type, so we don't emit a socket for them on the for-each
-      // side either (setForEachBody's `liftForEachOutputType` returns
-      // null for these, mirroring this decision in the editor).
     }
 
     for (let i = 0; i < n; i++) {
-      // Per-iteration inputs: __position / __index auto-fed; every
-      // other body input pulls its value from `inputs[name]` on the
-      // for-each-point's side, indexing into cloud-typed values.
-      const iterInputs: NodeInputs = {};
-      for (const bodyInput of bodyDef.inputs) {
-        if (bodyInput.name === '__position') {
-          const o = i * 3;
-          iterInputs.__position = [pc.positions[o]!, pc.positions[o + 1]!, pc.positions[o + 2]!];
-          continue;
-        }
-        if (bodyInput.name === '__index') {
-          iterInputs.__index = i;
-          continue;
-        }
-        const wired = inputs[bodyInput.name];
-        if (wired === undefined) {
-          iterInputs[bodyInput.name] = bodyInput.default;
-        } else {
-          iterInputs[bodyInput.name] = pickForIteration(wired, i, n);
-        }
+      // Per-iteration context: stamp `position` from the points cloud
+      // and `index` from the loop counter. These names must match
+      // PROVIDED_CONTEXT (and therefore the bridge's iteration-input
+      // boundary outputs) — that's the wire-time contract.
+      const o3 = i * 3;
+      const iterationContext: NodeInputs = {
+        position: [pc.positions[o3]!, pc.positions[o3 + 1]!, pc.positions[o3 + 2]!],
+        index: i,
+      };
+      // Fingerprint each context value individually so the bridge's
+      // iteration-input boundary's fp differs per iteration. Without
+      // this, every iteration's inner eval shares one cache slot and
+      // returns the same output.
+      const iterationContextFingerprints: Record<string, string> = {
+        position: canonicalJson(iterationContext.position),
+        index: `${i}`,
+      };
+
+      // Broadcast inputs: walk the bridge's declared subgraph-input
+      // (== bridgeEval.inputs) and for each, look up what the user
+      // wired into the for-each-point's mirrored extra socket. Cloud
+      // values get index-deref'd to a per-iteration scalar; broadcast
+      // values pass through unchanged (every iteration sees the same).
+      //
+      // Per-input fingerprints reflect the PICKED value, not the
+      // outer cloud. The bridge's subgraph-input boundary mixes
+      // `subgraphInputFingerprints` (which the bridgeEval forwards
+      // from this iteration's `inputFingerprints`) into its own fp,
+      // so without per-iteration picked-value fps every iteration
+      // would cache-hit on iteration 0's broadcast value. The
+      // user-visible symptom was "wiring a random-vec3-cloud to
+      // for-each-point.size makes every cell the same size".
+      const broadcastInputs: NodeInputs = {};
+      const broadcastFingerprints: Record<string, string> = {};
+      for (const bIn of bridgeEval.inputs) {
+        const wired = inputs[bIn.name];
+        const picked = wired === undefined
+          ? bIn.default
+          : pickForIteration(wired, i, n);
+        broadcastInputs[bIn.name] = picked;
+        broadcastFingerprints[bIn.name] = canonicalJson(picked);
       }
 
-      // Per-iteration ctx: the body wrapper forwards `ctx.inputFingerprints`
-      // into the inner eval as `subgraphInputFingerprints`, which the
-      // boundary-input node mixes into its own fingerprint. The
-      // for-each-point's OWN inputFingerprints are constant across
-      // iterations (they describe the cloud-shaped wired values, not
-      // per-iteration scalars), so without an iteration-specific bump
-      // every inner node's fingerprint matches across iterations →
-      // the eval cache returns the same GeometryValue for all N body
-      // calls → the renderer batches all entities at one position.
-      // Stamping `__iter` into the per-call inputFingerprints map
-      // makes each iteration's inner boundary fp unique without
-      // requiring us to fingerprint heterogeneous per-iter values
-      // (Vec3 arrays, Material refs, etc.) ourselves.
-      const iterCtx = {
+      const iterCtx: NodeContext = {
         ...ctx,
-        inputFingerprints: {
-          ...(ctx.inputFingerprints ?? {}),
-          __iter: `${i}`,
-        },
+        iterationContext,
+        iterationContextFingerprints,
+        inputFingerprints: broadcastFingerprints,
       };
-      const result = await bodyDef.evaluate(iterCtx, iterInputs);
+      const result = await bridgeEval.evaluate(iterCtx, broadcastInputs);
       const resultMap = result as Record<string, unknown>;
-      // Distribute this iteration's outputs into the per-output
-      // accumulators. Missing values from the body skip the slot for
-      // this iteration (Float clouds get 0, Vec3 clouds get [0,0,0]).
-      for (const o of bodyDef.outputs) {
+
+      for (const o of bridgeEval.outputs) {
         const acc = accumulators.get(o.name);
         if (!acc) continue;
         const v = resultMap[o.name];
@@ -317,7 +333,6 @@ broadcasts to all iterations (see the \`Float → FloatCloud\` and
           if (typeof v === 'number') acc.values[i] = v;
         } else if (acc.kind === 'Vec3') {
           if (Array.isArray(v) && v.length >= 3) {
-            const o3 = i * 3;
             acc.values[o3] = typeof v[0] === 'number' ? v[0] : 0;
             acc.values[o3 + 1] = typeof v[1] === 'number' ? v[1] : 0;
             acc.values[o3 + 2] = typeof v[2] === 'number' ? v[2] : 0;
@@ -326,7 +341,7 @@ broadcasts to all iterations (see the \`Float → FloatCloud\` and
       }
     }
 
-    // Materialise the accumulators into the final outputs object.
+    // Materialise.
     const out: Record<string, unknown> = {};
     for (const [name, acc] of accumulators) {
       if (acc.kind === 'Scene') {
@@ -341,18 +356,17 @@ broadcasts to all iterations (see the \`Float → FloatCloud\` and
         out[name] = { values: acc.values, count: n } satisfies Vec3CloudValue;
       }
     }
+    // If the bridge has no Scene output but the static def has one,
+    // tack on an empty Scene so the placeholder output still resolves.
+    if (!('scene' in out)) out.scene = { entities: [] };
     return out;
   },
 };
 
-// Docs sample: a 3×3 grid of small red cubes, each stamped by a tiny
-// `docs-fep-cube` body subgraph that takes only the implicit
-// `__position` input. Kept self-contained — the body builds its own
-// material from a solid-color so the sample needs no external wires
-// AND demonstrates the "body is a subgraph with its own internal
-// machinery" point of the node. Defined as a function so the sample
-// allocates fresh objects per render (matches how other sampleGraph
-// callbacks behave).
+// Docs sample: a 3×3 grid of small red cubes. The body is a tiny
+// inline subgraph `docs-fep-cube` with one regular input `position`
+// — bound via the bridge graph's iteration-input.position → body.position
+// wire. Demonstrates the new wiring story without magic names.
 function buildForEachPointSampleBody(): SubgraphDef {
   const id = 'docs-fep-cube';
   const g = createGraph();
@@ -375,7 +389,7 @@ function buildForEachPointSampleBody(): SubgraphDef {
   const entity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW } });
 
   addEdge(g, { node: cube.id, socket: 'geometry' }, { node: place.id, socket: 'geometry' });
-  addEdge(g, { node: inputNode.id, socket: '__position' }, { node: place.id, socket: 'translate' });
+  addEdge(g, { node: inputNode.id, socket: 'position' }, { node: place.id, socket: 'translate' });
   addEdge(g, { node: place.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
   addEdge(g, { node: colour.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
   addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
@@ -385,11 +399,45 @@ function buildForEachPointSampleBody(): SubgraphDef {
     id,
     label: 'Docs cube cell',
     category: 'Docs',
-    inputs: [{ name: '__position', type: 'Vec3' }],
+    inputs: [{ name: 'position', type: 'Vec3' }],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
     inputNodeId: inputNode.id,
     outputNodeId: outputNode.id,
+  };
+}
+
+// Build the bridge subgraph that owns the docs sample for-each-point.
+// Hand-wired (instead of going through the editor's attach-body
+// action) because the docs sample needs to be a pure data builder.
+function buildForEachPointSampleBridge(forEachId: string): SubgraphDef {
+  const id = `bridge-${forEachId}`;
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+
+  const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: 0 } });
+  const iterInputNode = addNode(g, `iteration-input/${id}`, { position: { x: 0, y: ROW } });
+  const iterOutputNode = addNode(g, `iteration-output/${id}`, { position: { x: COL * 3, y: ROW } });
+  const body = addNode(g, 'subgraph/docs-fep-cube', { position: { x: COL * 1.5, y: ROW } });
+
+  // The interesting edge: iteration-input.position → body.position.
+  // This is the bridge mapping the user would author by hand for
+  // anything more elaborate than the default-by-name auto-wire.
+  addEdge(g, { node: iterInputNode.id, socket: 'position' }, { node: body.id, socket: 'position' });
+  addEdge(g, { node: body.id, socket: 'scene' }, { node: iterOutputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'docs for-each bridge',
+    category: 'Subgraphs',
+    inputs: [], // no broadcast inputs for the docs sample
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: iterOutputNode.id,
+    owner: { kind: 'iteration-bridge', nodeId: forEachId },
+    iterationKind: 'core/for-each-point',
   };
 }
 
@@ -406,16 +454,20 @@ function buildForEachPointSample(): {
     position: { x: 0, y: ROW },
     inputValues: { cols: 3, rows: 3, spacing: 0.6 },
   });
+  const fepId = 'fep';
   const fep = addNode(g, 'core/for-each-point', {
-    id: 'fep',
+    id: fepId,
     position: { x: COL, y: ROW },
-    inputValues: { __body: 'subgraph/docs-fep-cube' },
+    inputValues: { __bridgeId: `bridge-${fepId}` },
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
   addEdge(g, { node: grid.id, socket: 'points' }, { node: fep.id, socket: 'points' });
   return {
     graph: g,
     rootNodeId: fep.id,
-    subgraphs: [buildForEachPointSampleBody()],
+    subgraphs: [
+      buildForEachPointSampleBody(),
+      buildForEachPointSampleBridge(fepId),
+    ],
   };
 }

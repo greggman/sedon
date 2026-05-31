@@ -2,11 +2,11 @@ import { addEdge, addNode, createGraph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 
 // A "cabinet cell" subgraph: one parametric rectangular box placed at
-// a world-space position. Designed to be the BODY of a
-// `core/for-each-point` — declares `__position` and `__index` as
-// inputs so the for-each-point can auto-feed the per-iteration
-// position + index, plus `size` (per-cell dimensions) and `material`
-// (broadcast across iterations).
+// a world-space position. A GENERIC body subgraph — its inputs are
+// just named values it consumes, no iteration-context magic. The
+// for-each-point demo's bridge wires `iteration-input.position` → the
+// cell's `position` input by name; `size` and `material` flow as
+// broadcast inputs through the bridge's `subgraph-input` boundary.
 //
 // The two-transform chain inside is what gets the cube to sit ON the
 // grid point (not embedded in it):
@@ -57,9 +57,8 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
 
   addEdge(g, { node: cube.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
   addEdge(g, { node: lift.id, socket: 'geometry' }, { node: place.id, socket: 'geometry' });
-  // The for-each-point auto-feeds these implicit inputs each iteration.
   addEdge(g, { node: inputNode.id, socket: 'size' }, { node: place.id, socket: 'scale' });
-  addEdge(g, { node: inputNode.id, socket: '__position' }, { node: place.id, socket: 'translate' });
+  addEdge(g, { node: inputNode.id, socket: 'position' }, { node: place.id, socket: 'translate' });
   addEdge(g, { node: place.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
   addEdge(g, { node: inputNode.id, socket: 'material' }, { node: entity.id, socket: 'material' });
   addEdge(g, { node: entity.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
@@ -69,14 +68,13 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
     label: 'Cabinet cell',
     category: 'Subgraphs',
     inputs: [
-      // Implicit context inputs — for-each-point auto-feeds these so
-      // they don't need a mirrored socket on the wrapper.
-      { name: '__position', type: 'Vec3' },
-      { name: '__index', type: 'Int' },
-      // Mirrored on the for-each-point's surface. `size` is a Vec3 here
-      // but on the for-each-point side it becomes a Vec3Cloud — wire a
-      // random-vec3-cloud (per-cell variation) or a plain Vec3 (every
-      // cell same size, broadcast).
+      // Generic named inputs. The for-each-point's bridge auto-wires
+      // its iteration-input.position to this `position` input by name
+      // match. `size` and `material` flow as broadcast inputs through
+      // the bridge's subgraph-input boundary — `size` becomes a
+      // Vec3Cloud on the for-each-point's outer surface (so a per-
+      // cell cloud wires straight in, or a plain Vec3 broadcasts).
+      { name: 'position', type: 'Vec3' },
       { name: 'size', type: 'Vec3' },
       { name: 'material', type: 'Material' },
     ],
