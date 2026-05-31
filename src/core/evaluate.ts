@@ -247,13 +247,24 @@ export async function evaluateGraph(
       // type-compat table), an `[r,g,b,a]` `inputValue` (set via the
       // inline picker on an unwired socket), or an `[r,g,b,a]` static
       // default in the InputDef. Whichever path produced an array
-      // value, materialise it to a cached 1×1 Texture2DValue here so
-      // the node sees a normal Texture2D and doesn't need its own
-      // promotion branch. The cache is keyed (device, packed RGBA8),
-      // so 100 nodes asking for the same colour share one GPUTexture.
+      // value, materialise it to a 1×1 Texture2DValue here so the
+      // node sees a normal Texture2D and doesn't need its own
+      // promotion branch.
+      //
+      // Slot key: `<nodeId>|<inputName>`. The texture is owned by
+      // that slot for its lifetime — dragging a colour picker
+      // updates the single pixel via writeTexture instead of
+      // allocating a new GPUTexture per tick. See
+      // resources.ts:getColorTexture for the slot-vs-content cache
+      // trade-off.
       if (input.type === 'Texture2D' && isRgbaArray(inputs[input.name])) {
         if (sharedCtx.device) {
-          inputs[input.name] = getColorTexture(sharedCtx.device, inputs[input.name] as number[]);
+          const slotKey = `${nodeId}|${input.name}`;
+          inputs[input.name] = getColorTexture(
+            sharedCtx.device,
+            slotKey,
+            inputs[input.name] as number[],
+          );
         }
       }
     }

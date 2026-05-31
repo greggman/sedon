@@ -38,19 +38,30 @@ if (!g.GPUTextureUsage) {
   };
 }
 
-// Each `createTexture` call returns a unique object (so the cache
-// key test can detect duplicate allocations). queue.writeTexture
-// is a no-op — we just need it to exist.
-function makeFakeDevice(): { device: GPUDevice; createCount: () => number } {
-  let count = 0;
+// Each `createTexture` call returns a unique object so the
+// allocation tests can distinguish "one texture across N ticks"
+// from "N textures across N ticks". writeTexture is counted too —
+// the drag-time invariant is that the colour-change path goes
+// through writeTexture, NOT createTexture.
+function makeFakeDevice(): {
+  device: GPUDevice;
+  createCount: () => number;
+  writeTextureCount: () => number;
+} {
+  let createCount = 0;
+  let writeTextureCount = 0;
   const device = {
     createTexture: () => {
-      count++;
-      return { __id: count } as unknown as GPUTexture;
+      createCount++;
+      return { __id: createCount } as unknown as GPUTexture;
     },
-    queue: { writeTexture: () => {} },
+    queue: { writeTexture: () => { writeTextureCount++; } },
   } as unknown as GPUDevice;
-  return { device, createCount: () => count };
+  return {
+    device,
+    createCount: () => createCount,
+    writeTextureCount: () => writeTextureCount,
+  };
 }
 
 // Capture-the-input stub: records the resolved input value the
@@ -148,42 +159,72 @@ test('Color → Texture2D wire promotes the wired colour to a 1×1 texture', asy
   assert.ok(got.texture);
 });
 
-test('cache: two nodes with the same colour share a single GPUTexture (renderer batching invariant)', async () => {
-  // Three capture nodes, three inputValue colours: A, A, B. The
-  // cache should produce 2 distinct GPUTexture allocations
-  // (A and B), not 3 — same-color reuse is what keeps the renderer
-  // batching 4×4 cabinets into a few draws.
-  const captures: { def: NodeDef; capture: () => unknown }[] = [];
+test('per-slot caching: one node dragged across N colours allocates ONE texture (drag-time invariant)', async () => {
+  // The user-facing reason this is per-slot, not per-colour: a
+  // color picker drag fires one setInputValue per tick. Per-slot
+  // means the SAME GPUTexture is reused every tick; only its
+  // single pixel is rewritten. createTexture is called once.
+  // Renderer-side, the material's structuralKey
+  // (`gpuObjectId(basecolor.texture)`) doesn't move → existing
+  // bind group reused → no per-tick allocation churn.
+  const { def: captureDef, capture } = makeCaptureNode();
+  const reg = buildRegistry(captureDef);
+  const { device, createCount, writeTextureCount } = makeFakeDevice();
+  const graph = createGraph();
+  const node = addNode(graph, 'test/capture-tex');
+  const colours = [
+    [0.1, 0.2, 0.3, 1],
+    [0.4, 0.5, 0.6, 1],
+    [0.7, 0.8, 0.9, 1],
+    [0.1, 0.2, 0.3, 1], // back to the first colour
+  ];
+  const textures: unknown[] = [];
+  for (const c of colours) {
+    node.inputValues = { tex: c };
+    await evaluateGraph(graph, reg, {
+      rootNodeId: node.id,
+      context: { device } as NodeContext,
+    });
+    textures.push((capture() as Texture2DValue).texture);
+  }
+  assert.equal(createCount(), 1, 'one createTexture for the whole drag, regardless of colour count');
+  assert.equal(writeTextureCount(), colours.length, 'one writeTexture per colour change (incl. the initial paint)');
+  // All four ticks return the same GPUTexture handle.
+  for (let i = 1; i < textures.length; i++) {
+    assert.strictEqual(textures[i], textures[0], `tick ${i} texture handle matches tick 0`);
+  }
+});
+
+test('per-slot caching: two different nodes with the same colour each get their own texture (slot identity wins over content)', async () => {
+  // Trade-off documented in resources.ts: per-slot means "two
+  // materials, same picker colour" don't share a GPUTexture. That
+  // costs the renderer-batching invariant in that uncommon case,
+  // but avoids drag-time churn in the common case. This test pins
+  // the slot-keying behaviour.
   const reg = createNodeRegistry();
-  for (let i = 0; i < 3; i++) {
+  const caps: { def: NodeDef; capture: () => unknown }[] = [];
+  for (let i = 0; i < 2; i++) {
     let captured: unknown = undefined;
     const def: NodeDef = {
-      id: `test/cap-${i}`,
+      id: `test/cap-slot-${i}`,
       category: '__test__',
       inputs: [{ name: 'tex', type: 'Texture2D', default: [1, 0, 0, 1] }],
       outputs: [],
       evaluate(_ctx, inputs) { captured = inputs.tex; return {}; },
     };
-    captures.push({ def, capture: () => captured });
+    caps.push({ def, capture: () => captured });
     reg.register(def);
   }
   const { device, createCount } = makeFakeDevice();
   const graph = createGraph();
-  const a1 = addNode(graph, 'test/cap-0', { inputValues: { tex: [0.5, 0.5, 0.5, 1] } });
-  const a2 = addNode(graph, 'test/cap-1', { inputValues: { tex: [0.5, 0.5, 0.5, 1] } });
-  const b = addNode(graph, 'test/cap-2', { inputValues: { tex: [0.1, 0.2, 0.3, 1] } });
-  // Each node is its own root so the test evaluates them all (eval
-  // walks ancestors from the root; a single root that doesn't
-  // depend on the others would skip them).
-  await evaluateGraph(graph, reg, { rootNodeId: a1.id, context: { device } as NodeContext });
-  await evaluateGraph(graph, reg, { rootNodeId: a2.id, context: { device } as NodeContext });
+  const a = addNode(graph, 'test/cap-slot-0', { inputValues: { tex: [0.5, 0.5, 0.5, 1] } });
+  const b = addNode(graph, 'test/cap-slot-1', { inputValues: { tex: [0.5, 0.5, 0.5, 1] } });
+  await evaluateGraph(graph, reg, { rootNodeId: a.id, context: { device } as NodeContext });
   await evaluateGraph(graph, reg, { rootNodeId: b.id, context: { device } as NodeContext });
-  assert.equal(createCount(), 2, 'one GPUTexture per distinct colour, not per node');
-  const t1 = captures[0]!.capture() as Texture2DValue;
-  const t2 = captures[1]!.capture() as Texture2DValue;
-  const t3 = captures[2]!.capture() as Texture2DValue;
-  assert.strictEqual(t1.texture, t2.texture, 'same colour shares the texture handle');
-  assert.notStrictEqual(t1.texture, t3.texture, 'different colour gets a distinct handle');
+  assert.equal(createCount(), 2, 'two slots → two GPUTextures even with the same colour');
+  const t1 = caps[0]!.capture() as Texture2DValue;
+  const t2 = caps[1]!.capture() as Texture2DValue;
+  assert.notStrictEqual(t1.texture, t2.texture);
 });
 
 test('Texture2D socket receiving a real Texture2DValue (not a color array) passes through unchanged', async () => {

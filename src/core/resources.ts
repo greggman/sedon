@@ -31,6 +31,23 @@ export interface Texture2DValue {
    * they'll sample the current content automatically.
    */
   revision: number;
+  /**
+   * Externally-owned: the eval cache must NOT destroy this texture
+   * when evicting an entry that references it. Set on textures that
+   * live in a long-lived, process-wide cache keyed by content (one
+   * 1×1 GPUTexture per RGBA8 colour, shared across every consumer)
+   * — see `getColorTexture`. Without this flag, dragging a color
+   * picker would: produce a fresh colour each tick → new eval-cache
+   * entry → previous entry evicted by `sweepCache` → its referenced
+   * colour texture destroyed → the global cache still hands that
+   * destroyed handle to the next consumer asking for the same
+   * colour → "Destroyed texture used in a submit" from WebGPU.
+   *
+   * Producer nodes that allocate their OWN GPUTexture per eval (and
+   * expect the eval cache to clean it up) MUST NOT set this — the
+   * default `undefined` keeps the eval-cache ownership contract.
+   */
+  shared?: boolean;
 }
 
 export interface GeometryValue {
@@ -674,7 +691,7 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
  * automatically and a future multi-device renderer doesn't share GPU
  * objects between devices.
  */
-// Per-device, per-RGBA cache of 1×1 textures. Two consumers:
+// Per-slot 1×1 colour textures. Two consumers:
 //   • Texture2D inputs with a color default / color-via-inputValue —
 //     evaluate.ts auto-promotes an `[r,g,b,a]` value into a 1×1
 //     texture at eval time, so the user can wire a Color (or pick a
@@ -682,13 +699,34 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
 //   • The subgraph-input boundary's standalone-preview path for
 //     unwired Texture2D / Material inputs.
 //
-// Keyed by GPUDevice (WeakMap so a device loss + recreate cleans up
-// automatically) then by a packed RGBA8 integer key. Sharing means
-// 16 cabinets with the same albedo color use the same GPUTexture
-// handle — important because the renderer batches by (geometry,
-// material) and a fresh texture handle for each entity would defeat
-// the batching.
-const colorTextureCache = new WeakMap<GPUDevice, Map<number, Texture2DValue>>();
+// Caching is keyed by SLOT, not by colour. A "slot" is one specific
+// `(nodeId, inputName)` pair (or `'__preview__'` for the boundary's
+// standalone fallback). Each slot owns ONE GPUTexture for its
+// lifetime; changing the colour calls `writeTexture` to update the
+// single pixel. This keeps `gpuObjectId(texture)` stable across drag
+// ticks, so:
+//   • the renderer's material `structuralKey` doesn't move →
+//     existing bind group is reused, no per-tick re-allocation
+//   • dragging a color picker is O(1) writeTexture per tick, not
+//     O(N) createTexture / createBindGroup / destroyTexture
+//
+// (An earlier version keyed by packed RGBA8 — shared one texture
+// across consumers of the same colour, which preserved renderer
+// batching when two materials happened to pick the same colour. But
+// that produced hundreds of textures during a drag and required
+// careful cooperation with the eval cache's sweep to avoid
+// destroying still-in-flight handles. The "same colour, different
+// inputs" case is uncommon enough that per-slot is a net win.)
+//
+// Keyed by GPUDevice (WeakMap) so device loss + recreate cleans up
+// automatically. Stale slots (for deleted nodes) leak per session;
+// each is 4 bytes of GPU memory, so it's not worth wiring a removal
+// hook through the node-lifecycle.
+interface ColorSlot {
+  packed: number; // last-written RGBA8 colour
+  value: Texture2DValue;
+}
+const colorSlotCache = new WeakMap<GPUDevice, Map<string, ColorSlot>>();
 const previewMaterialCache = new WeakMap<GPUDevice, MaterialValue>();
 
 function packRgba8(rgba: readonly number[]): number {
@@ -701,44 +739,68 @@ function packRgba8(rgba: readonly number[]): number {
   return (r << 24) | (g << 16) | (b << 8) | a;
 }
 
+function writePixel(device: GPUDevice, texture: GPUTexture, packed: number): void {
+  device.queue.writeTexture(
+    { texture },
+    new Uint8Array([
+      (packed >>> 24) & 0xff,
+      (packed >>> 16) & 0xff,
+      (packed >>> 8) & 0xff,
+      packed & 0xff,
+    ]),
+    { bytesPerRow: 4 },
+    [1, 1],
+  );
+}
+
 /**
- * 1×1 Texture2DValue of a given RGBA color, cached per device. Used
- * by evaluate.ts's auto-promotion path for Color → Texture2D wires
- * and inline-picker color defaults on Texture2D inputs.
+ * 1×1 Texture2DValue for an RGBA colour, owned by the given slot.
+ * Repeat calls for the SAME slot return the SAME Texture2DValue
+ * object (and the same GPUTexture handle), with the pixel
+ * overwritten when the colour changes. Different slots get
+ * different textures, even if they hold the same colour — see the
+ * `colorSlotCache` doc for why.
+ *
+ * `slotKey` is the caller's choice. evaluate.ts uses
+ * `<nodeId>|<inputName>`; the subgraph-input boundary's preview
+ * fallback uses `'__preview__'`.
  */
-export function getColorTexture(device: GPUDevice, rgba: readonly number[]): Texture2DValue {
-  let perDevice = colorTextureCache.get(device);
+export function getColorTexture(
+  device: GPUDevice,
+  slotKey: string,
+  rgba: readonly number[],
+): Texture2DValue {
+  let perDevice = colorSlotCache.get(device);
   if (!perDevice) {
     perDevice = new Map();
-    colorTextureCache.set(device, perDevice);
+    colorSlotCache.set(device, perDevice);
   }
-  const key = packRgba8(rgba);
-  const cached = perDevice.get(key);
-  if (cached) return cached;
+  const packed = packRgba8(rgba);
+  const existing = perDevice.get(slotKey);
+  if (existing) {
+    if (existing.packed !== packed) {
+      writePixel(device, existing.value.texture, packed);
+      existing.packed = packed;
+    }
+    return existing.value;
+  }
   const texture = device.createTexture({
     size: [1, 1],
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
-  device.queue.writeTexture(
-    { texture },
-    new Uint8Array([
-      (key >>> 24) & 0xff,
-      (key >>> 16) & 0xff,
-      (key >>> 8) & 0xff,
-      key & 0xff,
-    ]),
-    { bytesPerRow: 4 },
-    [1, 1],
-  );
+  writePixel(device, texture, packed);
   const value: Texture2DValue = {
     texture,
     format: 'rgba8unorm',
     width: 1,
     height: 1,
     revision: 0,
+    // The eval cache's sweep must NOT destroy this texture — the
+    // slot cache is the sole owner. See Texture2DValue.shared.
+    shared: true,
   };
-  perDevice.set(key, value);
+  perDevice.set(slotKey, { packed, value });
   return value;
 }
 
@@ -748,7 +810,10 @@ export function getColorTexture(device: GPUDevice, rgba: readonly number[]): Tex
  * neutral grey so the geometry preview isn't tinted.
  */
 export function getPreviewTexture2D(device: GPUDevice): Texture2DValue {
-  return getColorTexture(device, [200 / 255, 200 / 255, 200 / 255, 1]);
+  // One global preview slot. Boundary nodes across every subgraph
+  // share this single 1×1 grey texture for their unwired-Texture2D
+  // fallback — the slot key is constant, no churn.
+  return getColorTexture(device, '__preview__', [200 / 255, 200 / 255, 200 / 255, 1]);
 }
 
 export function getPreviewMaterial(device: GPUDevice): MaterialValue {
@@ -970,8 +1035,12 @@ export function walkGpuResources(
   seen.add(value as object);
   const v = value as Record<string, unknown>;
 
-  // Texture2DValue: { texture, format, width, height }
+  // Texture2DValue: { texture, format, width, height }. The `shared`
+  // flag opts out — see getColorTexture: a process-wide cache hands
+  // out the SAME GPUTexture to every consumer asking for the same
+  // colour, so the eval cache must not destroy it on eviction.
   if ('texture' in v && 'format' in v && 'width' in v && 'height' in v) {
+    if (v.shared === true) return;
     const tex = v.texture as Destroyable | undefined;
     if (tex && typeof tex.destroy === 'function') visit(tex);
     return;
