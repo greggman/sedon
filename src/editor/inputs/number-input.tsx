@@ -28,14 +28,17 @@ function findSiblingNumberInput(
   direction: 1 | -1,
 ): HTMLElement | null {
   // Scope: the nearest .sedon-node so Tab walks the inputs on this
-  // node and stops at the boundary (rather than jumping into the
-  // next node in document order, which would feel disorienting on
-  // a dense canvas).
+  // node only. Wraps at the ends — past the last input goes back to
+  // the first; before the first (Shift+Tab) goes to the last. Lets
+  // the user iterate through translate/rotate/scale on a transform
+  // without ever jumping to a different node, which felt random.
   const root = current.closest('.sedon-node') ?? document.body;
   const all = Array.from(root.querySelectorAll<HTMLElement>('[data-sedon-numinput]'));
+  if (all.length === 0) return null;
   const idx = all.indexOf(current);
   if (idx < 0) return null;
-  return all[idx + direction] ?? null;
+  const next = (idx + direction + all.length) % all.length;
+  return all[next] ?? null;
 }
 
 function clamp(v: number, min: number | undefined, max: number | undefined): number {
