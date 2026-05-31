@@ -186,6 +186,11 @@ export function useAppMenus(): TopMenu[] {
     // steps. The recording captures the starting project snapshot up
     // front, so replay reconstructs exactly the state the recording
     // was made against. See src/editor/recording.ts.
+    //
+    // Gated behind `?allow-macros=1` so the menu doesn't appear in
+    // normal sessions — recording is purely a developer / bug-repro
+    // tool right now. The wrapping mechanism in recording.ts (and
+    // `?log-commands=1`) stays available regardless of the menu gate.
     const recording = recordingActive();
     const macroMenu: TopMenu = {
       label: 'Macro',
@@ -211,6 +216,9 @@ export function useAppMenus(): TopMenu[] {
         },
       ],
     };
+    const macrosAllowed =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('allow-macros') === '1';
 
     // ── Help ─────────────────────────────────────────────
     const helpMenu: TopMenu = {
@@ -224,7 +232,14 @@ export function useAppMenus(): TopMenu[] {
       ],
     };
 
-    return [fileMenu, editMenu, addMenu, viewMenu, macroMenu, helpMenu];
+    return [
+      fileMenu,
+      editMenu,
+      addMenu,
+      viewMenu,
+      ...(macrosAllowed ? [macroMenu] : []),
+      helpMenu,
+    ];
   }, [registry, undoLen, redoLen]);
 }
 
