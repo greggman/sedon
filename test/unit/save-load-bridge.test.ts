@@ -50,14 +50,14 @@ function makeBridgeSubgraph(): SubgraphDef {
 
 test('parseSaveFile round-trips a bridge subgraph with owner + iterationKind + version intact', () => {
   const bridge = makeBridgeSubgraph();
-  const file = {
+  const file: import('../../src/editor/save-load.js').SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
     project: {
       graph: createGraph(),
       rootNodeId: 'placeholder',
       subgraphs: [bridge],
     },
-  } as const;
+  };
   const text = serializeSaveFile(file);
   const reparsed = parseSaveFile(text);
   const round = reparsed.project.subgraphs[0]!;
@@ -84,14 +84,14 @@ test('parseSaveFile leaves owner/iterationKind/version absent for ordinary user 
     inputNodeId: inputBoundary.id,
     outputNodeId: outputBoundary.id,
   };
-  const file = {
+  const file: import('../../src/editor/save-load.js').SaveFile = {
     formatVersion: SAVE_FORMAT_VERSION,
     project: {
       graph: createGraph(),
       rootNodeId: 'placeholder',
       subgraphs: [sg],
     },
-  } as const;
+  };
   const text = serializeSaveFile(file);
   const reparsed = parseSaveFile(text);
   const round = reparsed.project.subgraphs[0]!;

@@ -658,6 +658,66 @@ export function requireDevice(ctx: { device?: GPUDevice }): GPUDevice {
   return ctx.device;
 }
 
+/**
+ * Per-device cache of preview-fallback GPU resources used by the
+ * subgraph-input boundary's standalone-preview path. These exist
+ * because GPU-bearing types (Texture2D, Material) can't have a
+ * static InputDef.default — there's no texture handle until a node
+ * runs against a device. Without these, a body subgraph that takes
+ * a Material as input renders blank when previewed standalone (no
+ * wrapper supplying the material, no default, scene-entity emits
+ * an empty scene). A 1×1 grey is what these supply: flat enough
+ * not to bias the user's visual evaluation of the geometry, opaque
+ * enough that lighting reads on the surface.
+ *
+ * Keyed by GPUDevice (WeakMap) so a device loss + recreate cleans up
+ * automatically and a future multi-device renderer doesn't share GPU
+ * objects between devices.
+ */
+const previewTexture2DCache = new WeakMap<GPUDevice, Texture2DValue>();
+const previewMaterialCache = new WeakMap<GPUDevice, MaterialValue>();
+
+export function getPreviewTexture2D(device: GPUDevice): Texture2DValue {
+  const cached = previewTexture2DCache.get(device);
+  if (cached) return cached;
+  const texture = device.createTexture({
+    size: [1, 1],
+    format: 'rgba8unorm',
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_DST,
+  });
+  // Mid-grey: opaque, neutral, doesn't tint geometry preview.
+  device.queue.writeTexture(
+    { texture },
+    new Uint8Array([200, 200, 200, 255]),
+    { bytesPerRow: 4 },
+    [1, 1],
+  );
+  const value: Texture2DValue = {
+    texture,
+    format: 'rgba8unorm',
+    width: 1,
+    height: 1,
+    revision: 0,
+  };
+  previewTexture2DCache.set(device, value);
+  return value;
+}
+
+export function getPreviewMaterial(device: GPUDevice): MaterialValue {
+  const cached = previewMaterialCache.get(device);
+  if (cached) return cached;
+  const value: MaterialValue = {
+    kind: 'pbr',
+    basecolor: getPreviewTexture2D(device),
+    roughness: 0.8,
+    metallic: 0,
+  };
+  previewMaterialCache.set(device, value);
+  return value;
+}
+
 /** Identity tint (RGBA = 1,1,1,1) — multiplied into basecolor → no change. */
 export function identityTint(): Float32Array {
   return new Float32Array([1, 1, 1, 1]);

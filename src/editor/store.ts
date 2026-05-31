@@ -482,6 +482,38 @@ interface ProjectInit {
 // Single source of truth for "turn a ProjectInit into the slice of
 // EditorState it determines." Used both at store creation (line below)
 // AND inside `setGraph` for runtime demo/file loads, so the two paths
+// Types whose values carry live GPU handles (GPUTexture / GPUBuffer)
+// inside them and can't survive a JSON round-trip — `JSON.stringify`
+// of a GPUTexture is `{}`. Storing one as `InputDef.default` would
+// silently corrupt save / fragment-copy / undo. The two entry points
+// that write into `InputDef.default` (`addSubgraphSocketWithEdge` and
+// `setSubgraphInputDefault`) both throw if the type matches. Future
+// callers don't need to remember this — the throw will catch them.
+//
+// Match list is the set of types `systemDefaultForType` deliberately
+// excludes from synchronous defaults (the GPU-bearing types). The
+// `Material` and `Texture2D` boundary-preview defaults live on
+// `ctx.subgraphInputs` from the boundary's lazy fill — they were
+// never meant to flow into `InputDef.default`.
+const NON_SERIALIZABLE_DEFAULT_TYPES = new Set([
+  'Material',
+  'Texture2D',
+  'Geometry',
+  'Heightfield',
+]);
+
+function assertSerializableDefault(type: string, where: string): void {
+  if (NON_SERIALIZABLE_DEFAULT_TYPES.has(type)) {
+    throw new Error(
+      `${where}: cannot store a "${type}" value as InputDef.default — ` +
+        `it carries GPU handles that don't survive JSON round-trip ` +
+        `(save / copy-paste / undo would corrupt the project). The ` +
+        `subgraph-input boundary supplies a per-device preview fallback ` +
+        `at eval time for Material / Texture2D, so no default is needed.`,
+    );
+  }
+}
+
 // can't drift. Returns ONLY the project-derived fields; the caller
 // adds transient runtime bits (evalCache, device, syncCounter).
 function projectStateSlice(init: ProjectInit): Pick<
@@ -1366,6 +1398,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     addSubgraphSocketWithEdge: (subgraphId, side, type, edgeEnd, options) => {
+      if (side === 'input' && options?.capturedDefault !== undefined) {
+        assertSerializableDefault(type, 'addSubgraphSocketWithEdge');
+      }
       const state = get();
       const target = state.subgraphs.find((s) => s.id === subgraphId);
       if (!target) return;
@@ -1484,6 +1519,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!target) return;
       const entry = target.inputs.find((i) => i.name === inputName);
       if (!entry) return;
+      if (value !== undefined) {
+        assertSerializableDefault(entry.type, 'setSubgraphInputDefault');
+      }
       // Cheap identity short-circuit: scalars match by ===, identical
       // array references match too. Different array contents always
       // produce a new reference from a NumberInput / colour picker

@@ -2,6 +2,7 @@ import { canonicalJson } from './eval-cache.js';
 import { evaluateGraph } from './evaluate.js';
 import { addNode, createGraph, type Graph } from './graph.js';
 import type { InputDef, NodeDef, NodeRegistry, OutputDef } from './node-def.js';
+import { getPreviewMaterial, getPreviewTexture2D } from './resources.js';
 
 // A reusable, named graph fragment that exposes a typed I/O boundary. Three
 // node-defs come out of one subgraph definition:
@@ -93,15 +94,33 @@ const MAX_SUBGRAPH_DEPTH = 16;
 // scale[0], material's basecolor.kind, etc.). Boundary docstring at
 // the top of defineSubgraph describes this fallback order — this is
 // just the function that actually implements it.
+//
+// GPU-bound types (Material, Texture2D) have no static default, so
+// `standaloneDefaults` can't carry one. When we have a `device` and
+// the input is still undefined after the static fallbacks, fill in
+// from `getPreviewMaterial` / `getPreviewTexture2D` (1×1 grey, cached
+// per device). This is what makes a subgraph that takes a Material
+// preview standalone in the Assets thumbnail / inner-view instead
+// of rendering empty.
 function resolveBoundaryInputs(
   provided: Record<string, unknown> | undefined,
   standaloneDefaults: Record<string, unknown>,
+  lazyDefaults: ReadonlyArray<{ name: string; type: string }>,
+  device: GPUDevice | undefined,
 ): Record<string, unknown> {
-  if (provided === undefined) return standaloneDefaults;
   const out: Record<string, unknown> = { ...standaloneDefaults };
-  for (const k of Object.keys(provided)) {
-    const v = provided[k];
-    if (v !== undefined) out[k] = v;
+  if (provided !== undefined) {
+    for (const k of Object.keys(provided)) {
+      const v = provided[k];
+      if (v !== undefined) out[k] = v;
+    }
+  }
+  if (device !== undefined) {
+    for (const { name, type } of lazyDefaults) {
+      if (out[name] !== undefined) continue;
+      if (type === 'Material') out[name] = getPreviewMaterial(device);
+      else if (type === 'Texture2D') out[name] = getPreviewTexture2D(device);
+    }
   }
   return out;
 }
@@ -196,17 +215,24 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   //      on points" subgraph previews as "one tree at origin" without
   //      needing any custom preview chain.
   //
-  // Types with no system default (Texture2D, Material, Geometry,
-  // Heightfield, Lighting — anything that requires GPU resources) leave
-  // the input undefined; downstream nodes that depend on them stop
-  // evaluating gracefully.
+  // Types with no system default (Geometry, Heightfield, Lighting —
+  // anything that requires GPU resources and can't be substituted with
+  // a flat placeholder) leave the input undefined; downstream nodes
+  // that depend on them stop evaluating gracefully.
+  // Texture2D + Material DO get a lazy GPU default (1×1 grey, cached
+  // per device) so a body subgraph that takes a Material previews
+  // standalone instead of rendering empty.
   const standaloneDefaults: Record<string, unknown> = {};
+  const lazyDefaults: { name: string; type: string }[] = [];
   for (const i of def.inputs) {
     if (i.default !== undefined) {
       standaloneDefaults[i.name] = i.default;
     } else {
       const sys = systemDefaultForType(i.type);
       if (sys !== undefined) standaloneDefaults[i.name] = sys;
+      else if (i.type === 'Material' || i.type === 'Texture2D') {
+        lazyDefaults.push({ name: i.name, type: i.type });
+      }
     }
   }
   // Shape hash for the boundary-input's fingerprint. Captures only the
@@ -240,7 +266,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
     })),
     fingerprintExtra: inputShape,
     evaluate(ctx) {
-      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults);
+      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults, lazyDefaults, ctx.device);
     },
   };
 
@@ -382,12 +408,16 @@ function defineBridgeSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef
   // Broadcast subgraph-input — identical to a regular subgraph's
   // input boundary. Same standalone-defaults fallback chain.
   const standaloneDefaults: Record<string, unknown> = {};
+  const lazyDefaults: { name: string; type: string }[] = [];
   for (const i of def.inputs) {
     if (i.default !== undefined) {
       standaloneDefaults[i.name] = i.default;
     } else {
       const sys = systemDefaultForType(i.type);
       if (sys !== undefined) standaloneDefaults[i.name] = sys;
+      else if (i.type === 'Material' || i.type === 'Texture2D') {
+        lazyDefaults.push({ name: i.name, type: i.type });
+      }
     }
   }
   const inputShape = canonicalJson(
@@ -405,7 +435,7 @@ function defineBridgeSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef
     })),
     fingerprintExtra: inputShape,
     evaluate(ctx) {
-      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults);
+      return resolveBoundaryInputs(ctx.subgraphInputs, standaloneDefaults, lazyDefaults, ctx.device);
     },
   };
 

@@ -74,8 +74,23 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
       // the bridge's subgraph-input boundary — `size` becomes a
       // Vec3Cloud on the for-each-point's outer surface (so a per-
       // cell cloud wires straight in, or a plain Vec3 broadcasts).
-      { name: 'position', type: 'Vec3' },
-      { name: 'size', type: 'Vec3' },
+      //
+      // Defaults match what the editor's `addSubgraphSocketWithEdge`
+      // captures when the user drags a wire from a node socket onto
+      // the subgraph-input — it copies the target's effective value
+      // so the standalone-preview eval has reasonable values to feed
+      // the inner graph. Hand-built demos used to ship without these
+      // and the standalone preview was degenerate (Vec3 system
+      // default is [0,0,0] → place.scale = [0,0,0] → the geometry
+      // collapses to a point). Keep these in sync with the wired
+      // targets' node-def defaults:
+      //   position → place.translate  (transform default [0,0,0])
+      //   size     → place.scale      (transform default [1,1,1])
+      // `material` has no static default — the subgraph-input
+      // boundary supplies a lazy flat-grey PBR material for
+      // standalone preview when no wrapper provides one.
+      { name: 'position', type: 'Vec3', default: [0, 0, 0] },
+      { name: 'size', type: 'Vec3', default: [1, 1, 1] },
       { name: 'material', type: 'Material' },
     ],
     outputs: [{ name: 'scene', type: 'Scene' }],
