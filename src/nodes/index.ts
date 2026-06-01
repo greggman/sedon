@@ -16,6 +16,7 @@ import { cloudMultiplyNode } from './cloud-multiply.js';
 import { cloudSlopeNode } from './cloud-slope.js';
 import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
+import { bevelNode } from './bevel.js';
 import { coneNode } from './cone.js';
 import { computeNormalsNode } from './compute-normals.js';
 import { cubeNode } from './cube.js';
@@ -99,6 +100,7 @@ export const CORE_NODES = [
   selectByAngleNode,
   selectInvertNode,
   selectCombineNode,
+  bevelNode,
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -193,6 +195,7 @@ export {
   colorizeNode,
   grassBladesNode,
   grassNode,
+  bevelNode,
   coneNode,
   computeNormalsNode,
   cubeNode,
