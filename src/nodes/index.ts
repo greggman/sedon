@@ -18,7 +18,9 @@ import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { coneNode } from './cone.js';
 import { cubeNode } from './cube.js';
+import { curve2dNode } from './curve-2d.js';
 import { cylinderNode } from './cylinder.js';
+import { extrudeOnPathNode } from './extrude-on-path.js';
 import { distanceTransformNode } from './distance-transform.js';
 import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
@@ -31,6 +33,7 @@ import { textureMapRangeNode } from './texture-map-range.js';
 import { textureToHeightfieldMeshNode } from './texture-to-heightfield-mesh.js';
 import { instanceGeometryOnPointsNode } from './instance-geometry-on-points.js';
 import { instanceSceneOnPointsNode } from './instance-scene-on-points.js';
+import { latheNode } from './lathe.js';
 import { leafMeshNode } from './leaf-mesh.js';
 import { leafSkeletonNode } from './leaf-skeleton.js';
 import { levelsNode } from './levels.js';
@@ -38,6 +41,7 @@ import { mapRangeNode } from './map-range.js';
 import { materialNode } from './material.js';
 import { mergeGeometryNode } from './merge-geometry.js';
 import { mergeSceneEntitiesNode } from './merge-scene-entities.js';
+import { mirrorNode } from './mirror.js';
 import { mixNode } from './mix.js';
 import { multiplyNode } from './multiply.js';
 import { normalFromHeightNode } from './normal-from-height.js';
@@ -83,6 +87,10 @@ export const CORE_NODES = [
   cylinderNode,
   coneNode,
   planeNode,
+  curve2dNode,
+  latheNode,
+  extrudeOnPathNode,
+  mirrorNode,
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -179,7 +187,11 @@ export {
   grassNode,
   coneNode,
   cubeNode,
+  curve2dNode,
   cylinderNode,
+  extrudeOnPathNode,
+  latheNode,
+  mirrorNode,
   distributeInVolumeNode,
   distributeOnFacesNode,
   forEachPointNode,

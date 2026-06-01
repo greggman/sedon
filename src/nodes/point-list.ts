@@ -17,7 +17,16 @@ import type { PointCloudValue } from '../core/resources.js';
 // terrain-following Y use a "snap to heightfield" pass (not yet
 // written; tracked separately).
 
-export type Point = [number, number, number];
+// A point tuple stores AT LEAST three numbers (X / Y / Z for the
+// terrain-path use case), but the format is open-ended so other
+// widgets that share the point-list editor can park extra
+// per-anchor data in the trailing slots. The 2D Bezier curve
+// (`core/curve-2d`) uses indices 3..6 for left/right tangent-handle
+// deltas — the editor preserves those slots verbatim on drags,
+// pastes, and selection moves; `normalisePoints` below still
+// projects back to a flat `[x, y, z]` for terrain-path consumers
+// that don't care about the extras.
+export type Point = [number, number, number, ...number[]];
 
 const DEFAULT_POINTS: Point[] = [
   [-5, 0, 0],

@@ -1544,6 +1544,48 @@
 .sedon-pointlist-handle--dragging {
   cursor: grabbing;
 }
+/* Per-handle-type visual differentiation for curve-2d's Bezier
+   editor. AUTO = default yellow; FREE = magenta; ALIGNED = cyan;
+   CORNER = green diamond-ish (we still draw as a circle but a
+   different fill cues the user that this point is a kink). The
+   colours need to stay distinguishable when the anchor is ALSO
+   selected (which overrides fill via .--selected), so the type
+   class is only consulted when un-selected. */
+.sedon-pointlist-handle--free:not(.sedon-pointlist-handle--selected) {
+  fill: #d97cff;
+}
+.sedon-pointlist-handle--aligned:not(.sedon-pointlist-handle--selected) {
+  fill: #7ce0ff;
+}
+.sedon-pointlist-handle--corner:not(.sedon-pointlist-handle--selected) {
+  fill: #b4eb4d;
+}
+/* Tangent dots — smaller, slightly translucent so they read as
+   secondary to the anchor. AUTO previews are drawn faded so the
+   user can see the implicit handle direction without it competing
+   with the anchor visually. */
+.sedon-pointlist-tangent {
+  fill: #ffd54f;
+  stroke: #1a1a1a;
+  stroke-width: 1.5;
+  cursor: grab;
+}
+.sedon-pointlist-tangent:hover {
+  fill: #fff;
+}
+.sedon-pointlist-tangent--auto {
+  fill: rgba(255, 213, 79, 0.45);
+  stroke: rgba(0, 0, 0, 0.4);
+}
+.sedon-pointlist-tangent-line {
+  stroke: rgba(255, 213, 79, 0.6);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.sedon-pointlist-tangent-line--auto {
+  stroke: rgba(255, 213, 79, 0.25);
+  stroke-dasharray: 3 3;
+}
 .sedon-pointlist-marquee {
   fill: rgba(100, 180, 255, 0.15);
   stroke: rgba(100, 180, 255, 0.85);
@@ -1559,6 +1601,22 @@
   border-top: 1px solid #2c2c2c;
   flex: 0 0 auto;
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.sedon-pointlist-reset-view {
+  font-size: 10px;
+  background: #2a2a35;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.sedon-pointlist-reset-view:hover {
+  background: #3a3a48;
 }
 .sedon-pointlist-resize {
   position: absolute;

@@ -19,6 +19,7 @@ import type { GradientStop } from '../nodes/ramp.js';
 import { EnumInput } from './inputs/enum-input.js';
 import { NumberInput } from './inputs/number-input.js';
 import { PointListInput } from './inputs/point-list-editor.js';
+import type { Point } from '../nodes/point-list.js';
 import { StringInput } from './inputs/string-input.js';
 import { VecInput } from './inputs/vec-input.js';
 import { useLayoutStore } from './layout-store.js';
@@ -296,7 +297,7 @@ function inlineEditor(
     return (
       <PointListInput
         value={asPoints(value)}
-        onChange={onChange as (n: [number, number, number][]) => void}
+        onChange={onChange as (n: Point[]) => void}
         nodeId={nodeId}
         panelId={panelId ?? null}
       />
@@ -388,15 +389,21 @@ function isRgbaArray(v: unknown): boolean {
 function asString(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
-function asPoints(v: unknown): [number, number, number][] {
+function asPoints(v: unknown): Point[] {
   if (!Array.isArray(v)) return [];
-  const out: [number, number, number][] = [];
+  const out: Point[] = [];
   for (const p of v) {
     if (!Array.isArray(p) || p.length < 3) continue;
+    // Preserve trailing tuple slots (curve-2d packs left/right handle
+    // deltas at indices 3..6). Only the first three are validated as
+    // finite numbers since the terrain-path use case never relies on
+    // anything past index 2; the curve-2d sampler does its own
+    // safety check on the handle slots.
     const x = typeof p[0] === 'number' && Number.isFinite(p[0]) ? p[0] : 0;
     const y = typeof p[1] === 'number' && Number.isFinite(p[1]) ? p[1] : 0;
     const z = typeof p[2] === 'number' && Number.isFinite(p[2]) ? p[2] : 0;
-    out.push([x, y, z]);
+    const rest = p.slice(3).map((n) => (typeof n === 'number' && Number.isFinite(n) ? n : 0));
+    out.push([x, y, z, ...rest] as Point);
   }
   return out;
 }

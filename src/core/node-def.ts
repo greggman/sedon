@@ -80,6 +80,26 @@ export interface InputDef {
    */
   min?: number;
   max?: number;
+  /**
+   * For `widget: 'point-list'` inputs: invert the vertical screen
+   * axis so that the second authoring coordinate (the index-2 tuple
+   * slot — used as "height/up" by curve-2d profiles) grows UP the
+   * canvas instead of DOWN. The terrain-path convention is Y-down
+   * (top of canvas = far end of the world); curve-2d's mental model
+   * is Y-up (top of canvas = top of the candlestick). This flag
+   * picks the second convention. Ignored by non-point-list editors.
+   */
+  flipY?: boolean;
+  /**
+   * For `widget: 'point-list'` inputs: opt the editor into the
+   * Bezier-handle UI used by `core/curve-2d`. Each tuple's slots
+   * 1..6 are interpreted as `[type, leftDx, leftDy, rightDx,
+   * rightDy]` (slot 0 / 2 remain X / Y as elsewhere); the editor
+   * renders draggable tangent handles for selected anchors and
+   * cycles handle types via ctrl-click. Off (default) gives the
+   * plain terrain-path editor — just anchor dots.
+   */
+  bezierHandles?: boolean;
 }
 
 export interface OutputDef {
