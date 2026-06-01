@@ -62,6 +62,9 @@ import { pathMaskNode } from './path-mask.js';
 import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
+import { selectByAngleNode } from './select-by-angle.js';
+import { selectCombineNode } from './select-combine.js';
+import { selectInvertNode } from './select-invert.js';
 import { slopeFromHeightNode } from './slope-from-height.js';
 import { solidColorNode } from './solid-color.js';
 import { sphereNode } from './sphere.js';
@@ -93,6 +96,9 @@ export const CORE_NODES = [
   extrudeOnPathNode,
   mirrorNode,
   computeNormalsNode,
+  selectByAngleNode,
+  selectInvertNode,
+  selectCombineNode,
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -194,6 +200,9 @@ export {
   cylinderNode,
   extrudeOnPathNode,
   latheNode,
+  selectByAngleNode,
+  selectCombineNode,
+  selectInvertNode,
   mirrorNode,
   distributeInVolumeNode,
   distributeOnFacesNode,

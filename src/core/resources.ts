@@ -70,6 +70,44 @@ export interface CpuMeshRef {
   normals: Float32Array;
   uvs: Float32Array;
   indices: Uint32Array;
+  /**
+   * Transient per-element selection masks. Populated by selection
+   * producer nodes (`core/select-by-angle`, …) and consumed by
+   * topology operators (bevel, chamfer, extrude faces). Each slot is
+   * an optional Uint8Array — 0 = unselected, 1 = selected. Slots are
+   * INDEPENDENT: a mesh can carry an edge selection AND a vertex
+   * selection AND a face selection at once. Most selections only
+   * populate one slot at a time today.
+   *
+   * Indexing:
+   *   • `edges[i]` — keyed by half-edge id (`i ∈ 0..3F-1` for F
+   *     triangle faces). Length must equal `3 * (indices.length / 3)`
+   *     when present. Edges are conceptually undirected, so both
+   *     twins of a selected edge MUST be marked 1 (selection
+   *     producers maintain this; consumers can read either side and
+   *     get the same answer). The half-edge id ordering is the one
+   *     produced by `buildHalfEdgeMesh(this)` — deterministic from
+   *     `indices`, so any downstream node that rebuilds the half-
+   *     edge mesh sees the same numbering.
+   *   • `vertices[v]` — keyed by vertex index. Length matches
+   *     `positions.length / 3`.
+   *   • `faces[f]` — keyed by face index (face f is triangle at
+   *     `indices[f*3..f*3+2]`). Length matches `indices.length / 3`.
+   *
+   * Lifetime: selection is transient and only valid as long as
+   * `indices` (and `positions.length / 3`) don't change. Nodes that
+   * reshape topology (compute-normals splits vertices, future bevel
+   * inserts new faces) drop selection in their output. Nodes that
+   * preserve topology (transform, mirror, uv-transform) pass it
+   * through.
+   */
+  selection?: MeshSelection;
+}
+
+export interface MeshSelection {
+  edges?: Uint8Array;
+  vertices?: Uint8Array;
+  faces?: Uint8Array;
 }
 
 // Materials are a discriminated union of "kinds." Each kind ships its own

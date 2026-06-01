@@ -52,9 +52,19 @@ function getPipeline(device: GPUDevice, format: GPUTextureFormat): GPURenderPipe
       module,
       entryPoint: 'vs_main',
       buffers: [
+        // Per-vertex position.
         {
           arrayStride: 12,
           attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+        },
+        // Per-vertex edge-selected flag. One vec3f per vertex; all
+        // three vertices of a triangle carry the SAME vec3f, encoding
+        // selection of the triangle's three edges (component i = edge
+        // opposite vertex i; the fragment shader picks the relevant
+        // component from the barycentric argmin).
+        {
+          arrayStride: 12,
+          attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }],
         },
       ],
     },
@@ -107,6 +117,35 @@ function expandIndexed(positions: Float32Array, indices: Uint32Array): Float32Ar
   return out;
 }
 
+// Build the per-vertex edge-selection-flag buffer that pairs with the
+// expanded positions. For each triangle F (corners F*3..F*3+2), every
+// one of its three expanded vertices carries the SAME vec3f:
+//   x = selection.edges[F*3 + 1]   ← edge opposite v0 (between v1, v2)
+//   y = selection.edges[F*3 + 2]   ← edge opposite v1 (between v2, v0)
+//   z = selection.edges[F*3 + 0]   ← edge opposite v2 (between v0, v1)
+// The fragment shader picks the component matching the barycentric
+// argmin so the colour switches per-edge. When the mesh has no edge
+// selection mask, every flag is 0 (output is all-zero — the shader's
+// "selected" branch is never taken).
+function buildEdgeFlagBuffer(indices: Uint32Array, edges: Uint8Array | undefined): Float32Array {
+  const out = new Float32Array(indices.length * 3);
+  if (!edges) return out;
+  const faceCount = (indices.length / 3) | 0;
+  for (let f = 0; f < faceCount; f++) {
+    const e0 = (edges[f * 3 + 1] ?? 0) === 1 ? 1.0 : 0.0;
+    const e1 = (edges[f * 3 + 2] ?? 0) === 1 ? 1.0 : 0.0;
+    const e2 = (edges[f * 3 + 0] ?? 0) === 1 ? 1.0 : 0.0;
+    // Replicate to all 3 vertices of this face.
+    for (let k = 0; k < 3; k++) {
+      const dst = (f * 3 + k) * 3;
+      out[dst]     = e0;
+      out[dst + 1] = e1;
+      out[dst + 2] = e2;
+    }
+  }
+  return out;
+}
+
 // Axis-aligned bounding box from a positions buffer. Used to pick a
 // camera distance that frames the whole mesh regardless of authored
 // scale — a 0.1m wisp and a 200m terrain both render full-canvas.
@@ -134,7 +173,13 @@ export function MeshPreview({
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const formatRef = useRef<GPUTextureFormat | null>(null);
   const vbufRef = useRef<GPUBuffer | null>(null);
+  const ebufRef = useRef<GPUBuffer | null>(null);
   const ubufRef = useRef<GPUBuffer | null>(null);
+  // True when the input mesh carries at least one selected edge —
+  // drives the adaptive palette (dim unselected colours so the
+  // selected orange / red pops). Set per mount in the geometry build
+  // effect; read inside the draw closure.
+  const selectionActiveRef = useRef(false);
   const depthRef = useRef<GPUTexture | null>(null);
   const bindGroupRef = useRef<GPUBindGroup | null>(null);
   const vertexCountRef = useRef(0);
@@ -173,10 +218,11 @@ export function MeshPreview({
     const ctx = ctxRef.current;
     const format = formatRef.current;
     const vbuf = vbufRef.current;
+    const ebuf = ebufRef.current;
     const ubuf = ubufRef.current;
     const depth = depthRef.current;
     const bindGroup = bindGroupRef.current;
-    if (!canvas || !ctx || !format || !vbuf || !ubuf || !depth || !bindGroup) return;
+    if (!canvas || !ctx || !format || !vbuf || !ebuf || !ubuf || !depth || !bindGroup) return;
 
     const radius = radiusRef.current;
     const center = centerRef.current;
@@ -197,10 +243,28 @@ export function MeshPreview({
     const proj = perspective((45 * Math.PI) / 180, aspect, near, far);
     const mvp = multiply(proj, view);
 
-    const uniformData = new Float32Array(24);
+    // Uniforms: mvp (16) + back (4) + front (4) + back_selected (4) +
+    // front_selected (4) = 32 floats.
+    //
+    // Palette is ADAPTIVE: when the mesh carries an active selection
+    // (any 1 bit in `selection.edges`), the unselected greens / blues
+    // dim down so the orange / red selected edges actually stand out
+    // — at full saturation the green wireframe washes over too much
+    // surface and the user can barely tell selected from unselected.
+    // No-selection meshes keep the original bright palette so we
+    // don't change look-and-feel for everything else in the project.
+    const active = selectionActiveRef.current;
+    const uniformData = new Float32Array(32);
     uniformData.set(mvp, 0);
-    uniformData.set([0.25, 0.5, 1, 1], 16);
-    uniformData.set([0.25, 1, 0.5, 1], 20);
+    if (active) {
+      uniformData.set([0.08, 0.18, 0.34, 1], 16); // dim back (blue)
+      uniformData.set([0.10, 0.30, 0.18, 1], 20); // dim front (green)
+    } else {
+      uniformData.set([0.25, 0.5, 1, 1],     16); // back (bright blue)
+      uniformData.set([0.25, 1, 0.5, 1],     20); // front (bright green)
+    }
+    uniformData.set([0.95, 0.20, 0.20, 1], 24); // back selected (red)
+    uniformData.set([1.00, 0.55, 0.10, 1], 28); // front selected (orange)
     device.queue.writeBuffer(ubuf, 0, uniformData as BufferSource);
 
     const pipeline = getPipeline(device, format);
@@ -222,6 +286,7 @@ export function MeshPreview({
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.setVertexBuffer(0, vbuf);
+    pass.setVertexBuffer(1, ebuf);
     pass.draw(vertexCountRef.current);
     pass.end();
     device.queue.submit([encoder.finish()]);
@@ -267,8 +332,32 @@ export function MeshPreview({
     device.queue.writeBuffer(vbuf, 0, expanded as BufferSource);
     vbufRef.current = vbuf;
 
+    // Companion buffer: per-vertex edge-selection flags. Same vertex
+    // count as the expanded position buffer; data is per-triangle
+    // (each face's 3 vertices carry identical vec3f).
+    const edgeFlags = buildEdgeFlagBuffer(mesh.indices, mesh.selection?.edges);
+    // Decide whether to use the dimmed-unselected palette: requires
+    // an edges mask AND at least one set bit. An empty mask reads as
+    // "no selection" so the regular bright wireframe shows for
+    // selection nodes that produced a fully-empty selection.
+    let anySelected = false;
+    const edgesMask = mesh.selection?.edges;
+    if (edgesMask) {
+      for (let i = 0; i < edgesMask.length; i++) {
+        if (edgesMask[i]! !== 0) { anySelected = true; break; }
+      }
+    }
+    selectionActiveRef.current = anySelected;
+    const ebuf = device.createBuffer({
+      size: edgeFlags.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(ebuf, 0, edgeFlags as BufferSource);
+    ebufRef.current = ebuf;
+
     const ubuf = device.createBuffer({
-      size: 24 * 4,
+      // 32 floats = mvp(16) + back(4) + front(4) + back_sel(4) + front_sel(4)
+      size: 32 * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     ubufRef.current = ubuf;
@@ -301,9 +390,11 @@ export function MeshPreview({
 
     return () => {
       vbuf.destroy();
+      ebuf.destroy();
       ubuf.destroy();
       depth.destroy();
       if (vbufRef.current === vbuf) vbufRef.current = null;
+      if (ebufRef.current === ebuf) ebufRef.current = null;
       if (ubufRef.current === ubuf) ubufRef.current = null;
       if (depthRef.current === depth) depthRef.current = null;
       bindGroupRef.current = null;
