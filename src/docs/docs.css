@@ -121,6 +121,23 @@ html, body, #root {
   border-bottom: 1px solid var(--doc-border);
 }
 
+/* Sub-heading inside an h2 group on the index page — used by each
+ * category / type cluster. Smaller than h2 (which now marks the
+ * three top-level TOCs: by-category, by-output-type, by-input-type)
+ * so the visual hierarchy reads top→bottom as "table → cluster". */
+.sedon-doc-h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+}
+
+/* Extra top margin on every h2 EXCEPT the first, so the three TOCs
+ * are visibly separated without an explicit `<hr>` between them. */
+.sedon-doc-main > h2 + .sedon-doc-section + h2,
+.sedon-doc-main > h2 ~ h2 {
+  margin-top: 28px;
+}
+
 .sedon-doc-paragraph {
   margin: 0 0 10px;
 }
