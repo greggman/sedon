@@ -17,6 +17,14 @@ see big content from small data since IMO that's one of the biggest
 reasons 3D isn't bigger on the web. for example, the forest above is 9k
 gzipped. I don't know if this is a solution but I thought it might be fun to try to generate a close to AAA 3D web demo of a forest, jungle, dessert, city.
 
+That was inspired by talks like
+[this one on Battlefield](https://www.youtube.com/watch?v=tBXzyoK4GvE)
+and of course things like this
+[city generator](https://www.youtube.com/watch?v=A4qpjZ2SkJQ) and 
+[forest generator](https://www.youtube.com/watch?v=Z_gChm3TNz8).
+The blender ones aren't designed for real time graphics but I thought
+it would be interesting to see what it would take to do real-time.
+
 ## Vibe Coding
 
 This is vibe coded. Yes, I supervise and question implementation
