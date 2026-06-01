@@ -17,8 +17,10 @@ export function generateSphere(radius: number, segments: number, rings: number):
     const phi = (Math.PI * r) / rings;
     const sinPhi = Math.sin(phi);
     const cosPhi = Math.cos(phi);
+    const twoPI = 2 * Math.PI;
     for (let s = 0; s <= segments; s++) {
-      const theta = (2 * Math.PI * s) / segments;
+      // mod twoPI is need to avoid seems for compute-normals
+      const theta = (twoPI * s) / segments % twoPI;
       const x = sinPhi * Math.cos(theta);
       const y = cosPhi;
       const z = sinPhi * Math.sin(theta);

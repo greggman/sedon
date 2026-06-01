@@ -33,12 +33,14 @@ export function generateCone(radius: number, height: number, segments: number): 
   // Slant normal scaling. n_unscaled = (h·cosθ, R, h·sinθ); |.| = √(h²+R²).
   const slantInv = 1 / Math.hypot(height, radius);
   const nY = radius * slantInv;
+  const twoPI = 2 * Math.PI;
 
   for (let r = 0; r < 2; r++) {
     const y = r * height;
     const isApex = r === 1;
     for (let s = 0; s <= segs; s++) {
-      const theta = (2 * Math.PI * s) / segs;
+      // mod twoPI is need to avoid seems for compute-normals
+      const theta = (twoPI * s) / segs % twoPI;
       const cx = Math.cos(theta);
       const cz = Math.sin(theta);
       const i = r * sideRingV + s;

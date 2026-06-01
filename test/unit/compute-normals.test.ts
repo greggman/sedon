@@ -201,6 +201,142 @@ test('compute-normals: degenerate face contributes no smoothing — stays isolat
   for (let i = 3; i < 6; i++) approxNormal(out.normals, out.indices[i]!, [0, 1, 0]);
 });
 
+test('compute-normals: cube PRIMITIVE (24 split verts, per-face UVs) smooths cleanly at cusp=180°', () => {
+  // The cube primitive emits 24 vertices (4 per face) so each face
+  // carries its own UV island. Two faces meeting at a cube edge share
+  // POSITIONS but reference DIFFERENT vertex indices — without the
+  // auto-weld, the half-edge layer treats every edge as a boundary
+  // and the cusp setting has no effect (this was the user's bug).
+  // With weldByPosition (default true), the topology layer welds
+  // coincident positions for the smoothing pass; the output keeps
+  // 24 vertices (per-face UVs survive) but normals smooth across
+  // welded edges as expected.
+  const m = unitCubeSplitVertices();
+  assert.equal(m.positions.length / 3, 24, 'fixture has 24 split verts');
+
+  // cusp=180° → smooth every edge.
+  const smooth = computeNormalsWithCuspAngle(m, RAD(180));
+  assert.equal(smooth.positions.length / 3, 24, 'output preserves per-face UV islands');
+  // At each cube corner there are 3 original vertices (one per
+  // incident face). They share a position and now share the same
+  // averaged normal — the (1,1,1)/√3-style direction at that corner.
+  const r3 = 1 / Math.sqrt(3);
+  function normalsAtPosition(out: typeof smooth, x: number, y: number, z: number): [number, number, number][] {
+    const found: [number, number, number][] = [];
+    for (let i = 0; i < out.positions.length / 3; i++) {
+      if (Math.abs(out.positions[i * 3]!     - x) < 1e-5
+       && Math.abs(out.positions[i * 3 + 1]! - y) < 1e-5
+       && Math.abs(out.positions[i * 3 + 2]! - z) < 1e-5) {
+        found.push([out.normals[i * 3]!, out.normals[i * 3 + 1]!, out.normals[i * 3 + 2]!]);
+      }
+    }
+    return found;
+  }
+  const cornerNormals = normalsAtPosition(smooth, 0.5, 0.5, 0.5);
+  assert.equal(cornerNormals.length, 3, 'three originals at (+h,+h,+h)');
+  for (const n of cornerNormals) {
+    assert.ok(Math.abs(n[0] - r3) < 1e-5, `normal.x off: ${n[0]}`);
+    assert.ok(Math.abs(n[1] - r3) < 1e-5, `normal.y off: ${n[1]}`);
+    assert.ok(Math.abs(n[2] - r3) < 1e-5, `normal.z off: ${n[2]}`);
+  }
+
+  // cusp=30° → every cube edge (90°) is a crease. Output stays at
+  // 24 vertices and each face's 4 corners keep that face's normal.
+  const faceted = computeNormalsWithCuspAngle(m, RAD(30));
+  assert.equal(faceted.positions.length / 3, 24);
+});
+
+test('compute-normals: split-pole vertex (sphere top) smooths to ONE normal at the canonical position when cusp permits', () => {
+  // Mini-cone fan around a single position (the "pole"): N triangles
+  // sharing a tip at (0,0,1) but with N different ORIGINAL vertex
+  // indices for the tip (different UV per longitude wedge — what a
+  // sphere primitive does at its poles). All tip vertices weld to
+  // one canonical, all wedge faces smooth across at cusp=180°, the
+  // averaged tip normal becomes +Z by symmetry, and all N originals
+  // at the tip end up with the SAME normal but their own UVs.
+  const N = 6;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const uvs: number[] = [];
+  // Pole copies (one per wedge), all at (0,0,1) but with distinct UVs.
+  for (let i = 0; i < N; i++) {
+    positions.push(0, 0, 1);
+    uvs.push(i / N, 0); // distinct UV per pole copy
+  }
+  // Ring vertices at z = 0.5, around a circle of radius 0.5.
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    positions.push(0.5 * Math.cos(a), 0.5 * Math.sin(a), 0.5);
+    uvs.push(i / N, 1);
+  }
+  // Wedge i: triangle (pole_i, ring_i, ring_(i+1)).
+  for (let i = 0; i < N; i++) {
+    indices.push(i, N + i, N + ((i + 1) % N));
+  }
+  const m: CpuMeshRef = {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(positions.length),
+    uvs: new Float32Array(uvs),
+    indices: new Uint32Array(indices),
+  };
+  const out = computeNormalsWithCuspAngle(m, RAD(180));
+  // Output should have N pole copies + N ring vertices (UVs preserve
+  // the split). Pole copies should all share the same normal — by the
+  // symmetry of the fan, that's +Z.
+  function poleNormal(idx: number): [number, number, number] {
+    // The k-th input pole maps to whichever output vertex got assigned
+    // to (group, original_v = k). Find by position match.
+    for (let i = 0; i < out.positions.length / 3; i++) {
+      if (Math.abs(out.positions[i * 3]!     - 0)    < 1e-5
+       && Math.abs(out.positions[i * 3 + 1]! - 0)    < 1e-5
+       && Math.abs(out.positions[i * 3 + 2]! - 1)    < 1e-5
+       && Math.abs(out.uvs[i * 2]! - idx / N) < 1e-5) {
+        return [out.normals[i * 3]!, out.normals[i * 3 + 1]!, out.normals[i * 3 + 2]!];
+      }
+    }
+    throw new Error(`couldn't find output pole copy ${idx}`);
+  }
+  const n0 = poleNormal(0);
+  for (let i = 1; i < N; i++) {
+    const ni = poleNormal(i);
+    for (let k = 0; k < 3; k++) {
+      assert.ok(
+        Math.abs(ni[k]! - n0[k]!) < 1e-4,
+        `pole copies ${i} and 0 should share normal; comp ${k}: ${ni[k]} vs ${n0[k]}`,
+      );
+    }
+  }
+  // The shared pole normal points outward — for a cone with apex at
+  // +Z and base at z=0.5, that's a vector with positive Z.
+  assert.ok(n0[2]! > 0.3, `pole normal should point upward; got Z = ${n0[2]}`);
+});
+
+test('compute-normals: weldByPosition = false reverts to pre-fix behaviour (split-vertex cube has no smoothing)', () => {
+  // Hard escape hatch: the option lets a caller skip welding when
+  // they DO want hard edges from intentional vertex splits. With the
+  // 24-vert cube primitive, cusp=180° + weldByPosition=false gives
+  // 24 output vertices with face-aligned normals (every edge is a
+  // boundary because no twin matches across split indices).
+  const m = unitCubeSplitVertices();
+  const out = computeNormalsWithCuspAngle(m, RAD(180), { weldByPosition: false });
+  assert.equal(out.positions.length / 3, 24);
+  // Pick any output vertex at position (+h,+h,+h): its normal is
+  // whatever face's vertex it came from, NOT the averaged +X+Y+Z
+  // direction the welded case produces.
+  for (let i = 0; i < out.positions.length / 3; i++) {
+    const x = out.positions[i * 3]!, y = out.positions[i * 3 + 1]!, z = out.positions[i * 3 + 2]!;
+    if (Math.abs(x - 0.5) < 1e-5 && Math.abs(y - 0.5) < 1e-5 && Math.abs(z - 0.5) < 1e-5) {
+      const nx = out.normals[i * 3]!, ny = out.normals[i * 3 + 1]!, nz = out.normals[i * 3 + 2]!;
+      const r3 = 1 / Math.sqrt(3);
+      const isCornerSmoothed =
+        Math.abs(nx - r3) < 1e-3 && Math.abs(ny - r3) < 1e-3 && Math.abs(nz - r3) < 1e-3;
+      assert.ok(!isCornerSmoothed, 'without welding, normal must NOT be the corner-smoothed direction');
+      return;
+    }
+  }
+  assert.fail('no output vertex found at (+h,+h,+h)');
+});
+
 test('compute-normals: UVs forwarded onto split duplicates from the source vertex', () => {
   // Same 90° fold as before, but with distinct UVs per source vertex.
   // After the cusp split each duplicate should carry the source UV
@@ -263,6 +399,47 @@ function unitCube(): CpuMeshRef {
     uvs: new Float32Array(8 * 2),
     indices: new Uint32Array(indices),
   };
+}
+
+function unitCubeSplitVertices(): CpuMeshRef {
+  // Mimics the Sedon cube primitive: 6 faces × 4 vertices per face =
+  // 24 split vertices. Each face has its own corner copies so per-face
+  // UV islands work. Positions on a [-h, h]³ cube with h=0.5.
+  const h = 0.5;
+  const faces = [
+    // origin, edgeU, edgeV, outward normal direction
+    { o: [+h, -h, +h], eu: [0, 0, -1], ev: [0, +1, 0] }, // +X
+    { o: [-h, -h, -h], eu: [0, 0, +1], ev: [0, +1, 0] }, // -X
+    { o: [-h, +h, +h], eu: [+1, 0, 0], ev: [0, 0, -1] }, // +Y
+    { o: [-h, -h, -h], eu: [+1, 0, 0], ev: [0, 0, +1] }, // -Y
+    { o: [-h, -h, +h], eu: [+1, 0, 0], ev: [0, +1, 0] }, // +Z
+    { o: [+h, -h, -h], eu: [-1, 0, 0], ev: [0, +1, 0] }, // -Z
+  ];
+  const positions = new Float32Array(24 * 3);
+  const uvs = new Float32Array(24 * 2);
+  const indices = new Uint32Array(36);
+  let p = 0, u = 0, ii = 0;
+  const corners: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (let f = 0; f < faces.length; f++) {
+    const face = faces[f]!;
+    const base = f * 4;
+    for (const [ci, cj] of corners) {
+      positions[p]     = face.o[0]! + face.eu[0]! * ci + face.ev[0]! * cj;
+      positions[p + 1] = face.o[1]! + face.eu[1]! * ci + face.ev[1]! * cj;
+      positions[p + 2] = face.o[2]! + face.eu[2]! * ci + face.ev[2]! * cj;
+      uvs[u] = ci;
+      uvs[u + 1] = 1 - cj;
+      p += 3;
+      u += 2;
+    }
+    indices[ii++] = base;
+    indices[ii++] = base + 1;
+    indices[ii++] = base + 2;
+    indices[ii++] = base;
+    indices[ii++] = base + 2;
+    indices[ii++] = base + 3;
+  }
+  return { positions, normals: new Float32Array(24 * 3), uvs, indices };
 }
 
 function perFaceCubeNormals(): [number, number, number][] {

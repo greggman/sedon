@@ -47,11 +47,55 @@
 import type { CpuMeshRef } from '../core/resources.js';
 import { buildHalfEdgeMesh, faceOf, nextInFace, prevInFace } from './half-edge-mesh.js';
 
+export interface ComputeNormalsOptions {
+  /**
+   * Treat vertices at coincident POSITIONS as a single topological
+   * vertex when building the smoothing graph. Most Sedon primitives
+   * (cube, sphere, cylinder, …) emit per-face split vertices so each
+   * face can carry its own UVs — those split vertices share positions
+   * but reference DIFFERENT indices, so the half-edge layer would
+   * otherwise see every edge as a boundary and refuse to smooth
+   * across faces. Welding by position closes that gap for topology
+   * WITHOUT collapsing UVs in the output — each original vertex
+   * still emits its own output vertex (so per-face UV islands are
+   * preserved), the smoothed normal just becomes the same averaged
+   * value across all originals at that position. Default true.
+   */
+  weldByPosition?: boolean;
+}
+
 export function computeNormalsWithCuspAngle(
   mesh: CpuMeshRef,
   cuspAngleRadians: number,
+  options: ComputeNormalsOptions = {},
 ): CpuMeshRef {
-  const half = buildHalfEdgeMesh(mesh);
+  const weldByPosition = options.weldByPosition ?? true;
+  // Build the topology mesh. When welding is on, remap each vertex
+  // index to the LOWEST-indexed vertex at the same position — the
+  // half-edge builder uses these welded indices to detect shared
+  // edges. Original positions / UVs are still indexed by their
+  // ORIGINAL ids for the output pass.
+  let topoIndices = mesh.indices;
+  if (weldByPosition) {
+    const canonical = buildPositionWeldMap(mesh.positions);
+    let needsRemap = false;
+    for (let i = 0; i < mesh.indices.length; i++) {
+      if (canonical[mesh.indices[i]!]! !== mesh.indices[i]!) {
+        needsRemap = true;
+        break;
+      }
+    }
+    if (needsRemap) {
+      topoIndices = new Uint32Array(mesh.indices.length);
+      for (let i = 0; i < mesh.indices.length; i++) {
+        topoIndices[i] = canonical[mesh.indices[i]!]!;
+      }
+    }
+  }
+  const topoMesh: CpuMeshRef = topoIndices === mesh.indices
+    ? mesh
+    : { positions: mesh.positions, normals: mesh.normals, uvs: mesh.uvs, indices: topoIndices };
+  const half = buildHalfEdgeMesh(topoMesh);
   const faceCount = half.faceCount;
   const halfEdgeCount = half.halfEdgeCount;
 
@@ -205,40 +249,89 @@ export function computeNormalsWithCuspAngle(
   }
 
   // ── Pass 4: emit output vertices. ────────────────────────────────
-  // One output vertex per group. positions / UVs are copied from
-  // whichever source vertex this group sits on (same for every
-  // corner in the group, since the group lives at one vertex).
-  const outPositions = new Float32Array(groupCount * 3);
-  const outNormals = new Float32Array(groupCount * 3);
-  const outUvs = new Float32Array(groupCount * 2);
-  const groupSeen = new Uint8Array(groupCount);
+  // One output vertex per UNIQUE (smoothing group, original vertex)
+  // pair — NOT per group. When auto-weld is on, a single group can
+  // span multiple original vertices (e.g. the cube's three per-face
+  // copies of the (+h,+h,+h) corner all live in the same group at
+  // cusp=180°). Each original keeps its own output vertex so its
+  // UV survives; only the normal is shared across the group. When
+  // weld is off (or there's nothing to weld), each group lives at a
+  // single original vertex and the rule collapses to "one per group"
+  // — identical to the prior behaviour.
+  const vCount = mesh.positions.length / 3;
+  const outputId = new Map<number, number>();
+  const outIndices = new Uint32Array(halfEdgeCount);
+  const outPositions: number[] = [];
+  const outNormals: number[] = [];
+  const outUvs: number[] = [];
+  let outCount = 0;
   for (let c = 0; c < halfEdgeCount; c++) {
     const g = cornerGroup[c]!;
-    if (groupSeen[g]) continue;
-    groupSeen[g] = 1;
     const v = mesh.indices[c]!;
-    outPositions[g * 3]     = mesh.positions[v * 3]!;
-    outPositions[g * 3 + 1] = mesh.positions[v * 3 + 1]!;
-    outPositions[g * 3 + 2] = mesh.positions[v * 3 + 2]!;
-    outNormals[g * 3]     = groupNormals[g * 3]!;
-    outNormals[g * 3 + 1] = groupNormals[g * 3 + 1]!;
-    outNormals[g * 3 + 2] = groupNormals[g * 3 + 2]!;
-    outUvs[g * 2]     = mesh.uvs[v * 2]     ?? 0;
-    outUvs[g * 2 + 1] = mesh.uvs[v * 2 + 1] ?? 0;
-  }
-
-  // Output indices: each input corner maps to its group id.
-  const outIndices = new Uint32Array(halfEdgeCount);
-  for (let c = 0; c < halfEdgeCount; c++) {
-    outIndices[c] = cornerGroup[c]!;
+    // Pack (g, v) into one integer key. `g * vCount + v` is a stable
+    // bijection given vCount ≥ 1 (we returned early for empty meshes).
+    const key = g * vCount + v;
+    let id = outputId.get(key);
+    if (id === undefined) {
+      id = outCount++;
+      outputId.set(key, id);
+      outPositions.push(
+        mesh.positions[v * 3]!,
+        mesh.positions[v * 3 + 1]!,
+        mesh.positions[v * 3 + 2]!,
+      );
+      outNormals.push(
+        groupNormals[g * 3]!,
+        groupNormals[g * 3 + 1]!,
+        groupNormals[g * 3 + 2]!,
+      );
+      outUvs.push(
+        mesh.uvs[v * 2]     ?? 0,
+        mesh.uvs[v * 2 + 1] ?? 0,
+      );
+    }
+    outIndices[c] = id;
   }
 
   return {
-    positions: outPositions,
-    normals: outNormals,
-    uvs: outUvs,
+    positions: new Float32Array(outPositions),
+    normals: new Float32Array(outNormals),
+    uvs: new Float32Array(outUvs),
     indices: outIndices,
   };
+}
+
+/**
+ * Map each vertex to the LOWEST-indexed vertex at the same position.
+ * Used by `computeNormalsWithCuspAngle` when `weldByPosition` is on:
+ * the half-edge layer's connectivity is built against the welded
+ * indices, but the original index buffer (and its per-vertex UVs)
+ * survives into the output. Position comparison is exact-float: two
+ * vertices weld iff their position bytes are identical. Procedurally-
+ * generated primitives that emit split-but-coincident vertices (cube,
+ * sphere, cylinder, lathe, …) hit this path; meshes whose neighbours
+ * are at slightly-different floats (after a noise displacement, say)
+ * stay un-welded and the caller can use a separate "merge by
+ * distance" node — not implemented here.
+ */
+function buildPositionWeldMap(positions: Float32Array): Uint32Array {
+  const vCount = (positions.length / 3) | 0;
+  const map = new Uint32Array(vCount);
+  const posMap = new Map<string, number>();
+  for (let v = 0; v < vCount; v++) {
+    const x = positions[v * 3]!;
+    const y = positions[v * 3 + 1]!;
+    const z = positions[v * 3 + 2]!;
+    const key = `${x},${y},${z}`;
+    const existing = posMap.get(key);
+    if (existing === undefined) {
+      posMap.set(key, v);
+      map[v] = v;
+    } else {
+      map[v] = existing;
+    }
+  }
+  return map;
 }
 
 /**

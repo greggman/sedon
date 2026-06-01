@@ -23,6 +23,13 @@ export const computeNormalsNode: NodeDef = {
       description:
         'angle threshold in DEGREES. Edges whose dihedral angle is BELOW this are smoothed (a single vertex normal shared by both faces); edges at-or-above are creased (the vertex is duplicated so each face gets its own normal). 0 = every shared edge is a hard kink (faceted shading), 180 = every shared edge is smooth (continuous normals across the whole surface). 30° is the conventional default — matches Blender Auto Smooth and is right for "smooth curves, sharp corners" on bevelled / lathed / extruded furniture parts.',
     },
+    {
+      name: 'weld_by_position',
+      type: 'Bool',
+      default: true,
+      description:
+        'when ON (default), vertices at coincident positions are treated as a single topological vertex during the smoothing pass. Sedon\'s procedural primitives (cube, sphere, cylinder, lathe) emit per-face SPLIT vertices so each face can carry its own UVs — without welding, the half-edge layer would see every face as an island and refuse to smooth across any edge. Output keeps the original vertex count + UVs intact; only the smoothed normal is shared. Turn OFF for the rare case where you intentionally authored split vertices as hard edges and don\'t want them merged.',
+    },
   ],
   outputs: [
     {
@@ -92,7 +99,8 @@ Edge cases:
     }
     const cuspDegrees = inputs.cusp_angle as number;
     const cuspRadians = cuspDegrees * Math.PI / 180;
-    const out = computeNormalsWithCuspAngle(input.mesh, cuspRadians);
+    const weldByPosition = (inputs.weld_by_position as boolean | undefined) ?? true;
+    const out = computeNormalsWithCuspAngle(input.mesh, cuspRadians, { weldByPosition });
     return {
       geometry: uploadMeshToGpu(device, out, ctx.previousOutput?.geometry as GeometryValue | undefined),
     };

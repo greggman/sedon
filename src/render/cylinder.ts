@@ -26,12 +26,14 @@ export function generateCylinder(radius: number, height: number, segments: numbe
   const uvs = new Float32Array(totalV * 2);
   const indices = new Uint32Array(totalI);
 
+  const twoPI = 2 * Math.PI;
   // Side: bottom ring (r=0) at y=0, top ring (r=1) at y=height. Normals are
   // radial. UV.v runs 0..1 from bottom to top.
   for (let r = 0; r < 2; r++) {
     const y = r * height;
     for (let s = 0; s <= segs; s++) {
-      const theta = (2 * Math.PI * s) / segs;
+      // mod twoPI is need to avoid seems for compute-normals
+      const theta = (2 * Math.PI * s) / segs % twoPI;
       const cx = Math.cos(theta);
       const cz = Math.sin(theta);
       const i = r * sideRingV + s;
