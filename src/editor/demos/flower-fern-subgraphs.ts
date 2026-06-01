@@ -42,13 +42,13 @@ export function buildFlowerSubgraph(): SubgraphDef {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.4, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stemColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 1.2 },
-    inputValues: { color: [0.22, 0.45, 0.18, 1], resolution: 16 },
-  });
   const stemMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 1.2 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+    inputValues: {
+      basecolor: [0.22, 0.45, 0.18, 1],
+      roughness: 0.85,
+      metallic: 0,
+    },
   });
   const stemEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
@@ -86,13 +86,14 @@ export function buildFlowerSubgraph(): SubgraphDef {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { scale: 1, align: true },
   });
-  const petalColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 5.5 },
-    inputValues: { color: [0.92, 0.32, 0.4, 1], resolution: 16 },
-  });
   const petalMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 5.5 },
-    inputValues: { roughness: 0.6, metallic: 0, alpha_cutoff: 0 },
+    inputValues: {
+      basecolor: [0.92, 0.32, 0.4, 1],
+      roughness: 0.6,
+      metallic: 0,
+      alpha_cutoff: 0,
+    },
   });
   const petalEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 4 } });
 
@@ -105,13 +106,13 @@ export function buildFlowerSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW * 6.6 },
     inputValues: { translate: [0, 0.85, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const centerColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 7.6 },
-    inputValues: { color: [0.95, 0.78, 0.18, 1], resolution: 16 },
-  });
   const centerMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 7.6 },
-    inputValues: { roughness: 0.7, metallic: 0 },
+    inputValues: {
+      basecolor: [0.95, 0.78, 0.18, 1],
+      roughness: 0.7,
+      metallic: 0,
+    },
   });
   const centerEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 7 } });
 
@@ -127,18 +128,15 @@ export function buildFlowerSubgraph(): SubgraphDef {
   // Wiring.
   addEdge(g, { node: stemGeo.id, socket: 'geometry' }, { node: stemXform.id, socket: 'geometry' });
   addEdge(g, { node: stemXform.id, socket: 'geometry' }, { node: stemEntity.id, socket: 'geometry' });
-  addEdge(g, { node: stemColor.id, socket: 'texture' }, { node: stemMat.id, socket: 'basecolor' });
   addEdge(g, { node: stemMat.id, socket: 'material' }, { node: stemEntity.id, socket: 'material' });
 
   addEdge(g, { node: petalPoints.id, socket: 'points' }, { node: petalScatter.id, socket: 'points' });
   addEdge(g, { node: petalGeo.id, socket: 'geometry' }, { node: petalScatter.id, socket: 'instance' });
   addEdge(g, { node: petalScatter.id, socket: 'geometry' }, { node: petalEntity.id, socket: 'geometry' });
-  addEdge(g, { node: petalColor.id, socket: 'texture' }, { node: petalMat.id, socket: 'basecolor' });
   addEdge(g, { node: petalMat.id, socket: 'material' }, { node: petalEntity.id, socket: 'material' });
 
   addEdge(g, { node: centerGeo.id, socket: 'geometry' }, { node: centerXform.id, socket: 'geometry' });
   addEdge(g, { node: centerXform.id, socket: 'geometry' }, { node: centerEntity.id, socket: 'geometry' });
-  addEdge(g, { node: centerColor.id, socket: 'texture' }, { node: centerMat.id, socket: 'basecolor' });
   addEdge(g, { node: centerMat.id, socket: 'material' }, { node: centerEntity.id, socket: 'material' });
 
   addEdge(g, { node: stemEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
@@ -174,13 +172,13 @@ export function buildFernSubgraph(): SubgraphDef {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.8, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stalkColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 1.2 },
-    inputValues: { color: [0.28, 0.38, 0.18, 1], resolution: 16 },
-  });
   const stalkMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 1.2 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+    inputValues: {
+      basecolor: [0.28, 0.38, 0.18, 1],
+      roughness: 0.85,
+      metallic: 0,
+    },
   });
   const stalkEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
@@ -220,13 +218,13 @@ export function buildFernSubgraph(): SubgraphDef {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { scale: 1, align: true },
   });
-  const leafColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 5.5 },
-    inputValues: { color: [0.18, 0.42, 0.14, 1], resolution: 16 },
-  });
   const leafMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 5.5 },
-    inputValues: { roughness: 0.75, metallic: 0 },
+    inputValues: {
+      basecolor: [0.18, 0.42, 0.14, 1],
+      roughness: 0.75,
+      metallic: 0,
+    },
   });
   const leafEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 4 } });
 
@@ -240,13 +238,11 @@ export function buildFernSubgraph(): SubgraphDef {
 
   addEdge(g, { node: stalkGeo.id, socket: 'geometry' }, { node: stalkXform.id, socket: 'geometry' });
   addEdge(g, { node: stalkXform.id, socket: 'geometry' }, { node: stalkEntity.id, socket: 'geometry' });
-  addEdge(g, { node: stalkColor.id, socket: 'texture' }, { node: stalkMat.id, socket: 'basecolor' });
   addEdge(g, { node: stalkMat.id, socket: 'material' }, { node: stalkEntity.id, socket: 'material' });
 
   addEdge(g, { node: leafPoints.id, socket: 'points' }, { node: leafScatter.id, socket: 'points' });
   addEdge(g, { node: leafGeo.id, socket: 'geometry' }, { node: leafScatter.id, socket: 'instance' });
   addEdge(g, { node: leafScatter.id, socket: 'geometry' }, { node: leafEntity.id, socket: 'geometry' });
-  addEdge(g, { node: leafColor.id, socket: 'texture' }, { node: leafMat.id, socket: 'basecolor' });
   addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
 
   addEdge(g, { node: stalkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
@@ -281,13 +277,13 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 1.2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const discColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 1.2 },
-    inputValues: { color: [0.34, 0.18, 0.08, 1], resolution: 16 },
-  });
   const discMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 1.2 },
-    inputValues: { roughness: 0.9, metallic: 0 },
+    inputValues: {
+      basecolor: [0.34, 0.18, 0.08, 1],
+      roughness: 0.9,
+      metallic: 0,
+    },
   });
   const discEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
@@ -300,13 +296,13 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW * 2.2 },
     inputValues: { translate: [0, 0.6, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stalkColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 3.2 },
-    inputValues: { color: [0.22, 0.42, 0.16, 1], resolution: 16 },
-  });
   const stalkMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 3.2 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+    inputValues: {
+      basecolor: [0.22, 0.42, 0.16, 1],
+      roughness: 0.85,
+      metallic: 0,
+    },
   });
   const stalkEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 2.8 } });
 
@@ -335,13 +331,13 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: COL * 2, y: ROW * 4.8 },
     inputValues: { scale: 1, align: true },
   });
-  const seedColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 6.6 },
-    inputValues: { color: [0.18, 0.11, 0.06, 1], resolution: 16 },
-  });
   const seedMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 6.6 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+    inputValues: {
+      basecolor: [0.18, 0.11, 0.06, 1],
+      roughness: 0.85,
+      metallic: 0,
+    },
   });
   const seedEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 5.3 } });
 
@@ -375,13 +371,13 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: COL * 2, y: ROW * 8.2 },
     inputValues: { scale: 1, align: true },
   });
-  const petalColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 10 },
-    inputValues: { color: [0.96, 0.78, 0.14, 1], resolution: 16 },
-  });
   const petalMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 10 },
-    inputValues: { roughness: 0.55, metallic: 0 },
+    inputValues: {
+      basecolor: [0.96, 0.78, 0.14, 1],
+      roughness: 0.55,
+      metallic: 0,
+    },
   });
   const petalEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 8.7 } });
 
@@ -398,24 +394,20 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
   // Wiring.
   addEdge(g, { node: discGeo.id, socket: 'geometry' }, { node: discXform.id, socket: 'geometry' });
   addEdge(g, { node: discXform.id, socket: 'geometry' }, { node: discEntity.id, socket: 'geometry' });
-  addEdge(g, { node: discColor.id, socket: 'texture' }, { node: discMat.id, socket: 'basecolor' });
   addEdge(g, { node: discMat.id, socket: 'material' }, { node: discEntity.id, socket: 'material' });
 
   addEdge(g, { node: stalkGeo.id, socket: 'geometry' }, { node: stalkXform.id, socket: 'geometry' });
   addEdge(g, { node: stalkXform.id, socket: 'geometry' }, { node: stalkEntity.id, socket: 'geometry' });
-  addEdge(g, { node: stalkColor.id, socket: 'texture' }, { node: stalkMat.id, socket: 'basecolor' });
   addEdge(g, { node: stalkMat.id, socket: 'material' }, { node: stalkEntity.id, socket: 'material' });
 
   addEdge(g, { node: seedPoints.id, socket: 'points' }, { node: seedScatter.id, socket: 'points' });
   addEdge(g, { node: seedGeo.id, socket: 'geometry' }, { node: seedScatter.id, socket: 'instance' });
   addEdge(g, { node: seedScatter.id, socket: 'geometry' }, { node: seedEntity.id, socket: 'geometry' });
-  addEdge(g, { node: seedColor.id, socket: 'texture' }, { node: seedMat.id, socket: 'basecolor' });
   addEdge(g, { node: seedMat.id, socket: 'material' }, { node: seedEntity.id, socket: 'material' });
 
   addEdge(g, { node: petalPoints.id, socket: 'points' }, { node: petalScatter.id, socket: 'points' });
   addEdge(g, { node: petalGeo.id, socket: 'geometry' }, { node: petalScatter.id, socket: 'instance' });
   addEdge(g, { node: petalScatter.id, socket: 'geometry' }, { node: petalEntity.id, socket: 'geometry' });
-  addEdge(g, { node: petalColor.id, socket: 'texture' }, { node: petalMat.id, socket: 'basecolor' });
   addEdge(g, { node: petalMat.id, socket: 'material' }, { node: petalEntity.id, socket: 'material' });
 
   addEdge(g, { node: discEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });

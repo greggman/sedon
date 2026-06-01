@@ -150,13 +150,13 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW * 5.7 },
     inputValues: { scale: 0.07, align: true },
   });
-  const flowerColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 3, y: ROW * 6.8 },
-    inputValues: { color: [0.95, 0.55, 0.7, 1], resolution: 16 },
-  });
   const flowerMat = addNode(g, 'core/material', {
     position: { x: COL * 4, y: ROW * 6.8 },
-    inputValues: { roughness: 0.8, metallic: 0 },
+    inputValues: {
+      basecolor: [0.95, 0.55, 0.7, 1],
+      roughness: 0.8,
+      metallic: 0,
+    },
   });
   const flowerEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 5, y: ROW * 6 },
@@ -201,7 +201,6 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
   addEdge(g, { node: flowerPoints.id, socket: 'points' }, { node: flowerScatter.id, socket: 'points' });
   addEdge(g, { node: flowerGeo.id, socket: 'geometry' }, { node: flowerScatter.id, socket: 'instance' });
   addEdge(g, { node: flowerScatter.id, socket: 'geometry' }, { node: flowerEntity.id, socket: 'geometry' });
-  addEdge(g, { node: flowerColor.id, socket: 'texture' }, { node: flowerMat.id, socket: 'basecolor' });
   addEdge(g, { node: flowerMat.id, socket: 'material' }, { node: flowerEntity.id, socket: 'material' });
 
   // Merge: trunk + leaves + flowers → final scene.
@@ -269,13 +268,13 @@ export function buildBranchBushSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: 0 },
     inputValues: { sides: 6, uvTilingV: 1.2 },
   });
-  const stemColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 3, y: -ROW * 1.5 },
-    inputValues: { color: [0.25, 0.18, 0.1, 1], resolution: 16 },
-  });
   const stemMat = addNode(g, 'core/material', {
     position: { x: COL * 4, y: -ROW * 0.7 },
-    inputValues: { roughness: 0.9, metallic: 0 },
+    inputValues: {
+      basecolor: [0.25, 0.18, 0.1, 1],
+      roughness: 0.9,
+      metallic: 0,
+    },
   });
   const stemEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 5, y: 0 },
@@ -336,7 +335,6 @@ export function buildBranchBushSubgraph(): SubgraphDef {
   addEdge(g, { node: tropism.id, socket: 'branches' }, { node: leafPoints.id, socket: 'branches' });
 
   addEdge(g, { node: tube.id, socket: 'geometry' }, { node: stemEntity.id, socket: 'geometry' });
-  addEdge(g, { node: stemColor.id, socket: 'texture' }, { node: stemMat.id, socket: 'basecolor' });
   addEdge(g, { node: stemMat.id, socket: 'material' }, { node: stemEntity.id, socket: 'material' });
 
   addEdge(g, { node: leafPoints.id, socket: 'points' }, { node: leafScatter.id, socket: 'points' });
@@ -440,13 +438,13 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW * 2.7 },
     inputValues: { scale: 1, align: true },
   });
-  const frondColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 3, y: ROW * 4.2 },
-    inputValues: { color: [0.18, 0.45, 0.18, 1], resolution: 16 },
-  });
   const frondMat = addNode(g, 'core/material', {
     position: { x: COL * 4, y: ROW * 4.2 },
-    inputValues: { roughness: 0.85, metallic: 0 },
+    inputValues: {
+      basecolor: [0.18, 0.45, 0.18, 1],
+      roughness: 0.85,
+      metallic: 0,
+    },
   });
   const frondEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 5, y: ROW * 3 },
@@ -473,7 +471,6 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
   addEdge(g, { node: frondPoints.id, socket: 'points' }, { node: frondScatter.id, socket: 'points' });
   addEdge(g, { node: frondGeo.id, socket: 'geometry' }, { node: frondScatter.id, socket: 'instance' });
   addEdge(g, { node: frondScatter.id, socket: 'geometry' }, { node: frondEntity.id, socket: 'geometry' });
-  addEdge(g, { node: frondColor.id, socket: 'texture' }, { node: frondMat.id, socket: 'basecolor' });
   addEdge(g, { node: frondMat.id, socket: 'material' }, { node: frondEntity.id, socket: 'material' });
 
   addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
@@ -582,13 +579,13 @@ export function buildBranchPineSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 2.7 },
     inputValues: { scale: 0.09, align: true },
   });
-  const needleColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 4, y: ROW * 4.2 },
-    inputValues: { color: [0.08, 0.28, 0.16, 1], resolution: 16 },
-  });
   const needleMat = addNode(g, 'core/material', {
     position: { x: COL * 5, y: ROW * 4.2 },
-    inputValues: { roughness: 0.9, metallic: 0 },
+    inputValues: {
+      basecolor: [0.08, 0.28, 0.16, 1],
+      roughness: 0.9,
+      metallic: 0,
+    },
   });
   const needleEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 6, y: ROW * 3 },
@@ -616,7 +613,6 @@ export function buildBranchPineSubgraph(): SubgraphDef {
   addEdge(g, { node: needlePoints.id, socket: 'points' }, { node: needleScatter.id, socket: 'points' });
   addEdge(g, { node: needleGeo.id, socket: 'geometry' }, { node: needleScatter.id, socket: 'instance' });
   addEdge(g, { node: needleScatter.id, socket: 'geometry' }, { node: needleEntity.id, socket: 'geometry' });
-  addEdge(g, { node: needleColor.id, socket: 'texture' }, { node: needleMat.id, socket: 'basecolor' });
   addEdge(g, { node: needleMat.id, socket: 'material' }, { node: needleEntity.id, socket: 'material' });
 
   addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });

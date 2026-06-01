@@ -104,13 +104,13 @@ function buildTreeSubgraph(opts: {
       scale: [1, 1, 1],
     },
   });
-  const foliageColor = addNode(g, 'core/solid-color', {
-    position: { x: COL * 2, y: ROW * 3 },
-    inputValues: { color: opts.foliage.color, resolution: 16 },
-  });
   const foliageMat = addNode(g, 'core/material', {
     position: { x: COL * 3, y: ROW * 3 },
-    inputValues: { roughness: 0.9, metallic: 0 },
+    inputValues: {
+      basecolor: opts.foliage.color,
+      roughness: 0.9,
+      metallic: 0,
+    },
   });
   const foliageEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 4, y: ROW * 2 },
@@ -137,7 +137,6 @@ function buildTreeSubgraph(opts: {
   // Foliage chain.
   addEdge(g, { node: foliageGeo.id, socket: 'geometry' }, { node: foliageLift.id, socket: 'geometry' });
   addEdge(g, { node: foliageLift.id, socket: 'geometry' }, { node: foliageEntity.id, socket: 'geometry' });
-  addEdge(g, { node: foliageColor.id, socket: 'texture' }, { node: foliageMat.id, socket: 'basecolor' });
   addEdge(g, { node: foliageMat.id, socket: 'material' }, { node: foliageEntity.id, socket: 'material' });
 
   // Tree merge → boundary output.

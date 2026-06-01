@@ -40,13 +40,13 @@ export function createGrassTestDemo(): {
   });
 
   // Flat terrain material (muted soil so the grass reads against it).
-  const soil = addNode(g, 'core/solid-color', {
-    position: { x: COL, y: ROW },
-    inputValues: { color: [0.22, 0.18, 0.12, 1], resolution: 64 },
-  });
   const terrainMat = addNode(g, 'core/material', {
     position: { x: COL * 2, y: ROW },
-    inputValues: { roughness: 1, metallic: 0 },
+    inputValues: {
+      basecolor: [0.22, 0.18, 0.12, 1],
+      roughness: 1,
+      metallic: 0,
+    },
   });
   const terrainEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 3, y: ROW },
@@ -141,7 +141,6 @@ export function createGrassTestDemo(): {
   addEdge(g, { node: heightFloat.id, socket: 'texture' }, { node: heightScale.id, socket: 'texture' });
   addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: terrainMesh.id, socket: 'texture' });
   addEdge(g, { node: terrainMesh.id, socket: 'geometry' }, { node: terrainEntity.id, socket: 'geometry' });
-  addEdge(g, { node: soil.id, socket: 'texture' }, { node: terrainMat.id, socket: 'basecolor' });
   addEdge(g, { node: terrainMat.id, socket: 'material' }, { node: terrainEntity.id, socket: 'material' });
 
   // Density = patchy noise × path-mask (path carved bare).

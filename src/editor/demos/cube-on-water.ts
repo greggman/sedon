@@ -27,14 +27,16 @@ export function createCubeOnWaterDemo(): {
   const COL = 220;
   const ROW = 160;
 
-  // Pink texture → PBR material.
-  const pinkColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: 0 },
-    inputValues: { color: [1.0, 0.42, 0.71, 1.0], resolution: 32 },
-  });
+  // Pink PBR material. basecolor is a colour default → evaluate.ts
+  // auto-promotes to a 1×1 texture; no upstream solid-color node
+  // needed for a flat fill.
   const cubeMaterial = addNode(g, 'core/material', {
     position: { x: COL, y: 0 },
-    inputValues: { roughness: 0.4, metallic: 0 },
+    inputValues: {
+      basecolor: [1.0, 0.42, 0.71, 1.0],
+      roughness: 0.4,
+      metallic: 0,
+    },
   });
 
   // Cube geometry, translated so its bottom sits on the water at y=0.
@@ -66,7 +68,6 @@ export function createCubeOnWaterDemo(): {
 
   const output = addNode(g, 'core/output', { position: { x: COL * 4, y: ROW / 2 } });
 
-  addEdge(g, { node: pinkColor.id, socket: 'texture' }, { node: cubeMaterial.id, socket: 'basecolor' });
   addEdge(g, { node: cubeGeom.id, socket: 'geometry' }, { node: cubeXform.id, socket: 'geometry' });
   addEdge(g, { node: cubeXform.id, socket: 'geometry' }, { node: cubeEntity.id, socket: 'geometry' });
   addEdge(g, { node: cubeMaterial.id, socket: 'material' }, { node: cubeEntity.id, socket: 'material' });

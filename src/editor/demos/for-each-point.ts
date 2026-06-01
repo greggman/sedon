@@ -59,14 +59,15 @@ export function createForEachPointDemo(): {
     inputValues: { min: [0.3, 0.4, 0.2], max: [0.5, 0.8, 0.4], seed: 5 },
   });
 
-  // Wood material — broadcast to every cabinet.
-  const woodColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: 0 },
-    inputValues: { color: [0.55, 0.36, 0.20, 1.0], resolution: 32 },
-  });
+  // Wood material — broadcast to every cabinet. Flat basecolor →
+  // inline colour default, no solid-color node needed.
   const woodMaterial = addNode(g, 'core/material', {
     position: { x: COL, y: 0 },
-    inputValues: { roughness: 0.7, metallic: 0 },
+    inputValues: {
+      basecolor: [0.55, 0.36, 0.20, 1.0],
+      roughness: 0.7,
+      metallic: 0,
+    },
   });
 
   // Stable for-each-point id so the bridge id (`bridge-<forEachId>`)
@@ -92,13 +93,13 @@ export function createForEachPointDemo(): {
     position: { x: 0, y: ROW * 2.5 },
     inputValues: { size: [4, 4], divisions: [1, 1] },
   });
-  const groundColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 3.5 },
-    inputValues: { color: [0.32, 0.38, 0.30, 1.0], resolution: 32 },
-  });
   const groundMaterial = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 3 },
-    inputValues: { roughness: 0.95, metallic: 0 },
+    inputValues: {
+      basecolor: [0.32, 0.38, 0.30, 1.0],
+      roughness: 0.95,
+      metallic: 0,
+    },
   });
   const groundEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 2, y: ROW * 2.7 },
@@ -117,10 +118,8 @@ export function createForEachPointDemo(): {
   addEdge(g, { node: grid.id, socket: 'points' }, { node: sizes.id, socket: 'points' });
   addEdge(g, { node: sizes.id, socket: 'values' }, { node: forEach.id, socket: 'size' });
 
-  addEdge(g, { node: woodColor.id, socket: 'texture' }, { node: woodMaterial.id, socket: 'basecolor' });
   addEdge(g, { node: woodMaterial.id, socket: 'material' }, { node: forEach.id, socket: 'material' });
 
-  addEdge(g, { node: groundColor.id, socket: 'texture' }, { node: groundMaterial.id, socket: 'basecolor' });
   addEdge(g, { node: ground.id, socket: 'geometry' }, { node: groundEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMaterial.id, socket: 'material' }, { node: groundEntity.id, socket: 'material' });
 

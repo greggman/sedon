@@ -20,13 +20,13 @@ export function createCityDemo(): { graph: Graph; rootNodeId: string } {
     position: { x: 0, y: 0 },
     inputValues: { size: [24, 24], divisions: [1, 1] },
   });
-  const groundColor = addNode(g, 'core/solid-color', {
-    position: { x: 0, y: ROW * 1.2 },
-    inputValues: { color: [0.13, 0.13, 0.15, 1], resolution: 16 },
-  });
   const groundMat = addNode(g, 'core/material', {
     position: { x: COL, y: ROW * 1.2 },
-    inputValues: { roughness: 0.92, metallic: 0 },
+    inputValues: {
+      basecolor: [0.13, 0.13, 0.15, 1],
+      roughness: 0.92,
+      metallic: 0,
+    },
   });
   const groundEntity = addNode(g, 'core/scene-entity', {
     position: { x: COL * 2, y: ROW * 0.6 },
@@ -98,7 +98,6 @@ export function createCityDemo(): { graph: Graph; rootNodeId: string } {
 
   // Edges.
   // Ground.
-  addEdge(g, { node: groundColor.id, socket: 'texture' }, { node: groundMat.id, socket: 'basecolor' });
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: groundEntity.id, socket: 'material' });
 
