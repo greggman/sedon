@@ -2,6 +2,7 @@ import type { Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import { createBasicScene } from '../initial-graph.js';
 import type { CameraState } from '../store.js';
+import { createBevelTestDemo } from './bevel-test.js';
 import { createCityDemo } from './city.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
 import { createForEachPointDemo } from './for-each-point.js';
@@ -38,4 +39,5 @@ export const DEMOS: Demo[] = [
   { id: 'multi-layer-terrain', label: 'Terrain Layers (test)', build: createMultiLayerTerrainDemo },
   { id: 'cube-on-water', label: 'Cube on Water (reflection test)', build: createCubeOnWaterDemo },
   { id: 'for-each-point', label: 'For-Each-Point (cabinet test)', build: createForEachPointDemo },
+  { id: 'bevel-test', label: 'Bevel (direction test)', build: createBevelTestDemo },
 ];

@@ -79,31 +79,40 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
   // OTHER face-level edge sits on the INCOMING side. Walk from
   // prevInFace(he) backward through unselected diagonals until a
   // selected edge is found. Returns the canonical "other endpoint"
-  // (the origin of the found incoming edge).
+  // (the origin of the found incoming edge) plus a flag indicating
+  // whether the walk landed on a SELECTED edge (= the corner is
+  // 2-cut in this face) or hit a boundary first (= 1-cut, and the
+  // returned vertex is the unselected edge's far endpoint, useful
+  // as a fallback for cuts).
   function otherEndCanonForIncomingSide(he: number): number {
+    return otherEndIncomingDetailed(he).otherCan;
+  }
+  function otherEndIncomingDetailed(he: number): { otherCan: number; is2Cut: boolean } {
     let cur = prevInFace(he);
     while (edges[cur] !== 1) {
       const t = half.twin[cur]!;
-      if (t < 0) break; // open-mesh boundary — use this edge's origin
+      if (t < 0) return { otherCan: half.origin[cur]!, is2Cut: false };
       cur = prevInFace(t);
+      if (cur === prevInFace(he) || cur === he) return { otherCan: half.origin[he]!, is2Cut: false };
     }
-    return half.origin[cur]!;
+    return { otherCan: half.origin[cur]!, is2Cut: true };
   }
 
   // For corner `he` at V whose INCOMING edge (`prevInFace(he)`) is
   // selected, the OTHER face-level edge sits on the OUTGOING side.
   // Walk from `he` forward through unselected diagonals.
   function otherEndCanonForOutgoingSide(he: number): number {
+    return otherEndOutgoingDetailed(he).otherCan;
+  }
+  function otherEndOutgoingDetailed(he: number): { otherCan: number; is2Cut: boolean } {
     let cur = he;
     while (edges[cur] !== 1) {
       const t = half.twin[cur]!;
-      if (t < 0) {
-        // Boundary: use cur's destination as the other end.
-        return half.origin[nextInFace(cur)]!;
-      }
+      if (t < 0) return { otherCan: half.origin[nextInFace(cur)]!, is2Cut: false };
       cur = nextInFace(t);
+      if (cur === he) return { otherCan: half.origin[nextInFace(he)]!, is2Cut: false };
     }
-    return half.origin[nextInFace(cur)]!;
+    return { otherCan: half.origin[nextInFace(cur)]!, is2Cut: true };
   }
 
   // ── Output accumulators ─────────────────────────────────────────
@@ -120,25 +129,49 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
   //                                  strip and cap)
   const outVertexByKey = new Map<string, number>();
 
+  // Per-emission context: each face polygon, strip, and corner cap
+  // gets its OWN context string so the inner-insets / outer cuts
+  // they share by position don't dedup to a single output vertex.
+  // Different faces / strips / caps need DIFFERENT vertex copies
+  // because they want DIFFERENT per-vertex normals (the face's
+  // normal vs the chamfer's 45° normal vs the cap's body-diagonal
+  // normal). Within a single emission, the context stays constant
+  // so repeated references to the same position dedup correctly.
+  //
+  // When emitContext is empty (legacy path used by the partial-
+  // bevel arc subdivision code), behaviour matches the old global
+  // dedup. New face/strip/cap emission code sets it explicitly.
+  let emitContext = '';
+  let emitNormal: [number, number, number] = [0, 1, 0];
+  const setEmitContext = (ctx: string, normal: [number, number, number]): void => {
+    emitContext = ctx;
+    emitNormal = normal;
+  };
+
   const getUnaffectedVertex = (origV: number): number => {
-    const key = `u:${origV}`;
+    const key = `u:${emitContext}:${origV}`;
     const existing = outVertexByKey.get(key);
     if (existing !== undefined) return existing;
     const idx = outPositions.length / 3;
     outPositions.push(mesh.positions[origV * 3]!, mesh.positions[origV * 3 + 1]!, mesh.positions[origV * 3 + 2]!);
     outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
-    outNormals.push(0, 1, 0);
+    // Unaffected vertices on partial bevels preserve their original
+    // normal — the user's mesh authored a specific (possibly smooth)
+    // normal at V, and the bevel didn't modify anything around V.
+    // If the input has no normal (length 0), fall back to the
+    // emission's face normal.
+    const inx = mesh.normals[origV * 3] ?? 0;
+    const iny = mesh.normals[origV * 3 + 1] ?? 0;
+    const inz = mesh.normals[origV * 3 + 2] ?? 0;
+    const ilen = Math.hypot(inx, iny, inz);
+    if (ilen > 1e-6) outNormals.push(inx / ilen, iny / ilen, inz / ilen);
+    else outNormals.push(emitNormal[0], emitNormal[1], emitNormal[2]);
     outVertexByKey.set(key, idx);
     return idx;
   };
 
-  // Inset at original vertex `origV` (canonical vCan) along the
-  // OTHER face-level edge whose other end has canonical id
-  // `otherCan`. Same (origV, otherCan) → same output vertex; same
-  // (vCan, otherCan) but different origV → distinct output vertices
-  // (so per-face UV islands survive split-vertex primitives).
   const getInsetVertex = (origV: number, vCan: number, otherCan: number): number => {
-    const key = `i:${origV}:${otherCan}`;
+    const key = `i:${emitContext}:${origV}:${otherCan}`;
     const existing = outVertexByKey.get(key);
     if (existing !== undefined) return existing;
     const idx = outPositions.length / 3;
@@ -148,24 +181,14 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     const len = Math.hypot(dx, dy, dz) || 1;
     outPositions.push(vx + width * dx / len, vy + width * dy / len, vz + width * dz / len);
     outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
-    outNormals.push(0, 1, 0);
+    outNormals.push(emitNormal[0], emitNormal[1], emitNormal[2]);
     outVertexByKey.set(key, idx);
     return idx;
   };
 
-  // Inner inset vertex at a 2-cut cluster boundary corner. Sits
-  // INSIDE the face at the intersection of the two "shrunk-inward"
-  // boundary edges — the corner of the inset region you'd see if
-  // you imagined the cube face shrunk by `width` along each cube
-  // edge. Position = V + width × (unit(other1 − V) + unit(other2 − V)),
-  // which lands at the corner of the inset rectangle (for a 90°
-  // corner, that's V + w·√2 along the angle bisector). Used to
-  // triangulate each cluster polygon as N corner-cut triangles +
-  // 1 inner polygon, instead of a centroid-fan that spokes 8 lines
-  // across the face.
   const getInnerInsetVertex = (origV: number, vCan: number, other1: number, other2: number): number => {
     const lo = Math.min(other1, other2), hi = Math.max(other1, other2);
-    const key = `n:${origV}:${lo}:${hi}`;
+    const key = `n:${emitContext}:${origV}:${lo}:${hi}`;
     const existing = outVertexByKey.get(key);
     if (existing !== undefined) return existing;
     const idx = outPositions.length / 3;
@@ -179,7 +202,7 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     const dz = (o1z / l1 + o2z / l2);
     outPositions.push(vx + width * dx, vy + width * dy, vz + width * dz);
     outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
-    outNormals.push(0, 1, 0);
+    outNormals.push(emitNormal[0], emitNormal[1], emitNormal[2]);
     outVertexByKey.set(key, idx);
     return idx;
   };
@@ -204,6 +227,26 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     outVertexByKey.set(key, idx);
     return idx;
   };
+
+  // Face normal of triangle `f` from its winding. Cube clusters
+  // are coplanar so any tri in the cluster gives the right result.
+  function triFaceNormal(f: number): [number, number, number] {
+    const i0 = mesh.indices[f * 3]!;
+    const i1 = mesh.indices[f * 3 + 1]!;
+    const i2 = mesh.indices[f * 3 + 2]!;
+    const ax = mesh.positions[i0 * 3]!, ay = mesh.positions[i0 * 3 + 1]!, az = mesh.positions[i0 * 3 + 2]!;
+    const bx = mesh.positions[i1 * 3]!, by = mesh.positions[i1 * 3 + 1]!, bz = mesh.positions[i1 * 3 + 2]!;
+    const cx = mesh.positions[i2 * 3]!, cy = mesh.positions[i2 * 3 + 1]!, cz = mesh.positions[i2 * 3 + 2]!;
+    const nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+    const ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+    const nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    const len = Math.hypot(nx, ny, nz) || 1;
+    return [nx / len, ny / len, nz / len];
+  }
+  function normalize3(x: number, y: number, z: number): [number, number, number] {
+    const len = Math.hypot(x, y, z) || 1;
+    return [x / len, y / len, z / len];
+  }
 
   // ── (a) Face-CLUSTER polygon emission ──────────────────────────
   // Per-triangle emission would produce overlapping polygons on
@@ -282,10 +325,23 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     // inset region — that's the "A3" point from the user's mental
     // model: where the two shrunk-inward boundary edges meet
     // inside the face.
+    // Record per-corner state. cutCount tells how many adjacent edges
+    // at this corner are selected (0, 1, or 2). otherEnds[] records
+    // the canonical OTHER endpoints of those selected edges (needed
+    // by getInnerInsetVertex). The actual outer-cut output vertices
+    // are emitted LAZILY — only the 1-cut polygon path uses them,
+    // and emitting them eagerly added spurious verts to the output
+    // (e.g., a fully-bevelled cube would emit 48 unused outer cuts
+    // alongside its 24 inner insets, bloating the mesh 3×).
     interface CornerRec {
-      cuts: number[];      // 0, 1, or 2 output vertex indices.
-      otherEnds: number[]; // canonical other-end ids of the cuts.
-      unaffected: number;  // output vertex for 0-cut corners; -1 otherwise.
+      cutCount: 0 | 1 | 2;
+      otherEnds: number[];
+      // For 1-cut corners: the canonical other-end of the unselected
+      // edge whose face direction the lone cut sits along. The other
+      // (selected) edge's other-end is in otherEnds[0]. We need both
+      // to identify the cut for emission below.
+      cutOtherCan: number;  // unused when cutCount !== 1
+      cutIncomingSide: boolean; // 1-cut: is the cut on the incoming side?
       origV: number;
       vCan: number;
     }
@@ -297,50 +353,87 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
       const vCan = half.origin[cHe]!;
       const incomingSelected = edges[prevHe] === 1;
       const outgoingSelected = edges[cHe] === 1;
-      const rec: CornerRec = { cuts: [], otherEnds: [], unaffected: -1, origV, vCan };
+      const rec: CornerRec = {
+        cutCount: 0,
+        otherEnds: [],
+        cutOtherCan: -1,
+        cutIncomingSide: false,
+        origV,
+        vCan,
+      };
       if (incomingSelected) {
         // Cut perpendicular to incoming, along outgoing direction.
         const otherCan = half.origin[nextInFace(cHe)]!;
-        rec.cuts.push(getInsetVertex(origV, vCan, otherCan));
         rec.otherEnds.push(otherCan);
-      }
-      if (!incomingSelected && !outgoingSelected) {
-        rec.unaffected = getUnaffectedVertex(origV);
+        rec.cutOtherCan = otherCan;
+        rec.cutIncomingSide = true;
+        rec.cutCount = 1;
       }
       if (outgoingSelected) {
         // Cut perpendicular to outgoing, along incoming direction.
         const otherCan = half.origin[prevHe]!;
-        rec.cuts.push(getInsetVertex(origV, vCan, otherCan));
         rec.otherEnds.push(otherCan);
+        if (rec.cutCount === 0) {
+          rec.cutOtherCan = otherCan;
+          rec.cutIncomingSide = false;
+        }
+        rec.cutCount = (rec.cutCount + 1) as 0 | 1 | 2;
       }
       corners.push(rec);
     }
 
-    // Emit corner-cut triangles + build the inner polygon. The
-    // inner polygon uses the inner-inset vertex at 2-cut corners
-    // (A3-style); the cut itself at 1-cut corners; the original
-    // vertex at 0-cut corners. Fan-triangulate the inner polygon
-    // from its first vertex — the only "long" triangulation edges
-    // are within the inset region of the face, never crossing
-    // corner cuts.
-    const innerPolygon: number[] = [];
+    // Build the face polygon's boundary cycle. The face polygon is
+    // the original face cluster shrunk inward by `width` along every
+    // selected boundary edge. Per corner:
+    //   • 2-cut → 1 boundary vertex = inner inset (corner of the
+    //     shrunk region; the two adjacent selected edges meet here
+    //     in inset-space). NOT the outer cuts — those would put the
+    //     polygon boundary on the original cube edges, leaving the
+    //     chamfer strips with nowhere to go.
+    //   • 1-cut → 2 boundary vertices = V itself + the single outer
+    //     cut. The polygon goes from V (preserved on the unselected
+    //     side) across to the cut (where the chamfer begins). Order
+    //     in CCW depends on which side is selected.
+    //   • 0-cut → 1 boundary vertex = V itself (unaffected).
+    //
+    // For a cube face with all 12 edges selected (every corner is
+    // 2-cut), this collapses to a 4-vertex quad of inner insets,
+    // not the 8-outer-cut-plus-4-inner-Steiner octagon earlier
+    // versions emitted. The new topology matches what Blender's
+    // bevel produces — each cube face becomes a smaller quad, each
+    // cube edge becomes a 45° chamfer rectangle, each cube corner
+    // a 3-vertex cap triangle. Outer cuts only appear at 1-cut
+    // corners (partial bevels).
+    // Face-cluster normal: any tri in the cluster gives the same
+    // answer (the cluster is, by construction, the maximal coplanar
+    // set of tris joined by unselected diagonals). Use it for all
+    // verts emitted by this face polygon so the shaded preview
+    // sees flat shading on the face — without needing a downstream
+    // compute-normals pass.
+    setEmitContext(`f:${cluster}`, triFaceNormal(faceOf(he)));
+
+    const polygonVerts: number[] = [];
     for (const c of corners) {
-      if (c.cuts.length === 2) {
-        const innerIdx = getInnerInsetVertex(c.origV, c.vCan, c.otherEnds[0]!, c.otherEnds[1]!);
-        // Corner-cut triangle (cuts[0], inner, cuts[1]) winds CCW
-        // from outside the face. cuts[0] is the cut on the
-        // INCOMING side; cuts[1] is on the OUTGOING side; inner
-        // sits "between and inward" of them.
-        outIndices.push(c.cuts[0]!, innerIdx, c.cuts[1]!);
-        innerPolygon.push(innerIdx);
-      } else if (c.cuts.length === 1) {
-        innerPolygon.push(c.cuts[0]!);
-      } else if (c.unaffected >= 0) {
-        innerPolygon.push(c.unaffected);
+      if (c.cutCount === 2) {
+        // 2-cut corner → V is absorbed by the bevel; the polygon
+        // bends inward through the inner-inset vertex (corner of the
+        // shrunk face region).
+        polygonVerts.push(getInnerInsetVertex(c.origV, c.vCan, c.otherEnds[0]!, c.otherEnds[1]!));
+      } else if (c.cutCount === 1) {
+        // 1-cut corner → V is absorbed by the bevel on the selected
+        // side; only the single cut survives on the polygon boundary
+        // (the cut sits on the UNSELECTED face edge, perpendicular
+        // to the selected one).
+        polygonVerts.push(getInsetVertex(c.origV, c.vCan, c.cutOtherCan));
+      } else {
+        // 0-cut corner → V is preserved verbatim.
+        polygonVerts.push(getUnaffectedVertex(c.origV));
       }
     }
-    for (let i = 1; i < innerPolygon.length - 1; i++) {
-      outIndices.push(innerPolygon[0]!, innerPolygon[i]!, innerPolygon[i + 1]!);
+    // Fan-triangulate from polygonVerts[0]. For a cube face (4
+    // inner insets), this emits 2 tris.
+    for (let i = 1; i < polygonVerts.length - 1; i++) {
+      outIndices.push(polygonVerts[0]!, polygonVerts[i]!, polygonVerts[i + 1]!);
     }
   }
 
@@ -380,26 +473,72 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     const V0_orig_B = mesh.indices[cornerV0_B]!;
     const V1_orig_A = mesh.indices[cornerV1_A]!;
     const V1_orig_B = mesh.indices[cornerV1_B]!;
-    // F_A insets are on the INCOMING-OTHER side at each endpoint
-    // (since the bevelled edge is outgoing from V0 / incoming to V1
-    // in F_A). F_B insets are on the OUTGOING-OTHER side at each
-    // endpoint (bevelled edge is incoming to V0 / outgoing from V1
-    // in F_B).
-    const V0_A_otherEnd = otherEndCanonForIncomingSide(cornerV0_A);
-    const V0_B_otherEnd = otherEndCanonForOutgoingSide(cornerV0_B);
-    const V1_A_otherEnd = otherEndCanonForOutgoingSide(cornerV1_A);
-    const V1_B_otherEnd = otherEndCanonForIncomingSide(cornerV1_B);
 
-    const v0a = getInsetVertex(V0_orig_A, V0_canon, V0_A_otherEnd);
-    const v0b = getInsetVertex(V0_orig_B, V0_canon, V0_B_otherEnd);
-    const v1a = getInsetVertex(V1_orig_A, V1_canon, V1_A_otherEnd);
-    const v1b = getInsetVertex(V1_orig_B, V1_canon, V1_B_otherEnd);
+    // Strip face normal = midway between the two adjacent face
+    // normals. For a 90°-dihedral cube edge between +X and -Y this
+    // works out to (+X + -Y)/√2 = (1,-1,0)/√2 — the chamfer's
+    // outward direction. Using a normalised sum (not a slerp) is
+    // fine for segments=1, where every strip triangle is coplanar
+    // and gets this normal; for segments≥2 each subdivision ring
+    // would want its own slerped normal, which the arc-rewrite
+    // task will handle.
+    const nA = triFaceNormal(faceOf(he));
+    const nB = triFaceNormal(faceOf(t));
+    const stripNormal = normalize3(nA[0] + nB[0], nA[1] + nB[1], nA[2] + nB[2]);
+    setEmitContext(`s:${he}`, stripNormal);
+    // F_A "other-end" at V0 / V1 = canonical vertex at the far end
+    // of the F_A face's OTHER selected edge at that corner. The
+    // detailed walker also tells us whether the corner is 2-cut in
+    // this face (= the walk found ANOTHER selected face-level edge)
+    // or 1-cut (= the walk ran off a boundary first, no other
+    // selected edge in this face — the returned otherCan is then
+    // the far end of the UNSELECTED face-level edge, suitable as
+    // the outer-cut direction). prevInFace alone isn't a reliable
+    // 2-cut test on face clusters with interior diagonals (e.g. a
+    // cube face cluster of 2 tris has its diagonal as prevInFace at
+    // half the corners, and the diagonal is always unselected).
+    const v0A = otherEndIncomingDetailed(cornerV0_A);
+    const v0B = otherEndOutgoingDetailed(cornerV0_B);
+    const v1A = otherEndOutgoingDetailed(cornerV1_A);
+    const v1B = otherEndIncomingDetailed(cornerV1_B);
+    const V0_A_otherEnd = v0A.otherCan;
+    const V0_B_otherEnd = v0B.otherCan;
+    const V1_A_otherEnd = v1A.otherCan;
+    const V1_B_otherEnd = v1B.otherCan;
+    const V0_A_is2Cut = v0A.is2Cut;
+    const V0_B_is2Cut = v0B.is2Cut;
+    const V1_A_is2Cut = v1A.is2Cut;
+    const V1_B_is2Cut = v1B.is2Cut;
+
+    // Strip corners. 2-cut → INNER INSET (corner of the shrunk
+    // adjacent face region; on the cube FACE plane, inset from the
+    // cube edges). 1-cut → OUTER CUT (on the UNSELECTED face edge
+    // perpendicular to the bevelled edge; on the cube EDGE).
+    // Previous version used outer cuts unconditionally, which gave
+    // the cube case Blender-incompatible topology — the corner cap
+    // ended up rotated 60° because its 3 verts each lay on cube
+    // edges instead of cube faces.
+    const v0a = V0_A_is2Cut
+      ? getInnerInsetVertex(V0_orig_A, V0_canon, V1_canon, V0_A_otherEnd)
+      : getInsetVertex(V0_orig_A, V0_canon, V0_A_otherEnd);
+    const v0b = V0_B_is2Cut
+      ? getInnerInsetVertex(V0_orig_B, V0_canon, V1_canon, V0_B_otherEnd)
+      : getInsetVertex(V0_orig_B, V0_canon, V0_B_otherEnd);
+    const v1a = V1_A_is2Cut
+      ? getInnerInsetVertex(V1_orig_A, V1_canon, V0_canon, V1_A_otherEnd)
+      : getInsetVertex(V1_orig_A, V1_canon, V1_A_otherEnd);
+    const v1b = V1_B_is2Cut
+      ? getInnerInsetVertex(V1_orig_B, V1_canon, V0_canon, V1_B_otherEnd)
+      : getInsetVertex(V1_orig_B, V1_canon, V1_B_otherEnd);
 
     if (segments === 1) {
-      // Chamfer quad. Winding: looking from outside the bevel cut
-      // (away from V0-V1 edge), CCW = (v0a, v1a, v1b, v0b). Split.
-      outIndices.push(v0a, v1a, v1b);
-      outIndices.push(v0a, v1b, v0b);
+      // Chamfer quad. Winding: looking from OUTSIDE the cube along
+      // the strip's outward normal (between F_A's and F_B's outward
+      // normals), CCW = (v0a, v0b, v1b, v1a). Split into 2 tris.
+      // (The other winding produces the strip with normals facing
+      // INTO the cube, making the chamfer look like a carved groove.)
+      outIndices.push(v0a, v0b, v1b);
+      outIndices.push(v0a, v1b, v1a);
       return;
     }
 
@@ -454,8 +593,11 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     ringV1.push(v1b);
 
     for (let i = 0; i < segments; i++) {
-      outIndices.push(ringV0[i]!, ringV1[i]!, ringV1[i + 1]!);
-      outIndices.push(ringV0[i]!, ringV1[i + 1]!, ringV0[i + 1]!);
+      // Same outward-CCW winding as the chamfer quad: at each segment,
+      // (V0_i, V0_(i+1), V1_(i+1)) + (V0_i, V1_(i+1), V1_i) — going
+      // ACROSS (F_A → F_B) before going ALONG (V0 → V1).
+      outIndices.push(ringV0[i]!, ringV0[i + 1]!, ringV1[i + 1]!);
+      outIndices.push(ringV0[i]!, ringV1[i + 1]!, ringV1[i]!);
     }
   }
 
@@ -470,9 +612,10 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     half, edges, mesh.indices, segments, width,
     mesh.positions, canonical,
     otherEndCanonForIncomingSide, otherEndCanonForOutgoingSide,
-    getInsetVertex, getArcVertex,
+    getInsetVertex, getInnerInsetVertex, getArcVertex,
     outPositions, outUvs, outNormals, outIndices,
     unitDir, mesh.uvs,
+    setEmitContext,
   );
 
   return {
@@ -557,6 +700,7 @@ function emitCornerCaps(
   otherEndForIn: (he: number) => number,
   otherEndForOut: (he: number) => number,
   getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
+  getInnerInsetVertex: (origV: number, vCan: number, other1: number, other2: number) => number,
   getArcVertex: (vCan: number, lo: number, hi: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
   outPositions: number[],
   outUvs: number[],
@@ -564,6 +708,7 @@ function emitCornerCaps(
   outIndices: number[],
   unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
   uvs: Float32Array,
+  setEmitContext: (ctx: string, normal: [number, number, number]) => void,
 ): void {
   const vertexCount = half.vertexCount;
   const visited = new Uint8Array(vertexCount);
@@ -584,7 +729,36 @@ function emitCornerCaps(
       // For M ≥ 4 chamfer or any M with segments ≥ 2: fan from
       // capCorners[0] — slightly faceted for the bevel case but
       // it's the rare M ≥ 4 path.
-      const idxs = capCorners.map((c) => getInsetVertex(c.origV, c.vCan, c.otherCan));
+      //
+      // Cap corners use INNER INSETS (corner of the shrunk adjacent
+      // face region) — same vertex the face polygon and strip use
+      // at this (corner, face) pair. Both "other ends" of the F_A
+      // face's selected edges at V identify the inset uniquely.
+      //
+      // Per-cap emit context with a placeholder normal so the
+      // 3 cap-corner verts get their OWN copies (not shared with
+      // the face polygon's or the chamfer strip's at the same
+      // position). We patch the real normal in after emission from
+      // the cross product of two cap-corner edges (body-diagonal
+      // for cube corners; correct outward direction for any cap).
+      setEmitContext(`c:${v}`, [0, 1, 0]);
+      const idxs = capCorners.map((c) => getInnerInsetVertex(c.origV, c.vCan, c.otherCan, c.bevelEnd));
+      if (idxs.length >= 3) {
+        const a0 = idxs[0]! * 3, a1 = idxs[1]! * 3, a2 = idxs[2]! * 3;
+        const ax = outPositions[a0]!,     ay = outPositions[a0 + 1]!, az = outPositions[a0 + 2]!;
+        const bx = outPositions[a1]!,     by = outPositions[a1 + 1]!, bz = outPositions[a1 + 2]!;
+        const cx = outPositions[a2]!,     cy = outPositions[a2 + 1]!, cz = outPositions[a2 + 2]!;
+        const nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+        const ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+        const nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        const len = Math.hypot(nx, ny, nz) || 1;
+        const cnx = nx / len, cny = ny / len, cnz = nz / len;
+        for (const idx of idxs) {
+          outNormals[idx * 3]     = cnx;
+          outNormals[idx * 3 + 1] = cny;
+          outNormals[idx * 3 + 2] = cnz;
+        }
+      }
       for (let i = 1; i < idxs.length - 1; i++) {
         outIndices.push(idxs[0]!, idxs[i]!, idxs[i + 1]!);
       }
@@ -605,7 +779,8 @@ function emitCornerCaps(
 interface CapCorner {
   origV: number;    // original vertex of the corner inset (carries UV)
   vCan: number;     // canonical vertex (the cap centre)
-  otherCan: number; // canonical "other end" — the cube edge direction the inset lies along
+  otherCan: number; // canonical "other end" of the F_A face's OTHER selected edge at V
+  bevelEnd: number; // canonical destination of the OUTGOING selected edge (the bevelled edge `he`)
 }
 
 /**
@@ -657,7 +832,10 @@ function collectCapCorners(
   for (const he of fan) {
     if (edges[he] !== 1) continue;
     const otherCan = otherEndForIn(he);
-    corners.push({ origV: origIndices[he]!, vCan: v, otherCan });
+    // `he` originates at v and points along the bevelled edge. Its
+    // destination = origin of next half-edge in the face.
+    const bevelEnd = half.origin[nextInFace(he)]!;
+    corners.push({ origV: origIndices[he]!, vCan: v, otherCan, bevelEnd });
   }
   void otherEndForOut;
   void isClosed;
