@@ -6,7 +6,9 @@ import type {
   SceneEntity,
   SceneValue,
   TerrainFieldValue,
+  Texture2DValue,
 } from '../core/resources.js';
+import { getColorTexture } from '../core/resources.js';
 import { createGrassSystem, type GrassSystem } from './grass.js';
 import { ATMOSPHERIC_SUN_INTENSITY } from './sky-sample.js';
 import { lookAt, multiply, orthographic, type Mat4 } from './mat4.js';
@@ -206,6 +208,13 @@ interface Batch {
   material: MaterialValue;
   geometry: GeometryValue;
   materialBindGroup: GPUBindGroup;
+  /**
+   * Per-batch alpha-cutout bind group bound by the shadow, pick, and
+   * outline-mask pipelines. Supplies (basecolor texture, sampler,
+   * alphaCutoff). Materials without alpha-cutout share a single
+   * bind group built around the 1×1 placeholder texture + cutoff=0.
+   */
+  cutoutBindGroup: GPUBindGroup;
   instanceBuffer: GPUBuffer;
   instanceCount: number;
   /**
@@ -291,6 +300,37 @@ interface PoolEntry<T> {
 
 const materialCacheGlobal = new Map<string, PoolEntry<CachedMaterial>>();
 
+// Pool the per-batch alpha-cutout bind groups. Same pattern + lifecycle
+// as `materialCacheGlobal`: keyed by `(basecolor texture id | packed
+// cutoff)`, refcounted so a slider-scrub that doesn't change the
+// material's texture / cutoff hits the cache instead of churning a
+// fresh bind group + uniform buffer every tick. The kept-alive uniform
+// buffer means writeBuffer happens once at first build; later setScene
+// calls with the same (texture, cutoff) skip both the createBuffer and
+// the createBindGroup. This is what keeps the zero-alloc slider-scrub
+// invariant intact after the cutout bind group was wired in.
+interface CachedCutout {
+  bindGroup: GPUBindGroup;
+  uniformBuffer: GPUBuffer;
+}
+const cutoutCacheGlobal = new Map<string, PoolEntry<CachedCutout>>();
+
+function acquireCutout(key: string, build: () => CachedCutout): CachedCutout {
+  let entry = cutoutCacheGlobal.get(key);
+  if (!entry) {
+    entry = { value: build(), refs: 0 };
+    cutoutCacheGlobal.set(key, entry);
+  }
+  entry.refs++;
+  return entry.value;
+}
+
+function releaseCutout(key: string): void {
+  const entry = cutoutCacheGlobal.get(key);
+  if (!entry) return;
+  entry.refs--;
+}
+
 function acquireMaterial(
   key: string,
   build: () => CachedMaterial,
@@ -322,6 +362,21 @@ interface SharedRendererState {
   format: GPUTextureFormat;
   sceneBindGroupLayout: GPUBindGroupLayout;
   shadowBindGroupLayout: GPUBindGroupLayout;
+  // Per-batch alpha-cutout bind group layout. Shared by shadow, pick,
+  // and outline-mask pipelines: each samples basecolor.a and discards
+  // below `alphaCutoff` so cutout cards (foliage, fences) cast / pick
+  // / outline along the texture silhouette, not the quad. Non-cutout
+  // materials supply cutoff=0 + a placeholder 1×1 white texture; the
+  // shader branch skips the sample.
+  cutoutBindGroupLayout: GPUBindGroupLayout;
+  /** Sampler reused for every cutout bind group — same filter / wrap
+   *  rules as colour-pass basecolor sampling. */
+  cutoutSampler: GPUSampler;
+  /** 1×1 white placeholder texture for materials that don't carry a
+   *  basecolor.texture (terrain-splat, water, etc.) or that have
+   *  cutoff=0 anyway. The bind group still needs a texture binding;
+   *  the fragment never samples it because the cutoff branch skips. */
+  cutoutPlaceholderTexture: Texture2DValue;
   singleInputLayout: GPUBindGroupLayout;
   compositeLayout: GPUBindGroupLayout;
   // Group-2 layout used ONLY by the water material — exposes the
@@ -440,7 +495,31 @@ function ensureSharedRendererState(
     layout: shadowBindGroupLayout,
     entries: [{ binding: 0, resource: shadowUniformBuffer }],
   });
-  const shadowPipeline = createShadowPipeline(device, shadowBindGroupLayout);
+  // Shared cutout bind-group infrastructure. Group layout: texture +
+  // sampler + alphaCutoff uniform. Built once per device; consumed by
+  // the shadow, pick, and outline-mask pipelines. The sampler matches
+  // the colour-pass basecolor sampler (linear + repeat) so cutout
+  // discards land on the same texels the colour pass shades against.
+  const cutoutBindGroupLayout = device.createBindGroupLayout({
+    label: 'cutout bind group',
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    ],
+  });
+  const cutoutSampler = getSampler(device, {
+    magFilter: 'linear',
+    minFilter: 'linear',
+    addressModeU: 'repeat',
+    addressModeV: 'repeat',
+  });
+  // Placeholder bound for materials that don't have a basecolor
+  // texture (terrain-splat / water) or that have alphaCutoff == 0.
+  // The shader branch never samples it; binding it just satisfies
+  // the pipeline's required group-1 layout.
+  const cutoutPlaceholderTexture = getColorTexture(device, '__cutout-placeholder__', [1, 1, 1, 1]);
+  const shadowPipeline = createShadowPipeline(device, shadowBindGroupLayout, cutoutBindGroupLayout);
   const kinds = new Map<MaterialValue['kind'], MaterialKindImpl>([
     ['pbr', createPbrKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['terrain-splat', createTerrainSplatKind(device, HDR_FORMAT, sceneBindGroupLayout)],
@@ -510,7 +589,9 @@ function ensureSharedRendererState(
   });
   const pickModule = device.createShaderModule({ code: pickShaderCode });
   const pickPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [pickSceneLayout, pickBatchLayout] }),
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [pickSceneLayout, pickBatchLayout, cutoutBindGroupLayout],
+    }),
     vertex: {
       module: pickModule,
       entryPoint: 'vs_main',
@@ -547,7 +628,9 @@ function ensureSharedRendererState(
     ],
   });
   const outlineMaskPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [outlineMaskLayout] }),
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [outlineMaskLayout, cutoutBindGroupLayout],
+    }),
     vertex: {
       module: outlineModule,
       entryPoint: 'mask_vs',
@@ -602,6 +685,7 @@ function ensureSharedRendererState(
     device, format,
     sceneBindGroupLayout, shadowBindGroupLayout, singleInputLayout, compositeLayout,
     waterExtrasBindGroupLayout,
+    cutoutBindGroupLayout, cutoutSampler, cutoutPlaceholderTexture,
     sampler, shadowSampler, postSampler, shadowTexture,
     shadowPipeline, skyPipeline, flatBackgroundPipeline,
     brightPassPipeline, downsamplePipeline, upsamplePipeline, compositePipeline,
@@ -867,6 +951,13 @@ export function flushUnusedPools(): void {
       instanceBufferPool.delete(key);
     }
   }
+  for (const [key, entry] of cutoutCacheGlobal) {
+    if (entry.refs <= 0) {
+      debug('[pool EVICTED CUTOUT]', key);
+      try { entry.value.uniformBuffer.destroy(); } catch { /* */ }
+      cutoutCacheGlobal.delete(key);
+    }
+  }
   for (const [key, entry] of intermediatesByKey) {
     if (entry.refs <= 0) {
       debug('[pool EVICTED INTERMEDIATES]', key);
@@ -888,20 +979,87 @@ export function flushUnusedPools(): void {
 // Per-instance vertex buffer: 16 floats matrix + 4 floats RGBA tint = 20 floats = 80 bytes.
 const INSTANCE_FLOATS = 20;
 
+// Pick the cutout bind group for a batch. PBR materials with
+// `alphaCutoff > 0` use their real basecolor texture so the fragment
+// shader can sample basecolor.a and discard below cutoff; every other
+// material (opaque PBR, terrain-splat, water, …) shares a single
+// "placeholder" entry built around the 1×1 white texture + cutoff=0
+// — the shader's `if (cutoff > 0.0)` branch skips the sample, so the
+// placeholder costs nothing per fragment.
+//
+// Refcounted via `cutoutCacheGlobal`, same pattern as
+// `materialCacheGlobal`. Slider-scrubs that don't change the
+// material's basecolor texture or cutoff value hit the cache —
+// no createBuffer / createBindGroup churn, which is what the
+// "slider-scrub allocates nothing" tests check.
+function cutoutCacheKey(material: MaterialValue): string {
+  const isCutoutPbr =
+    material.kind === 'pbr' &&
+    typeof material.alphaCutoff === 'number' &&
+    material.alphaCutoff > 0;
+  if (!isCutoutPbr) return '__placeholder__';
+  // Quantise cutoff to a fixed precision so floating-point jitter
+  // from inputValue commits doesn't fragment the cache.
+  const cutoff = Math.round(material.alphaCutoff! * 1000) / 1000;
+  return `${gpuObjectId(material.basecolor.texture)}|${cutoff}`;
+}
+
+function acquireCutoutBindGroup(
+  device: GPUDevice,
+  shared: SharedRendererState,
+  material: MaterialValue,
+): { key: string; bindGroup: GPUBindGroup } {
+  const key = cutoutCacheKey(material);
+  const cached = acquireCutout(key, () => {
+    const isCutoutPbr =
+      material.kind === 'pbr' &&
+      typeof material.alphaCutoff === 'number' &&
+      material.alphaCutoff > 0;
+    const basecolor: Texture2DValue =
+      isCutoutPbr ? material.basecolor : shared.cutoutPlaceholderTexture;
+    const cutoff = isCutoutPbr ? material.alphaCutoff! : 0;
+    const uniformBuffer = device.createBuffer({
+      size: 16, // f32 cutoff + 12 bytes std140 padding
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(
+      uniformBuffer,
+      0,
+      new Float32Array([cutoff, 0, 0, 0]) as BufferSource,
+    );
+    const bindGroup = device.createBindGroup({
+      layout: shared.cutoutBindGroupLayout,
+      entries: [
+        // Direct texture binding (project convention — no .createView()).
+        { binding: 0, resource: basecolor.texture },
+        { binding: 1, resource: shared.cutoutSampler },
+        { binding: 2, resource: uniformBuffer },
+      ],
+    });
+    return { bindGroup, uniformBuffer };
+  });
+  return { key, bindGroup: cached.bindGroup };
+}
+
 function createShadowPipeline(
   device: GPUDevice,
   shadowBindGroupLayout: GPUBindGroupLayout,
+  cutoutBindGroupLayout: GPUBindGroupLayout,
 ): GPURenderPipeline {
   const module = device.createShaderModule({ code: shadowShaderCode });
   const layout = device.createPipelineLayout({
-    bindGroupLayouts: [shadowBindGroupLayout],
+    bindGroupLayouts: [shadowBindGroupLayout, cutoutBindGroupLayout],
   });
-  // No fragment stage — we only care about depth output. cullMode 'none'
-  // because heightfield meshes are single-sided; if we culled back faces,
-  // terrain would vanish from the shadow map.
+  // Fragment stage exists ONLY to host the alpha-cutout discard. No
+  // colour targets — the discard alone gates depth writes for cutout
+  // materials; opaque materials see the cutoff branch skipped and the
+  // empty fragment falls through. cullMode 'none' because heightfield
+  // meshes are single-sided; if we culled back faces, terrain would
+  // vanish from the shadow map.
   return device.createRenderPipeline({
     layout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
+    fragment: { module, entryPoint: 'fs_main', targets: [] },
     primitive: { cullMode: 'none' },
     depthStencil: {
       format: 'depth32float',
@@ -1118,6 +1276,7 @@ export function createSceneRenderer(
   // ones to acquire. destroy() releases whatever's left.
   let currentMaterialKeys = new Set<string>();
   let currentInstanceKeys = new Set<string>();
+  let currentCutoutKeys = new Set<string>();
   let currentSizeKey: string | null = null;
 
   // -----------------------------------------------------------------
@@ -1436,6 +1595,7 @@ export function createSceneRenderer(
     const next: Batch[] = [];
     const usedMaterialKeys = new Set<string>();
     const usedInstanceKeys = new Set<string>();
+    const usedCutoutKeys = new Set<string>();
 
     for (const [kindId, byGeometry] of groupsByKind) {
       const kind = shared.kinds.get(kindId);
@@ -1497,11 +1657,19 @@ export function createSceneRenderer(
           device.queue.writeBuffer(instanceBuffer, 0, instanceData as BufferSource);
           usedInstanceKeys.add(instanceKey);
 
+          // Per-batch alpha-cutout bind group. Refcounted by
+          // `acquireCutoutBindGroup` so a slider-scrub that doesn't
+          // change the material's basecolor texture or cutoff hits
+          // the cache — no fresh allocations per setScene.
+          const cutoutAcquired = acquireCutoutBindGroup(device, shared, material);
+          usedCutoutKeys.add(cutoutAcquired.key);
+
           next.push({
             kindId,
             material,
             geometry,
             materialBindGroup: cached.bindGroup,
+            cutoutBindGroup: cutoutAcquired.bindGroup,
             instanceBuffer,
             instanceCount,
             structuralKey,
@@ -1522,10 +1690,15 @@ export function createSceneRenderer(
     for (const k of currentInstanceKeys) {
       if (!usedInstanceKeys.has(k)) releaseInstanceBuffer(k);
     }
+    for (const k of currentCutoutKeys) {
+      if (!usedCutoutKeys.has(k)) releaseCutout(k);
+    }
     // The new "currently held" sets are what this round acquired.
-    // (acquireMaterial / acquireInstanceBuffer already bumped refs.)
+    // (acquireMaterial / acquireInstanceBuffer / acquireCutout already
+    // bumped refs.)
     currentMaterialKeys = usedMaterialKeys;
     currentInstanceKeys = usedInstanceKeys;
+    currentCutoutKeys = usedCutoutKeys;
     void prevBatchByKey;
 
     batches = next;
@@ -1597,6 +1770,7 @@ export function createSceneRenderer(
     // still held by other renderers stay alive.
     for (const k of currentMaterialKeys) releaseMaterial(k);
     for (const k of currentInstanceKeys) releaseInstanceBuffer(k);
+    for (const k of currentCutoutKeys) releaseCutout(k);
     if (currentSizeKey !== null) releaseIntermediates(currentSizeKey);
     grassSystem?.destroy();
     if (pickResources) {
@@ -1618,6 +1792,7 @@ export function createSceneRenderer(
     selectedRuns = [];
     currentMaterialKeys = new Set();
     currentInstanceKeys = new Set();
+    currentCutoutKeys = new Set();
     currentSizeKey = null;
     batches = [];
   }
@@ -1685,6 +1860,7 @@ export function createSceneRenderer(
       const b = batches[i]!;
       if (b.geometry.indexCount === 0) continue;
       pass.setBindGroup(1, pr.batchBindGroup, [i * shared.pickBatchStride]);
+      pass.setBindGroup(2, b.cutoutBindGroup);
       pass.setVertexBuffer(0, b.geometry.positionBuffer);
       pass.setVertexBuffer(1, b.geometry.normalBuffer);
       pass.setVertexBuffer(2, b.geometry.uvBuffer);
@@ -1937,6 +2113,7 @@ export function createSceneRenderer(
         // submit fails, taking down OTHER entities (e.g. the palm
         // trunk) along with the empty one.
         if (b.geometry.indexCount === 0) continue;
+        shadowPass.setBindGroup(1, b.cutoutBindGroup);
         shadowPass.setVertexBuffer(0, b.geometry.positionBuffer);
         shadowPass.setVertexBuffer(1, b.geometry.normalBuffer);
         shadowPass.setVertexBuffer(2, b.geometry.uvBuffer);
@@ -2237,14 +2414,16 @@ export function createSceneRenderer(
         });
         maskPass.setPipeline(shared.outlineMaskPipeline);
         maskPass.setBindGroup(0, ol.sceneBindGroup);
-        // Bind vertex buffers once per batch (geometry differs by batch),
-        // then iterate the runs in order and dispatch each as an
-        // instance range starting at `firstInstance`.
+        // Bind vertex buffers AND the cutout bind group once per batch
+        // (both vary by batch), then iterate the runs in order and
+        // dispatch each as an instance range starting at
+        // `firstInstance`.
         let currentBatchIdx = -1;
         for (const run of selectedRuns) {
           if (run.batchIndex !== currentBatchIdx) {
             const b = batches[run.batchIndex]!;
             if (b.geometry.indexCount === 0) continue;
+            maskPass.setBindGroup(1, b.cutoutBindGroup);
             maskPass.setVertexBuffer(0, b.geometry.positionBuffer);
             maskPass.setVertexBuffer(1, b.geometry.normalBuffer);
             maskPass.setVertexBuffer(2, b.geometry.uvBuffer);

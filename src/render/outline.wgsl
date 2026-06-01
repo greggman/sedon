@@ -22,8 +22,20 @@ struct Scene {
 };
 @group(0) @binding(0) var<uniform> scene: Scene;
 
+// Per-batch alpha-cutout group. Same shape as the shadow + pick
+// pipelines (see shadow.wgsl for the rationale). Without this, the
+// outline silhouette of a foliage-card selection traces the FULL
+// quad rather than the leaf shape the colour pass actually draws.
+struct CutoutU {
+  alphaCutoff: f32,
+};
+@group(1) @binding(0) var basecolor_tex: texture_2d<f32>;
+@group(1) @binding(1) var basecolor_samp: sampler;
+@group(1) @binding(2) var<uniform> cutout: CutoutU;
+
 struct VsIn {
   @location(0) position: vec3f,
+  @location(2) uv: vec2f,
   // Same instance-buffer layout the colour / pick pipelines use; only
   // the 4 matrix columns are read (tint at @location(7) is ignored).
   @location(3) inst0: vec4f,
@@ -32,8 +44,13 @@ struct VsIn {
   @location(6) inst3: vec4f,
 };
 
+struct MaskVsOut {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
 @vertex
-fn mask_vs(in: VsIn) -> @builtin(position) vec4f {
+fn mask_vs(in: VsIn) -> MaskVsOut {
   // Match pbr.wgsl's vs_main computation byte-for-byte: the rasterised
   // depths must equal what the colour pass wrote, otherwise the mask's
   // `depthCompare: greater-equal` test rejects every fragment. Don't
@@ -41,11 +58,18 @@ fn mask_vs(in: VsIn) -> @builtin(position) vec4f {
   let inst = mat4x4f(in.inst0, in.inst1, in.inst2, in.inst3);
   let world_pos4 = inst * vec4f(in.position, 1.0);
   let view_pos4 = scene.modelView * world_pos4;
-  return scene.projection * view_pos4;
+  var out: MaskVsOut;
+  out.position = scene.projection * view_pos4;
+  out.uv = in.uv;
+  return out;
 }
 
 @fragment
-fn mask_fs() -> @location(0) vec4f {
+fn mask_fs(in: MaskVsOut) -> @location(0) vec4f {
+  if (cutout.alphaCutoff > 0.0) {
+    let a = textureSample(basecolor_tex, basecolor_samp, in.uv).a;
+    if (a < cutout.alphaCutoff) { discard; }
+  }
   // R8Unorm — only the red channel reaches the storage texture; the
   // others get clamped/discarded. 1.0 = "this pixel is on the selection".
   return vec4f(1.0, 0.0, 0.0, 1.0);
