@@ -1,98 +1,69 @@
-// Bevel / chamfer: replace each SELECTED edge with a strip of new
-// faces, and split each affected vertex into multiple "inset" copies
-// — one per smoothing sector. With `segments = 1` this is chamfer
-// (single flat quad per edge, triangular corner fill); with
-// `segments ≥ 2` it'll be bevel proper (multi-quad arc + tessellated
-// corner). This file implements the segments=1 case; the multi-
-// segment path is layered on top as a follow-up.
+// Bevel / chamfer: replace each selected edge with a strip of new
+// faces, cutting away material from each affected vertex along the
+// face-level OTHER edge. With `segments = 1` this is chamfer (one
+// flat quad per edge, one polygon corner cap); `segments ≥ 2` gives
+// a rounded arc cross-section + spherical-triangle corner cap.
 //
-// Inputs:
-//   • `mesh` carrying a CPU-side selection.edges mask (per half-edge
-//     id, as produced by core/select-by-angle). If no edge is
-//     selected, the algorithm short-circuits and returns the input.
-//   • `width`: signed distance from each affected vertex to its
-//     inset position, measured along the per-sector angle bisector.
-//     Positive widens; negative would inset OUTWARD (we don't
-//     support negative widths here yet).
+// Outward bevel: the insets sit ON the surrounding faces (not inside
+// their interior along the angle bisector — that would carve notches
+// inward instead of rounding the corner outward). Specifically, for
+// each face F at vertex V where one of F's edges-at-V is the selected
+// edge E being bevelled, the inset is V + width × unit(OTHER face-
+// level edge direction at V). The "other face-level edge" is found
+// by walking past any unselected internal diagonals of the face
+// cluster until the next selected (or boundary) edge.
 //
-// Output: a new CpuMeshRef. Topology has changed (vertices split,
-// new faces added), so the output's `selection.edges` slot is left
-// UNSET — the indices no longer match the input mask.
+// For a cube vertex V with all 3 incident edges selected:
+//   • 3 unique inset positions, one per cube edge AT V (along that
+//     edge direction by `width`).
+//   • Each face's corner gets cut by 2 lines (perpendicular to each
+//     adjacent selected edge), producing 2 new vertices in the
+//     face's modified polygon — the face's quad becomes an octagon.
+//   • Each cube edge becomes a strip whose 4 corners are 2 insets
+//     per endpoint (one per adjacent face). For chamfer this is a
+//     flat quad; for bevel an arc-subdivided strip.
+//   • The 3 unique insets at V form the corner cap — 1 triangle for
+//     chamfer, an N² triangular-barycentric grid for bevel.
 //
-// Algorithm:
-//   1. Weld positions for topology (matching the convention used by
-//      select-by-angle / compute-normals): split-vertex primitives
-//      need their face-to-face edges to read as shared.
-//   2. Build the half-edge mesh on welded indices.
-//   3. For each AFFECTED canonical vertex (any incident half-edge
-//      marked selected), walk the incident-face fan and partition
-//      it into SECTORS separated by selected edges. Boundary edges
-//      also act as sector breaks (an open-mesh boundary vertex has
-//      a natural start / end). Each sector gets a unique sector id;
-//      each face-corner at the vertex is tagged with its sector id.
-//   4. Per sector: compute the inset world position by averaging
-//      the in-face angle bisectors of every face in the sector, then
-//      stepping `width` along the normalised average from the
-//      vertex's position.
-//   5. Emit the output mesh:
-//      a. Each ORIGINAL face is re-emitted, with each affected
-//         corner replaced by its sector's inset vertex. Unaffected
-//         corners keep their original vertex (so per-face UV
-//         islands survive).
-//      b. Each selected edge contributes a STRIP: a quad bridging
-//         the two sector insets on each side of the edge across the
-//         four corners. Two triangles per quad.
-//      c. Each vertex with ≥ 2 selected incident edges (or ≥ 1
-//         selected edge AND boundary endpoints) contributes a
-//         CORNER FILL polygon — a triangle for the segments=1 case,
-//         walking the sector insets in fan order.
-//
-// Per-face UVs: we key output vertices by (ORIGINAL vertex id, sector
-// id) for affected corners, so two original vertices at the same
-// canonical position carrying different UVs (cube primitive's per-
-// face split) stay split in the output. Insets in the same sector
-// at the same canonical position from DIFFERENT originals end up at
-// the same xyz but with their own UV — same pattern as
-// compute-normals.
+// For non-cube cases the same machinery handles single-edge bevels,
+// open meshes, and partial-corner selections. M ≥ 4 corner caps fall
+// back to a flat fan-triangulation (a small artefact at the cap
+// centre for N ≥ 2) — common-case primitives are all M = 3 corners.
 
 import type { CpuMeshRef } from '../core/resources.js';
 import { buildHalfEdgeMesh, faceOf, nextInFace, prevInFace, type HalfEdgeMesh } from './half-edge-mesh.js';
 
 export interface BevelOptions {
-  /** Signed inset distance along each sector's average bisector. */
+  /** Signed distance from each affected vertex to its inset along the OTHER face-level edge. */
   width: number;
   /**
-   * Number of bevel segments per edge. 1 = chamfer (flat strip),
-   * 2+ will produce a rounded arc cross-section (stage B; this
-   * file only implements segments = 1 today and clamps higher
-   * values down).
+   * Number of subdivisions across each bevel strip. 1 = chamfer
+   * (flat strip + flat corner cap). ≥ 2 = bevel (arc strip + N²
+   * subdivided corner cap for M = 3 corners; M ≥ 4 corners stay
+   * flat-fan even with segments ≥ 2).
    */
   segments?: number;
   /**
-   * Match the half-edge welding convention used by select-by-angle
-   * / compute-normals upstream. Default true so split-vertex
-   * primitives (cube etc.) behave correctly.
+   * Treat coincident-position vertices as a single topological
+   * vertex when building the half-edge mesh. Default true; matches
+   * select-by-angle / compute-normals.
    */
   weldByPosition?: boolean;
 }
 
 export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
   const segments = Math.max(1, Math.floor(options.segments ?? 1));
-  if (segments !== 1) {
-    // Stage B will lift this; for now clamp loudly so the caller
-    // can't accidentally think they're getting rounded output.
-    // (The single-segment path covers chamfer cleanly already.)
-  }
   const width = options.width;
   const weldByPosition = options.weldByPosition ?? true;
 
-  const edges = mesh.selection?.edges;
-  if (!edges || !anySelected(edges)) {
-    return mesh; // nothing to do — short-circuit
-  }
+  const maybeEdges = mesh.selection?.edges;
+  if (!maybeEdges || !anySelected(maybeEdges)) return mesh;
+  const edges: Uint8Array = maybeEdges;
 
   // ── Welded topology ─────────────────────────────────────────────
-  const canonical = weldByPosition ? buildPositionWeldMap(mesh.positions) : identityMap(mesh.positions.length / 3);
+  const canonical = weldByPosition
+    ? buildPositionWeldMap(mesh.positions)
+    : identityMap((mesh.positions.length / 3) | 0);
   const weldedIndices = remapIndices(mesh.indices, canonical);
   const topoMesh: CpuMeshRef = {
     positions: mesh.positions,
@@ -101,126 +72,407 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     indices: weldedIndices,
   };
   const half = buildHalfEdgeMesh(topoMesh);
-
-  // ── Sector partition for affected vertices ──────────────────────
-  // sectorOfCorner[he] = sector id for the half-edge `he` (which
-  // originates at `mesh.indices[he]` in the welded topology). -1
-  // means the corner's vertex is unaffected (no selected incident
-  // edges) — the corner keeps its original vertex in the output.
   const halfEdgeCount = half.halfEdgeCount;
-  const sectorOfCorner = new Int32Array(halfEdgeCount).fill(-1);
-  // Per-sector accumulators: which canonical vertex the sector
-  // sits at, and the un-normalised inset direction sum (we
-  // normalise + scale by width once at the end).
-  const sectorVertex: number[] = [];
-  const sectorDir: { x: number; y: number; z: number }[] = [];
-  // Per-sector list of corner half-edges (used by the corner-fill
-  // step to walk sectors around a vertex in fan order).
-  const sectorCorners: number[][] = [];
 
-  const vCount = (mesh.positions.length / 3) | 0;
-  const visited = new Uint8Array(vCount); // canonical-vertex visited flag
-  for (let he = 0; he < halfEdgeCount; he++) {
-    const v = half.origin[he]!;
-    if (visited[v]) continue;
-    visited[v] = 1;
-    partitionSectorsAtVertex(
-      half, v, edges, sectorOfCorner,
-      sectorVertex, sectorDir, sectorCorners,
-      mesh.positions, canonical, mesh.indices,
-    );
+  // ── Face-level OTHER edge walk ──────────────────────────────────
+  // For corner `he` at V whose OUTGOING edge `he` is selected, the
+  // OTHER face-level edge sits on the INCOMING side. Walk from
+  // prevInFace(he) backward through unselected diagonals until a
+  // selected edge is found. Returns the canonical "other endpoint"
+  // (the origin of the found incoming edge).
+  function otherEndCanonForIncomingSide(he: number): number {
+    let cur = prevInFace(he);
+    while (edges[cur] !== 1) {
+      const t = half.twin[cur]!;
+      if (t < 0) break; // open-mesh boundary — use this edge's origin
+      cur = prevInFace(t);
+    }
+    return half.origin[cur]!;
   }
 
-  // ── Compute inset positions per sector ──────────────────────────
-  const sectorCount = sectorVertex.length;
-  const sectorInset = new Float32Array(sectorCount * 3);
-  for (let s = 0; s < sectorCount; s++) {
-    const v = sectorVertex[s]!;
-    const d = sectorDir[s]!;
-    const len = Math.hypot(d.x, d.y, d.z);
-    const inv = len > 1e-12 ? 1 / len : 0;
-    sectorInset[s * 3]     = mesh.positions[v * 3]!     + d.x * inv * width;
-    sectorInset[s * 3 + 1] = mesh.positions[v * 3 + 1]! + d.y * inv * width;
-    sectorInset[s * 3 + 2] = mesh.positions[v * 3 + 2]! + d.z * inv * width;
+  // For corner `he` at V whose INCOMING edge (`prevInFace(he)`) is
+  // selected, the OTHER face-level edge sits on the OUTGOING side.
+  // Walk from `he` forward through unselected diagonals.
+  function otherEndCanonForOutgoingSide(he: number): number {
+    let cur = he;
+    while (edges[cur] !== 1) {
+      const t = half.twin[cur]!;
+      if (t < 0) {
+        // Boundary: use cur's destination as the other end.
+        return half.origin[nextInFace(cur)]!;
+      }
+      cur = nextInFace(t);
+    }
+    return half.origin[nextInFace(cur)]!;
   }
 
-  // ── Build output ────────────────────────────────────────────────
+  // ── Output accumulators ─────────────────────────────────────────
   const outPositions: number[] = [];
   const outNormals: number[] = [];
   const outUvs: number[] = [];
   const outIndices: number[] = [];
-  // Output-vertex deduper.
-  //   key "u:<orig>"           = unaffected original vertex
-  //   key "s:<orig>:<sector>"  = affected corner at original vertex
-  //                              going through sector
+
+  // Output vertex deduper.
+  //   key "u:<orig>"             = unaffected original vertex
+  //   key "i:<orig>:<otherCan>"  = inset at original vertex going
+  //                                toward canonical other endpoint
+  //   key "a:<vCan>:<lo>:<hi>:<i>" = arc intermediate (shared between
+  //                                  strip and cap)
   const outVertexByKey = new Map<string, number>();
-  const getOutputVertex = (origV: number, sectorId: number): number => {
-    const key = sectorId < 0 ? `u:${origV}` : `s:${origV}:${sectorId}`;
+
+  const getUnaffectedVertex = (origV: number): number => {
+    const key = `u:${origV}`;
     const existing = outVertexByKey.get(key);
     if (existing !== undefined) return existing;
     const idx = outPositions.length / 3;
-    let px: number, py: number, pz: number;
-    if (sectorId < 0) {
-      px = mesh.positions[origV * 3]!;
-      py = mesh.positions[origV * 3 + 1]!;
-      pz = mesh.positions[origV * 3 + 2]!;
-    } else {
-      px = sectorInset[sectorId * 3]!;
-      py = sectorInset[sectorId * 3 + 1]!;
-      pz = sectorInset[sectorId * 3 + 2]!;
-    }
-    outPositions.push(px, py, pz);
+    outPositions.push(mesh.positions[origV * 3]!, mesh.positions[origV * 3 + 1]!, mesh.positions[origV * 3 + 2]!);
     outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
-    // Normals are placeholder; the user pipes through compute-normals
-    // afterwards to get correct shading. (The bevel emits new faces
-    // whose flat normals depend on the inset positions — we don't
-    // know them without computing per-face normals, and most callers
-    // chain compute-normals anyway.)
     outNormals.push(0, 1, 0);
     outVertexByKey.set(key, idx);
     return idx;
   };
 
-  // (a) Modified original faces: each corner remaps to its sector
-  // inset if affected, else keeps its original vertex.
+  // Inset at original vertex `origV` (canonical vCan) along the
+  // OTHER face-level edge whose other end has canonical id
+  // `otherCan`. Same (origV, otherCan) → same output vertex; same
+  // (vCan, otherCan) but different origV → distinct output vertices
+  // (so per-face UV islands survive split-vertex primitives).
+  const getInsetVertex = (origV: number, vCan: number, otherCan: number): number => {
+    const key = `i:${origV}:${otherCan}`;
+    const existing = outVertexByKey.get(key);
+    if (existing !== undefined) return existing;
+    const idx = outPositions.length / 3;
+    const vx = mesh.positions[vCan * 3]!,    vy = mesh.positions[vCan * 3 + 1]!,    vz = mesh.positions[vCan * 3 + 2]!;
+    const ox = mesh.positions[otherCan * 3]!, oy = mesh.positions[otherCan * 3 + 1]!, oz = mesh.positions[otherCan * 3 + 2]!;
+    const dx = ox - vx, dy = oy - vy, dz = oz - vz;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    outPositions.push(vx + width * dx / len, vy + width * dy / len, vz + width * dz / len);
+    outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
+    outNormals.push(0, 1, 0);
+    outVertexByKey.set(key, idx);
+    return idx;
+  };
+
+  // Inner inset vertex at a 2-cut cluster boundary corner. Sits
+  // INSIDE the face at the intersection of the two "shrunk-inward"
+  // boundary edges — the corner of the inset region you'd see if
+  // you imagined the cube face shrunk by `width` along each cube
+  // edge. Position = V + width × (unit(other1 − V) + unit(other2 − V)),
+  // which lands at the corner of the inset rectangle (for a 90°
+  // corner, that's V + w·√2 along the angle bisector). Used to
+  // triangulate each cluster polygon as N corner-cut triangles +
+  // 1 inner polygon, instead of a centroid-fan that spokes 8 lines
+  // across the face.
+  const getInnerInsetVertex = (origV: number, vCan: number, other1: number, other2: number): number => {
+    const lo = Math.min(other1, other2), hi = Math.max(other1, other2);
+    const key = `n:${origV}:${lo}:${hi}`;
+    const existing = outVertexByKey.get(key);
+    if (existing !== undefined) return existing;
+    const idx = outPositions.length / 3;
+    const vx = mesh.positions[vCan * 3]!,    vy = mesh.positions[vCan * 3 + 1]!,    vz = mesh.positions[vCan * 3 + 2]!;
+    const o1x = mesh.positions[other1 * 3]! - vx, o1y = mesh.positions[other1 * 3 + 1]! - vy, o1z = mesh.positions[other1 * 3 + 2]! - vz;
+    const o2x = mesh.positions[other2 * 3]! - vx, o2y = mesh.positions[other2 * 3 + 1]! - vy, o2z = mesh.positions[other2 * 3 + 2]! - vz;
+    const l1 = Math.hypot(o1x, o1y, o1z) || 1;
+    const l2 = Math.hypot(o2x, o2y, o2z) || 1;
+    const dx = (o1x / l1 + o2x / l2);
+    const dy = (o1y / l1 + o2y / l2);
+    const dz = (o1z / l1 + o2z / l2);
+    outPositions.push(vx + width * dx, vy + width * dy, vz + width * dz);
+    outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
+    outNormals.push(0, 1, 0);
+    outVertexByKey.set(key, idx);
+    return idx;
+  };
+
+  // Arc intermediate vertex at canonical V on the arc between two
+  // inset positions identified by their "other end" canonical ids
+  // (lo and hi, sorted). Ring index i ∈ (0, segments); ring 0 = lo
+  // inset, ring N = hi inset, both of those reuse getInsetVertex.
+  // Cache by (vCan, lo, hi, i) so the strip and cap share these.
+  const getArcVertex = (
+    vCan: number, otherLo: number, otherHi: number, i: number,
+    posX: number, posY: number, posZ: number,
+    uvU: number, uvV: number,
+  ): number => {
+    const key = `a:${vCan}:${otherLo}:${otherHi}:${i}`;
+    const existing = outVertexByKey.get(key);
+    if (existing !== undefined) return existing;
+    const idx = outPositions.length / 3;
+    outPositions.push(posX, posY, posZ);
+    outUvs.push(uvU, uvV);
+    outNormals.push(0, 1, 0);
+    outVertexByKey.set(key, idx);
+    return idx;
+  };
+
+  // ── (a) Face-CLUSTER polygon emission ──────────────────────────
+  // Per-triangle emission would produce overlapping polygons on
+  // multi-tri faces — two coplanar tris of a cube face don't agree
+  // on where to put the "shortened diagonal" between them, so their
+  // modified polygons criss-cross each other. Fix: union-find tris
+  // joined by UNSELECTED interior edges (= internal diagonals of
+  // a logical face), then emit one polygon per cluster whose
+  // boundary is a clean cycle of selected + open-mesh-boundary
+  // half-edges. The cube's +X quad face becomes one cluster, one
+  // octagonal polygon, six fan-triangulated sub-tris.
   const faceCount = (mesh.indices.length / 3) | 0;
-  for (let f = 0; f < faceCount; f++) {
-    const a = getOutputVertex(mesh.indices[f * 3]!,     sectorOfCorner[f * 3]!);
-    const b = getOutputVertex(mesh.indices[f * 3 + 1]!, sectorOfCorner[f * 3 + 1]!);
-    const c = getOutputVertex(mesh.indices[f * 3 + 2]!, sectorOfCorner[f * 3 + 2]!);
-    outIndices.push(a, b, c);
+  const clusterParent = new Int32Array(faceCount);
+  for (let f = 0; f < faceCount; f++) clusterParent[f] = f;
+  function findCluster(f: number): number {
+    while (clusterParent[f]! !== f) {
+      clusterParent[f] = clusterParent[clusterParent[f]!]!;
+      f = clusterParent[f]!;
+    }
+    return f;
+  }
+  function unionCluster(a: number, b: number): void {
+    const ra = findCluster(a), rb = findCluster(b);
+    if (ra !== rb) clusterParent[ra] = rb;
+  }
+  // Join faces across every UNSELECTED interior (non-boundary)
+  // half-edge: those are the diagonals we want to absorb into a
+  // single cluster.
+  for (let he = 0; he < halfEdgeCount; he++) {
+    if (edges[he] === 1) continue;
+    const t = half.twin[he]!;
+    if (t < 0) continue;
+    unionCluster(faceOf(he), faceOf(t));
   }
 
-  // (b) Strip faces along each selected edge. Each LOGICAL edge has
-  // two half-edges (twins); we emit one strip per edge by skipping
-  // the twin we've already seen (he > twin).
+  // Pick ONE boundary half-edge per cluster as the walk seed. A
+  // boundary half-edge is one where the edge is selected OR the
+  // twin doesn't exist (open mesh).
+  const clusterSeen = new Set<number>();
+  // Helper: walk forward along the cluster's boundary from `he`.
+  // Returns the next boundary half-edge whose origin = destination
+  // of `he`. Skips over interior diagonals by stepping
+  // nextInFace(twin(...)) through them.
+  function nextBoundaryHe(he: number): number {
+    let cur = nextInFace(he);
+    while (true) {
+      if (edges[cur] === 1) return cur;        // selected boundary
+      const t = half.twin[cur]!;
+      if (t < 0) return cur;                    // open-mesh boundary
+      cur = nextInFace(t);                      // hop to next face in cluster
+    }
+  }
+
+  for (let he = 0; he < halfEdgeCount; he++) {
+    // Only start a walk from a boundary half-edge (selected or
+    // open-mesh) — interior half-edges are skipped over anyway.
+    const tHere = half.twin[he]!;
+    const isBoundary = edges[he] === 1 || tHere < 0;
+    if (!isBoundary) continue;
+    const cluster = findCluster(faceOf(he));
+    if (clusterSeen.has(cluster)) continue;
+    clusterSeen.add(cluster);
+
+    // Walk the boundary cycle starting at `he`.
+    const boundary: number[] = [];
+    let cur = he;
+    do {
+      boundary.push(cur);
+      cur = nextBoundaryHe(cur);
+    } while (cur !== he);
+
+    // Per-corner records along the boundary walk. Each corner emits
+    // 0, 1, or 2 cut vertices depending on its incoming / outgoing
+    // boundary edge selection state. A 2-cut corner ALSO gets an
+    // inner inset vertex computed at the corner of the shrunk
+    // inset region — that's the "A3" point from the user's mental
+    // model: where the two shrunk-inward boundary edges meet
+    // inside the face.
+    interface CornerRec {
+      cuts: number[];      // 0, 1, or 2 output vertex indices.
+      otherEnds: number[]; // canonical other-end ids of the cuts.
+      unaffected: number;  // output vertex for 0-cut corners; -1 otherwise.
+      origV: number;
+      vCan: number;
+    }
+    const corners: CornerRec[] = [];
+    for (let i = 0; i < boundary.length; i++) {
+      const cHe = boundary[i]!;
+      const prevHe = boundary[(i - 1 + boundary.length) % boundary.length]!;
+      const origV = mesh.indices[cHe]!;
+      const vCan = half.origin[cHe]!;
+      const incomingSelected = edges[prevHe] === 1;
+      const outgoingSelected = edges[cHe] === 1;
+      const rec: CornerRec = { cuts: [], otherEnds: [], unaffected: -1, origV, vCan };
+      if (incomingSelected) {
+        // Cut perpendicular to incoming, along outgoing direction.
+        const otherCan = half.origin[nextInFace(cHe)]!;
+        rec.cuts.push(getInsetVertex(origV, vCan, otherCan));
+        rec.otherEnds.push(otherCan);
+      }
+      if (!incomingSelected && !outgoingSelected) {
+        rec.unaffected = getUnaffectedVertex(origV);
+      }
+      if (outgoingSelected) {
+        // Cut perpendicular to outgoing, along incoming direction.
+        const otherCan = half.origin[prevHe]!;
+        rec.cuts.push(getInsetVertex(origV, vCan, otherCan));
+        rec.otherEnds.push(otherCan);
+      }
+      corners.push(rec);
+    }
+
+    // Emit corner-cut triangles + build the inner polygon. The
+    // inner polygon uses the inner-inset vertex at 2-cut corners
+    // (A3-style); the cut itself at 1-cut corners; the original
+    // vertex at 0-cut corners. Fan-triangulate the inner polygon
+    // from its first vertex — the only "long" triangulation edges
+    // are within the inset region of the face, never crossing
+    // corner cuts.
+    const innerPolygon: number[] = [];
+    for (const c of corners) {
+      if (c.cuts.length === 2) {
+        const innerIdx = getInnerInsetVertex(c.origV, c.vCan, c.otherEnds[0]!, c.otherEnds[1]!);
+        // Corner-cut triangle (cuts[0], inner, cuts[1]) winds CCW
+        // from outside the face. cuts[0] is the cut on the
+        // INCOMING side; cuts[1] is on the OUTGOING side; inner
+        // sits "between and inward" of them.
+        outIndices.push(c.cuts[0]!, innerIdx, c.cuts[1]!);
+        innerPolygon.push(innerIdx);
+      } else if (c.cuts.length === 1) {
+        innerPolygon.push(c.cuts[0]!);
+      } else if (c.unaffected >= 0) {
+        innerPolygon.push(c.unaffected);
+      }
+    }
+    for (let i = 1; i < innerPolygon.length - 1; i++) {
+      outIndices.push(innerPolygon[0]!, innerPolygon[i]!, innerPolygon[i + 1]!);
+    }
+  }
+
+  // ── Inset direction helpers (for arc strips) ────────────────────
+  // Unit direction from V (canonical) toward another canonical end.
+  function unitDir(vCan: number, otherCan: number): { x: number; y: number; z: number } {
+    const dx = mesh.positions[otherCan * 3]!     - mesh.positions[vCan * 3]!;
+    const dy = mesh.positions[otherCan * 3 + 1]! - mesh.positions[vCan * 3 + 1]!;
+    const dz = mesh.positions[otherCan * 3 + 2]! - mesh.positions[vCan * 3 + 2]!;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    return { x: dx / len, y: dy / len, z: dz / len };
+  }
+
+  // ── (b) Strip emission for selected edges ───────────────────────
+  // Each logical edge gets one strip. We canonicalise the pair by
+  // emitting on the lower-id half-edge of each twin pair.
   for (let he = 0; he < halfEdgeCount; he++) {
     if (edges[he] !== 1) continue;
     const t = half.twin[he]!;
-    if (t < 0 || he > t) continue; // emit on the canonical (lower-id) twin only
-    // he runs V0 → V1 in face A. twin runs V1 → V0 in face B.
-    //   V0 in A = he                    (origin of he)
-    //   V1 in A = nextInFace(he)        (destination of he in A)
-    //   V0 in B = nextInFace(t)         (origin of next-in-face on twin = V0 in B)
-    //   V1 in B = t                     (origin of t in B = V1)
-    const v0a = getOutputVertex(mesh.indices[he]!,               sectorOfCorner[he]!);
-    const v1a = getOutputVertex(mesh.indices[nextInFace(he)]!,   sectorOfCorner[nextInFace(he)]!);
-    const v1b = getOutputVertex(mesh.indices[t]!,                sectorOfCorner[t]!);
-    const v0b = getOutputVertex(mesh.indices[nextInFace(t)]!,    sectorOfCorner[nextInFace(t)]!);
-    // Quad (v0a, v1a, v1b, v0b) — viewed from OUTSIDE the cut, this
-    // winds CCW because face A's outward side is on the (he, next(he))
-    // direction. Triangulate into (v0a, v1a, v1b) + (v0a, v1b, v0b).
-    outIndices.push(v0a, v1a, v1b);
-    outIndices.push(v0a, v1b, v0b);
+    if (t < 0 || he > t) continue;
+    emitStrip(he, t);
   }
 
-  // (c) Corner fill for vertices with ≥ 2 sectors (multiple selected
-  // edges, or one selected edge + a boundary that splits the fan).
-  // For each multi-sector vertex, walk its sectors in fan order and
-  // emit a fan of triangles between sector insets.
-  emitCornerFills(
-    half, edges, sectorOfCorner, sectorCorners,
-    mesh.indices, getOutputVertex, outIndices,
+  function emitStrip(he: number, t: number): void {
+    // V0 = origin(he) (= destination(t)); V1 = origin(t) (= destination(he)).
+    // Corner of V0 in F_A (face containing he) = `he` itself.
+    // Corner of V1 in F_A = nextInFace(he).
+    // Corner of V0 in F_B (face containing t) = nextInFace(t).
+    // Corner of V1 in F_B = `t` itself.
+    const cornerV0_A = he;
+    const cornerV1_A = nextInFace(he);
+    const cornerV0_B = nextInFace(t);
+    const cornerV1_B = t;
+    const V0_canon = half.origin[cornerV0_A]!;
+    const V1_canon = half.origin[cornerV1_A]!;
+    const V0_orig_A = mesh.indices[cornerV0_A]!;
+    const V0_orig_B = mesh.indices[cornerV0_B]!;
+    const V1_orig_A = mesh.indices[cornerV1_A]!;
+    const V1_orig_B = mesh.indices[cornerV1_B]!;
+    // F_A insets are on the INCOMING-OTHER side at each endpoint
+    // (since the bevelled edge is outgoing from V0 / incoming to V1
+    // in F_A). F_B insets are on the OUTGOING-OTHER side at each
+    // endpoint (bevelled edge is incoming to V0 / outgoing from V1
+    // in F_B).
+    const V0_A_otherEnd = otherEndCanonForIncomingSide(cornerV0_A);
+    const V0_B_otherEnd = otherEndCanonForOutgoingSide(cornerV0_B);
+    const V1_A_otherEnd = otherEndCanonForOutgoingSide(cornerV1_A);
+    const V1_B_otherEnd = otherEndCanonForIncomingSide(cornerV1_B);
+
+    const v0a = getInsetVertex(V0_orig_A, V0_canon, V0_A_otherEnd);
+    const v0b = getInsetVertex(V0_orig_B, V0_canon, V0_B_otherEnd);
+    const v1a = getInsetVertex(V1_orig_A, V1_canon, V1_A_otherEnd);
+    const v1b = getInsetVertex(V1_orig_B, V1_canon, V1_B_otherEnd);
+
+    if (segments === 1) {
+      // Chamfer quad. Winding: looking from outside the bevel cut
+      // (away from V0-V1 edge), CCW = (v0a, v1a, v1b, v0b). Split.
+      outIndices.push(v0a, v1a, v1b);
+      outIndices.push(v0a, v1b, v0b);
+      return;
+    }
+
+    // Arc subdivision: slerp ring points at each endpoint between
+    // the F_A and F_B direction. Endpoints (ring 0 = F_A inset,
+    // ring N = F_B inset) reuse the existing inset vertices.
+    const dirA0 = unitDir(V0_canon, V0_A_otherEnd);
+    const dirB0 = unitDir(V0_canon, V0_B_otherEnd);
+    const dirA1 = unitDir(V1_canon, V1_A_otherEnd);
+    const dirB1 = unitDir(V1_canon, V1_B_otherEnd);
+
+    // UV interpolation: A side at t=0, B side at t=1. Lerp.
+    const uvA0u = mesh.uvs[V0_orig_A * 2]     ?? 0, uvA0v = mesh.uvs[V0_orig_A * 2 + 1] ?? 0;
+    const uvB0u = mesh.uvs[V0_orig_B * 2]     ?? 0, uvB0v = mesh.uvs[V0_orig_B * 2 + 1] ?? 0;
+    const uvA1u = mesh.uvs[V1_orig_A * 2]     ?? 0, uvA1v = mesh.uvs[V1_orig_A * 2 + 1] ?? 0;
+    const uvB1u = mesh.uvs[V1_orig_B * 2]     ?? 0, uvB1v = mesh.uvs[V1_orig_B * 2 + 1] ?? 0;
+
+    const vx0 = mesh.positions[V0_canon * 3]!, vy0 = mesh.positions[V0_canon * 3 + 1]!, vz0 = mesh.positions[V0_canon * 3 + 2]!;
+    const vx1 = mesh.positions[V1_canon * 3]!, vy1 = mesh.positions[V1_canon * 3 + 1]!, vz1 = mesh.positions[V1_canon * 3 + 2]!;
+
+    // Cache-key canonicalisation: arc at V is cached with the lower
+    // "other end" canonical id at ring 0. If A's other-end > B's,
+    // swap the ring index when looking up.
+    const v0LoIsA = V0_A_otherEnd < V0_B_otherEnd;
+    const v0Lo = v0LoIsA ? V0_A_otherEnd : V0_B_otherEnd;
+    const v0Hi = v0LoIsA ? V0_B_otherEnd : V0_A_otherEnd;
+    const v1LoIsA = V1_A_otherEnd < V1_B_otherEnd;
+    const v1Lo = v1LoIsA ? V1_A_otherEnd : V1_B_otherEnd;
+    const v1Hi = v1LoIsA ? V1_B_otherEnd : V1_A_otherEnd;
+
+    const ringV0: number[] = [v0a];
+    const ringV1: number[] = [v1a];
+    for (let i = 1; i < segments; i++) {
+      const tt = i / segments;
+      const d0 = slerpUnit(dirA0, dirB0, tt);
+      const p0x = vx0 + width * d0.x;
+      const p0y = vy0 + width * d0.y;
+      const p0z = vz0 + width * d0.z;
+      const uv0u = uvA0u + (uvB0u - uvA0u) * tt;
+      const uv0v = uvA0v + (uvB0v - uvA0v) * tt;
+      ringV0.push(getArcVertex(V0_canon, v0Lo, v0Hi, v0LoIsA ? i : (segments - i), p0x, p0y, p0z, uv0u, uv0v));
+
+      const d1 = slerpUnit(dirA1, dirB1, tt);
+      const p1x = vx1 + width * d1.x;
+      const p1y = vy1 + width * d1.y;
+      const p1z = vz1 + width * d1.z;
+      const uv1u = uvA1u + (uvB1u - uvA1u) * tt;
+      const uv1v = uvA1v + (uvB1v - uvA1v) * tt;
+      ringV1.push(getArcVertex(V1_canon, v1Lo, v1Hi, v1LoIsA ? i : (segments - i), p1x, p1y, p1z, uv1u, uv1v));
+    }
+    ringV0.push(v0b);
+    ringV1.push(v1b);
+
+    for (let i = 0; i < segments; i++) {
+      outIndices.push(ringV0[i]!, ringV1[i]!, ringV1[i + 1]!);
+      outIndices.push(ringV0[i]!, ringV1[i + 1]!, ringV0[i + 1]!);
+    }
+  }
+
+  // ── (c) Corner caps ─────────────────────────────────────────────
+  // For each canonical vertex V with ≥ 2 selected incident edges,
+  // emit a cap polygon at V's corner. The cap is bounded by ONE
+  // inset per selected incident edge (the insets sit ON the cube
+  // edges at distance width from V, not on the face bisectors).
+  // Walk the half-edge fan at V to enumerate the selected edges in
+  // CCW order; each edge contributes one cap corner.
+  emitCornerCaps(
+    half, edges, mesh.indices, segments, width,
+    mesh.positions, canonical,
+    otherEndCanonForIncomingSide, otherEndCanonForOutgoingSide,
+    getInsetVertex, getArcVertex,
+    outPositions, outUvs, outNormals, outIndices,
+    unitDir, mesh.uvs,
   );
 
   return {
@@ -231,7 +483,7 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
   };
 }
 
-// ─ Helpers ────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────
 
 function anySelected(mask: Uint8Array): boolean {
   for (let i = 0; i < mask.length; i++) if (mask[i] !== 0) return true;
@@ -263,186 +515,160 @@ function remapIndices(indices: Uint32Array, canonical: Uint32Array): Uint32Array
   return out;
 }
 
+function slerpUnit(
+  u: { x: number; y: number; z: number },
+  v: { x: number; y: number; z: number },
+  t: number,
+): { x: number; y: number; z: number } {
+  let dot = u.x * v.x + u.y * v.y + u.z * v.z;
+  if (dot < -1) dot = -1;
+  else if (dot > 1) dot = 1;
+  if (dot > 0.9999) {
+    const x = u.x + (v.x - u.x) * t;
+    const y = u.y + (v.y - u.y) * t;
+    const z = u.z + (v.z - u.z) * t;
+    const len = Math.hypot(x, y, z) || 1;
+    return { x: x / len, y: y / len, z: z / len };
+  }
+  const theta = Math.acos(dot);
+  const s = Math.sin(theta);
+  const a = Math.sin((1 - t) * theta) / s;
+  const b = Math.sin(t * theta) / s;
+  return { x: a * u.x + b * v.x, y: a * u.y + b * v.y, z: a * u.z + b * v.z };
+}
+
 /**
- * Walk the fan around canonical vertex `v` (using welded twins) and
- * assign sector ids to every outgoing half-edge at v. If the vertex
- * has no selected incident edges AND isn't a boundary vertex, no
- * sectors are created — the corners keep `sectorOfCorner[he] = -1`
- * and the output reuses the original vertex.
- *
- * For closed-manifold vertices: the fan is cyclic. We rotate the
- * walk to START just after a selected boundary so sector ids land
- * deterministically. If no edges are selected, the vertex is
- * unaffected — skip.
- *
- * For open-mesh boundary vertices: the fan has two boundary ends.
- * Walk left-to-right (back then forward). Each boundary end acts as
- * a sector start. If the vertex has zero selected incident edges,
- * the whole fan is one sector — but with width applied that would
- * collapse the open-mesh corner inward in a way nobody asked for.
- * To stay surgical, skip boundary-vertex sectoring entirely when no
- * incident edge is selected.
+ * Enumerate corner caps. For each canonical vertex V with ≥ 2
+ * selected incident edges, the cap is bounded by ONE inset per
+ * selected edge — each inset sits ON one cube edge at distance
+ * width from V (NOT on a face bisector). The selected edges around
+ * V form a cyclic fan (interior vertices) or a linear fan (open-
+ * mesh boundary vertices); we walk in CCW order via the half-edge
+ * twins.
  */
-function partitionSectorsAtVertex(
+function emitCornerCaps(
   half: HalfEdgeMesh,
-  v: number,
   edges: Uint8Array,
-  sectorOfCorner: Int32Array,
-  sectorVertex: number[],
-  sectorDir: { x: number; y: number; z: number }[],
-  sectorCorners: number[][],
+  origIndices: Uint32Array,
+  segments: number,
+  width: number,
   positions: Float32Array,
   canonical: Uint32Array,
-  origIndices: Uint32Array,
+  otherEndForIn: (he: number) => number,
+  otherEndForOut: (he: number) => number,
+  getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
+  getArcVertex: (vCan: number, lo: number, hi: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
+  outPositions: number[],
+  outUvs: number[],
+  outNormals: number[],
+  outIndices: number[],
+  unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
+  uvs: Float32Array,
 ): void {
-  const seed = half.vertexFirstEdge[v]!;
-  if (seed < 0) return;
+  const vertexCount = half.vertexCount;
+  const visited = new Uint8Array(vertexCount);
 
-  // Walk the fan corners in order. For closed manifolds: cyclic list.
-  // For open: linear (back-walk reversed then forward-walk).
-  const { corners, isClosed } = fanCornersInOrder(half, v, seed);
-
-  // Determine whether the vertex is "affected" — at least one
-  // incident half-edge is selected. Otherwise skip.
-  let anyIncidentSelected = false;
-  for (const c of corners) {
-    // The two incident half-edges at v in c's face are c itself
-    // (outgoing) and prev(c) (incoming). Check whichever has the
-    // selection bit.
-    if (edges[c] === 1 || edges[prevInFace(c)] === 1) { anyIncidentSelected = true; break; }
-  }
-  if (!anyIncidentSelected) return;
-
-  // Find sector-boundary CROSSING points. The "edge between fan[i]
-  // and fan[i+1]" is the half-edge `prev(fan[i])` (in fan[i]'s
-  // face, pointing AT v). When it's selected, sector breaks.
-  const breaks: boolean[] = new Array(corners.length).fill(false);
-  for (let i = 1; i < corners.length; i++) {
-    const cross = prevInFace(corners[i - 1]!);
-    if (edges[cross] === 1) breaks[i] = true;
-  }
-  if (isClosed) {
-    // Wrap-around edge between last and first.
-    const cross = prevInFace(corners[corners.length - 1]!);
-    if (edges[cross] === 1) breaks[0] = true;
-  }
-
-  // Pick the starting index. For closed: rotate so we begin AT a
-  // break (deterministic numbering). For open: start at index 0
-  // (back-walk-leading corner — that boundary acts as an implicit
-  // break).
-  let start = 0;
-  if (isClosed) {
-    for (let i = 0; i < corners.length; i++) {
-      if (breaks[i]) { start = i; break; }
+  // For each canonical vertex with selected incident edges, find
+  // the cap corners. Each corner is (origV, V_canon, otherEnd_canon)
+  // identifying an inset vertex. The fan walk gives them in CCW
+  // order around V.
+  for (let v = 0; v < vertexCount; v++) {
+    if (visited[v]) continue;
+    visited[v] = 1;
+    const seed = half.vertexFirstEdge[v]!;
+    if (seed < 0) continue;
+    const capCorners = collectCapCorners(half, edges, v, seed, origIndices, otherEndForIn, otherEndForOut);
+    if (capCorners.length < 3) continue; // need at least 3 selected incident edges for a triangular cap
+    if (segments === 1 || capCorners.length !== 3) {
+      // Flat fan triangulation. For M = 3 chamfer: 1 triangle.
+      // For M ≥ 4 chamfer or any M with segments ≥ 2: fan from
+      // capCorners[0] — slightly faceted for the bevel case but
+      // it's the rare M ≥ 4 path.
+      const idxs = capCorners.map((c) => getInsetVertex(c.origV, c.vCan, c.otherCan));
+      for (let i = 1; i < idxs.length - 1; i++) {
+        outIndices.push(idxs[0]!, idxs[i]!, idxs[i + 1]!);
+      }
+      continue;
     }
-  }
 
-  // Walk and assign sector ids. Each new break opens a new sector.
-  let sectorId = sectorVertex.length;
-  let curSector = sectorId++;
-  initSector(curSector, v, sectorVertex, sectorDir, sectorCorners);
-
-  for (let k = 0; k < corners.length; k++) {
-    const i = (start + k) % corners.length;
-    if (k > 0 && breaks[i]) {
-      curSector = sectorId++;
-      initSector(curSector, v, sectorVertex, sectorDir, sectorCorners);
-    }
-    const corner = corners[i]!;
-    sectorOfCorner[corner] = curSector;
-    sectorCorners[curSector]!.push(corner);
-    // Accumulate the bisector for this face into the sector's
-    // direction sum.
-    addFaceBisectorToSector(
-      curSector, corner, positions, canonical, origIndices,
-      sectorDir,
+    // M = 3 with segments ≥ 2 — subdivided spherical triangle.
+    emitTriangleCap(
+      v, capCorners[0]!, capCorners[1]!, capCorners[2]!, segments, width,
+      positions, uvs, origIndices,
+      getInsetVertex, getArcVertex, unitDir,
+      outPositions, outUvs, outNormals, outIndices,
     );
   }
-}
-
-function initSector(
-  id: number,
-  v: number,
-  sectorVertex: number[],
-  sectorDir: { x: number; y: number; z: number }[],
-  sectorCorners: number[][],
-): void {
-  sectorVertex[id] = v;
-  sectorDir[id] = { x: 0, y: 0, z: 0 };
-  sectorCorners[id] = [];
-}
-
-/**
- * The face at corner `corner` (canonical vertex `v` at slot
- * `corner % 3`) has two edges leaving v — one to the next vertex in
- * face order, one to the previous. The interior angle bisector at v
- * in this face is `normalize(unit(prev - v) + unit(next - v))`. Add
- * that unit vector to the sector's direction sum so the sector's
- * average bisector ends up at the centroid of its faces' bisector
- * directions.
- *
- * Position lookups use ORIGINAL vertex indices via the original
- * `mesh.indices`, NOT welded canonical ids: positions are
- * un-changed by welding, so reading via original or canonical gives
- * the same xyz, but the indices array we have at this depth is the
- * pre-welded one.
- */
-function addFaceBisectorToSector(
-  sectorId: number,
-  corner: number,
-  positions: Float32Array,
-  canonical: Uint32Array,
-  origIndices: Uint32Array,
-  sectorDir: { x: number; y: number; z: number }[],
-): void {
-  const f3 = faceOf(corner) * 3;
-  // Find the slot of `corner` within its face (so we know which of
-  // origIndices[f3..f3+2] corresponds to the corner vertex).
-  const slot = corner % 3;
-  const nextSlot = (slot + 1) % 3;
-  const prevSlot = (slot + 2) % 3;
-  const vOrig    = origIndices[f3 + slot]!;
-  const nextOrig = origIndices[f3 + nextSlot]!;
-  const prevOrig = origIndices[f3 + prevSlot]!;
-
-  const vx = positions[vOrig * 3]!,    vy = positions[vOrig * 3 + 1]!,    vz = positions[vOrig * 3 + 2]!;
-  const nx = positions[nextOrig * 3]! - vx;
-  const ny = positions[nextOrig * 3 + 1]! - vy;
-  const nz = positions[nextOrig * 3 + 2]! - vz;
-  const px = positions[prevOrig * 3]! - vx;
-  const py = positions[prevOrig * 3 + 1]! - vy;
-  const pz = positions[prevOrig * 3 + 2]! - vz;
-  const nlen = Math.hypot(nx, ny, nz);
-  const plen = Math.hypot(px, py, pz);
-  if (nlen < 1e-12 || plen < 1e-12) return; // degenerate edge
-
-  const bx = nx / nlen + px / plen;
-  const by = ny / nlen + py / plen;
-  const bz = nz / nlen + pz / plen;
-  const blen = Math.hypot(bx, by, bz);
-  if (blen < 1e-12) return; // bisector points perfectly opposite — face is degenerate at v
-  const acc = sectorDir[sectorId]!;
-  acc.x += bx / blen;
-  acc.y += by / blen;
-  acc.z += bz / blen;
-  // `canonical` is captured for future use (we may want to verify
-  // the corner's canonical vertex matches `sectorVertex[sectorId]`
-  // in a debug build) but isn't read in production.
   void canonical;
 }
 
+interface CapCorner {
+  origV: number;    // original vertex of the corner inset (carries UV)
+  vCan: number;     // canonical vertex (the cap centre)
+  otherCan: number; // canonical "other end" — the cube edge direction the inset lies along
+}
+
 /**
- * Walk the fan of outgoing half-edges around canonical vertex `v`
- * starting from `seed`. Returns the corner list in canonical fan
- * order plus a flag for whether the fan closed back to the seed
- * (closed-manifold vertex) or terminated at a boundary (open mesh).
+ * Walk the fan around vertex V (canonical) and collect ONE cap
+ * corner per selected incident edge, in CCW fan order. For a cube
+ * vertex this returns 3 corners (one per cube edge in the OPPOSITE
+ * direction).
  */
+function collectCapCorners(
+  half: HalfEdgeMesh,
+  edges: Uint8Array,
+  v: number,
+  seed: number,
+  origIndices: Uint32Array,
+  otherEndForIn: (he: number) => number,
+  otherEndForOut: (he: number) => number,
+): CapCorner[] {
+  // Visit each outgoing half-edge from V in fan order. For each:
+  //   • If `he` (outgoing) is selected: contributes the inset on the
+  //     INCOMING-OTHER side (using `otherEndForIn(he)`). This is the
+  //     "F_A side" of the bevelled edge.
+  //   • If `prevInFace(he)` (incoming) is selected at this corner:
+  //     contributes the inset on the OUTGOING-OTHER side. But we'll
+  //     get this same corner when visiting the FAN CONTRIBUTION from
+  //     the adjacent face — to avoid double-counting we attribute
+  //     each selected edge to ONE corner only (the corner where it's
+  //     outgoing).
+  //
+  // For each outgoing half-edge `he` from V with `edges[he] === 1`:
+  //   • The strip across `he` contributes 2 corners at V (F_A and
+  //     F_B insets). The F_A inset (incoming side) is collected
+  //     here. The F_B inset comes from the SAME selected edge's
+  //     other corner — the twin's `nextInFace`. But that twin's
+  //     `nextInFace` has outgoing edge = nextInFace(twin(he)),
+  //     which may or may not be selected.
+  //   • Actually: each cube edge at V contributes ONE inset (along
+  //     the OTHER cube edge direction, as I derived in the planning
+  //     doc). The cap walks UNIQUE insets, not the strip endpoints.
+  //
+  // So we enumerate selected outgoing edges. Each contributes 1
+  // inset = the (vCan, otherEndForIn(he)) pair.
+  const corners: CapCorner[] = [];
+  // Walk fan starting from seed.
+  const { fan, isClosed } = fanCornersInOrder(half, v, seed);
+  // For each fan corner that has a selected OUTGOING edge, record
+  // its inset. This gives one corner per selected outgoing edge at
+  // V — which equals the number of selected incident edges (each
+  // selected logical edge has one outgoing half-edge at V).
+  for (const he of fan) {
+    if (edges[he] !== 1) continue;
+    const otherCan = otherEndForIn(he);
+    corners.push({ origV: origIndices[he]!, vCan: v, otherCan });
+  }
+  void otherEndForOut;
+  void isClosed;
+  return corners;
+}
+
 function fanCornersInOrder(
   half: HalfEdgeMesh,
-  _v: number,
+  v: number,
   seed: number,
-): { corners: number[]; isClosed: boolean } {
+): { fan: number[]; isClosed: boolean } {
   const forward: number[] = [];
   let cur = seed;
   let isClosed = false;
@@ -455,126 +681,117 @@ function fanCornersInOrder(
     forward.push(t);
     cur = t;
   }
-  if (isClosed) return { corners: forward, isClosed: true };
-  // Boundary: walk backward to capture the other half of the fan.
-  // The backward step from `current` is `nextInFace(twin(current))`
-  // — twin flips to the previous face where `current`'s edge runs
-  // INTO v; next-in-face from there lands at v's outgoing edge in
-  // that previous face.
+  if (isClosed) return { fan: forward, isClosed: true };
   const backward: number[] = [];
   let back = seed;
   while (true) {
     const t = half.twin[back]!;
     if (t < 0) break;
     back = nextInFace(t);
-    if (back === seed) break; // safety
-    backward.unshift(back); // prepend
+    if (back === seed) break;
+    backward.unshift(back);
   }
-  return { corners: [...backward, ...forward], isClosed: false };
+  void v;
+  return { fan: [...backward, ...forward], isClosed: false };
 }
 
 /**
- * For each affected canonical vertex with ≥ 2 sectors, emit a fan
- * of triangles between the sector inset vertices in fan order. The
- * fan center is sector 0's inset; subsequent triangles connect it
- * to consecutive sector insets. For a 3-sector vertex (cube corner
- * with all 3 edges selected) this yields a single triangle, which
- * is exactly the chamfer corner cap we want.
- *
- * Winding: we wind so the cap's outward normal points AWAY from
- * the vertex — same hemisphere as the bisector of the sectors. To
- * achieve that without computing the bisector here, we use the
- * fact that sector_corners walk the fan CCW (the way the half-edge
- * fan walk produces them), so the cap triangles (sector_0 →
- * sector_i → sector_{i+1}) wind CCW from outside.
- *
- * UV choice: for the cap vertices we take whichever original vertex
- * first registered the sector inset. For the cube case each sector
- * is a single face → single original → unambiguous; for richer
- * shared cases we just pick one (the user can apply UV-transform
- * afterwards if they care). Better cap-UV schemes are a follow-up.
+ * Emit a triangular barycentric-grid corner cap. The 3 cap corners
+ * (A, B, C in CCW fan order) sit at distance `width` from V along
+ * their respective "other end" directions; intermediate grid points
+ * spherical-barycentric blend the 3 unit directions. Arc-edge
+ * vertices share with the strip arcs through the arcVertex cache.
  */
-function emitCornerFills(
-  half: HalfEdgeMesh,
-  edges: Uint8Array,
-  sectorOfCorner: Int32Array,
-  sectorCorners: number[][],
-  origIndices: Uint32Array,
-  getOutputVertex: (origV: number, sectorId: number) => number,
+function emitTriangleCap(
+  vCan: number,
+  capA: CapCorner, capB: CapCorner, capC: CapCorner,
+  N: number, width: number,
+  positions: Float32Array, uvs: Float32Array, origIndices: Uint32Array,
+  getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
+  getArcVertex: (vCan: number, lo: number, hi: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
+  unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
+  outPositions: number[], outUvs: number[], outNormals: number[],
   outIndices: number[],
 ): void {
-  // Group sectors by their vertex so we can find multi-sector vertices.
-  const sectorsByVertex = new Map<number, number[]>();
-  for (let s = 0; s < sectorCorners.length; s++) {
-    const corners = sectorCorners[s];
-    if (!corners || corners.length === 0) continue;
-    const v = half.origin[corners[0]!]!;
-    let list = sectorsByVertex.get(v);
-    if (!list) { list = []; sectorsByVertex.set(v, list); }
-    list.push(s);
-  }
-  for (const [v, sectors] of sectorsByVertex) {
-    if (sectors.length < 2) continue; // no cap needed
-    // We need the sectors in fan order. The walk that PRODUCED
-    // them already used fan order (partitionSectorsAtVertex's
-    // walk loop assigns sector ids in the order corners are
-    // encountered), so the `sectors` array as collected here might
-    // be out of order. Re-derive fan order from the half-edge mesh.
-    const ordered = sectorsInFanOrder(half, v, sectorOfCorner);
-    if (ordered.length < 2) continue;
-    // Choose a representative original-vertex per sector for the
-    // cap output vertex (UV inheritance). Use the first corner of
-    // each sector's `sectorCorners` list — that was the first one
-    // the partition walk found.
-    const capVerts: number[] = ordered.map((s) => {
-      const corner0 = sectorCorners[s]![0]!;
-      const origV = origIndices[corner0]!;
-      return getOutputVertex(origV, s);
-    });
-    // Triangle fan from cap_0. For 3 sectors → 1 triangle; for 4
-    // sectors (rare — would need 4 selected edges at a vertex) → 2
-    // triangles; etc.
-    for (let i = 1; i < capVerts.length - 1; i++) {
-      outIndices.push(capVerts[0]!, capVerts[i]!, capVerts[i + 1]!);
-    }
-    // edges is captured for debug-only assertions (every sector
-    // boundary must correspond to a selected edge); not used in the
-    // hot path.
-    void edges;
-  }
-}
+  const vx = positions[vCan * 3]!,    vy = positions[vCan * 3 + 1]!,    vz = positions[vCan * 3 + 2]!;
+  const dA = unitDir(vCan, capA.otherCan);
+  const dB = unitDir(vCan, capB.otherCan);
+  const dC = unitDir(vCan, capC.otherCan);
+  const uvAu = uvs[capA.origV * 2] ?? 0, uvAv = uvs[capA.origV * 2 + 1] ?? 0;
+  const uvBu = uvs[capB.origV * 2] ?? 0, uvBv = uvs[capB.origV * 2 + 1] ?? 0;
+  const uvCu = uvs[capC.origV * 2] ?? 0, uvCv = uvs[capC.origV * 2 + 1] ?? 0;
 
-/**
- * Re-walk the fan at vertex `v` and return its sector ids in fan
- * order (one entry per sector, in the order the fan first
- * encounters that sector). The fan walk visits each corner; the
- * corner's sector is read from `sectorOfCorner`.
- */
-function sectorsInFanOrder(
-  half: HalfEdgeMesh,
-  v: number,
-  sectorOfCorner: Int32Array,
-): number[] {
-  const seed = half.vertexFirstEdge[v]!;
-  if (seed < 0) return [];
-  const { corners, isClosed } = fanCornersInOrder(half, v, seed);
-  const out: number[] = [];
-  let last = -2;
-  for (const c of corners) {
-    const s = sectorOfCorner[c]!;
-    if (s < 0) continue;
-    if (s !== last) {
-      out.push(s);
-      last = s;
+  // Helper: look up (or recompute) the arc-boundary vertex on the
+  // cap's edge between two sector corners at ring index i (i = 0 at
+  // s1, i = N at s2).
+  const arcBoundary = (s1: CapCorner, s2: CapCorner, i: number): number => {
+    const lo = Math.min(s1.otherCan, s2.otherCan);
+    const hi = Math.max(s1.otherCan, s2.otherCan);
+    const idxRing = s1.otherCan < s2.otherCan ? i : (N - i);
+    // Compute position via slerp from s1.dir to s2.dir at t = i/N.
+    const t = i / N;
+    const dStart = s1.otherCan === capA.otherCan ? dA : (s1.otherCan === capB.otherCan ? dB : dC);
+    const dEnd   = s2.otherCan === capA.otherCan ? dA : (s2.otherCan === capB.otherCan ? dB : dC);
+    const d = slerpUnit(dStart, dEnd, t);
+    const px = vx + width * d.x;
+    const py = vy + width * d.y;
+    const pz = vz + width * d.z;
+    const uvS = s1.otherCan === capA.otherCan ? { u: uvAu, v: uvAv } : (s1.otherCan === capB.otherCan ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
+    const uvE = s2.otherCan === capA.otherCan ? { u: uvAu, v: uvAv } : (s2.otherCan === capB.otherCan ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
+    const u = uvS.u + (uvE.u - uvS.u) * t;
+    const vUv = uvS.v + (uvE.v - uvS.v) * t;
+    return getArcVertex(vCan, lo, hi, idxRing, px, py, pz, u, vUv);
+  };
+
+  // Grid: row i in [0, N], col j in [0, i].
+  //   bary_A = (N - i) / N
+  //   bary_B = (i - j) / N
+  //   bary_C = j / N
+  const grid: number[][] = [];
+  for (let i = 0; i <= N; i++) {
+    const row: number[] = [];
+    for (let j = 0; j <= i; j++) {
+      const ba = (N - i) / N;
+      const bb = (i - j) / N;
+      const bc = j / N;
+      let idx: number;
+      if (i === 0 && j === 0) idx = getInsetVertex(capA.origV, vCan, capA.otherCan);
+      else if (i === N && j === 0) idx = getInsetVertex(capB.origV, vCan, capB.otherCan);
+      else if (i === N && j === N) idx = getInsetVertex(capC.origV, vCan, capC.otherCan);
+      else if (j === 0) idx = arcBoundary(capA, capB, i);
+      else if (j === i) idx = arcBoundary(capA, capC, i);
+      else if (i === N) idx = arcBoundary(capB, capC, j);
+      else {
+        // Interior — fresh vertex via barycentric slerp.
+        const dx = ba * dA.x + bb * dB.x + bc * dC.x;
+        const dy = ba * dA.y + bb * dB.y + bc * dC.y;
+        const dz = ba * dA.z + bb * dB.z + bc * dC.z;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        const px = vx + width * dx / len;
+        const py = vy + width * dy / len;
+        const pz = vz + width * dz / len;
+        const u = ba * uvAu + bb * uvBu + bc * uvCu;
+        const vUv = ba * uvAv + bb * uvBv + bc * uvCv;
+        idx = outPositions.length / 3;
+        outPositions.push(px, py, pz);
+        outUvs.push(u, vUv);
+        outNormals.push(0, 1, 0);
+      }
+      row.push(idx);
+    }
+    grid.push(row);
+  }
+  // Triangulate: row i contributes (i+1) up-triangles and i down-
+  // triangles. Total per cap: N². Winding: CCW from outside the cap.
+  for (let i = 0; i < N; i++) {
+    const rowI = grid[i]!;
+    const rowI1 = grid[i + 1]!;
+    for (let j = 0; j <= i; j++) {
+      outIndices.push(rowI[j]!, rowI1[j]!, rowI1[j + 1]!);
+    }
+    for (let j = 0; j < i; j++) {
+      outIndices.push(rowI[j]!, rowI1[j + 1]!, rowI[j + 1]!);
     }
   }
-  // Closed-manifold wrap-around: the fan walk starts in some sector
-  // and may return to that same sector at the end (the partition
-  // walk rotated to start at a boundary, but `corners` here is in
-  // raw fan order). Drop the duplicate so the cap walks each sector
-  // exactly once.
-  if (isClosed && out.length >= 2 && out[0] === out[out.length - 1]) {
-    out.pop();
-  }
-  return out;
+  void origIndices;
 }

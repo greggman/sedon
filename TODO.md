@@ -1,7 +1,9 @@
 # TODOs
 
 - [ ] need LODs so trees work?
-- [ ] import png, jpg, webp (use URL where # is local)
+- [ ] add nodes for city
+  What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
+- [*] import png, jpg, webp (use URL where # is local)
   - [ ] drag and drop
     issue, what does it mean? Drag and drop is for local files os this would
     have to add data that needs to be serialized on save.
@@ -121,6 +123,46 @@ based on distance from the camera.
 
 ## --- done ---
 
+- [ ] clicking outside a menu does not dismiss the menu
+- [ ] bevel
+  needs half-edge connectivity (face-adjacency, vertex valence). Sedon
+  meshes are indexed triangle lists — to bevel edges we'd first need
+  a connectivity builder (positions + indices → edge list with
+  left/right faces). That's a separable, foundational change. Once
+  built, both edge-bevel and inset-faces fall out naturally.
+- [ ] chamfer
+- [ ] flip-normals node
+- [ ] subdivision, loop-cut, smooth, edge-split
+  same blocker as bevel — needs the connectivity layer.
+- [*] extrude-along-path (`core/extrude-on-path`)
+- [*] lathe (`core/lathe`)
+- [*] mirror (`core/mirror`)
+- [*] `core/curve-2d` (Bezier authoring, outputs Path)
+- [ ] curve-2d: per-point handle-type UI
+  data model already supports `[x, y, handleType]` (0 = smooth, 1 =
+  corner). The 2D editor only authors x / y today; until the toggle
+  UI lands, all points are smooth unless someone hand-edits the
+  JSON inputValue. Add per-point handle-type cycling (right-click /
+  toggle button) in the point-list editor — should live alongside
+  the existing point-add / point-drag / point-delete affordances.
+- [ ] `core/compute-normals { cusp_angle }`
+  Houdini-style. Recompute mesh normals with a cusp-angle threshold:
+  edges sharper than the angle get split normals (hard edge); shallower
+  edges share normals (smooth). Drives lathe / extrude / curve-2d
+  output to look right for furniture where SOME edges are smooth
+  bulges and others are sharp creases.
+- [ ] for-each-cell, for-each-along-axis
+- [ ] selection-driven-gizmos
+- [*] TRS node, tabbing does not go to next input
+- [*] long names should not stretch node
+- [*] putting node in for-each-point should copy defaults.
+- [*] for-each-point should show "drop subgraph here"
+- [*] missing previews
+- [*] shadowmaps need alpha threshold
+- [*] in docs, add more TOC categories (by input, by output)
+- [*] tabbing in TRS node should stay in node? (current jumps to other stuff)
+- [*] add record=1 or menus, and save-recording.
+- [*] fix core/ramp type too long in docs (Css change)
 - [*] replace space-colonization's distrubute-on-faces with distribute-in-volume
 - [*] input tool tips should have description?
 - [*] favicon.ico

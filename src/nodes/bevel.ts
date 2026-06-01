@@ -85,7 +85,7 @@ might add if anyone needs it (Blender exposes both).
       const bev = addNode(g, 'core/bevel', {
         id: 'bevel',
         position: { x: 560, y: 0 },
-        inputValues: { width: 0.18, segments: 1 },
+        inputValues: { width: 0.12, segments: 4 },
       });
       addEdge(g, { node: cube.id, socket: 'geometry' }, { node: sel.id, socket: 'geometry' });
       addEdge(g, { node: sel.id, socket: 'geometry' }, { node: bev.id, socket: 'geometry' });
