@@ -336,7 +336,7 @@ export interface NodeDef {
    * the evaluator hash them. The escape hatch is for genuine
    * out-of-band state.
    */
-  dynamicFingerprintExtra?(inputs: NodeInputs): string;
+  dynamicFingerprintExtra?(inputs: NodeInputs, ctx: NodeContext): string;
   /**
    * Opt-in: the node's output value depends on the calling subgraph
    * context (specifically `ctx.subgraphPath`), so the evaluator must

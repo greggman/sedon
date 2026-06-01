@@ -474,6 +474,112 @@ test('sweepCache prunes lastFingerprintByNodeId entries whose fp was evicted', (
   );
 });
 
+test('dynamicFingerprintExtra: changes when a registry-looked-up dependency (bridge version) changes', () => {
+  // Mirrors the for-each-point case: the node's output depends on a
+  // bridge-eval kind fetched via `ctx.registry`. The bridge isn't an
+  // upstream wire so it doesn't enter `upstreamFingerprints` — the
+  // node closes the gap by using `dynamicFingerprintExtra(inputs, ctx)`
+  // to mix the bridge's version in. This test pins the contract:
+  // dynamicFingerprintExtra receives ctx, sees the bridge def, and
+  // changes when the bridge's version changes.
+  const registryV1 = createNodeRegistry();
+  registryV1.register({
+    id: 'bridge-eval/test-bridge',
+    category: '__internal__',
+    inputs: [],
+    outputs: [],
+    version: 'v1',
+    evaluate: () => ({}),
+  });
+  const registryV2 = createNodeRegistry();
+  registryV2.register({
+    id: 'bridge-eval/test-bridge',
+    category: '__internal__',
+    inputs: [],
+    outputs: [],
+    version: 'v2',
+    evaluate: () => ({}),
+  });
+  const def = {
+    id: 'test/has-bridge-dep',
+    category: 'Test',
+    inputs: [{ name: '__bridgeId', type: 'String', default: '' }],
+    outputs: [],
+    dynamicFingerprintExtra(inputs: Record<string, unknown>, ctx: { registry?: NodeRegistry }): string {
+      const id = (inputs.__bridgeId as string) ?? '';
+      return `bridge:${id}@${ctx.registry?.get(`bridge-eval/${id}`)?.version ?? ''}`;
+    },
+    evaluate: () => ({}),
+  };
+  const extra1 = def.dynamicFingerprintExtra({ __bridgeId: 'test-bridge' }, { registry: registryV1 });
+  const extra2 = def.dynamicFingerprintExtra({ __bridgeId: 'test-bridge' }, { registry: registryV2 });
+  assert.notEqual(extra1, extra2, 'bridge version change must change the dynamic extra');
+});
+
+test('nested subgraphs: editing an INNER subgraph invalidates an OUTER wrapper that contains it', async () => {
+  // Real-world repro: in the user's project, the cabinet-cell subgraph
+  // is wrapped by a bridge subgraph (for-each-point's iteration body).
+  // Editing a node INSIDE cabinet-cell bumps cabinet-cell.version, but
+  // the bridge.version stays the same. If the bridge wrapper's
+  // fingerprint depends ONLY on bridge.version, a cached bridge output
+  // gets returned at the for-each-point caller and the cabinet-cell
+  // edit is silently invisible. The fix: a subgraph wrapper's
+  // fingerprint version must reflect its TRANSITIVE subgraph
+  // dependencies, not just its own version field.
+  const counts = new Map<string, number>();
+  const registry = buildRegistry(counts);
+  const cache = createEvalCache();
+
+  // INNER subgraph: just emits a const value (the thing being edited).
+  const inner = createEmptySubgraph('inner', 'inner');
+  inner.outputs = [{ name: 'result', type: 'Float' }];
+  inner.version = 1;
+  const innerConst = addNode(inner.graph, 'test/const', { inputValues: { value: 10 } });
+  addEdge(inner.graph, { node: innerConst.id, socket: 'out' }, { node: inner.outputNodeId, socket: 'result' });
+
+  // OUTER subgraph: contains an instance of the inner subgraph wrapper.
+  // Its own graph never changes, so outer.version stays at 1.
+  const outer = createEmptySubgraph('outer', 'outer');
+  outer.outputs = [{ name: 'result', type: 'Float' }];
+  outer.version = 1;
+  const innerWrapperInstance = addNode(outer.graph, 'subgraph/inner');
+  addEdge(outer.graph, { node: innerWrapperInstance.id, socket: 'result' }, { node: outer.outputNodeId, socket: 'result' });
+
+  // Register both. Order: inner first so its wrapper kind exists when
+  // outer references it (matches how `buildRegistry` walks subgraphs).
+  for (const def of defineSubgraph(inner, registry)) registry.register(def);
+  for (const def of defineSubgraph(outer, registry)) registry.register(def);
+
+  // Parent graph: one outer-wrapper instance.
+  const parent = createGraph();
+  const outerWrapper = addNode(parent, 'subgraph/outer');
+
+  // First eval — populate the cache.
+  await evaluateGraph(parent, registry, { rootNodeId: outerWrapper.id, cache, touched: new Set() });
+  const innerEvalCountBefore = counts.get('test/const') ?? 0;
+
+  // Now simulate "user edits cabinet-cell": bump inner.version + change
+  // the inner const's input value. Rebuild the registry the way the
+  // editor would (new registry instance, fresh wrapper NodeDefs).
+  inner.version = 2;
+  innerConst.inputValues = { value: 999 };
+  const registry2 = buildRegistry(counts);
+  for (const def of defineSubgraph(inner, registry2)) registry2.register(def);
+  for (const def of defineSubgraph(outer, registry2)) registry2.register(def);
+  // NB: outer.version is intentionally NOT bumped — the bug scenario
+  // is exactly that the editor only bumps the directly-edited subgraph,
+  // and outer needs to invalidate transitively.
+
+  // Second eval — must re-run the inner const for the change to be visible.
+  await evaluateGraph(parent, registry2, { rootNodeId: outerWrapper.id, cache, touched: new Set() });
+  const innerEvalCountAfter = counts.get('test/const') ?? 0;
+
+  assert.ok(
+    innerEvalCountAfter > innerEvalCountBefore,
+    `inner const must re-evaluate after inner subgraph edit; ran ${innerEvalCountAfter - innerEvalCountBefore} times`,
+  );
+});
+
 test('sweepCache does NOT destroy a resource still referenced by a live entry', () => {
   const cache = createEvalCache();
 

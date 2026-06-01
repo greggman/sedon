@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { NodeRegistry } from '../core/node-def.js';
-import { defineSubgraph, type SubgraphDef } from '../core/subgraph.js';
+import { defineSubgraph, topologicallySortSubgraphs, type SubgraphDef } from '../core/subgraph.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
 import { useEditorStore } from './store.js';
 
@@ -9,9 +9,17 @@ import { useEditorStore } from './store.js';
 // closures capture this same registry, so nested subgraphs work — by the
 // time any wrapper.evaluate() runs, every subgraph kind is already
 // registered (we register them all up-front, evaluate runs later).
+//
+// Register in TOPOLOGICAL order (inner subgraphs first) so each
+// wrapper's `defineSubgraph` call can read its inner subgraphs'
+// already-registered wrapper versions when computing the outer's
+// transitive version. Without this ordering, an outer subgraph
+// registered before an inner one would stamp a transitive version
+// derived from a missing inner wrapper, and edits to the inner
+// subgraph wouldn't invalidate the outer's eval cache.
 export function buildRegistry(subgraphs: ReadonlyArray<SubgraphDef>): NodeRegistry {
   const registry = createCoreNodeRegistry();
-  for (const sg of subgraphs) {
+  for (const sg of topologicallySortSubgraphs(subgraphs)) {
     const defs = defineSubgraph(sg, registry);
     for (const d of defs) registry.register(d);
   }

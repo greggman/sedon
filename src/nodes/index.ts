@@ -17,6 +17,7 @@ import { cloudSlopeNode } from './cloud-slope.js';
 import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { coneNode } from './cone.js';
+import { computeNormalsNode } from './compute-normals.js';
 import { cubeNode } from './cube.js';
 import { curve2dNode } from './curve-2d.js';
 import { cylinderNode } from './cylinder.js';
@@ -91,6 +92,7 @@ export const CORE_NODES = [
   latheNode,
   extrudeOnPathNode,
   mirrorNode,
+  computeNormalsNode,
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -186,6 +188,7 @@ export {
   grassBladesNode,
   grassNode,
   coneNode,
+  computeNormalsNode,
   cubeNode,
   curve2dNode,
   cylinderNode,

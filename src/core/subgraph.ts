@@ -307,15 +307,20 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   };
 
   // Wrapper: appears in parent graphs as a regular node. Its NodeDef.version
-  // is the subgraph's version counter — the eval cache mixes this into the
-  // wrapper's fingerprint, so any edit to the inner graph invalidates cached
-  // outputs of this wrapper across all of its instances.
+  // is the subgraph's TRANSITIVE version — its own version + every inner
+  // subgraph instance's (already-registered) wrapper version. The eval
+  // cache mixes this into the wrapper's fingerprint, so any edit anywhere
+  // in the dependency tree invalidates cached outputs of this wrapper.
+  // Direct `def.version` (own counter only) would miss edits in a nested
+  // subgraph: editing cabinet-cell would change cabinet-cell.version but
+  // NOT the bridge subgraph's version above it, so a for-each-point
+  // wrapping the bridge would cache-hit and silently swallow the change.
   const wrapper: NodeDef = {
     id: wrapperKind,
     category: def.category,
     inputs: def.inputs,
     outputs: def.outputs,
-    version: def.version ?? 0,
+    version: transitiveSubgraphVersion(def, registry),
     async evaluate(ctx, inputs) {
       const depth = (ctx.subgraphDepth ?? 0) + 1;
       if (depth > MAX_SUBGRAPH_DEPTH) {
@@ -513,7 +518,11 @@ function defineBridgeSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef
     category: '__internal__',
     inputs: def.inputs,
     outputs: def.outputs,
-    version: def.version ?? 0,
+    // Same transitive-version rationale as the regular wrapper above:
+    // a bridge containing a subgraph/cabinet-cell instance must
+    // re-evaluate when cabinet-cell is edited, even though the bridge
+    // itself wasn't touched.
+    version: transitiveSubgraphVersion(def, registry),
     async evaluate(ctx, inputs) {
       const depth = (ctx.subgraphDepth ?? 0) + 1;
       if (depth > MAX_SUBGRAPH_DEPTH) {
@@ -573,6 +582,76 @@ export function isIterationOutputKind(kind: string): boolean {
 export function subgraphIdFromKind(kind: string): string | null {
   if (!isSubgraphInstanceKind(kind)) return null;
   return kind.slice('subgraph/'.length);
+}
+
+/**
+ * Topologically sort subgraphs so a subgraph appears AFTER every
+ * subgraph it transitively references. The wrapper NodeDef for the
+ * outer subgraph stamps its `version` from the inner subgraph's
+ * already-registered version (see `defineSubgraph`'s transitive-
+ * version computation) — that only works when the inner is
+ * registered first. Cycles are broken arbitrarily (the SubgraphDef
+ * graph forbids them via the recursion-depth check, but the sort
+ * stays defensive).
+ */
+export function topologicallySortSubgraphs(
+  subgraphs: ReadonlyArray<SubgraphDef>,
+): SubgraphDef[] {
+  const byId = new Map(subgraphs.map((s) => [s.id, s]));
+  const out: SubgraphDef[] = [];
+  const visited = new Set<string>();
+  const inProgress = new Set<string>();
+  function visit(sg: SubgraphDef) {
+    if (visited.has(sg.id)) return;
+    if (inProgress.has(sg.id)) return; // cycle — emit on the way out
+    inProgress.add(sg.id);
+    for (const node of sg.graph.nodes) {
+      const innerId = subgraphIdFromKind(node.kind);
+      if (innerId !== null) {
+        const inner = byId.get(innerId);
+        if (inner) visit(inner);
+      }
+    }
+    inProgress.delete(sg.id);
+    visited.add(sg.id);
+    out.push(sg);
+  }
+  for (const sg of subgraphs) visit(sg);
+  return out;
+}
+
+/**
+ * Compute a TRANSITIVE version string for a subgraph: its own
+ * `version` field combined with the (already-registered) wrapper
+ * versions of every subgraph it instantiates in its inner graph.
+ * The outer wrapper's `NodeDef.version` is set to this string, so
+ * editing ANY subgraph in the dependency tree changes the outer
+ * wrapper's fingerprint and forces a re-eval through the outer
+ * wrapper's cache.
+ *
+ * Requires inner subgraphs' wrappers to already be in the registry
+ * (call after topologicallySortSubgraphs).
+ */
+export function transitiveSubgraphVersion(
+  def: SubgraphDef,
+  registry: NodeRegistry,
+): string {
+  const parts = [String(def.version ?? 0)];
+  // Sort referenced ids for determinism (graph node iteration order
+  // depends on insertion, which can shift across edits and would
+  // produce spurious version churn).
+  const innerIds = new Set<string>();
+  for (const node of def.graph.nodes) {
+    const innerId = subgraphIdFromKind(node.kind);
+    if (innerId !== null) innerIds.add(innerId);
+  }
+  for (const innerId of [...innerIds].sort()) {
+    const innerWrapper = registry.get(`subgraph/${innerId}`);
+    if (innerWrapper?.version !== undefined) {
+      parts.push(`${innerId}:${innerWrapper.version}`);
+    }
+  }
+  return parts.join('|');
 }
 
 // Seed an empty SubgraphDef with the two boundary nodes in place but no

@@ -214,6 +214,20 @@ kinds (for-each-point, future for-each-face, for-each-segment) just
 by re-wiring its bridge.
 `,
   },
+  // For-each-point's output depends on its bridge's evaluation, but
+  // the bridge is fetched at evaluate time via `ctx.registry` — it
+  // isn't an upstream socket whose fingerprint would otherwise enter
+  // our own. Without this, an edit to any subgraph the bridge
+  // references (cabinet-cell inside bridge-fep-cabinets, the most
+  // common nesting) doesn't change our own fingerprint, and the for-
+  // each-point cache hits with stale output. Mixing the bridge's
+  // (already-transitive) version into our fp closes that gap.
+  dynamicFingerprintExtra(inputs, ctx): string {
+    const bridgeId = (inputs.__bridgeId as string | undefined) ?? '';
+    const bridgeDef = ctx.registry?.get(`bridge-eval/${bridgeId}`);
+    const bridgeVer = bridgeDef?.version ?? '';
+    return `bridge:${bridgeId}@${bridgeVer}`;
+  },
   async evaluate(ctx, inputs): Promise<Record<string, unknown>> {
     const pc = inputs.points as PointCloudValue | undefined;
     const bridgeId = (inputs.__bridgeId as string | undefined) ?? '';
