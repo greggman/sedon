@@ -8,7 +8,8 @@ Procedural 3D content generator built around a node graph. (super alpha)
 
 [Live](https://greggman.github.io/sedon/?anim=1)
 
-Currently you can save as a URL up to the maximum URL size. If you make
+Currently you can save as a URL up to the maximum URL size. Or you can
+download a file and then pick load to re-read it. If you make
 something cool please post a link. This is alpha software those so expect
 that the file format will change and old links might stop working.
 
@@ -202,6 +203,12 @@ a cone or sphere on top.
 We worked though the issues and it mostly seems to work as expected though
 I don't have extensive personal usage testing yet.
 
+Here's an image where I loaded the demo tree & bush scene, copied two of the
+trees. Then loaded the forest scene, pasted in the trees and wired them
+to the instancing nodes
+
+<img src="images/screenshots/forest-with-trees.png">
+
 ### Mock WebGPU
 
 At one point I asked it to Mock WebGPU so it could run much of the code
@@ -236,10 +243,13 @@ saying we wanted what's on the left, but what we had now was what was on the rig
 
 <img src="images/screenshots/bevel-algo1-vs-algo2.png">
 
-It claimed to see it immediately (incredible!) and described the difference correctly
-and how it needed to fix it.
+It claimed to see it immediately (incredible!) and described the difference correctly and how it needed to fix it.
 
-<img src="image/screenshots/bevel-fixed.png">
+<img src="images/screenshots/bevel-fixed.png">
+
+This wasn't the only case were I gave it screenshots.
+I expected screenshots to work for widgets in UIs. I did not expect it to
+work for graphics in general.
 
 ## Future
 
