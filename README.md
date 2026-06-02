@@ -214,6 +214,33 @@ Of course Puppeteer has been useful. We avoid it for a while but eventually
 I got tired of hand testing and told Claude, "You could test this yourself
 with puppeteer" and it was like "Yea, good idea!" 😂
 
+### Showing it screenshots
+
+It's also crazy how much it perceives screenshots. Working to get bevel correct
+I ran into two issues. One, after bevel the preview no longer displayed.
+We tried a lots of stuff and Claude went off the rails quite a bit trying to
+find the issue. We had a simple graph cube->bevel->scene-entity->preview that wasn't
+working. It tried to compare it to other scenes. I pointed out connecting cube
+directly to scene-entity worked so the issue was not elsewhere. Anyway, we try
+a bunch of different things. Eventually I asked Claude to export the data
+after bevel to a json file so I could inspect it. Without prompting it helpfully
+wrote both a .json file and .obj file, making it suitable for loading into blender.
+
+There it became clear, regardless of the display bug, the algo it had made
+wasn't quite working.
+
+<img src="images/screenshots/bevel-bug.png">
+
+We decided to fix that first but it's new algo was both still off and still not displaying. It tried to explain with text diagrams. Finally I give it this screenshot
+saying we wanted what's on the left, but what we had now was what was on the right.
+
+<img src="images/screenshots/bevel-algo1-vs-algo2.png">
+
+It claimed to see it immediately (incredible!) and described the difference correctly
+and how it needed to fix it.
+
+<img src="image/screenshots/bevel-fixed.png">
+
 ## Future
 
 I honestly don't know. I see this as an experiment in Vibe Coding in
