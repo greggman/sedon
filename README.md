@@ -242,7 +242,7 @@ wasn't quite working.
 
 <img src="images/screenshots/bevel-bug.png">
 
-We decided to fix that first but it's new algo was both still off and still not displaying. It tried to explain with text diagrams. Finally I give it this screenshot
+We decided to fix that first but it's new algo was both still off and still not displaying. I tried to explain with text diagrams. Finally I give it this screenshot
 saying we wanted what's on the left, but what we had now was what was on the right.
 
 <img src="images/screenshots/bevel-algo1-vs-algo2.png">
