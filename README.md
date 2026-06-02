@@ -6,7 +6,8 @@ Procedural 3D content generator built around a node graph. (super alpha)
 
 (sedon = nodes spelled backward - need a better name!)
 
-[Live](https://greggman.github.io/sedon/?anim=1)
+* [Live](https://greggman.github.io/sedon/?anim=1)
+* [Docs](DOCS.md)
 
 Currently you can save as a URL up to the maximum URL size. Or you can
 download a file and then pick load to re-read it. If you make
@@ -253,6 +254,12 @@ It claimed to see it immediately (incredible!) and described the difference corr
 This wasn't the only case were I gave it screenshots.
 I expected screenshots to work for widgets in UIs. I did not expect it to
 work for graphics in general.
+
+### Failure
+
+One thing we both failed at was an algorithm for auto-layout.
+There's one in there now `View->Cleanup` but it does a horrible job.
+It's possible.
 
 ## Future
 
