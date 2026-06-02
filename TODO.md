@@ -1,6 +1,16 @@
 # TODOs
 
 - [ ] need LODs so trees work?
+- [ ] clicking outside a menu does not dismiss the menu
+- [*] bevel
+  needs half-edge connectivity (face-adjacency, vertex valence). Sedon
+  meshes are indexed triangle lists — to bevel edges we'd first need
+  a connectivity builder (positions + indices → edge list with
+  left/right faces). That's a separable, foundational change. Once
+  built, both edge-bevel and inset-faces fall out naturally.
+- [ ] flip-normals node
+- [ ] subdivision, loop-cut, smooth, edge-split
+  same blocker as bevel — needs the connectivity layer.
 - [ ] add nodes for city
   What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
 - [*] import png, jpg, webp (use URL where # is local)
@@ -55,9 +65,9 @@ based on distance from the camera.
   - [ ] list, icon
   - [ ] drag into graph
 - [ ] double click frames?
-- [ ] copy/copy/paste nodes
+- [*] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
-- [ ] need to be able to set default on subgraph-input
+- [*] need to be able to set default on subgraph-input
 - [ ] future nodes
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
@@ -71,7 +81,6 @@ based on distance from the camera.
 - [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
 - [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to list?
 - [ ] is there a list/array entry type
-- [ ] solid-color should just be color (special case or give it 2 outputs)
 - [ ] editable texture? a node with a pixel editor?
   This is mostly for drawing terrain? Though I can
   guess you'd want to edit terrain in the preview
@@ -79,17 +88,14 @@ based on distance from the camera.
   - [ ] simple brush with alpha - like 2d blend demo
   - [ ] needs undo
 - [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
-- [ ] having color nodes is gross - solutions
-  - [*] color inputs, like numbers, have a color
-  - [ ] color bank (a node with N colors and N outputs, maybe with labels)
 - [ ] need preview always - even if bad inputs (example heightfield)
 - [ ] let you pull off an input (?)
   prefs because easy to break when trying to move node
-- [ ] add help icon at top right of each node (or bottom left as there is space)
+- [*] add help icon at top right of each node (or bottom left as there is space)
   should be link to docs. Generate docs for each node. Docs should have live
   sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` or `url?src=url` 
 - [ ] allow drag and drop of scene file
-- [ ] name scene .sedon
+- [*] name scene .sedon
 - [ ] need "new scene"
   - [ ] verify before deleting work
   - [ ] offer various kinds of starting scenes
@@ -123,17 +129,6 @@ based on distance from the camera.
 
 ## --- done ---
 
-- [ ] clicking outside a menu does not dismiss the menu
-- [ ] bevel
-  needs half-edge connectivity (face-adjacency, vertex valence). Sedon
-  meshes are indexed triangle lists — to bevel edges we'd first need
-  a connectivity builder (positions + indices → edge list with
-  left/right faces). That's a separable, foundational change. Once
-  built, both edge-bevel and inset-faces fall out naturally.
-- [ ] chamfer
-- [ ] flip-normals node
-- [ ] subdivision, loop-cut, smooth, edge-split
-  same blocker as bevel — needs the connectivity layer.
 - [*] extrude-along-path (`core/extrude-on-path`)
 - [*] lathe (`core/lathe`)
 - [*] mirror (`core/mirror`)
