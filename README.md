@@ -259,7 +259,7 @@ work for graphics in general.
 
 One thing we both failed at was an algorithm for auto-layout.
 There's one in there now `View->Cleanup` but it does a horrible job.
-It's possible.
+It's possible it just implemented sugiyama wrong.
 
 ## Future
 
