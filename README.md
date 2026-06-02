@@ -209,6 +209,9 @@ to the instancing nodes
 
 <img src="images/screenshots/forest-with-trees.png">
 
+I haven't made this the default because it needs LODing, culling,
+and more work to lower the poly count of the tree, merge leaves, etc.
+
 ### Mock WebGPU
 
 At one point I asked it to Mock WebGPU so it could run much of the code
