@@ -204,14 +204,15 @@ a cone or sphere on top.
 We worked though the issues and it mostly seems to work as expected though
 I don't have extensive personal usage testing yet.
 
-Here's an image where I loaded the demo tree & bush scene, copied two of the
-trees. Then loaded the forest scene, pasted in the trees and wired them
-to the instancing nodes
+Here's an image where I loaded the [demo tree & bush scene](https://greggman.github.io/sedon/?scene=tree-bush),
+copied two of the trees. Then loaded [the forest scene](https://greggman.github.io/sedon/?scene=forest),
+pasted in the trees and wired them to the instancing nodes
 
 <img src="images/screenshots/forest-with-trees.png">
 
 I haven't made this the default because it needs LODing, culling,
-and more work to lower the poly count of the tree, merge leaves, etc.
+and more work to lower the poly count of the tree, merge leaves, etc...
+But, it points at the direct we were going.
 
 ### Mock WebGPU
 
