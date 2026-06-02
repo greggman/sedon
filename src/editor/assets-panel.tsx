@@ -14,6 +14,7 @@ import {
 } from './asset-clipboard.js';
 import type { AssetSelection } from './asset-ops.js';
 import { AssetThumbnail } from './asset-thumbnail.js';
+import { buildAssetInstancesFragment, serializeFragment } from './fragment.js';
 import { useLayoutStore } from './layout-store.js';
 import { openGraphInCanvas, openGraphInPreview } from './open-graph.js';
 import { useEditorStore } from './store.js';
@@ -419,7 +420,24 @@ export function AssetsPanel() {
 
   const performCopy = useCallback(() => {
     if (tileSelection.size === 0) return;
-    setCopy(selectionToAssetSelection(tileSelection));
+    const sel = selectionToAssetSelection(tileSelection);
+    setCopy(sel);
+    // Mirror the selection to the OS clipboard as an instantiation
+    // fragment so a Cmd-V on a canvas pastes wrapper-node instances
+    // of the copied assets — the same end state as dragging each
+    // asset onto the canvas. Folders aren't instantiable, so this
+    // only carries the subgraph ids; the asset-panel's own paste
+    // path keeps using the internal store for cut/copy-within-the-
+    // panel semantics (where folders DO matter). Fire-and-forget on
+    // failure (insecure context, permission denied): the in-panel
+    // paste still works via the internal store.
+    if (sel.subgraphIds.length > 0) {
+      const { subgraphs } = useEditorStore.getState();
+      const fragment = buildAssetInstancesFragment(sel.subgraphIds, subgraphs);
+      if (fragment) {
+        navigator.clipboard.writeText(serializeFragment(fragment)).catch(() => {});
+      }
+    }
   }, [tileSelection, setCopy]);
 
   const performPaste = useCallback(() => {

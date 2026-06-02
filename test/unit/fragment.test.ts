@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { addEdge, addNode, createGraph } from '../../src/core/graph.js';
 import { createEmptySubgraph } from '../../src/core/subgraph.js';
 import {
+  buildAssetInstancesFragment,
   buildFragment,
   buildSubgraphFragment,
   FRAGMENT_FORMAT_VERSION,
@@ -84,6 +85,36 @@ test('buildSubgraphFragment captures one def and its deps without root nodes', (
 
 test('buildSubgraphFragment returns undefined for an unknown def id', () => {
   assert.equal(buildSubgraphFragment('does-not-exist', []), undefined);
+});
+
+test('buildAssetInstancesFragment builds wrapper-node instances + dep closure', () => {
+  // Two subgraph defs in the project registry, no nesting.
+  const a = createEmptySubgraph('asset-a');
+  const b = createEmptySubgraph('asset-b');
+  const subgraphs = [a, b];
+  const frag = buildAssetInstancesFragment(['asset-a', 'asset-b'], subgraphs)!;
+  assert.equal(frag.sedonFragment, FRAGMENT_FORMAT_VERSION);
+  assert.equal(frag.nodes.length, 2);
+  assert.deepEqual(frag.nodes.map((n) => n.kind), ['subgraph/asset-a', 'subgraph/asset-b']);
+  // Defs travel along so a paste into a fresh project still works.
+  assert.equal(frag.subgraphs.length, 2);
+  assert.equal(frag.edges.length, 0);
+  // bbox spans the laid-out node row (positions are spaced
+  // horizontally so multi-paste doesn't stack on a single point).
+  assert.ok(frag.bbox.w > 0);
+});
+
+test('buildAssetInstancesFragment drops unknown ids', () => {
+  const a = createEmptySubgraph('asset-a');
+  const frag = buildAssetInstancesFragment(['asset-a', 'not-real'], [a]);
+  assert.ok(frag);
+  assert.equal(frag!.nodes.length, 1);
+  assert.equal(frag!.nodes[0]!.kind, 'subgraph/asset-a');
+});
+
+test('buildAssetInstancesFragment returns undefined when all ids unknown', () => {
+  const frag = buildAssetInstancesFragment(['ghost-1', 'ghost-2'], []);
+  assert.equal(frag, undefined);
 });
 
 test('serialize → parse round-trips a fragment by value', () => {

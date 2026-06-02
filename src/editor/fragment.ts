@@ -148,6 +148,51 @@ export function buildSubgraphFragment(
   };
 }
 
+/**
+ * Build a fragment that INSTANTIATES one or more subgraphs as wrapper
+ * nodes — the payload behind copying assets from the Assets panel and
+ * pasting them onto a canvas. Same end state as the user dragging
+ * each asset onto the canvas, just bundled into a single Fragment
+ * round-trip (which means OS-clipboard + .sedon-save also work).
+ *
+ * Each id in `defIds` becomes a `subgraph/<id>` wrapper node with a
+ * fresh uuid; positions are laid out in a horizontal row at the
+ * origin so the import path can re-anchor them to the paste cursor
+ * via the standard bbox-centred logic. The transitive closure of
+ * subgraph defs is included so the paste succeeds in a project that
+ * doesn't already have the referenced defs.
+ *
+ * Returns undefined when `defIds` is empty or none of them resolve
+ * against `allSubgraphs` (caller treats as a no-op).
+ */
+export function buildAssetInstancesFragment(
+  defIds: ReadonlyArray<string>,
+  allSubgraphs: ReadonlyArray<SubgraphDef>,
+): Fragment | undefined {
+  const knownIds = new Set(allSubgraphs.map((s) => s.id));
+  const nodes: GraphNode[] = [];
+  const SPACING = 240;
+  let x = 0;
+  for (const defId of defIds) {
+    if (!knownIds.has(defId)) continue;
+    nodes.push({
+      id: `paste-${defId}-${nodes.length}`,
+      kind: `subgraph/${defId}`,
+      position: { x, y: 0 },
+    });
+    x += SPACING;
+  }
+  if (nodes.length === 0) return undefined;
+  const subgraphs = collectSubgraphClosure(nodes, allSubgraphs);
+  return {
+    sedonFragment: FRAGMENT_FORMAT_VERSION,
+    bbox: computeBbox(nodes),
+    nodes,
+    edges: [],
+    subgraphs,
+  };
+}
+
 /** Serialize to the canonical JSON form. Used by clipboard write + file save. */
 export function serializeFragment(fragment: Fragment): string {
   return JSON.stringify(fragment);
