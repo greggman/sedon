@@ -729,9 +729,9 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     half, edges, mesh.indices, segments, width,
     mesh.positions, canonical,
     otherEndCanonForIncomingSide, otherEndCanonForOutgoingSide,
-    getInsetVertex, getInnerInsetVertex, getArcVertex,
+    getInnerInsetVertex, getArcVertex,
     outPositions, outUvs, outNormals, outIndices,
-    unitDir, mesh.uvs,
+    mesh.uvs,
     setEmitContext,
     triFaceNormal,
   );
@@ -817,14 +817,12 @@ function emitCornerCaps(
   canonical: Uint32Array,
   otherEndForIn: (he: number) => number,
   otherEndForOut: (he: number) => number,
-  getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
   getInnerInsetVertex: (origV: number, vCan: number, other1: number, other2: number) => number,
   getArcVertex: (vCan: number, lo: number, hi: number, bevelEdge: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
   outPositions: number[],
   outUvs: number[],
   outNormals: number[],
   outIndices: number[],
-  unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
   uvs: Float32Array,
   setEmitContext: (ctx: string, normal: [number, number, number]) => void,
   triFaceNormal: (f: number) => [number, number, number],
@@ -1129,107 +1127,3 @@ function fanCornersInOrder(
   return { fan: [...backward, ...forward], isClosed: false };
 }
 
-/**
- * Emit a triangular barycentric-grid corner cap. The 3 cap corners
- * (A, B, C in CCW fan order) sit at distance `width` from V along
- * their respective "other end" directions; intermediate grid points
- * spherical-barycentric blend the 3 unit directions. Arc-edge
- * vertices share with the strip arcs through the arcVertex cache.
- */
-function emitTriangleCap(
-  vCan: number,
-  capA: CapCorner, capB: CapCorner, capC: CapCorner,
-  N: number, width: number,
-  positions: Float32Array, uvs: Float32Array, origIndices: Uint32Array,
-  getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
-  getArcVertex: (vCan: number, lo: number, hi: number, bevelEdge: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
-  unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
-  outPositions: number[], outUvs: number[], outNormals: number[],
-  outIndices: number[],
-): void {
-  const vx = positions[vCan * 3]!,    vy = positions[vCan * 3 + 1]!,    vz = positions[vCan * 3 + 2]!;
-  const dA = unitDir(vCan, capA.otherCan);
-  const dB = unitDir(vCan, capB.otherCan);
-  const dC = unitDir(vCan, capC.otherCan);
-  const uvAu = uvs[capA.origV * 2] ?? 0, uvAv = uvs[capA.origV * 2 + 1] ?? 0;
-  const uvBu = uvs[capB.origV * 2] ?? 0, uvBv = uvs[capB.origV * 2 + 1] ?? 0;
-  const uvCu = uvs[capC.origV * 2] ?? 0, uvCv = uvs[capC.origV * 2 + 1] ?? 0;
-
-  // Helper: look up (or recompute) the arc-boundary vertex on the
-  // cap's edge between two sector corners at ring index i (i = 0 at
-  // s1, i = N at s2).
-  const arcBoundary = (s1: CapCorner, s2: CapCorner, i: number): number => {
-    const lo = Math.min(s1.otherCan, s2.otherCan);
-    const hi = Math.max(s1.otherCan, s2.otherCan);
-    const idxRing = s1.otherCan < s2.otherCan ? i : (N - i);
-    // Compute position via slerp from s1.dir to s2.dir at t = i/N.
-    const t = i / N;
-    const dStart = s1.otherCan === capA.otherCan ? dA : (s1.otherCan === capB.otherCan ? dB : dC);
-    const dEnd   = s2.otherCan === capA.otherCan ? dA : (s2.otherCan === capB.otherCan ? dB : dC);
-    const d = slerpUnit(dStart, dEnd, t);
-    const px = vx + width * d.x;
-    const py = vy + width * d.y;
-    const pz = vz + width * d.z;
-    const uvS = s1.otherCan === capA.otherCan ? { u: uvAu, v: uvAv } : (s1.otherCan === capB.otherCan ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
-    const uvE = s2.otherCan === capA.otherCan ? { u: uvAu, v: uvAv } : (s2.otherCan === capB.otherCan ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
-    const u = uvS.u + (uvE.u - uvS.u) * t;
-    const vUv = uvS.v + (uvE.v - uvS.v) * t;
-    // Legacy emitTriangleCap path — no longer reached (the new
-    // inline cap subdivision in emitCornerCaps handles segments≥2),
-    // but kept for API stability. Pass 0 for the bevelEdge slot;
-    // any value works since this code is dead.
-    return getArcVertex(vCan, lo, hi, 0, idxRing, px, py, pz, u, vUv);
-  };
-
-  // Grid: row i in [0, N], col j in [0, i].
-  //   bary_A = (N - i) / N
-  //   bary_B = (i - j) / N
-  //   bary_C = j / N
-  const grid: number[][] = [];
-  for (let i = 0; i <= N; i++) {
-    const row: number[] = [];
-    for (let j = 0; j <= i; j++) {
-      const ba = (N - i) / N;
-      const bb = (i - j) / N;
-      const bc = j / N;
-      let idx: number;
-      if (i === 0 && j === 0) idx = getInsetVertex(capA.origV, vCan, capA.otherCan);
-      else if (i === N && j === 0) idx = getInsetVertex(capB.origV, vCan, capB.otherCan);
-      else if (i === N && j === N) idx = getInsetVertex(capC.origV, vCan, capC.otherCan);
-      else if (j === 0) idx = arcBoundary(capA, capB, i);
-      else if (j === i) idx = arcBoundary(capA, capC, i);
-      else if (i === N) idx = arcBoundary(capB, capC, j);
-      else {
-        // Interior — fresh vertex via barycentric slerp.
-        const dx = ba * dA.x + bb * dB.x + bc * dC.x;
-        const dy = ba * dA.y + bb * dB.y + bc * dC.y;
-        const dz = ba * dA.z + bb * dB.z + bc * dC.z;
-        const len = Math.hypot(dx, dy, dz) || 1;
-        const px = vx + width * dx / len;
-        const py = vy + width * dy / len;
-        const pz = vz + width * dz / len;
-        const u = ba * uvAu + bb * uvBu + bc * uvCu;
-        const vUv = ba * uvAv + bb * uvBv + bc * uvCv;
-        idx = outPositions.length / 3;
-        outPositions.push(px, py, pz);
-        outUvs.push(u, vUv);
-        outNormals.push(0, 1, 0);
-      }
-      row.push(idx);
-    }
-    grid.push(row);
-  }
-  // Triangulate: row i contributes (i+1) up-triangles and i down-
-  // triangles. Total per cap: N². Winding: CCW from outside the cap.
-  for (let i = 0; i < N; i++) {
-    const rowI = grid[i]!;
-    const rowI1 = grid[i + 1]!;
-    for (let j = 0; j <= i; j++) {
-      outIndices.push(rowI[j]!, rowI1[j]!, rowI1[j + 1]!);
-    }
-    for (let j = 0; j < i; j++) {
-      outIndices.push(rowI[j]!, rowI1[j + 1]!, rowI[j + 1]!);
-    }
-  }
-  void origIndices;
-}

@@ -89,8 +89,8 @@ test('buildSubgraphFragment returns undefined for an unknown def id', () => {
 
 test('buildAssetInstancesFragment builds wrapper-node instances + dep closure', () => {
   // Two subgraph defs in the project registry, no nesting.
-  const a = createEmptySubgraph('asset-a');
-  const b = createEmptySubgraph('asset-b');
+  const a = createEmptySubgraph('asset-a', 'Asset A');
+  const b = createEmptySubgraph('asset-b', 'Asset B');
   const subgraphs = [a, b];
   const frag = buildAssetInstancesFragment(['asset-a', 'asset-b'], subgraphs)!;
   assert.equal(frag.sedonFragment, FRAGMENT_FORMAT_VERSION);
@@ -105,7 +105,7 @@ test('buildAssetInstancesFragment builds wrapper-node instances + dep closure', 
 });
 
 test('buildAssetInstancesFragment drops unknown ids', () => {
-  const a = createEmptySubgraph('asset-a');
+  const a = createEmptySubgraph('asset-a', 'Asset A');
   const frag = buildAssetInstancesFragment(['asset-a', 'not-real'], [a]);
   assert.ok(frag);
   assert.equal(frag!.nodes.length, 1);
