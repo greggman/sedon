@@ -213,11 +213,19 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
   // inset, ring N = hi inset, both of those reuse getInsetVertex.
   // Cache by (vCan, lo, hi, i) so the strip and cap share these.
   const getArcVertex = (
-    vCan: number, otherLo: number, otherHi: number, i: number,
+    vCan: number, otherLo: number, otherHi: number, bevelEdge: number, i: number,
     posX: number, posY: number, posZ: number,
     uvU: number, uvV: number,
   ): number => {
-    const key = `a:${vCan}:${otherLo}:${otherHi}:${i}`;
+    // (vCan, bevelEdge, i) uniquely identifies an arc midpoint:
+    // bevelEdge is the canonical "other end" of the cube edge this
+    // arc lies on, and `i` is the CANONICAL ring index (0 = "lo"
+    // face-tri side, N = "hi" face-tri side — both the strip and
+    // the cap canonicalise the same way). otherLo/otherHi are
+    // passed through but not used in the key — kept in the
+    // signature so older calling code stays type-compatible.
+    void otherLo; void otherHi;
+    const key = `a:${vCan}:${bevelEdge}:${i}`;
     const existing = outVertexByKey.get(key);
     if (existing !== undefined) return existing;
     const idx = outPositions.length / 3;
@@ -542,13 +550,89 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
       return;
     }
 
-    // Arc subdivision: slerp ring points at each endpoint between
-    // the F_A and F_B direction. Endpoints (ring 0 = F_A inset,
-    // ring N = F_B inset) reuse the existing inset vertices.
-    const dirA0 = unitDir(V0_canon, V0_A_otherEnd);
-    const dirB0 = unitDir(V0_canon, V0_B_otherEnd);
-    const dirA1 = unitDir(V1_canon, V1_A_otherEnd);
-    const dirB1 = unitDir(V1_canon, V1_B_otherEnd);
+    // segments ≥ 2: replace the chamfer-average normal that
+    // setEmitContext stamped on the strip endpoints (ring 0 / ring N
+    // = v0a/v1a / v0b/v1b) with the ADJACENT FACE's outward normal.
+    // The face polygon at this corner already carries that face
+    // normal; matching the strip's ring 0 to it gives a smooth
+    // (no-crease) transition from face polygon into the rounded
+    // bevel. Without this fix the boundary shows a visible band
+    // because v0a's normal averages F_A and F_B even though the
+    // physically-touching face polygon stamps F_A only.
+    outNormals[v0a * 3]     = nA[0];
+    outNormals[v0a * 3 + 1] = nA[1];
+    outNormals[v0a * 3 + 2] = nA[2];
+    outNormals[v1a * 3]     = nA[0];
+    outNormals[v1a * 3 + 1] = nA[1];
+    outNormals[v1a * 3 + 2] = nA[2];
+    outNormals[v0b * 3]     = nB[0];
+    outNormals[v0b * 3 + 1] = nB[1];
+    outNormals[v0b * 3 + 2] = nB[2];
+    outNormals[v1b * 3]     = nB[0];
+    outNormals[v1b * 3 + 1] = nB[1];
+    outNormals[v1b * 3 + 2] = nB[2];
+
+    // Arc subdivision (segments ≥ 2) — Blender-style rounded bevel.
+    // Each endpoint of the strip gets its own arc, sized for that
+    // endpoint's cut configuration:
+    //
+    //   • BOTH adjacent faces 2-cut at this endpoint → the arc is a
+    //     quarter-circle of the rounded-bevel cylinder. Center =
+    //     V + width·(−nA − nB ± edge_unit) (inset cube corner);
+    //     slerp directions = outward face normals (nA, nB).
+    //   • EITHER face 1-cut at this endpoint → V is preserved on
+    //     the unselected side. The arc is centered AT V itself,
+    //     with slerp directions = the in-face directions toward
+    //     each face's "other end" vertex (= the unselected edge's
+    //     far endpoint for 1-cut, returned by the `otherEnd…`
+    //     walker).
+    //
+    // The per-ring slerp direction is ALSO the surface normal at
+    // that point on the bevel (radial outward), so we stamp it
+    // directly on the arc verts. For 1-cut endpoints the normal is
+    // approximate (the unrolled fold's slerped direction) which is
+    // good enough for the shaded preview.
+    const eVec0 = { x: mesh.positions[V1_canon * 3]! - mesh.positions[V0_canon * 3]!,
+                    y: mesh.positions[V1_canon * 3 + 1]! - mesh.positions[V0_canon * 3 + 1]!,
+                    z: mesh.positions[V1_canon * 3 + 2]! - mesh.positions[V0_canon * 3 + 2]! };
+    const eLen0 = Math.hypot(eVec0.x, eVec0.y, eVec0.z) || 1;
+    const eu0 = { x: eVec0.x / eLen0, y: eVec0.y / eLen0, z: eVec0.z / eLen0 };
+
+    const V0_2cut = V0_A_is2Cut && V0_B_is2Cut;
+    const V1_2cut = V1_A_is2Cut && V1_B_is2Cut;
+
+    let cx0: number, cy0: number, cz0: number;
+    let dir0A: { x: number; y: number; z: number };
+    let dir0B: { x: number; y: number; z: number };
+    if (V0_2cut) {
+      cx0 = mesh.positions[V0_canon * 3]!     - width * (nA[0] + nB[0]) + width * eu0.x;
+      cy0 = mesh.positions[V0_canon * 3 + 1]! - width * (nA[1] + nB[1]) + width * eu0.y;
+      cz0 = mesh.positions[V0_canon * 3 + 2]! - width * (nA[2] + nB[2]) + width * eu0.z;
+      dir0A = { x: nA[0], y: nA[1], z: nA[2] };
+      dir0B = { x: nB[0], y: nB[1], z: nB[2] };
+    } else {
+      cx0 = mesh.positions[V0_canon * 3]!;
+      cy0 = mesh.positions[V0_canon * 3 + 1]!;
+      cz0 = mesh.positions[V0_canon * 3 + 2]!;
+      dir0A = unitDir(V0_canon, V0_A_otherEnd);
+      dir0B = unitDir(V0_canon, V0_B_otherEnd);
+    }
+    let cx1: number, cy1: number, cz1: number;
+    let dir1A: { x: number; y: number; z: number };
+    let dir1B: { x: number; y: number; z: number };
+    if (V1_2cut) {
+      cx1 = mesh.positions[V1_canon * 3]!     - width * (nA[0] + nB[0]) - width * eu0.x;
+      cy1 = mesh.positions[V1_canon * 3 + 1]! - width * (nA[1] + nB[1]) - width * eu0.y;
+      cz1 = mesh.positions[V1_canon * 3 + 2]! - width * (nA[2] + nB[2]) - width * eu0.z;
+      dir1A = { x: nA[0], y: nA[1], z: nA[2] };
+      dir1B = { x: nB[0], y: nB[1], z: nB[2] };
+    } else {
+      cx1 = mesh.positions[V1_canon * 3]!;
+      cy1 = mesh.positions[V1_canon * 3 + 1]!;
+      cz1 = mesh.positions[V1_canon * 3 + 2]!;
+      dir1A = unitDir(V1_canon, V1_A_otherEnd);
+      dir1B = unitDir(V1_canon, V1_B_otherEnd);
+    }
 
     // UV interpolation: A side at t=0, B side at t=1. Lerp.
     const uvA0u = mesh.uvs[V0_orig_A * 2]     ?? 0, uvA0v = mesh.uvs[V0_orig_A * 2 + 1] ?? 0;
@@ -556,38 +640,71 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     const uvA1u = mesh.uvs[V1_orig_A * 2]     ?? 0, uvA1v = mesh.uvs[V1_orig_A * 2 + 1] ?? 0;
     const uvB1u = mesh.uvs[V1_orig_B * 2]     ?? 0, uvB1v = mesh.uvs[V1_orig_B * 2 + 1] ?? 0;
 
-    const vx0 = mesh.positions[V0_canon * 3]!, vy0 = mesh.positions[V0_canon * 3 + 1]!, vz0 = mesh.positions[V0_canon * 3 + 2]!;
-    const vx1 = mesh.positions[V1_canon * 3]!, vy1 = mesh.positions[V1_canon * 3 + 1]!, vz1 = mesh.positions[V1_canon * 3 + 2]!;
-
-    // Cache-key canonicalisation: arc at V is cached with the lower
-    // "other end" canonical id at ring 0. If A's other-end > B's,
-    // swap the ring index when looking up.
-    const v0LoIsA = V0_A_otherEnd < V0_B_otherEnd;
-    const v0Lo = v0LoIsA ? V0_A_otherEnd : V0_B_otherEnd;
-    const v0Hi = v0LoIsA ? V0_B_otherEnd : V0_A_otherEnd;
-    const v1LoIsA = V1_A_otherEnd < V1_B_otherEnd;
-    const v1Lo = v1LoIsA ? V1_A_otherEnd : V1_B_otherEnd;
-    const v1Hi = v1LoIsA ? V1_B_otherEnd : V1_A_otherEnd;
+    // Arc midpoints are SHARED with the adjacent corner cap (same
+    // surface, same normal at the boundary). Canonicalise by face
+    // TRI INDEX (stable, agreed-on by strip and cap) so both emit
+    // at the same key.
+    //
+    //   aIsLo = (face A's tri idx < face B's tri idx)
+    //   canonical ring 0 = "lo" face side; ring N = "hi" face side
+    //   slerp always goes from lo's normal to hi's normal
+    //   key = (vCan, bevelEdge, canonicalRing)
+    const faceA = faceOf(he);
+    const faceB = faceOf(t);
+    const aIsLo = faceA < faceB;
+    // Strip lo/hi recorded for legacy compatibility with the key;
+    // not used for canonical ring computation anymore (face idx is
+    // the canonical signal).
+    const v0Lo = Math.min(V0_A_otherEnd, V0_B_otherEnd);
+    const v0Hi = Math.max(V0_A_otherEnd, V0_B_otherEnd);
+    const v1Lo = Math.min(V1_A_otherEnd, V1_B_otherEnd);
+    const v1Hi = Math.max(V1_A_otherEnd, V1_B_otherEnd);
 
     const ringV0: number[] = [v0a];
     const ringV1: number[] = [v1a];
     for (let i = 1; i < segments; i++) {
-      const tt = i / segments;
-      const d0 = slerpUnit(dirA0, dirB0, tt);
-      const p0x = vx0 + width * d0.x;
-      const p0y = vy0 + width * d0.y;
-      const p0z = vz0 + width * d0.z;
-      const uv0u = uvA0u + (uvB0u - uvA0u) * tt;
-      const uv0v = uvA0v + (uvB0v - uvA0v) * tt;
-      ringV0.push(getArcVertex(V0_canon, v0Lo, v0Hi, v0LoIsA ? i : (segments - i), p0x, p0y, p0z, uv0u, uv0v));
+      // canonicalI is the ring index in the canonical "lo→hi"
+      // direction. The slerp parameter goes from 0 (lo face side)
+      // to 1 (hi face side); when aIsLo (F_A's face index < F_B's),
+      // loop i directly maps to canonicalI = i.
+      const canonicalI = aIsLo ? i : (segments - i);
+      const canonicalT = canonicalI / segments;
+      const dLo0 = aIsLo ? dir0A : dir0B;
+      const dHi0 = aIsLo ? dir0B : dir0A;
+      const dLo1 = aIsLo ? dir1A : dir1B;
+      const dHi1 = aIsLo ? dir1B : dir1A;
+      const d0 = slerpUnit(dLo0, dHi0, canonicalT);
+      const p0x = cx0 + width * d0.x;
+      const p0y = cy0 + width * d0.y;
+      const p0z = cz0 + width * d0.z;
+      const uvLo0u = aIsLo ? uvA0u : uvB0u, uvLo0v = aIsLo ? uvA0v : uvB0v;
+      const uvHi0u = aIsLo ? uvB0u : uvA0u, uvHi0v = aIsLo ? uvB0v : uvA0v;
+      const uv0u = uvLo0u + (uvHi0u - uvLo0u) * canonicalT;
+      const uv0v = uvLo0v + (uvHi0v - uvLo0v) * canonicalT;
+      const idxV0Mid = getArcVertex(V0_canon, v0Lo, v0Hi, V1_canon, canonicalI, p0x, p0y, p0z, uv0u, uv0v);
+      ringV0.push(idxV0Mid);
 
-      const d1 = slerpUnit(dirA1, dirB1, tt);
-      const p1x = vx1 + width * d1.x;
-      const p1y = vy1 + width * d1.y;
-      const p1z = vz1 + width * d1.z;
-      const uv1u = uvA1u + (uvB1u - uvA1u) * tt;
-      const uv1v = uvA1v + (uvB1v - uvA1v) * tt;
-      ringV1.push(getArcVertex(V1_canon, v1Lo, v1Hi, v1LoIsA ? i : (segments - i), p1x, p1y, p1z, uv1u, uv1v));
+      const d1 = slerpUnit(dLo1, dHi1, canonicalT);
+      const p1x = cx1 + width * d1.x;
+      const p1y = cy1 + width * d1.y;
+      const p1z = cz1 + width * d1.z;
+      const uvLo1u = aIsLo ? uvA1u : uvB1u, uvLo1v = aIsLo ? uvA1v : uvB1v;
+      const uvHi1u = aIsLo ? uvB1u : uvA1u, uvHi1v = aIsLo ? uvB1v : uvA1v;
+      const uv1u = uvLo1u + (uvHi1u - uvLo1u) * canonicalT;
+      const uv1v = uvLo1v + (uvHi1v - uvLo1v) * canonicalT;
+      const idxV1Mid = getArcVertex(V1_canon, v1Lo, v1Hi, V0_canon, canonicalI, p1x, p1y, p1z, uv1u, uv1v);
+      ringV1.push(idxV1Mid);
+
+      // Stamp normals = radial slerp direction (the surface's
+      // outward normal at each point). Shared with the cap on the
+      // 2-cut path; approximate for the 1-cut fallback (in-face
+      // slerp direction, which is normal to the unrolled fold).
+      outNormals[idxV0Mid * 3]     = d0.x;
+      outNormals[idxV0Mid * 3 + 1] = d0.y;
+      outNormals[idxV0Mid * 3 + 2] = d0.z;
+      outNormals[idxV1Mid * 3]     = d1.x;
+      outNormals[idxV1Mid * 3 + 1] = d1.y;
+      outNormals[idxV1Mid * 3 + 2] = d1.z;
     }
     ringV0.push(v0b);
     ringV1.push(v1b);
@@ -616,6 +733,7 @@ export function bevelMesh(mesh: CpuMeshRef, options: BevelOptions): CpuMeshRef {
     outPositions, outUvs, outNormals, outIndices,
     unitDir, mesh.uvs,
     setEmitContext,
+    triFaceNormal,
   );
 
   return {
@@ -701,7 +819,7 @@ function emitCornerCaps(
   otherEndForOut: (he: number) => number,
   getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
   getInnerInsetVertex: (origV: number, vCan: number, other1: number, other2: number) => number,
-  getArcVertex: (vCan: number, lo: number, hi: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
+  getArcVertex: (vCan: number, lo: number, hi: number, bevelEdge: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
   outPositions: number[],
   outUvs: number[],
   outNormals: number[],
@@ -709,6 +827,7 @@ function emitCornerCaps(
   unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
   uvs: Float32Array,
   setEmitContext: (ctx: string, normal: [number, number, number]) => void,
+  triFaceNormal: (f: number) => [number, number, number],
 ): void {
   const vertexCount = half.vertexCount;
   const visited = new Uint8Array(vertexCount);
@@ -765,13 +884,146 @@ function emitCornerCaps(
       continue;
     }
 
-    // M = 3 with segments ≥ 2 — subdivided spherical triangle.
-    emitTriangleCap(
-      v, capCorners[0]!, capCorners[1]!, capCorners[2]!, segments, width,
-      positions, uvs, origIndices,
-      getInsetVertex, getArcVertex, unitDir,
-      outPositions, outUvs, outNormals, outIndices,
-    );
+    // M = 3 with segments ≥ 2 — subdivided spherical-triangle cap.
+    // Each grid vertex is at:
+    //
+    //   pos = center + width · normalize(a·nA + b·nB + c·nC)
+    //
+    // where (a, b, c) are barycentric coords summing to 1, nA / nB /
+    // nC are the OUTWARD face normals of the 3 adjacent faces at V,
+    // and center = V − width·(nA + nB + nC) is the corner of the
+    // inset cube. The slerp direction IS also the surface normal,
+    // so we stamp it per vertex — the cap blends smoothly into the
+    // adjacent rounded chamfer strips at the shared arc midpoints.
+    {
+      let capA = capCorners[0]!;
+      let capB = capCorners[1]!;
+      let capC = capCorners[2]!;
+      let nA = triFaceNormal(capA.face);
+      let nB = triFaceNormal(capB.face);
+      let nC = triFaceNormal(capC.face);
+      const vx = positions[v * 3]!, vy = positions[v * 3 + 1]!, vz = positions[v * 3 + 2]!;
+      const cxC = vx - width * (nA[0] + nB[0] + nC[0]);
+      const cyC = vy - width * (nA[1] + nB[1] + nC[1]);
+      const czC = vz - width * (nA[2] + nB[2] + nC[2]);
+      const uvAu = uvs[capA.origV * 2] ?? 0, uvAv = uvs[capA.origV * 2 + 1] ?? 0;
+      const uvBu = uvs[capB.origV * 2] ?? 0, uvBv = uvs[capB.origV * 2 + 1] ?? 0;
+      const uvCu = uvs[capC.origV * 2] ?? 0, uvCv = uvs[capC.origV * 2 + 1] ?? 0;
+
+      // Use a per-cap emit context so corners + interior get their
+      // own copies. Arc-edge midpoints are emitted via getArcVertex
+      // with a GLOBAL key — they share with the adjacent strips
+      // (same surface, same slerp direction = same normal).
+      setEmitContext(`c:${v}`, [0, 1, 0]);
+
+      // Arc-edge midpoint on the cap edge between sectors s1, s2 at
+      // ring index i (0 = s1 corner, N = s2 corner). Looks up the
+      // same vertex the matching strip emits at its V0-end ring.
+      const arcMidpoint = (s1: CapCorner, n1: [number, number, number], s2: CapCorner, n2: [number, number, number], i: number): number => {
+        const lo = Math.min(s1.otherCan, s2.otherCan);
+        const hi = Math.max(s1.otherCan, s2.otherCan);
+        // Canonical ring index based on face TRI INDEX, matching
+        // the strip's convention so cap and strip share arc verts
+        // on the same cube edge regardless of which side the
+        // walker called s1.
+        const sIsLo = s1.face < s2.face;
+        const canonicalI = sIsLo ? i : (segments - i);
+        const canonicalT = canonicalI / segments;
+        const nLo = sIsLo ? n1 : n2;
+        const nHi = sIsLo ? n2 : n1;
+        const d = slerpUnit({ x: nLo[0], y: nLo[1], z: nLo[2] }, { x: nHi[0], y: nHi[1], z: nHi[2] }, canonicalT);
+        const px = cxC + width * d.x;
+        const py = cyC + width * d.y;
+        const pz = czC + width * d.z;
+        const sLo = sIsLo ? s1 : s2;
+        const sHi = sIsLo ? s2 : s1;
+        const uvLo = sLo === capA ? { u: uvAu, v: uvAv } : (sLo === capB ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
+        const uvHi = sHi === capA ? { u: uvAu, v: uvAv } : (sHi === capB ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
+        const u = uvLo.u + (uvHi.u - uvLo.u) * canonicalT;
+        const vUv = uvLo.v + (uvHi.v - uvLo.v) * canonicalT;
+        // bevelEdge: the cube edge this arc lies on, identified by
+        // its OTHER endpoint from v. The cube edge between cap
+        // sectors s1 and s2 is the one whose far endpoint is in
+        // both {s1.otherCan, s1.bevelEnd} and {s2.otherCan,
+        // s2.bevelEnd}. (Each cap sector has TWO selected cube edges
+        // at v — one perpendicular to its incoming side, one to its
+        // outgoing. Adjacent sectors share exactly one of those.)
+        let bevelEdge: number;
+        if (s1.otherCan === s2.otherCan || s1.otherCan === s2.bevelEnd) bevelEdge = s1.otherCan;
+        else bevelEdge = s1.bevelEnd;
+        const idx = getArcVertex(v, lo, hi, bevelEdge, canonicalI, px, py, pz, u, vUv);
+        outNormals[idx * 3]     = d.x;
+        outNormals[idx * 3 + 1] = d.y;
+        outNormals[idx * 3 + 2] = d.z;
+        return idx;
+      };
+
+      // Build the (N+1)×(N+1)/2 barycentric grid. Row i has i+1
+      // points; (i, j) has barycentric (ba, bb, bc) where bb is
+      // along A→B and bc is along A→C; ba=1 at the A corner.
+      const grid: number[][] = [];
+      for (let i = 0; i <= segments; i++) {
+        const row: number[] = [];
+        for (let j = 0; j <= i; j++) {
+          const ba = (segments - i) / segments;
+          const bb = (i - j) / segments;
+          const bc = j / segments;
+          let idx: number;
+          if (i === 0 && j === 0) idx = getInnerInsetVertex(capA.origV, capA.vCan, capA.otherCan, capA.bevelEnd);
+          else if (i === segments && j === 0) idx = getInnerInsetVertex(capB.origV, capB.vCan, capB.otherCan, capB.bevelEnd);
+          else if (i === segments && j === segments) idx = getInnerInsetVertex(capC.origV, capC.vCan, capC.otherCan, capC.bevelEnd);
+          else if (j === 0) idx = arcMidpoint(capA, nA, capB, nB, i);
+          else if (j === i) idx = arcMidpoint(capA, nA, capC, nC, i);
+          else if (i === segments) idx = arcMidpoint(capB, nB, capC, nC, j);
+          else {
+            // Interior — barycentric blend then normalize for the
+            // unit direction; position = center + width · dir.
+            const dx = ba * nA[0] + bb * nB[0] + bc * nC[0];
+            const dy = ba * nA[1] + bb * nB[1] + bc * nC[1];
+            const dz = ba * nA[2] + bb * nB[2] + bc * nC[2];
+            const len = Math.hypot(dx, dy, dz) || 1;
+            const ux = dx / len, uy = dy / len, uz = dz / len;
+            const px = cxC + width * ux;
+            const py = cyC + width * uy;
+            const pz = czC + width * uz;
+            const u = ba * uvAu + bb * uvBu + bc * uvCu;
+            const vUv = ba * uvAv + bb * uvBv + bc * uvCv;
+            idx = outPositions.length / 3;
+            outPositions.push(px, py, pz);
+            outUvs.push(u, vUv);
+            outNormals.push(ux, uy, uz);
+          }
+          row.push(idx);
+        }
+        grid.push(row);
+      }
+      // Triangulate with CCW winding (outside the cap).
+      for (let i = 0; i < segments; i++) {
+        const rowI = grid[i]!;
+        const rowI1 = grid[i + 1]!;
+        for (let j = 0; j <= i; j++) {
+          outIndices.push(rowI[j]!, rowI1[j]!, rowI1[j + 1]!);
+        }
+        for (let j = 0; j < i; j++) {
+          outIndices.push(rowI[j]!, rowI1[j + 1]!, rowI[j + 1]!);
+        }
+      }
+
+      // Also stamp the slerp-direction normals on the 3 corner
+      // inner-insets we just emitted (each is a fresh per-cap copy
+      // because we set ctx = "c:{v}", so this won't clobber the
+      // face-polygon or strip copies that share the position).
+      const cornerNormals: [number, [number, number, number]][] = [
+        [grid[0]![0]!, nA],
+        [grid[segments]![0]!, nB],
+        [grid[segments]![segments]!, nC],
+      ];
+      for (const [idx, n] of cornerNormals) {
+        outNormals[idx * 3]     = n[0];
+        outNormals[idx * 3 + 1] = n[1];
+        outNormals[idx * 3 + 2] = n[2];
+      }
+    }
   }
   void canonical;
 }
@@ -781,6 +1033,7 @@ interface CapCorner {
   vCan: number;     // canonical vertex (the cap centre)
   otherCan: number; // canonical "other end" of the F_A face's OTHER selected edge at V
   bevelEnd: number; // canonical destination of the OUTGOING selected edge (the bevelled edge `he`)
+  face: number;     // triangle index of the OUTGOING half-edge — gives the adjacent face's normal
 }
 
 /**
@@ -833,9 +1086,12 @@ function collectCapCorners(
     if (edges[he] !== 1) continue;
     const otherCan = otherEndForIn(he);
     // `he` originates at v and points along the bevelled edge. Its
-    // destination = origin of next half-edge in the face.
+    // destination = origin of next half-edge in the face. The
+    // FACE owning `he` is the F_A side of the bevelled edge at v —
+    // we record its tri index so emitTriangleCap can look up the
+    // adjacent face's outward normal.
     const bevelEnd = half.origin[nextInFace(he)]!;
-    corners.push({ origV: origIndices[he]!, vCan: v, otherCan, bevelEnd });
+    corners.push({ origV: origIndices[he]!, vCan: v, otherCan, bevelEnd, face: faceOf(he) });
   }
   void otherEndForOut;
   void isClosed;
@@ -886,7 +1142,7 @@ function emitTriangleCap(
   N: number, width: number,
   positions: Float32Array, uvs: Float32Array, origIndices: Uint32Array,
   getInsetVertex: (origV: number, vCan: number, otherCan: number) => number,
-  getArcVertex: (vCan: number, lo: number, hi: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
+  getArcVertex: (vCan: number, lo: number, hi: number, bevelEdge: number, i: number, x: number, y: number, z: number, u: number, v: number) => number,
   unitDir: (vCan: number, otherCan: number) => { x: number; y: number; z: number },
   outPositions: number[], outUvs: number[], outNormals: number[],
   outIndices: number[],
@@ -918,7 +1174,11 @@ function emitTriangleCap(
     const uvE = s2.otherCan === capA.otherCan ? { u: uvAu, v: uvAv } : (s2.otherCan === capB.otherCan ? { u: uvBu, v: uvBv } : { u: uvCu, v: uvCv });
     const u = uvS.u + (uvE.u - uvS.u) * t;
     const vUv = uvS.v + (uvE.v - uvS.v) * t;
-    return getArcVertex(vCan, lo, hi, idxRing, px, py, pz, u, vUv);
+    // Legacy emitTriangleCap path — no longer reached (the new
+    // inline cap subdivision in emitCornerCaps handles segments≥2),
+    // but kept for API stability. Pass 0 for the bevelEdge slot;
+    // any value works since this code is dead.
+    return getArcVertex(vCan, lo, hi, 0, idxRing, px, py, pz, u, vUv);
   };
 
   // Grid: row i in [0, N], col j in [0, i].

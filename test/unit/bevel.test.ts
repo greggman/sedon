@@ -206,39 +206,41 @@ test('bevel: output drops the selection mask (topology no longer matches)', () =
   assert.equal(out.selection, undefined, 'topology changed → selection must be cleared');
 });
 
-test.skip('bevel: cube with segments=2 — vertex / face counts match the arc-subdivided outward bevel', () => {
-  // Outward bevel at N=2 on the shared-vert cube:
-  //   Verts: 24 sector insets + 12 edges × 2 endpoints × (N-1) arc
-  //          intermediates = 24 + 24 = 48 (cap interior for N=2 is
-  //          (N-1)(N-2)/2 = 0, so no extra).
-  //   Verts: 24 outer insets + 24 inner insets + 24 arc intermediates
-  //         = 72.
-  //   Tris : 36 face (6 × 6 = 4 corner-cuts + 2 inner-quad)
-  //         + 12 strips × 2N = 48
-  //         + 8 caps × N² = 32
-  //         = 116.
+test('bevel: cube with segments=2 — vertex / face counts match the rounded-bevel chamfer', () => {
+  // Blender-style rounded bevel, segments=2. Each cube edge becomes
+  // a quarter-cylinder swept along the edge; each cube corner an
+  // octant of a sphere. Counts per surface (each surface emits its
+  // own per-face-normal copies of shared positions):
+  //   • 6 face polygons × 4 inner-inset verts = 24, × 2 tris = 12.
+  //   • 12 strips: each has (N+1) rings × 2 ends = 6 verts (with
+  //     arc midpoints shared with the adjacent caps; the strip
+  //     emits 4 endpoint copies + 2 arc midpoints shared with caps).
+  //     Each strip emits 2N = 4 tris. Per-strip: 4 endpoint copies +
+  //     2 mid copies (some shared) ⇒ 96 strip endpoint copies + 24
+  //     arc midpoints total. 12 strips × 4 tris = 48.
+  //   • 8 corner caps × spherical-triangle grid (N+1)(N+2)/2 = 6
+  //     verts each. Corners are per-cap copies; arc-edge midpoints
+  //     shared with strips. 8 × 3 corner copies + 0 interior +
+  //     shared arc midpoints. 8 caps × N² = 32 cap tris.
+  // Total verts (empirically) = 120; tris = 12 + 48 + 32 = 92.
   const m = sharedVertexCube();
   m.selection = { edges: selectEdgesByAngle(m, RAD(30)) };
   const out = bevelMesh(m, { width: 0.1, segments: 2 });
-  assert.equal(out.positions.length / 3, 72);
-  assert.equal(out.indices.length / 3, 164);
+  assert.equal(out.positions.length / 3, 120);
+  assert.equal(out.indices.length / 3, 92);
 });
 
-test.skip('bevel: cube with segments=3 — vertex / face counts match the arc-subdivided outward bevel', () => {
-  // N=3:
-  //   Verts: 24 + 12×2×(N-1)=48 + 8 × (N-1)(N-2)/2 = 8 interior
-  //          = 24 + 48 + 8 = 80.
-  //   Verts: 48 + 48 + 8 = 104.
-  //   Tris : 36 face + 12 × 2N strip + 8 × N² cap
-  //         = 36 + 72 + 72 = 180.
+test('bevel: cube with segments=3 — vertex / face counts match the rounded-bevel chamfer', () => {
+  // Same shape as segments=2 with more subdivisions. Empirically
+  // measured counts (per-surface copies + shared arc midpoints).
   const m = sharedVertexCube();
   m.selection = { edges: selectEdgesByAngle(m, RAD(30)) };
   const out = bevelMesh(m, { width: 0.1, segments: 3 });
-  assert.equal(out.positions.length / 3, 104);
-  assert.equal(out.indices.length / 3, 228);
+  assert.equal(out.positions.length / 3, 152);
+  assert.equal(out.indices.length / 3, 156);
 });
 
-test.skip('bevel: cube with segments=2 — arc intermediates sit at exactly width from their canonical (face centroids excepted)', () => {
+test('bevel: cube with segments=2 — arc intermediates sit at exactly width from their canonical (face centroids excepted)', () => {
   const m = sharedVertexCube();
   m.selection = { edges: selectEdgesByAngle(m, RAD(30)) };
   const width = 0.1;
@@ -247,7 +249,18 @@ test.skip('bevel: cube with segments=2 — arc intermediates sit at exactly widt
   for (let i = 0; i < m.positions.length / 3; i++) {
     inputs.push([m.positions[i * 3]!, m.positions[i * 3 + 1]!, m.positions[i * 3 + 2]!]);
   }
-  let outerCount = 0, innerCount = 0;
+  // Blender-style rounded bevel at N=2: every output vertex sits
+  // at one of two well-defined distances from its nearest cube
+  // corner.
+  //   • width × √2          — inner-inset corners (V + width·(d1+d2)
+  //     where d1, d2 are unit cube-edge directions; for a 90° cube
+  //     corner |d1+d2|=√2).
+  //   • width × √(4 − 2√2)  — arc midpoints on the quarter-circle
+  //     bevel surface at the strip endpoints. Derived from
+  //         midpoint − V = width·(−1 + √2/2, 1 − √2/2, −1)
+  //     in axis-aligned coords on the cube, |·|² = 4 − 2√2.
+  const arcMidDist = width * Math.sqrt(4 - 2 * Math.SQRT2);
+  let arcCount = 0, innerCount = 0;
   for (let i = 0; i < out.positions.length / 3; i++) {
     const px = out.positions[i * 3]!, py = out.positions[i * 3 + 1]!, pz = out.positions[i * 3 + 2]!;
     let bestDist = Infinity;
@@ -255,13 +268,12 @@ test.skip('bevel: cube with segments=2 — arc intermediates sit at exactly widt
       const d = Math.hypot(px - ix, py - iy, pz - iz);
       if (d < bestDist) bestDist = d;
     }
-    if (Math.abs(bestDist - width) < 1e-4) outerCount++;
+    if (Math.abs(bestDist - arcMidDist) < 1e-4) arcCount++;
     else if (Math.abs(bestDist - width * Math.SQRT2) < 1e-4) innerCount++;
     else assert.fail(`vertex ${i} at unexpected distance ${bestDist}`);
   }
-  // 24 outer + 24 arc intermediates at distance width.
-  assert.equal(outerCount, 48);
-  assert.equal(innerCount, 24);
+  assert.equal(arcCount, 24, '24 arc midpoints (12 strips × 2 ends × 1 mid)');
+  assert.equal(innerCount, 96, '96 inner-inset per-surface copies (24 positions × 4 surfaces)');
 });
 
 test('bevel: 90° fold strip ring at t=0.5 sits along the diagonal between the two perpendicular face-OTHER edges', () => {
@@ -298,7 +310,7 @@ test('bevel: 90° fold strip ring at t=0.5 sits along the diagonal between the t
   assert.ok(found, `expected mid-arc ring vertex at V1; got none. positions: ${Array.from(out.positions).map((n) => n.toFixed(3)).join(',')}`);
 });
 
-test.skip('bevel: cube with segments=4 — output is well-formed (no NaN / out-of-range indices)', () => {
+test('bevel: cube with segments=4 — output is well-formed (no NaN / out-of-range indices)', () => {
   const m = sharedVertexCube();
   m.selection = { edges: selectEdgesByAngle(m, RAD(30)) };
   const out = bevelMesh(m, { width: 0.1, segments: 4 });
@@ -312,9 +324,9 @@ test.skip('bevel: cube with segments=4 — output is well-formed (no NaN / out-o
     const v = out.indices[i]!;
     assert.ok(v >= 0 && v < vCount, `indices[${i}] = ${v} out of range`);
   }
-  // Triangle count: 36 face + 12 × 2N strip + 8 × N² cap
-  // = 36 + 96 + 128 = 260.
-  assert.equal(out.indices.length / 3, 308);
+  // Triangle count (Blender-style rounded bevel, N=4):
+  //   12 face + 12 × 2N strip + 8 × N² cap = 12 + 96 + 128 = 236.
+  assert.equal(out.indices.length / 3, 236);
 });
 
 // ── Fixtures ───────────────────────────────────────────────────────
