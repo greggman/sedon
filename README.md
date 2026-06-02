@@ -143,7 +143,7 @@ to open multiple windows. Moments later this feature was working.
 
 <img src="images/screenshots/multiple-windows.png">
 
-<img src="images/screenshots/mutliple-views.png">
+<img src="images/screenshots/multiple-views.png">
 
 ### [point-lists](https://greggman.github.io/sedon/docs/nodes/core/point-list/)
 
