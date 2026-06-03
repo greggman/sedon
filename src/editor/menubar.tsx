@@ -122,7 +122,14 @@ export function MenuBar({ menus }: MenuBarProps) {
                   ? 'sedon-menubar-item sedon-menubar-item--open'
                   : 'sedon-menubar-item'
               }
-              onClick={() => setOpenIndex(isOpen ? null : i)}
+              // Native menus open on press, not release: press File →
+              // drag through the items → release on the target item
+              // runs it (paired with MenuRow's onMouseUp). Using
+              // onClick (which is mouseup-after-mousedown-on-same-
+              // element) would block the drag-select gesture because
+              // the menu wouldn't open until release, by which point
+              // the cursor has already left the button.
+              onMouseDown={() => setOpenIndex(isOpen ? null : i)}
               // Once the bar is "hot" (something is open), hovering a
               // sibling top-level item flips to it. Don't activate on
               // hover in the idle state — the user expects a click.
@@ -391,7 +398,12 @@ function MenuRow({
         if (rect) onEnter(rect, e);
       }}
       onMouseLeave={onLeave}
-      onClick={() => {
+      // mouseup, not click — supports the native press-drag-release
+      // gesture started on the top-level menubar button. A normal
+      // press-release on a row also lands here (mouseup fires after
+      // mousedown on the same element), so the non-drag case still
+      // works.
+      onMouseUp={() => {
         if (!entry.disabled && entry.kind === 'item') onClick();
       }}
     >
