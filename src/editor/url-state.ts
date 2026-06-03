@@ -1,19 +1,30 @@
 import { parseSaveFile, serializeSaveFile, type ProjectData, type SaveFile, SAVE_FORMAT_VERSION } from './save-load.js';
 
 // URL-based project sharing. Encodes a project as
-//   ?json=<deflate-raw-compressed-base64url>
+//   #json=<deflate-raw-compressed-base64url>
 // so the entire scene fits in a copy-paste link. Round-trip is:
 //
 //   serialize SaveFile → JSON.stringify (no whitespace padding)
 //                     → CompressionStream('deflate-raw')
 //                     → base64url (URL-safe alphabet, no padding =)
-//                     → URL search param
+//                     → URL FRAGMENT (after `#`)
 //
 // Decode reverses each step. We strip the workspace LAYOUT (panel
 // arrangement, viewports, cameras-per-panel) before encoding — those
 // are per-session UX, not "what scene is this," and keeping them out
 // halves typical URL length. The receiver's existing layout is
 // preserved.
+//
+// Why the FRAGMENT instead of the search string? The compressed
+// payload is often kilobytes long and unique per project, so when
+// it lived in `?json=…` every shared link was a different URL from
+// the browser/CDN's perspective — the HTML response cache key
+// includes the search string and the cache was effectively useless
+// across distinct shares. Fragments aren't sent to the server and
+// don't participate in the cache key, so all `#json=…` URLs hit the
+// same cached index.html. Legacy `?json=…` URLs that predate the
+// move are still accepted on the READ path so existing bookmarks
+// keep working.
 
 const URL_JSON_PARAM = 'json';
 const URL_SCENE_PARAM = 'scene';
@@ -25,9 +36,23 @@ export function getUrlSceneId(): string | null {
   return new URLSearchParams(window.location.search).get(URL_SCENE_PARAM);
 }
 
-/** Read `?json=<base64url>` synchronously; null if missing. */
+/**
+ * Read the shared-project payload synchronously; null if missing.
+ *
+ * Prefers `#json=<base64url>` (the current encoding — keeps the
+ * search string off the cache key). Falls back to `?json=<base64url>`
+ * if no fragment match is found, so links generated before the
+ * fragment migration still load.
+ */
 export function getUrlJsonParam(): string | null {
   if (typeof window === 'undefined') return null;
+  // location.hash includes the leading '#'; URLSearchParams expects
+  // a query-string-like body, so trim the '#' before parsing.
+  const hash = window.location.hash;
+  if (hash.length > 1) {
+    const fromHash = new URLSearchParams(hash.slice(1)).get(URL_JSON_PARAM);
+    if (fromHash !== null) return fromHash;
+  }
   return new URLSearchParams(window.location.search).get(URL_JSON_PARAM);
 }
 
@@ -79,9 +104,11 @@ export function buildShareableSaveFile(project: ProjectData): SaveFile {
 
 /**
  * Encode a SaveFile to a complete shareable URL. The result starts
- * with the current page's origin + path, with the search string
- * replaced by `?json=<encoded>` (any existing params are dropped so
- * a `?scene=basic` on the active page doesn't leak into the link).
+ * with the current page's origin + path. Search string and existing
+ * fragment are dropped (so a `?scene=basic` or stale `#json=` on the
+ * active page doesn't leak into the link) and the payload is set as
+ * `#json=<encoded>` — fragments stay off the HTTP cache key so every
+ * shared link still hits the same cached index.html.
  */
 export async function encodeProjectToUrl(file: SaveFile): Promise<string> {
   const json = serializeSaveFile(file);
@@ -93,7 +120,7 @@ export async function encodeProjectToUrl(file: SaveFile): Promise<string> {
   const b64 = toBase64Url(compressed);
   const url = new URL(window.location.href);
   url.search = '';
-  url.searchParams.set(URL_JSON_PARAM, b64);
+  url.hash = `${URL_JSON_PARAM}=${b64}`;
   return url.toString();
 }
 
