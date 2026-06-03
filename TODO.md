@@ -1,7 +1,14 @@
 # TODOs
 
 - [ ] need LODs so trees work?
-- [ ] clicking outside a menu does not dismiss the menu
+- [*] set bloom_intensity to 0 on node previews.
+- [*] clicking outside a menu does not dismiss the menu
+- [*] click-drag on menu does not work like a native menu
+- [ ] extrude options
+  - [ ] by face normal (not until really needed)
+  - [*] scale
+- [*] scene stored in fragment, not query
+- [ ] transform - should work on selection (probably no. Needs a real use-case)
 - [*] bevel
   needs half-edge connectivity (face-adjacency, vertex valence). Sedon
   meshes are indexed triangle lists — to bevel edges we'd first need
@@ -11,6 +18,12 @@
 - [ ] flip-normals node
 - [ ] subdivision, loop-cut, smooth, edge-split
   same blocker as bevel — needs the connectivity layer.
+- [ ] need a "convert to subgraph" option
+  This is a shortcut. Instead copy and pasting nodes into a subgraph
+  and then wiring some existing graph to use it, you just select a portion
+  of an existing graph and say "convert to subgraph" and it builds a subgraph
+  with those nodes, and whatever inputs and outputs are needed to replace
+  them in the existing graph and wires it up.
 - [ ] add nodes for city
   What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
 - [*] import png, jpg, webp (use URL where # is local)
