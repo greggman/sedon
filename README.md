@@ -157,8 +157,8 @@ shift+drag moves in smaller units because you're closer to the object. Maybe
 that works great but it wasn't working for me because there was no way to easily
 select a new place to focus on.
 
-So, I asked for picking. We discusses how to implement it and a few minutes later
-it as working, including outlines.
+So, I asked for picking. We discussed how to implement it and a few minutes later
+it was working, including outlines.
 
 <img src="images/screenshots/picking.png">
 
