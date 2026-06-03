@@ -163,6 +163,82 @@ test('extrude: two disjoint selected tris form two clusters and extrude independ
   assert.equal(capCount, 2);
 });
 
+test('extrude: scale=0.5 tapers the cap toward the cluster centroid', () => {
+  // Extrude +Y face of the unit cube by 0.5 with scale=0.5.
+  //   cluster_centroid = (0, 1, 0)  (centre of the +Y face)
+  //   cap_centroid     = (0, 1.5, 0)
+  //   For corner V = (1, 1, 1):
+  //     cap_v = cap_centroid + 0.5 · (V − cluster_centroid)
+  //           = (0, 1.5, 0) + 0.5 · (1, 0, 1) = (0.5, 1.5, 0.5)
+  // All four cap corners sit at (±0.5, 1.5, ±0.5).
+  const m = sharedVertexCube();
+  const mask = new Uint8Array(12);
+  mask[8] = 1; mask[9] = 1; // +Y
+  m.selection = { faces: mask };
+  const out = extrudeMesh(m, { offset: 0.5, scale: 0.5 });
+  const expected: Array<[number, number]> = [
+    [0.5, 0.5], [-0.5, 0.5], [0.5, -0.5], [-0.5, -0.5],
+  ];
+  const matched = new Set<number>();
+  for (let i = 0; i < out.positions.length / 3; i++) {
+    const x = out.positions[i * 3]!, y = out.positions[i * 3 + 1]!, z = out.positions[i * 3 + 2]!;
+    if (Math.abs(y - 1.5) > 1e-4) continue;
+    for (let e = 0; e < expected.length; e++) {
+      if (Math.abs(x - expected[e]![0]) < 1e-4 && Math.abs(z - expected[e]![1]) < 1e-4) {
+        matched.add(e);
+      }
+    }
+  }
+  assert.equal(matched.size, 4, 'all four tapered cap corners present');
+});
+
+test('extrude: scale=0 collapses the cap to the centroid (pyramid roof)', () => {
+  const m = sharedVertexCube();
+  const mask = new Uint8Array(12);
+  mask[8] = 1; mask[9] = 1; // +Y
+  m.selection = { faces: mask };
+  const out = extrudeMesh(m, { offset: 0.5, scale: 0 });
+  // All four cap-corner verts collapse to the cap centroid (0, 1.5, 0).
+  let atTip = 0;
+  for (let t = 0; t < out.indices.length / 3; t++) {
+    if (out.selection!.faces![t] !== 1) continue;
+    for (let k = 0; k < 3; k++) {
+      const v = out.indices[t * 3 + k]!;
+      const x = out.positions[v * 3]!, y = out.positions[v * 3 + 1]!, z = out.positions[v * 3 + 2]!;
+      if (Math.abs(x) < 1e-4 && Math.abs(y - 1.5) < 1e-4 && Math.abs(z) < 1e-4) atTip++;
+    }
+  }
+  // 2 cap tris × 3 verts each, all at the tip.
+  assert.equal(atTip, 6);
+});
+
+test('extrude: wall normal slopes correctly under taper (scale=0.5)', () => {
+  // For the +Y boundary edge from V_4 = (-1, -1, 1) to V_5 = (1, -1, 1)
+  // … wait that's -Y. The +Y boundary edge V_7=(-1, 1, 1) → V_6=(1, 1, 1)
+  // (along +X) has wall outward = (b−a) × cluster_n = +X × +Y = +Z for
+  // the straight case. With scale=0.5 the top corners pull toward
+  // (0, 1.5, 0); the wall tilts upward so the normal picks up a +Y
+  // component while staying outward (positive Z).
+  const m = sharedVertexCube();
+  const mask = new Uint8Array(12);
+  mask[8] = 1; mask[9] = 1; // +Y
+  m.selection = { faces: mask };
+  const out = extrudeMesh(m, { offset: 0.5, scale: 0.5 });
+  // Find any vertex sitting on a wall whose face plane should
+  // contain a (0, +, +) normal — verts at z=1 (the original +Y∩+Z
+  // edge), still at y=1 (it's a wall BASE not a top). Confirm at
+  // least one such vert has a normal in the (0, +y, +z) half-space.
+  let saw = false;
+  for (let i = 0; i < out.positions.length / 3; i++) {
+    const x = out.positions[i * 3]!, y = out.positions[i * 3 + 1]!, z = out.positions[i * 3 + 2]!;
+    if (Math.abs(y - 1) > 1e-4 || Math.abs(z - 1) > 1e-4) continue;
+    if (Math.abs(x) > 1) continue;
+    const nx = out.normals[i * 3]!, ny = out.normals[i * 3 + 1]!, nz = out.normals[i * 3 + 2]!;
+    if (Math.abs(nx) < 1e-3 && ny > 0 && nz > 0) saw = true;
+  }
+  assert.ok(saw, 'at least one wall-base vert on +Y∩+Z edge tilts outward+upward');
+});
+
 test('extrude: drops the input face mask AND any other selection slots', () => {
   // Carry a vertex mask in — extrude should drop it in the output.
   const m = meshOf([0, 0, 0,  1, 0, 0,  0, 1, 0], [0, 1, 2]);

@@ -35,6 +35,18 @@ export interface ExtrudeOptions {
    */
   offset: number;
   /**
+   * Uniform scale applied to the offset cap around the cluster's
+   * centroid. Default 1.0 (no scale — pure translation). Values
+   * below 1 taper the cap inward (truncated-pyramid / lampshade);
+   * values above 1 flare it outward; values at exactly 0 collapse
+   * the cap to a single point at the cap centroid. The cluster's
+   * BASE boundary stays unchanged (it's welded to the surrounding
+   * unchanged mesh), so the walls necessarily slope to bridge
+   * base→cap — wall normals are recomputed from the actual wall
+   * edges so lighting stays correct under any taper.
+   */
+  scale?: number;
+  /**
    * Treat coincident-position vertices as a single topological
    * vertex when building the half-edge mesh used for the cluster +
    * boundary walk. Default true; matches select-by-angle /
@@ -47,6 +59,7 @@ export function extrudeMesh(mesh: CpuMeshRef, options: ExtrudeOptions): CpuMeshR
   const faceMask = mesh.selection?.faces;
   if (!faceMask || !anySelected(faceMask)) return mesh;
   const offset = options.offset;
+  const scale = options.scale ?? 1;
   const weldByPosition = options.weldByPosition ?? true;
 
   // Welded topology — same trick as bevel.ts. Lets `buildHalfEdgeMesh`
@@ -151,21 +164,49 @@ export function extrudeMesh(mesh: CpuMeshRef, options: ExtrudeOptions): CpuMeshR
     }
     const ox = offset * cnx, oy = offset * cny, oz = offset * cnz;
 
+    // Cluster centroid (average of unique CANONICAL vertex positions
+    // in the cluster). Used as the scale anchor — the cap is
+    // translated along the cluster normal AND scaled around the
+    // cluster's projected centre on the cap plane.
+    //   cap_centroid = cluster_centroid + offset · n
+    //   cap_v        = cap_centroid + scale · (v − cluster_centroid)
+    // Reduces to plain `v + offset · n` when scale == 1 (the default).
+    let ccx = 0, ccy = 0, ccz = 0;
+    {
+      const seen = new Set<number>();
+      for (const f of members) {
+        for (let k = 0; k < 3; k++) {
+          const oV = mesh.indices[f * 3 + k]!;
+          const cV = canonical[oV]!;
+          if (seen.has(cV)) continue;
+          seen.add(cV);
+          ccx += mesh.positions[cV * 3]!;
+          ccy += mesh.positions[cV * 3 + 1]!;
+          ccz += mesh.positions[cV * 3 + 2]!;
+        }
+      }
+      const n = seen.size || 1;
+      ccx /= n; ccy /= n; ccz /= n;
+    }
+
     // Emit fresh OFFSET verts — one per unique ORIGINAL vertex used
-    // by the cluster. Position = orig + cluster_normal·offset.
-    // Normal = cluster_normal (flat shading on the offset cap).
-    // UV = original vertex's UV (preserves the source face's UV
-    // mapping into the cap).
+    // by the cluster. Position is the translated + scaled cap
+    // formula above; normal = cluster_normal (flat shading on the
+    // offset cap); UV = original vertex's UV (preserves the source
+    // face's UV mapping into the cap).
     const offsetVertOf = new Map<number, number>();
     for (const f of members) {
       for (let k = 0; k < 3; k++) {
         const origV = mesh.indices[f * 3 + k]!;
         if (offsetVertOf.has(origV)) continue;
         const idx = outPositions.length / 3;
+        const vx = mesh.positions[origV * 3]!;
+        const vy = mesh.positions[origV * 3 + 1]!;
+        const vz = mesh.positions[origV * 3 + 2]!;
         outPositions.push(
-          mesh.positions[origV * 3]!     + ox,
-          mesh.positions[origV * 3 + 1]! + oy,
-          mesh.positions[origV * 3 + 2]! + oz,
+          ccx + ox + scale * (vx - ccx),
+          ccy + oy + scale * (vy - ccy),
+          ccz + oz + scale * (vz - ccz),
         );
         outNormals.push(cnx, cny, cnz);
         outUvs.push(mesh.uvs[origV * 2] ?? 0, mesh.uvs[origV * 2 + 1] ?? 0);
@@ -214,13 +255,29 @@ export function extrudeMesh(mesh: CpuMeshRef, options: ExtrudeOptions): CpuMeshR
       const ax = mesh.positions[aOrig * 3]!, ay = mesh.positions[aOrig * 3 + 1]!, az = mesh.positions[aOrig * 3 + 2]!;
       const bx = mesh.positions[bOrig * 3]!, by = mesh.positions[bOrig * 3 + 1]!, bz = mesh.positions[bOrig * 3 + 2]!;
 
-      // Wall outward normal = (b - a) × cluster_normal, normalised.
-      // For a CCW cluster boundary walked in CCW order, this points
-      // away from the cluster interior.
+      // Compute the cap-side corner positions FIRST — when `scale`
+      // ≠ 1 the cap is tapered, so the wall slopes and its normal
+      // can't just be `(b−a) × cluster_normal` (which is the
+      // straight-up-wall normal). Take the cross of the actual
+      // wall edges instead.
+      const aTopX = ccx + ox + scale * (ax - ccx);
+      const aTopY = ccy + oy + scale * (ay - ccy);
+      const aTopZ = ccz + oz + scale * (az - ccz);
+      const bTopX = ccx + ox + scale * (bx - ccx);
+      const bTopY = ccy + oy + scale * (by - ccy);
+      const bTopZ = ccz + oz + scale * (bz - ccz);
+
+      // Wall outward normal = (b − a) × (aTop − a), normalised.
+      // For scale == 1 (aTop − a is offset · cluster_normal) this
+      // reduces to `offset · (b − a) × cluster_normal`, same as the
+      // straight-up case. For scale ≠ 1 the second factor picks up
+      // a horizontal component and the cross tilts to match the
+      // wall's actual slope.
       const ex = bx - ax, ey = by - ay, ez = bz - az;
-      let wnx = ey * cnz - ez * cny;
-      let wny = ez * cnx - ex * cnz;
-      let wnz = ex * cny - ey * cnx;
+      const sx = aTopX - ax, sy = aTopY - ay, sz = aTopZ - az;
+      let wnx = ey * sz - ez * sy;
+      let wny = ez * sx - ex * sz;
+      let wnz = ex * sy - ey * sx;
       const wlen = Math.hypot(wnx, wny, wnz);
       if (wlen > 1e-12) { wnx /= wlen; wny /= wlen; wnz /= wlen; }
       else { wnx = 0; wny = 1; wnz = 0; }
@@ -243,11 +300,11 @@ export function extrudeMesh(mesh: CpuMeshRef, options: ExtrudeOptions): CpuMeshR
       outNormals.push(wnx, wny, wnz);
       outUvs.push(buU, 0);
       const bTopIdx = outPositions.length / 3;
-      outPositions.push(bx + ox, by + oy, bz + oz);
+      outPositions.push(bTopX, bTopY, bTopZ);
       outNormals.push(wnx, wny, wnz);
       outUvs.push(buU, 1);
       const aTopIdx = outPositions.length / 3;
-      outPositions.push(ax + ox, ay + oy, az + oz);
+      outPositions.push(aTopX, aTopY, aTopZ);
       outNormals.push(wnx, wny, wnz);
       outUvs.push(auU, 1);
 

@@ -22,6 +22,14 @@ export const extrudeNode: NodeDef = {
       description:
         'signed distance to move the selected faces along their cluster\'s average outward normal. Positive = protrude away from the mesh interior (legs from a slab, drawer fronts, raised panels). Negative = recess into the mesh (recessed panels, label insets, key bit channels). Zero is allowed and emits degenerate zero-thickness walls.',
     },
+    {
+      name: 'scale',
+      type: 'Float',
+      default: 1,
+      min: 0,
+      description:
+        'uniform scale applied to the offset cap around the cluster\'s centroid. 1 = no scale (parallel translation, the usual extrude). Below 1 tapers the cap inward — `scale=0.5` makes a truncated-pyramid roof or a tapered chair-leg top; `scale=0` collapses the cap to a single point at the cap centre (a pure pyramid). Above 1 flares the cap outward — `scale=1.3` makes a lampshade silhouette. The cluster\'s BASE stays fixed (welded to the surrounding mesh); only the cap moves, so the walls necessarily slope.',
+    },
   ],
   outputs: [
     {
@@ -107,7 +115,8 @@ direction × cluster_normal sign tracks the offset sign).
       );
     }
     const offset = inputs.offset as number;
-    const out = extrudeMesh(input.mesh, { offset });
+    const scale = inputs.scale as number;
+    const out = extrudeMesh(input.mesh, { offset, scale });
     return {
       geometry: uploadMeshToGpu(device, out, ctx.previousOutput?.geometry as GeometryValue | undefined),
     };
