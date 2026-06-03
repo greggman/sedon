@@ -22,7 +22,9 @@ import { computeNormalsNode } from './compute-normals.js';
 import { cubeNode } from './cube.js';
 import { curve2dNode } from './curve-2d.js';
 import { cylinderNode } from './cylinder.js';
+import { extrudeNode } from './extrude.js';
 import { extrudeOnPathNode } from './extrude-on-path.js';
+import { insetNode } from './inset.js';
 import { distanceTransformNode } from './distance-transform.js';
 import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
@@ -64,6 +66,7 @@ import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
 import { selectByAngleNode } from './select-by-angle.js';
+import { selectByNormalNode } from './select-by-normal.js';
 import { selectCombineNode } from './select-combine.js';
 import { selectInvertNode } from './select-invert.js';
 import { slopeFromHeightNode } from './slope-from-height.js';
@@ -98,9 +101,12 @@ export const CORE_NODES = [
   mirrorNode,
   computeNormalsNode,
   selectByAngleNode,
+  selectByNormalNode,
   selectInvertNode,
   selectCombineNode,
   bevelNode,
+  extrudeNode,
+  insetNode,
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -201,9 +207,12 @@ export {
   cubeNode,
   curve2dNode,
   cylinderNode,
+  extrudeNode,
   extrudeOnPathNode,
+  insetNode,
   latheNode,
   selectByAngleNode,
+  selectByNormalNode,
   selectCombineNode,
   selectInvertNode,
   mirrorNode,
