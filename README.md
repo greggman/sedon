@@ -145,6 +145,27 @@ to open multiple windows. Moments later this feature was working.
 
 <img src="images/screenshots/multiple-views.png">
 
+### Picking
+
+The camera controls on the preview leave a lot to be desired. It's effectively
+an orbit camera and like many orbit cameras, you can only really orbit around
+and dolly to/from its center point. You can hold shift and drag to move
+perpendicular to the camera's view.
+
+Like most editors, the idea is you're focusing on one item. As you zoom in,
+shift+drag moves in smaller units because you're closer to the object. Maybe
+that works great but it wasn't working for me because there was no way to easily
+select a new place to focus on.
+
+So, I asked for picking. We discusses how to implement it and a few minutes later
+it as working, including outlines.
+
+<img src="images/screenshots/picking.png">
+
+One complication is I wanted to be able to select trees in the forest but the
+trees are not individual objects, they're instanced. Anyway, it wired it up
+and at least at one level of indirection it's working.
+
 ### [point-lists](https://greggman.github.io/sedon/docs/nodes/core/point-list/)
 
 At some point it made a `spline` node and had practically hard coded 3 vertices
@@ -171,7 +192,14 @@ This one I'm not sure what other apps do here. Claude wrote something with
 hard coded names and it actually seemed kind of messy. We worked through
 it with me suggesting that a `for-each-xxx` node have an editable internal
 graph where the user could connect iteration inputs from the `for-each-xxx`
-to whatever they wanted. It remains to be seen if it was the right decision.
+to whatever they wanted. In other words, first you make a subgraph and
+define its inputs and outputs. Then you make a `for-each-xxx` node and you
+drag a subgraph into it. Finally you edit the `for-each-xxx`'s internal
+graph to connect the iteration and inputs into the subgraph that will be
+called. This gives you a chance to add some graph code to modify the inputs
+on the way to calling your subgraph.
+
+It remains to be seen if it was the right decision.
 
 <img src="images/screenshots/iteration-input.png">
 
