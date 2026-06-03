@@ -26,10 +26,17 @@ export function useDismiss(
     // mousedown rather than click — by the time `click` fires, focus
     // and selection state may have already shifted, and we want the
     // popup gone before the new click target processes its own handler.
-    window.addEventListener('mousedown', onDown);
+    //
+    // Capture phase: several React subtrees (assets panel rows, preview
+    // overlays, custom-node controls) call `e.stopPropagation()` on
+    // mousedown to keep their own popups alive. A bubble-phase window
+    // listener would miss those clicks and the dropdown would stay
+    // open after clicking on them. Capture fires window → target
+    // before any element handler can stop it.
+    window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey);
     };
   }, [open, ref, onDismiss]);

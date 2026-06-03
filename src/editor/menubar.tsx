@@ -77,6 +77,13 @@ export function MenuBar({ menus }: MenuBarProps) {
   // submenu popups via the React portal — they render outside barRef,
   // but we capture them by also pinning a ref to each popup root and
   // checking subtree-of-popup via dataset.menuPopupRoot.
+  //
+  // The listener runs in the CAPTURE phase. Several React subtrees
+  // (assets panel rows, preview overlays, custom-node controls) call
+  // `e.stopPropagation()` on mousedown to keep their own popups alive;
+  // a bubble-phase window listener would never see those events and
+  // the menu would stay open after clicking on them. Capture fires
+  // window → target before any element handler can stop it.
   useEffect(() => {
     if (openIndex === null) return;
     const onDown = (e: MouseEvent) => {
@@ -94,10 +101,10 @@ export function MenuBar({ menus }: MenuBarProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close();
     };
-    window.addEventListener('mousedown', onDown);
+    window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey);
     };
   }, [openIndex, close]);
