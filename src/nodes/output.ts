@@ -69,7 +69,7 @@ export const outputNode: NodeDef = {
     {
       name: 'bloom_intensity',
       type: 'Float',
-      default: 0.15,
+      default: 0,
       description: '0 disables bloom; 0.1-0.2 reads as "real lights are bright"; 0.4+ is stylized',
     },
     {

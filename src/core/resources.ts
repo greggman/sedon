@@ -700,7 +700,7 @@ export function defaultLighting(): LightingValue {
     ambientIntensity: 1.0,
     fogColor: [0.78, 0.82, 0.78],
     fogDensity: 0,
-    bloomIntensity: 0.15,
+    bloomIntensity: 0,
     bloomThreshold: 1.0,
     bloomSoftKnee: 0.5,
   };
