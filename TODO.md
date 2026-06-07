@@ -1,15 +1,10 @@
 # TODOs
 
 - [ ] need LODs so trees work?
-- [*] set bloom_intensity to 0 on node previews.
-- [*] clicking outside a menu does not dismiss the menu
-- [*] click-drag on menu does not work like a native menu
 - [ ] extrude options
   - [ ] by face normal (not until really needed)
   - [*] scale
-- [*] scene stored in fragment, not query
 - [ ] transform - should work on selection (probably no. Needs a real use-case)
-- [*] bevel
   needs half-edge connectivity (face-adjacency, vertex valence). Sedon
   meshes are indexed triangle lists — to bevel edges we'd first need
   a connectivity builder (positions + indices → edge list with
@@ -142,10 +137,7 @@ based on distance from the camera.
 
 ## --- done ---
 
-- [*] extrude-along-path (`core/extrude-on-path`)
-- [*] lathe (`core/lathe`)
-- [*] mirror (`core/mirror`)
-- [*] `core/curve-2d` (Bezier authoring, outputs Path)
+- [ ] add API for WebMCP
 - [ ] curve-2d: per-point handle-type UI
   data model already supports `[x, y, handleType]` (0 = smooth, 1 =
   corner). The 2D editor only authors x / y today; until the toggle
@@ -159,8 +151,24 @@ based on distance from the camera.
   edges share normals (smooth). Drives lathe / extrude / curve-2d
   output to look right for furniture where SOME edges are smooth
   bulges and others are sharp creases.
-- [ ] for-each-cell, for-each-along-axis
 - [ ] selection-driven-gizmos
+- [-] remove cube for box? (no)
+- [*] push/pop view so you can enter a subgraph and pop back out
+- [*] set bloom_intensity to 0 on node previews.
+- [*] clicking outside a menu does not dismiss the menu
+- [*] click-drag on menu does not work like a native menu
+- [*] scene stored in fragment, not query
+- [*] bevel
+- [*] why are demo scenes not just external json files that are fetched?
+  Maybe we should keep the code, but, instead of compiling it into the app
+  we should just run it at compile time to export .json. That way we keep
+  all the type checking and build checks but we get code removed from the app.
+- [*] rename core/transform to core/transform-geometry?
+- [*] no animation in node previews
+- [*] extrude-along-path (`core/extrude-on-path`)
+- [*] lathe (`core/lathe`)
+- [*] mirror (`core/mirror`)
+- [*] `core/curve-2d` (Bezier authoring, outputs Path)
 - [*] TRS node, tabbing does not go to next input
 - [*] long names should not stretch node
 - [*] putting node in for-each-point should copy defaults.
