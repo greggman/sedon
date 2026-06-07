@@ -11,7 +11,7 @@ import {
 } from '../render/mat4.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { animationTime, requestRender, subscribeRender } from './render-bus.js';
+import { requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
@@ -171,7 +171,13 @@ export function ScenePreview({
       projection,
       cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
       lighting: defaultLighting(),
-      time: animationTime(),
+      // Frozen at 0 — animation is a Preview-pane concern, not a node-
+      // preview / asset-thumbnail one. Watching water ripple inside
+      // every tiny node preview is distracting and confusing about
+      // which surface is "the real one". The render-bus subscription
+      // below still drives repaints on texture-content updates, so
+      // edits propagate; only TIME stops advancing.
+      time: 0,
     });
     device.queue.submit([encoder.finish()]);
   };
