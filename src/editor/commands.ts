@@ -5,7 +5,7 @@ import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { loadDemoSaveFile } from './demos/demo-loader.js';
 import { getDockviewApi } from './dockview-handle.js';
-import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
+import { loadProject, newScene, saveProject, saveProjectToUrl } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
 import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
@@ -60,6 +60,11 @@ function canvasHistoryCanGo(direction: 'back' | 'forward'): boolean {
 
 function buildCommands(): PaletteCommand[] {
   return [
+    {
+      id: 'file.new',
+      label: 'File: New Scene',
+      run: () => newScene(),
+    },
     {
       id: 'file.save',
       label: 'File: Save Project',

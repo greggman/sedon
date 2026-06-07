@@ -18,7 +18,7 @@ import {
   pasteFromClipboard,
   saveSelectionToFile,
 } from './clipboard-ops.js';
-import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
+import { loadProject, newScene, saveProject, saveProjectToUrl } from './file-ops.js';
 import { startRecording, stopRecording, loadRecordingFromFile, recordingActive } from './recording.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
@@ -47,6 +47,8 @@ export function useAppMenus(): TopMenu[] {
     const fileMenu: TopMenu = {
       label: 'File',
       items: [
+        { kind: 'item', label: 'New Scene', run: () => newScene() },
+        { kind: 'separator' },
         { kind: 'item', label: 'Save…', shortcut: '⌘S', run: () => saveProject() },
         { kind: 'item', label: 'Load…', shortcut: '⌘O', run: () => loadProject() },
         { kind: 'item', label: 'Save to URL', run: () => { void saveProjectToUrl(); } },

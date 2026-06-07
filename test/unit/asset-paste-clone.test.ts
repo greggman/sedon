@@ -19,7 +19,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addNode, createGraph } from '../../src/core/graph.js';
+import { addNode } from '../../src/core/graph.js';
 import {
   cloneSubgraphDef,
   nextCopyLabel,

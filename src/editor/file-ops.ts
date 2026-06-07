@@ -1,6 +1,7 @@
 import type { SerializedDockview } from 'dockview';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { getDockviewApi } from './dockview-handle.js';
+import { createBasicScene } from './initial-graph.js';
 import { useLayoutStore } from './layout-store.js';
 import {
   parseSaveFile,
@@ -97,6 +98,17 @@ export function snapshotProject(): { project: ProjectData; layout: LayoutData | 
     ...(Object.keys(viewports).length > 0 ? { viewports } : {}),
   };
   return { project, layout: hasLayout ? layoutData : undefined };
+}
+
+// Replace the current project with the same minimal starter scene the
+// app boots into when there's no `?scene=` override: grid → material,
+// sphere → scene-entity → output. Discards every subgraph, folder,
+// camera, and undo entry — same blast radius as loading a demo, so the
+// same dirty-confirm prompt guards it.
+export function newScene(): void {
+  if (!confirmDiscardIfDirty()) return;
+  const { graph, rootNodeId } = createBasicScene();
+  useEditorStore.getState().setGraph(graph, rootNodeId, [], {}, {}, []);
 }
 
 export function saveProject(): void {
