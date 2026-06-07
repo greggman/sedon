@@ -5,6 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { cornerPointsNode } from '../../src/nodes/corner-points.js';
 import { pointsLineNode } from '../../src/nodes/points-line.js';
 import { radialPointsNode } from '../../src/nodes/radial-points.js';
 import { phyllotaxisPointsNode } from '../../src/nodes/phyllotaxis-points.js';
@@ -274,4 +275,66 @@ test('points-line: count=2 places one point at start and one at end', () => {
   const [x1, y1, z1] = pos(points, 1);
   assert.ok(near(x0, 1) && near(y0, 2) && near(z0, 3));
   assert.ok(near(x1, 7) && near(y1, 5) && near(z1, -1));
+});
+
+// ===== core/corner-points ===========================================
+
+test('corner-points: 4 points at the corners of width×depth rectangle, y=0, CCW from back-left', () => {
+  const { points } = cornerPointsNode.evaluate({}, {
+    width: 2,
+    depth: 4,
+    inset: 0,
+  }) as { points: PointCloudValue };
+  assert.equal(points.count, 4);
+  const expected: Array<[number, number]> = [
+    [-1, -2],
+    [+1, -2],
+    [+1, +2],
+    [-1, +2],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const [x, y, z] = pos(points, i);
+    assert.ok(near(x, expected[i]![0]), `corner ${i}.x expected ${expected[i]![0]}, got ${x}`);
+    assert.ok(near(y, 0), `corner ${i}.y expected 0, got ${y}`);
+    assert.ok(near(z, expected[i]![1]), `corner ${i}.z expected ${expected[i]![1]}, got ${z}`);
+  }
+});
+
+test('corner-points: inset shrinks the rectangle inward on all sides', () => {
+  const { points } = cornerPointsNode.evaluate({}, {
+    width: 2,
+    depth: 2,
+    inset: 0.25,
+  }) as { points: PointCloudValue };
+  // With width=depth=2 the no-inset corners would be at ±1; inset=0.25
+  // brings them to ±(1 - 0.25) = ±0.75.
+  for (let i = 0; i < 4; i++) {
+    const [x, , z] = pos(points, i);
+    assert.ok(near(Math.abs(x), 0.75), `inset corner ${i}.|x| expected 0.75, got ${Math.abs(x)}`);
+    assert.ok(near(Math.abs(z), 0.75), `inset corner ${i}.|z| expected 0.75, got ${Math.abs(z)}`);
+  }
+});
+
+test('corner-points: inset >= half-extent collapses to the centre rather than going negative', () => {
+  const { points } = cornerPointsNode.evaluate({}, {
+    width: 1,
+    depth: 1,
+    inset: 5,
+  }) as { points: PointCloudValue };
+  for (let i = 0; i < 4; i++) {
+    const [x, , z] = pos(points, i);
+    assert.ok(near(x, 0), `over-inset corner ${i}.x expected 0, got ${x}`);
+    assert.ok(near(z, 0), `over-inset corner ${i}.z expected 0, got ${z}`);
+  }
+});
+
+test('corner-points: normals are world-up so align-on-points keeps legs vertical', () => {
+  const { points } = cornerPointsNode.evaluate({}, {
+    width: 1, depth: 1, inset: 0,
+  }) as { points: PointCloudValue };
+  for (let i = 0; i < 4; i++) {
+    const [nx, ny, nz] = nrm(points, i);
+    assert.ok(near(nx, 0) && near(ny, 1) && near(nz, 0),
+      `normal ${i} expected (0,1,0), got (${nx},${ny},${nz})`);
+  }
 });

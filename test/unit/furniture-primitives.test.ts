@@ -18,6 +18,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { generateBox, generateCube } from '../../src/render/cube.js';
 import { generateLathe } from '../../src/render/lathe.js';
 import { mirrorMesh } from '../../src/render/mirror-mesh.js';
 import { generateExtrudeOnPath } from '../../src/render/extrude-on-path.js';
@@ -160,6 +161,40 @@ test('extrude-on-path: path shorter than 2 samples produces an empty mesh', () =
   const path = new Float32Array([0, 0, 0]);
   const out = generateExtrudeOnPath(path, 1, [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
   assert.equal(out.indices.length, 0);
+});
+
+// ---------- BOX / CUBE ----------
+
+test('box: generates 24 verts / 36 indices (same topology as cube)', () => {
+  const mesh = generateBox(2, 3, 4);
+  assert.equal(mesh.positions.length / 3, 24);
+  assert.equal(mesh.indices.length, 36);
+});
+
+test('box: positions span ±width/2, ±height/2, ±depth/2', () => {
+  const mesh = generateBox(2, 4, 6);
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < 24; i++) {
+    const x = mesh.positions[i * 3]!;
+    const y = mesh.positions[i * 3 + 1]!;
+    const z = mesh.positions[i * 3 + 2]!;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  assert.equal(minX, -1); assert.equal(maxX, 1);
+  assert.equal(minY, -2); assert.equal(maxY, 2);
+  assert.equal(minZ, -3); assert.equal(maxZ, 3);
+});
+
+test('box: generateCube(s) and generateBox(s,s,s) produce identical meshes', () => {
+  const cube = generateCube(2.5);
+  const box = generateBox(2.5, 2.5, 2.5);
+  assert.deepEqual(Array.from(cube.positions), Array.from(box.positions));
+  assert.deepEqual(Array.from(cube.indices), Array.from(box.indices));
+  assert.deepEqual(Array.from(cube.normals), Array.from(box.normals));
 });
 
 test('extrude-on-path: open ribbon (closedSection=false) skips the seam dup and caps', () => {

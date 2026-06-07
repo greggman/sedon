@@ -17,8 +17,10 @@ import { cloudSlopeNode } from './cloud-slope.js';
 import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { bevelNode } from './bevel.js';
+import { boxNode } from './box.js';
 import { coneNode } from './cone.js';
 import { computeNormalsNode } from './compute-normals.js';
+import { cornerPointsNode } from './corner-points.js';
 import { cubeNode } from './cube.js';
 import { curve2dNode } from './curve-2d.js';
 import { cylinderNode } from './cylinder.js';
@@ -93,6 +95,7 @@ export const CORE_NODES = [
   mapRangeNode,
   sphereNode,
   cubeNode,
+  boxNode,
   cylinderNode,
   coneNode,
   planeNode,
@@ -111,6 +114,7 @@ export const CORE_NODES = [
   transformNode,
   uvTransformNode,
   mergeGeometryNode,
+  cornerPointsNode,
   distributeInVolumeNode,
   distributeOnFacesNode,
   forEachPointNode,
@@ -204,8 +208,10 @@ export {
   grassBladesNode,
   grassNode,
   bevelNode,
+  boxNode,
   coneNode,
   computeNormalsNode,
+  cornerPointsNode,
   cubeNode,
   curve2dNode,
   cylinderNode,

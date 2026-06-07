@@ -4,8 +4,21 @@ import type { CpuMesh } from './mesh.js';
 // Winding is CCW when viewed from outside, matching the sphere convention so
 // default back-face culling drops the inside.
 export function generateCube(size: number): CpuMesh {
-  const h = size / 2;
+  return generateBox(size, size, size);
+}
 
+// Same topology as generateCube but with independent half-extents per axis.
+// Centred at the origin, axis-aligned. Used by `core/box` to skip the
+// cube+transform.scale boilerplate that's otherwise repeated dozens of times
+// in furniture / room-scale graphs.
+export function generateBox(width: number, height: number, depth: number): CpuMesh {
+  const hx = width / 2;
+  const hy = height / 2;
+  const hz = depth / 2;
+
+  const sx = width;
+  const sy = height;
+  const sz = depth;
   // Each face: [origin, edgeU, edgeV, normal]. Vertices are origin + (i,j) * edges
   // where (i,j) takes the values (0,0), (1,0), (1,1), (0,1) — quad CCW.
   const faces: Array<{
@@ -15,17 +28,17 @@ export function generateCube(size: number): CpuMesh {
     n: [number, number, number];
   }> = [
     // +X
-    { origin: [+h, -h, +h], eu: [0, 0, -size], ev: [0, +size, 0], n: [+1, 0, 0] },
+    { origin: [+hx, -hy, +hz], eu: [0, 0, -sz], ev: [0, +sy, 0], n: [+1, 0, 0] },
     // -X
-    { origin: [-h, -h, -h], eu: [0, 0, +size], ev: [0, +size, 0], n: [-1, 0, 0] },
+    { origin: [-hx, -hy, -hz], eu: [0, 0, +sz], ev: [0, +sy, 0], n: [-1, 0, 0] },
     // +Y
-    { origin: [-h, +h, +h], eu: [+size, 0, 0], ev: [0, 0, -size], n: [0, +1, 0] },
+    { origin: [-hx, +hy, +hz], eu: [+sx, 0, 0], ev: [0, 0, -sz], n: [0, +1, 0] },
     // -Y
-    { origin: [-h, -h, -h], eu: [+size, 0, 0], ev: [0, 0, +size], n: [0, -1, 0] },
+    { origin: [-hx, -hy, -hz], eu: [+sx, 0, 0], ev: [0, 0, +sz], n: [0, -1, 0] },
     // +Z
-    { origin: [-h, -h, +h], eu: [+size, 0, 0], ev: [0, +size, 0], n: [0, 0, +1] },
+    { origin: [-hx, -hy, +hz], eu: [+sx, 0, 0], ev: [0, +sy, 0], n: [0, 0, +1] },
     // -Z
-    { origin: [+h, -h, -h], eu: [-size, 0, 0], ev: [0, +size, 0], n: [0, 0, -1] },
+    { origin: [+hx, -hy, -hz], eu: [-sx, 0, 0], ev: [0, +sy, 0], n: [0, 0, -1] },
   ];
 
   const positions = new Float32Array(24 * 3);
