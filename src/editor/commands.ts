@@ -6,6 +6,7 @@ import { DEMOS } from './demos/index.js';
 import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
+import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
 import type { NodeRegistry } from '../core/node-def.js';
 import { buildRegistry, useRegistry } from './registry.js';
@@ -41,6 +42,21 @@ export function useCommands(): PaletteCommand[] {
   return useMemo(() => [...buildCommands(), ...buildAddNodeCommands(registry)], [registry]);
 }
 
+// Whether the last-active canvas's history cursor can move in the
+// given direction. Read once at command-list build time — the palette
+// computes `enabled` per render, so this reflects the user's current
+// state by the time the menu appears.
+function canvasHistoryCanGo(direction: 'back' | 'forward'): boolean {
+  const layout = useLayoutStore.getState();
+  const panelId = layout.lastActiveCanvasPanelId;
+  if (!panelId) return false;
+  const h = layout.canvasHistory[panelId];
+  if (!h) return false;
+  return direction === 'back'
+    ? h.cursor > 0
+    : h.cursor < h.entries.length - 1;
+}
+
 function buildCommands(): PaletteCommand[] {
   return [
     {
@@ -71,6 +87,26 @@ function buildCommands(): PaletteCommand[] {
       label: 'Edit: Redo',
       shortcut: 'Cmd/Ctrl+Shift+Z',
       run: () => useEditorStore.getState().redo(),
+    },
+    {
+      id: 'view.canvas-back',
+      label: 'View: Back in Canvas History',
+      shortcut: 'Cmd/Ctrl+[',
+      enabled: canvasHistoryCanGo('back'),
+      run: () => {
+        const panelId = useLayoutStore.getState().lastActiveCanvasPanelId;
+        if (panelId) navigateCanvasBack(panelId);
+      },
+    },
+    {
+      id: 'view.canvas-forward',
+      label: 'View: Forward in Canvas History',
+      shortcut: 'Cmd/Ctrl+]',
+      enabled: canvasHistoryCanGo('forward'),
+      run: () => {
+        const panelId = useLayoutStore.getState().lastActiveCanvasPanelId;
+        if (panelId) navigateCanvasForward(panelId);
+      },
     },
     {
       id: 'view.split-right',
@@ -185,6 +221,10 @@ export function splitActivePanel(direction: 'right' | 'below'): void {
       if (sourceRf) {
         layout.saveCanvasViewport(newPanelId, sourceGraphId, sourceRf.getViewport());
       }
+      // Splits should look like a literal duplication, including the
+      // navigation history — so the new pane's Back/Forward buttons
+      // start where the source's were.
+      layout.cloneCanvasHistory(active.id, newPanelId);
     }
   } else if (component === 'preview') {
     const sourcePinned = layout.pinnedGraphIds[active.id];

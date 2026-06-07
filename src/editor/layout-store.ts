@@ -40,6 +40,31 @@ export interface LayoutState {
   canvasViewports: Record<string, Record<string, Viewport>>;
 
   /**
+   * Per-canvas navigation history, browser-style. `entries` is the
+   * ordered list of graphs the canvas has visited; `cursor` points at
+   * the currently-displayed one. Subgraphs are reusable assets (not
+   * a tree), so this is a linear history of "where you've been",
+   * NOT a parent hierarchy.
+   *
+   * Semantics match Chrome/Firefox:
+   *   • Back  → cursor--  (does not pop; the entry stays available).
+   *   • Forward → cursor++.
+   *   • Navigate-to G (drill via Edit / double-click, asset open):
+   *       - if entries[cursor]   === G → no-op (already here).
+   *       - elif entries[cursor+1] === G → cursor++ (you've gone
+   *         forward via the same path you went back from, common
+   *         after Back-Edit-same-thing).
+   *       - else → truncate forward history past cursor and append G.
+   *         (Same as "follow a link" in a browser: the forward arrow
+   *         goes away because you've started a new branch.)
+   *
+   * All navigation paths route through `recordCanvasNavigation` /
+   * `goBackCanvasHistory` / `goForwardCanvasHistory` so the cursor
+   * always agrees with what the panel is actually showing.
+   */
+  canvasHistory: Record<string, { entries: string[]; cursor: number }>;
+
+  /**
    * Most recent canvas viewport per graph, regardless of which panel
    * produced it. Updated on every canvas pan/zoom (alongside the
    * per-panel map above). New panels — opened via "Create Canvas
@@ -86,6 +111,24 @@ export interface LayoutState {
   /** Forget a canvas's graph pin (e.g. on panel close). */
   clearCanvasGraphId: (panelId: string) => void;
 
+  /**
+   * Record a navigation to `graphId` in the canvas's history. Applies
+   * browser-history rules — see `canvasHistory` above. Does NOT touch
+   * `canvasGraphIds`; callers pair this with `setCanvasGraphId` (the
+   * helpers in open-graph.ts do both).
+   */
+  recordCanvasNavigation: (panelId: string, graphId: string) => void;
+  /** Move the cursor back one; returns the graph now under it, or
+   * undefined if already at the start. */
+  goBackCanvasHistory: (panelId: string) => string | undefined;
+  /** Move the cursor forward one; returns the graph now under it,
+   * or undefined if already at the end. */
+  goForwardCanvasHistory: (panelId: string) => string | undefined;
+  /** Copy the source panel's history snapshot onto the destination
+   * (for "Split" — the new pane should be a literal duplicate, back
+   * and forward both populated). */
+  cloneCanvasHistory: (srcPanelId: string, dstPanelId: string) => void;
+
   /** Record a canvas pane's pan/zoom for a specific graph. */
   saveCanvasViewport: (panelId: string, graphId: string, viewport: Viewport) => void;
 
@@ -121,11 +164,12 @@ export interface LayoutState {
   resetForNewProject: () => void;
 }
 
-export const useLayoutStore = create<LayoutState>((set) => ({
+export const useLayoutStore = create<LayoutState>((set, get) => ({
   pinnedGraphIds: {},
   canvasGraphIds: {},
   canvasViewports: {},
   recentCanvasViewports: {},
+  canvasHistory: {},
   previewCameras: {},
   recentPreviewCameras: {},
   assetsTreeWidth: 200,
@@ -150,10 +194,78 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   clearCanvasGraphId: (panelId) =>
     set((state) => {
-      if (!(panelId in state.canvasGraphIds)) return state;
-      const next = { ...state.canvasGraphIds };
-      delete next[panelId];
-      return { canvasGraphIds: next };
+      const hasGraph = panelId in state.canvasGraphIds;
+      const hasHistory = panelId in state.canvasHistory;
+      if (!hasGraph && !hasHistory) return state;
+      const nextGraph = { ...state.canvasGraphIds };
+      delete nextGraph[panelId];
+      const nextHistory = { ...state.canvasHistory };
+      delete nextHistory[panelId];
+      return { canvasGraphIds: nextGraph, canvasHistory: nextHistory };
+    }),
+
+  recordCanvasNavigation: (panelId, graphId) =>
+    set((state) => {
+      const cur = state.canvasHistory[panelId] ?? { entries: [], cursor: -1 };
+      // Already at this graph — nothing to record. Avoids producing
+      // adjacent-duplicate entries when the same drill-in fires twice
+      // (e.g. component remounts replaying the click handler).
+      if (cur.entries[cur.cursor] === graphId) return state;
+      let next: { entries: string[]; cursor: number };
+      if (cur.entries[cur.cursor + 1] === graphId) {
+        // Going forward via the same path we came back from — preserve
+        // the forward arrow so back-forth doesn't keep rewriting
+        // history.
+        next = { entries: cur.entries, cursor: cur.cursor + 1 };
+      } else {
+        // Different graph than what was next — truncate any forward
+        // history (browser semantics: following a "link" closes the
+        // forward branch) and append.
+        const truncated = cur.entries.slice(0, cur.cursor + 1);
+        truncated.push(graphId);
+        next = { entries: truncated, cursor: truncated.length - 1 };
+      }
+      return {
+        canvasHistory: { ...state.canvasHistory, [panelId]: next },
+      };
+    }),
+
+  goBackCanvasHistory: (panelId) => {
+    const cur = get().canvasHistory[panelId];
+    if (!cur || cur.cursor <= 0) return undefined;
+    const nextCursor = cur.cursor - 1;
+    set((state) => ({
+      canvasHistory: {
+        ...state.canvasHistory,
+        [panelId]: { entries: cur.entries, cursor: nextCursor },
+      },
+    }));
+    return cur.entries[nextCursor];
+  },
+
+  goForwardCanvasHistory: (panelId) => {
+    const cur = get().canvasHistory[panelId];
+    if (!cur || cur.cursor >= cur.entries.length - 1) return undefined;
+    const nextCursor = cur.cursor + 1;
+    set((state) => ({
+      canvasHistory: {
+        ...state.canvasHistory,
+        [panelId]: { entries: cur.entries, cursor: nextCursor },
+      },
+    }));
+    return cur.entries[nextCursor];
+  },
+
+  cloneCanvasHistory: (srcPanelId, dstPanelId) =>
+    set((state) => {
+      const src = state.canvasHistory[srcPanelId];
+      if (!src) return state;
+      return {
+        canvasHistory: {
+          ...state.canvasHistory,
+          [dstPanelId]: { entries: [...src.entries], cursor: src.cursor },
+        },
+      };
     }),
 
   saveCanvasViewport: (panelId, graphId, viewport) =>
@@ -213,6 +325,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
       canvasGraphIds: {},
       canvasViewports: {},
       recentCanvasViewports: {},
+      canvasHistory: {},
       previewCameras: {},
       recentPreviewCameras: {},
     }),

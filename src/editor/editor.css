@@ -686,6 +686,43 @@
   margin: 4px 6px;
 }
 
+/* Back + Forward sharing one row of ReactFlow's Controls strip. The
+ * row takes the full column width (matching a regular ControlButton)
+ * and the two buttons inside flex-split it evenly. Targeting the
+ * .react-flow__controls-button class directly so we inherit the
+ * strip's existing border/hover/disabled styling and only override
+ * the layout-sensitive bits. Without min-width:0 + width:auto the
+ * default button sizing wins and the row never actually splits. */
+.sedon-canvas-nav-row {
+  display: flex;
+  width: 100%;
+}
+
+.sedon-canvas-nav-row > .react-flow__controls-button {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The chevrons read as a paired nav control, not as two full-strength
+ * buttons — they should look smaller than the surrounding zoom icons
+ * so the eye groups them together. Fixed 10px keeps them snug to the
+ * middle of each half-cell instead of stretching to fill it; the
+ * empty space around them is intentional. max-* overrides ReactFlow's
+ * default child-SVG cap (which is what was making them as big as the
+ * single-icon buttons above). */
+.sedon-canvas-nav-row > .react-flow__controls-button > svg {
+  width: 10px;
+  height: 10px;
+  max-width: none;
+  max-height: none;
+}
+
+
 /* ============================================================
  * Demos menu
  * ============================================================ */

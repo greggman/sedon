@@ -1,5 +1,6 @@
 import {
   Background,
+  ControlButton,
   Controls,
   ReactFlow,
   SelectionMode,
@@ -36,6 +37,7 @@ import {
   subgraphIdFromBoundaryKind,
 } from './custom-node.js';
 import { useLayoutStore } from './layout-store.js';
+import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { requestRender } from './render-bus.js';
 import { buildRegistry, useRegistry } from './registry.js';
 import { edgeColor, graphToRfEdges, graphToRfNodes } from './rf-conversion.js';
@@ -161,7 +163,13 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   useEffect(() => {
     if (pinnedGraphId !== undefined) return;
     const initial = useEditorStore.getState().currentEditingId;
-    useLayoutStore.getState().setCanvasGraphId(panelId, initial);
+    const layout = useLayoutStore.getState();
+    layout.setCanvasGraphId(panelId, initial);
+    // Seed nav history with the initial graph so future Back can return
+    // to it. recordCanvasNavigation no-ops if the panel already has a
+    // history entry, so this never clobbers state restored by other
+    // paths (e.g. a clone after split).
+    layout.recordCanvasNavigation(panelId, initial);
   }, [panelId, pinnedGraphId]);
   // We use RF's internal store directly (not useUpdateNodeInternals) because
   // the public hook defers measurement to a requestAnimationFrame — by the
@@ -785,6 +793,27 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     rf.fitView({ padding: 0.2, nodes: target.map((n) => ({ id: n.id })), duration: 200 });
   }, [rf]);
 
+  // Subscribe to the history shape so the corner buttons enable /
+  // disable reactively. The selector returns a small object; useShallow
+  // makes the comparison structural so identity-only changes
+  // (set returning a new object with the same fields) don't re-render.
+  // Both buttons render unconditionally — they sit in the Controls
+  // strip whether or not history exists, and gray out via `disabled`
+  // when there's nowhere to go. Always-present means the affordance is
+  // discoverable from the moment the user opens a canvas.
+  const { canGoBack, canGoForward } = useLayoutStore(
+    useShallow((s) => {
+      const h = s.canvasHistory[panelId];
+      if (!h) return { canGoBack: false, canGoForward: false };
+      return {
+        canGoBack: h.cursor > 0,
+        canGoForward: h.cursor < h.entries.length - 1,
+      };
+    }),
+  );
+  const onBackClick = useCallback(() => navigateCanvasBack(panelId), [panelId]);
+  const onForwardClick = useCallback(() => navigateCanvasForward(panelId), [panelId]);
+
   return (
     <CanvasPanelContext.Provider value={canvasPanelInfo}>
       <div
@@ -812,10 +841,62 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           colorMode="dark"
         >
           <Background />
-          <Controls />
+          {/* Back / Forward live inside ReactFlow's Controls strip so
+              they share the canvas mini-toolbar with zoom / fit. The
+              top-left corner is already owned by Add Node. Both
+              buttons mount as a pair whenever this canvas has any
+              navigation history; ControlButton's `disabled` styling
+              tracks the cursor position. */}
+          <Controls>
+            {/* Back + Forward sharing one row of the Controls strip,
+                half-width each. Saves vertical space and keeps the
+                two-arrow gesture readable as a single nav control.
+                Both always render, greyed out via `disabled` when
+                history can't move that way. Inline SVG (rather than
+                ← / → glyphs) so the icon scales to whatever cell
+                width the flex split produces — Unicode arrows have
+                intrinsic glyph width that fought the 50/50 layout. */}
+            <div className="sedon-canvas-nav-row">
+              <ControlButton
+                title="Back (⌘[)"
+                disabled={!canGoBack}
+                onClick={onBackClick}
+              >
+                <ChevronIcon direction="left" />
+              </ControlButton>
+              <ControlButton
+                title="Forward (⌘])"
+                disabled={!canGoForward}
+                onClick={onForwardClick}
+              >
+                <ChevronIcon direction="right" />
+              </ControlButton>
+            </div>
+          </Controls>
         </ReactFlow>
       </div>
     </CanvasPanelContext.Provider>
+  );
+}
+
+// Chevron used by the Back / Forward buttons. `currentColor` lets
+// ReactFlow's Controls strip style it (including the dimmed look on
+// disabled). 24-unit viewBox gives the stroke room without clipping
+// at the small widths the flex split produces.
+function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  const d = direction === 'left' ? 'M15 6 L9 12 L15 18' : 'M9 6 L15 12 L9 18';
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
   );
 }
 

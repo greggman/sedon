@@ -22,7 +22,7 @@ import { PointListInput } from './inputs/point-list-editor.js';
 import type { Point } from '../nodes/point-list.js';
 import { StringInput } from './inputs/string-input.js';
 import { VecInput } from './inputs/vec-input.js';
-import { useLayoutStore } from './layout-store.js';
+import { navigateCanvasTo } from './open-graph.js';
 import { MaterialPreview } from './material-preview.js';
 import { MeshPreview } from './mesh-preview.js';
 import { useRegistry } from './registry.js';
@@ -884,16 +884,16 @@ export function CustomNode({ id, data, selected }: NodeProps) {
 
   const onEditSubgraph = () => {
     if (!subgraphId) return;
-    // Position commit is now redundant — onNodeDragStop in NodeCanvas
-    // keeps positions in the store continuously. We do still flip the
-    // active editing context AND, if we know which canvas this Edit
-    // button lives in, pin that canvas to the subgraph so the click
-    // navigates THIS canvas (rather than every canvas in the app, which
-    // would happen if we relied on setActiveEditing alone).
+    // Drill-in: navigateCanvasTo handles per-canvas pin, browser-style
+    // history (push, truncating any forward branch), and the global
+    // currentEditingId flip. Pinning is what keeps the click scoped to
+    // this canvas — otherwise every canvas in the app would follow
+    // setActiveEditing.
     if (canvasPanelId) {
-      useLayoutStore.getState().setCanvasGraphId(canvasPanelId, subgraphId);
+      navigateCanvasTo(canvasPanelId, subgraphId);
+    } else {
+      setActiveEditing(subgraphId);
     }
-    setActiveEditing(subgraphId);
   };
   // for-each-point's bridge is just a subgraph the user can drill
   // into the same way as a regular wrapper, but reached via the
@@ -901,9 +901,10 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const onEditIteration = () => {
     if (!forEachBridgeId) return;
     if (canvasPanelId) {
-      useLayoutStore.getState().setCanvasGraphId(canvasPanelId, forEachBridgeId);
+      navigateCanvasTo(canvasPanelId, forEachBridgeId);
+    } else {
+      setActiveEditing(forEachBridgeId);
     }
-    setActiveEditing(forEachBridgeId);
   };
 
   const valueOf = (input: InputDef) => {

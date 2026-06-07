@@ -11,6 +11,7 @@ import { useAppMenus } from './app-menus.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { copySelection, pasteFromClipboard } from './clipboard-ops.js';
 import { CommandPalette } from './command-palette.js';
+import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { GithubLink } from './github-link.js';
 import { getDockviewApi, setDockviewApi } from './dockview-handle.js';
 import { GraphSwitcher } from './graph-switcher.js';
@@ -138,6 +139,35 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Cmd/Ctrl+[ / Cmd/Ctrl+] move the last-active canvas's history
+  // cursor back / forward (the inverse of double-clicking a subgraph
+  // wrapper to drill in). Listening at window level — and registering
+  // during CAPTURE — is what keeps the browser's history shortcuts
+  // from firing first when focus is somewhere outside the canvas pane
+  // (the menubar, an asset row, the app shell). preventDefault always
+  // fires on the chord, even with no available target, so we never
+  // accidentally unload the SPA.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key !== '[' && e.key !== ']') return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      const panelId = useLayoutStore.getState().lastActiveCanvasPanelId;
+      if (!panelId) return;
+      if (e.key === '[') navigateCanvasBack(panelId);
+      else navigateCanvasForward(panelId);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   // Cmd/Ctrl+A: select-all in the active DockView panel rather than

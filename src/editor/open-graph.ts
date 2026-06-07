@@ -23,10 +23,41 @@ function defaultTitleForGraph(graphId: string): string {
 }
 
 /**
+ * Internal: apply a "the canvas is now showing this graph" navigation
+ * — record it in the history (browser-style: truncate forward, append)
+ * AND mirror it into `canvasGraphIds` + `currentEditingId`. All public
+ * entry points (`navigateCanvasTo`, `openGraphInCanvas`, the canvas
+ * back/forward) funnel through here so the cursor stays consistent
+ * with what the canvas is rendering.
+ */
+function commitNavigation(panelId: string, graphId: string): void {
+  const layout = useLayoutStore.getState();
+  layout.recordCanvasNavigation(panelId, graphId);
+  layout.setCanvasGraphId(panelId, graphId);
+  useEditorStore.getState().setActiveEditing(graphId);
+}
+
+/**
+ * Drill-style navigation: the user picked "open this graph" inside a
+ * known canvas (Edit button on a subgraph wrapper, double-click on its
+ * preview, "Edit Iteration" on for-each). Pushes browser-style — see
+ * `recordCanvasNavigation` for the rules.
+ */
+export function navigateCanvasTo(panelId: string, graphId: string): void {
+  commitNavigation(panelId, graphId);
+}
+
+/**
  * Open `graphId` in the most-recently-active canvas pane, creating one
  * if no canvas pane currently exists. Also flips the editor store's
  * `currentEditingId` so edits in this graph route to the right backing
  * (subgraphs[i].graph or mainGraph).
+ *
+ * History semantics: same as any other navigation — record in the
+ * panel's history per browser rules (truncate forward, append, unless
+ * the target matches the next entry). Earlier prototypes reset the
+ * stack here, but unifying with the rest of the navigation model
+ * lets Back work consistently regardless of HOW the user got here.
  */
 export function openGraphInCanvas(graphId: string): void {
   const dockApi = getDockviewApi();
@@ -46,8 +77,32 @@ export function openGraphInCanvas(graphId: string): void {
     // Bring the existing canvas to focus so the user sees the change.
     dockApi?.getPanel(panelId)?.api.setActive();
   }
-  layout.setCanvasGraphId(panelId, graphId);
-  useEditorStore.getState().setActiveEditing(graphId);
+  commitNavigation(panelId, graphId);
+}
+
+/**
+ * Move the canvas's history cursor backward and navigate there. No-op
+ * at the start of history. Used by the canvas Back button and Cmd-[.
+ * Does NOT remove the current entry; Forward returns to it.
+ */
+export function navigateCanvasBack(panelId: string): void {
+  const layout = useLayoutStore.getState();
+  const target = layout.goBackCanvasHistory(panelId);
+  if (target === undefined) return;
+  layout.setCanvasGraphId(panelId, target);
+  useEditorStore.getState().setActiveEditing(target);
+}
+
+/**
+ * Move the canvas's history cursor forward and navigate there. No-op
+ * at the end of history. Used by the canvas Forward button and Cmd-].
+ */
+export function navigateCanvasForward(panelId: string): void {
+  const layout = useLayoutStore.getState();
+  const target = layout.goForwardCanvasHistory(panelId);
+  if (target === undefined) return;
+  layout.setCanvasGraphId(panelId, target);
+  useEditorStore.getState().setActiveEditing(target);
 }
 
 /**
