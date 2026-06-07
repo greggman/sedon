@@ -85,8 +85,8 @@ function reverseMappedGraph() {
   const g = createGraph();
   const s1 = addNode(g, 'core/sphere', { id: 's1' });
   const s2 = addNode(g, 'core/sphere', { id: 's2' });
-  const m1 = addNode(g, 'core/transform', { id: 'm1' });
-  const m2 = addNode(g, 'core/transform', { id: 'm2' });
+  const m1 = addNode(g, 'core/transform-geometry', { id: 'm1' });
+  const m2 = addNode(g, 'core/transform-geometry', { id: 'm2' });
   const t = addNode(g, 'core/output', { id: 't' });
   // Reverse mapping
   addEdge(g, { node: s1.id, socket: 'out' }, { node: m2.id, socket: 'in' });

@@ -93,7 +93,7 @@ Edge cases:
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, slices: 32, stacks: 16 },
       });
-      const squash = addNode(g, 'core/transform', {
+      const squash = addNode(g, 'core/transform-geometry', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { scale: [1, 0.5, 1] },

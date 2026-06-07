@@ -54,7 +54,7 @@ along Y, ±depth/2 along Z.
 
 For furniture / architecture graphs where almost every primitive is
 non-uniform (tabletops, drawer bodies, shelf panels, sofa seats),
-this replaces the usual cube + [core/transform](../../core/transform)
+this replaces the usual cube + [core/transform-geometry](../../core/transform-geometry)
 scale wiring. The cube is still the right choice when you want
 uniform scale via a downstream parameter (e.g. random-scaled crates
 in a city demo).

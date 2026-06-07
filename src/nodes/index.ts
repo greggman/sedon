@@ -87,7 +87,7 @@ import { waterPlaneNode } from './water-plane.js';
 import { terrainRendererNode } from './terrain-renderer.js';
 import { terrainMaterialNode } from './terrain-material.js';
 import { terrainMultiLayerMaterialNode } from './terrain-multi-layer-material.js';
-import { transformNode } from './transform.js';
+import { transformGeometryNode } from './transform-geometry.js';
 import { transformSceneNode } from './transform-scene.js';
 import { uvTransformNode } from './uv-transform.js';
 import { warpNode } from './warp.js';
@@ -115,7 +115,7 @@ export const CORE_NODES = [
   bevelNode,
   extrudeNode,
   insetNode,
-  transformNode,
+  transformGeometryNode,
   transformSceneNode,
   uvTransformNode,
   mergeGeometryNode,
@@ -282,7 +282,7 @@ export {
   terrainMaterialNode,
   terrainMultiLayerMaterialNode,
   terrainRendererNode,
-  transformNode,
+  transformGeometryNode,
   transformSceneNode,
   waterPlaneNode,
   uvTransformNode,

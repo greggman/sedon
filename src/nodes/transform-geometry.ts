@@ -4,8 +4,8 @@ import type { GeometryValue } from '../core/resources.js';
 import { requireDevice } from '../core/resources.js';
 import { transformMesh, uploadMeshToGpu } from '../render/mesh.js';
 
-export const transformNode: NodeDef = {
-  id: 'core/transform',
+export const transformGeometryNode: NodeDef = {
+  id: 'core/transform-geometry',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -62,13 +62,13 @@ variation.
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const tx = addNode(g, 'core/transform', {
-        id: 'transform',
+      const tx = addNode(g, 'core/transform-geometry', {
+        id: 'transform-geometry',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0.5, 0], rotate: [0, 0.5, 0], scale: [2, 0.5, 1] },
       });
       addEdge(g, { node: cube.id, socket: 'geometry' }, { node: tx.id, socket: 'geometry' });
-      return { graph: g, rootNodeId: 'transform' };
+      return { graph: g, rootNodeId: 'transform-geometry' };
     },
   },
   evaluate(ctx, inputs): { geometry: GeometryValue } {
@@ -76,7 +76,7 @@ variation.
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/transform requires a CPU-side mesh on the input geometry; ' +
+        'core/transform-geometry requires a CPU-side mesh on the input geometry; ' +
           'this source produced GPU-only data.',
       );
     }

@@ -44,7 +44,7 @@ export function createCubeOnWaterDemo(): {
     position: { x: 0, y: ROW },
     inputValues: { size: 2 },
   });
-  const cubeXform = addNode(g, 'core/transform', {
+  const cubeXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: ROW },
     inputValues: { translate: [0, 1, 0] },
   });

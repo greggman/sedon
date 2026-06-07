@@ -410,7 +410,7 @@ function buildForEachPointSampleBody(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW } });
 
   const cube = addNode(g, 'core/cube', { position: { x: COL, y: 0 }, inputValues: { size: 0.3 } });
-  const place = addNode(g, 'core/transform', { position: { x: COL * 2, y: 0 } });
+  const place = addNode(g, 'core/transform-geometry', { position: { x: COL * 2, y: 0 } });
   const colour = addNode(g, 'core/solid-color', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { color: [0.85, 0.32, 0.22, 1], resolution: 16 },

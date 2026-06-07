@@ -226,7 +226,7 @@ export function buildTableSubgraph(): SubgraphDef {
 // is 3 fabric cushions, with 3 back cushions behind them at h=0.6m.
 //
 // Lots of components — this is the longest hero piece. Each
-// translates to its own position with `core/transform`; we don't
+// translates to its own position with `core/transform-geometry`; we don't
 // try to instance the cushions on a points-line because seat and
 // back cushions differ in size.
 export function buildSofaSubgraph(): SubgraphDef {

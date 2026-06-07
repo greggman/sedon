@@ -84,7 +84,7 @@ mirrored surface.
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const offset = addNode(g, 'core/transform', {
+      const offset = addNode(g, 'core/transform-geometry', {
         id: 'offset',
         position: { x: 280, y: 0 },
         inputValues: { translate: [1.5, 0, 0] },

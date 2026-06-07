@@ -45,7 +45,7 @@ the join is smooth; the body uses face-aligned normals so the radial
 seams shade as expected (no smearing from averaged normals).
 
 Use for pipes, columns, tree trunks (when paired with a noise-driven
-[core/transform](../../core/transform) to vary diameter), or as the base
+[core/transform-geometry](../../core/transform-geometry) to vary diameter), or as the base
 for instanced [core/grass-blades](../../core/grass-blades) if you ever want
 square-ish blades.
 `,

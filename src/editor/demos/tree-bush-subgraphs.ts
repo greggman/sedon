@@ -106,7 +106,7 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW * 3.3 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform', {
+  const leafLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 3.3 },
     inputValues: {
       translate: [0, 0.5, 0],
@@ -299,7 +299,7 @@ export function buildBranchBushSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW * 3.2 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform', {
+  const leafLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 3.2 },
     inputValues: {
       translate: [0, 0.5, 0],
@@ -651,7 +651,7 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
     position: { x: 0, y: 0 },
     inputValues: { radius: 4, segments: 14, rings: 10 },
   });
-  const crownLift = addNode(g, 'core/transform', {
+  const crownLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 9, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -747,7 +747,7 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW * 3.4 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform', {
+  const leafLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 3.4 },
     inputValues: {
       translate: [0, 0.5, 0],

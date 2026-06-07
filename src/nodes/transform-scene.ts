@@ -4,7 +4,7 @@ import type { SceneEntity, SceneValue } from '../core/resources.js';
 import { multiply, rotationX, rotationY, rotationZ, translation, type Mat4 } from '../render/mat4.js';
 
 // Compose a column-major mat4 from (scale, rotate, translate). Matches
-// `core/transform`'s convention: scale first, then rotate X / Y / Z,
+// `core/transform-geometry`'s convention: scale first, then rotate X / Y / Z,
 // then translate. Returned matrix M transforms a point p as
 // p' = T·Rx·Ry·Rz·S · p. There's no `scaling()` helper in mat4.ts so
 // we build S inline (diagonal, column-major).
@@ -63,19 +63,19 @@ export const transformSceneNode: NodeDef = {
   doc: {
     summary: 'Translate / rotate / scale an entire Scene as one block.',
     description: `
-The Scene counterpart of [core/transform](../../core/transform). Takes
+The Scene counterpart of [core/transform-geometry](../../core/transform-geometry). Takes
 a Scene (a list of {geometry, material, transform, tint} entities) and
 left-multiplies every entity's existing world transform by a new
 (scale → rotate → translate) matrix, so the whole scene moves /
 rotates / scales as one rigid block. Rotation order is X then Y then
-Z (radians), same as core/transform.
+Z (radians), same as core/transform-geometry.
 
 Use to position a hero subgraph in a parent scene: a chair subgraph
 emits a Scene with the chair centred at the origin, then
 core/transform-scene with \`translate = [2, 0, 0]\` places that whole
 chair at \`(2, 0, 0)\` in the showroom — no per-entity wiring, no
 per-mesh vertex churn. This is FAR cheaper than chaining a per-vertex
-[core/transform](../../core/transform) before the scene-entity step:
+[core/transform-geometry](../../core/transform-geometry) before the scene-entity step:
 this composes matrices (O(entities)) instead of moving vertices
 (O(triangles)).
 

@@ -46,7 +46,7 @@ export function buildTaperedLegSubgraph(): SubgraphDef {
   });
   // Lift so the base plate's bottom sits at y=0 instead of straddling
   // the origin. Half the plate thickness.
-  const lift = addNode(g, 'core/transform', {
+  const lift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW },
     inputValues: { translate: [0, 0.001, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -274,8 +274,8 @@ export function buildDrawerSubgraph(): SubgraphDef {
   // Cylinder axis runs along Y; rotate 90° around X (π/2 radians) to
   // point its axis along Z so it sticks out toward the viewer. Then
   // translate to the drawer face position (z = depth/2 + half the
-  // pull length). core/transform takes RADIANS — not degrees.
-  const pullTransform = addNode(g, 'core/transform', {
+  // pull length). core/transform-geometry takes RADIANS — not degrees.
+  const pullTransform = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: {
       translate: [0, 0, 0.29],
@@ -368,7 +368,7 @@ export function buildBookSubgraph(): SubgraphDef {
     position: { x: COL, y: ROW },
     inputValues: { width: 1, height: 1, depth: 1 },
   });
-  const corner = addNode(g, 'core/transform', {
+  const corner = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW },
     inputValues: { translate: [0.5, 0.5, 0.5], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });

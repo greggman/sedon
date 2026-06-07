@@ -121,7 +121,7 @@ want downstream as A.
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const squash = addNode(g, 'core/transform', {
+      const squash = addNode(g, 'core/transform-geometry', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 0.5, 1] },

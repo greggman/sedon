@@ -64,7 +64,7 @@ the legs vertical — apply a downstream rotation if you want them
 canted outward (the "tapered toward the body" look).
 
 Equivalent to \`core/points-line\` × 2 + merge, or 4 hand-wired
-\`core/transform\` nodes — but one node instead of 5+.
+\`core/transform-geometry\` nodes — but one node instead of 5+.
 `,
     sampleGraph: () => {
       const g = createGraph();

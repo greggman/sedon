@@ -41,14 +41,14 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
   // origin). This bakes the "cabinets sit on the ground" assumption into
   // the body and means the for-each-point's `__position` can stay flat
   // on the XZ plane without per-cell Y math.
-  const lift = addNode(g, 'core/transform', {
+  const lift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: 0 },
     inputValues: { translate: [0, 0.5, 0] },
   });
   // Scale to per-cell size, then translate to __position. transform's
   // scale-then-translate order is what we want: the lifted base stays
   // at y=0 in pre-translate space, then translates to __position.y.
-  const place = addNode(g, 'core/transform', {
+  const place = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 3, y: 0 },
   });
   const entity = addNode(g, 'core/scene-entity', {

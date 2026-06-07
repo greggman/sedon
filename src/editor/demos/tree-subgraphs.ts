@@ -96,7 +96,7 @@ function buildTreeSubgraph(opts: {
           segments: opts.foliage.segments,
         },
       });
-  const foliageLift = addNode(g, 'core/transform', {
+  const foliageLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: {
       translate: [0, opts.foliage.liftY, 0],

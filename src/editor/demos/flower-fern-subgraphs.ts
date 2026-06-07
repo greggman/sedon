@@ -38,7 +38,7 @@ export function buildFlowerSubgraph(): SubgraphDef {
   });
   // Cylinder is centered on origin; translate so its base sits on the
   // ground and the top sits at y=0.8.
-  const stemXform = addNode(g, 'core/transform', {
+  const stemXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.4, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -102,7 +102,7 @@ export function buildFlowerSubgraph(): SubgraphDef {
     position: { x: 0, y: ROW * 6.6 },
     inputValues: { radius: 0.06, segments: 12, rings: 8 },
   });
-  const centerXform = addNode(g, 'core/transform', {
+  const centerXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: ROW * 6.6 },
     inputValues: { translate: [0, 0.85, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -168,7 +168,7 @@ export function buildFernSubgraph(): SubgraphDef {
     position: { x: 0, y: 0 },
     inputValues: { radius: 0.025, height: 1.6, segments: 8 },
   });
-  const stalkXform = addNode(g, 'core/transform', {
+  const stalkXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.8, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -273,7 +273,7 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: 0, y: 0 },
     inputValues: { radius: 0.7, height: 0.08, segments: 24 },
   });
-  const discXform = addNode(g, 'core/transform', {
+  const discXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 1.2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -292,7 +292,7 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
     position: { x: 0, y: ROW * 2.2 },
     inputValues: { radius: 0.04, height: 1.2, segments: 8 },
   });
-  const stalkXform = addNode(g, 'core/transform', {
+  const stalkXform = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: ROW * 2.2 },
     inputValues: { translate: [0, 0.6, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });

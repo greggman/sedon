@@ -57,7 +57,7 @@ export function createCityDemo(): { graph: Graph; rootNodeId: string } {
     position: { x: 0, y: ROW * 3 },
     inputValues: { size: 1 },
   });
-  const lift = addNode(g, 'core/transform', {
+  const lift = addNode(g, 'core/transform-geometry', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { translate: [0, 0.5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });

@@ -105,7 +105,7 @@ hundreds for interactive editing; bump for hero shots.
         position: { x: 0, y: 0 },
         inputValues: { radius: 3, segments: 16, rings: 12 },
       });
-      const shift = addNode(g, 'core/transform', {
+      const shift = addNode(g, 'core/transform-geometry', {
         id: 'shift',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
