@@ -182,5 +182,29 @@ void (async () => {
     const { setAnimating } = await import('./editor/render-bus.js');
     setAnimating(true);
   }
+  // Register the MCP tool surface so a browser-side agent (or any
+  // userland script via `window.sedonMcp`) can drive the editor.
+  // Done lazily to keep the bootstrap surface small; failures are
+  // logged but don't block rendering.
+  try {
+    const { buildSedonTools } = await import('./editor/mcp/tools.js');
+    const { registerSedonTools } = await import('./editor/mcp/webmcp.js');
+    const { buildRegistry } = await import('./editor/registry.js');
+    const tools = buildSedonTools({
+      getState: () => useEditorStore.getState(),
+      // Registry is per-render in the editor; the MCP surface
+      // rebuilds it on every call so user-authored subgraphs added
+      // mid-session are immediately visible to the agent.
+      getRegistry: () => buildRegistry(useEditorStore.getState().subgraphs),
+    });
+    const status = registerSedonTools(tools);
+    // eslint-disable-next-line no-console
+    console.info(
+      `Sedon MCP: ${tools.length} tools available `
+      + `(webmcp=${status.webmcp}, window.sedonMcp=${status.windowExpose})`,
+    );
+  } catch (e) {
+    console.error('Failed to register Sedon MCP tools:', e);
+  }
   createRoot(root).render(<App />);
 })();
