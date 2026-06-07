@@ -89,26 +89,31 @@ export function countBrokenRefs(
   return { refs, graphs: graphsTouched };
 }
 
-// Generate "Foo copy" / "Foo copy 2" / … against the labels already in
-// use within the destination parent folder. Capped to avoid runaway
-// loops on pathological label sets; falls back to a UUID suffix.
+// Generate "Foo_copy" / "Foo_copy(2)" / "Foo_copy(3)" / … against the
+// labels already in use within the destination parent folder. The
+// first copy omits the "(1)" suffix — matches the spec "<name>_copy(n),
+// if n <= 1 leave off (1)". Capped to avoid runaway loops; falls back
+// to a UUID suffix.
 export function nextCopyLabel(existing: ReadonlySet<string>, base: string): string {
-  const first = `${base} copy`;
+  const first = `${base}_copy`;
   if (!existing.has(first)) return first;
   for (let i = 2; i < 10000; i++) {
-    const candidate = `${base} copy ${i}`;
+    const candidate = `${base}_copy(${i})`;
     if (!existing.has(candidate)) return candidate;
   }
-  return `${base} copy ${crypto.randomUUID().slice(0, 6)}`;
+  return `${base}_copy(${crypto.randomUUID().slice(0, 6)})`;
 }
 
-// Deep-clone a subgraph definition with a fresh id. The two boundary
-// nodes inside the inner graph get fresh ids + rewritten kinds (since
-// the kind embeds the subgraph id), and every edge that referenced the
-// old boundary ids is rewritten to the new ones. Wrapper nodes inside
-// the cloned inner graph that reference OTHER subgraphs are left
-// unchanged — the clone shares those references with the original so
-// "duplicate this subgraph" doesn't accidentally rewire its dependencies.
+// Deep-clone a subgraph definition with a fresh id. EVERY internal
+// node gets a fresh id (boundaries get rewritten kinds since the kind
+// embeds the subgraph id); edges are rewritten through an id map; the
+// inputs/outputs arrays and each entry are deep-copied (so editing a
+// clone's boundary defaults doesn't bleed through the shared array
+// reference to the original — that was a real bug: changing the
+// clone's color_dark turned every chair referencing the ORIGINAL red).
+// Wrapper nodes inside the cloned inner graph still reference OTHER
+// subgraphs by id — that sharing is intentional ("duplicate this
+// asset" shouldn't accidentally fork its dependencies).
 export function cloneSubgraphDef(
   sg: SubgraphDef,
   newId: string,
@@ -122,36 +127,40 @@ export function cloneSubgraphDef(
   const newInputKind = `subgraph-input/${newId}`;
   const newOutputKind = `subgraph-output/${newId}`;
 
+  const idMap = new Map<string, string>();
+  idMap.set(oldInputBoundaryId, newInputBoundaryId);
+  idMap.set(oldOutputBoundaryId, newOutputBoundaryId);
+  for (const n of sg.graph.nodes) {
+    if (!idMap.has(n.id)) idMap.set(n.id, crypto.randomUUID());
+  }
+
   const nodes: GraphNode[] = sg.graph.nodes.map((n) => {
-    if (n.id === oldInputBoundaryId) {
-      return { ...n, id: newInputBoundaryId, kind: newInputKind };
-    }
-    if (n.id === oldOutputBoundaryId) {
-      return { ...n, id: newOutputBoundaryId, kind: newOutputKind };
-    }
-    return n;
+    const cloned: GraphNode = { ...n, id: idMap.get(n.id)! };
+    if (n.id === oldInputBoundaryId) cloned.kind = newInputKind;
+    else if (n.id === oldOutputBoundaryId) cloned.kind = newOutputKind;
+    if (n.position) cloned.position = { ...n.position };
+    if (n.inputValues) cloned.inputValues = structuredClone(n.inputValues);
+    if (n.extraInputs) cloned.extraInputs = n.extraInputs.map((i) => ({ ...i }));
+    if (n.extraOutputs) cloned.extraOutputs = n.extraOutputs.map((o) => ({ ...o }));
+    return cloned;
   });
 
-  const remap = (id: string) =>
-    id === oldInputBoundaryId
-      ? newInputBoundaryId
-      : id === oldOutputBoundaryId
-        ? newOutputBoundaryId
-        : id;
   const edges = sg.graph.edges.map((e) => ({
-    ...e,
-    from: { ...e.from, node: remap(e.from.node) },
-    to: { ...e.to, node: remap(e.to.node) },
+    id: crypto.randomUUID(),
+    from: { ...e.from, node: idMap.get(e.from.node) ?? e.from.node },
+    to: { ...e.to, node: idMap.get(e.to.node) ?? e.to.node },
   }));
 
   return {
     ...sg,
     id: newId,
     label: newLabel,
+    inputs: sg.inputs.map((i) => structuredClone(i)),
+    outputs: sg.outputs.map((o) => structuredClone(o)),
     inputNodeId: newInputBoundaryId,
     outputNodeId: newOutputBoundaryId,
     parentFolderId: newParentFolderId,
-    graph: { ...sg.graph, nodes, edges },
+    graph: { version: sg.graph.version, nodes, edges },
     version: 0,
   };
 }
