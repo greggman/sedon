@@ -137,6 +137,61 @@ async function listDocumentedNodes() {
   }
 }
 
+// Walk the build-time demos registry, run each demo's `build()` to
+// produce a project graph, serialize it through the same `SaveFile`
+// format the runtime uses for File → Save / Load, and write the
+// bytes to `dist/demos/<id>.sedon`. The runtime fetches these on
+// demand via `loadDemoSaveFile`, so demos stay out of the editor JS
+// bundle — ~3MB savings vs. baking the graphs into the bundle.
+//
+// Same probe-script pattern as `listDocumentedNodes()`: bundle a
+// tiny entry that imports the build-time registry + the save-file
+// serializer, write the bundle to a temp file, dynamic-import it.
+// Bundling is what lets us reach into TS source from this CJS-ish
+// node script.
+async function buildDemos() {
+  const probeSource = `
+    import { BUILD_TIME_DEMOS } from './src/editor/demos/_build-time.js';
+    import { serializeSaveFile, SAVE_FORMAT_VERSION } from './src/editor/save-load.js';
+    export const out = BUILD_TIME_DEMOS.map((d) => {
+      const built = d.build();
+      const file = {
+        formatVersion: SAVE_FORMAT_VERSION,
+        project: {
+          graph: built.graph,
+          rootNodeId: built.rootNodeId,
+          subgraphs: built.subgraphs ?? [],
+          ...(built.cameras ? { cameras: built.cameras } : {}),
+        },
+      };
+      return { id: d.id, content: serializeSaveFile(file) };
+    });
+  `;
+  const result = await esbuild.build({
+    stdin: { contents: probeSource, loader: 'ts', resolveDir: process.cwd() },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    write: false,
+    logLevel: 'error',
+    loader: { '.wgsl': 'text', '.png': 'empty', '.jpg': 'empty', '.svg': 'empty' },
+  });
+  const tmp = path.join(os.tmpdir(), `sedon-demos-probe-${process.pid}-${Date.now()}.mjs`);
+  await writeFile(tmp, result.outputFiles[0].text, 'utf8');
+  let demos;
+  try {
+    const mod = await import(pathToFileURL(tmp).href);
+    demos = mod.out;
+  } finally {
+    await unlink(tmp).catch(() => {});
+  }
+  await mkdir('dist/demos', { recursive: true });
+  for (const d of demos) {
+    await writeFile(`dist/demos/${d.id}.sedon`, d.content, 'utf8');
+  }
+  console.log(`Built ${demos.length} demo file(s) → dist/demos/`);
+}
+
 // Pre-configured showdown converter used to render every node's
 // description markdown into HTML at build time. Flags:
 //   • simpleLineBreaks: true so a single `\n` inside a paragraph stays
@@ -260,11 +315,13 @@ if (serve) {
   const mode = prod ? 'PRODUCTION React (no dev warnings)' : 'development React';
   console.log(`\nSedon dev server: http://${host}:${result.port}/  [${mode}]\n`);
   await writeDocsHtml();
+  await buildDemos();
 } else {
   await esbuild.build({
     ...editorOptions,
     entryPoints: [...editorOptions.entryPoints, ...docsOptions.entryPoints],
   });
   await writeDocsHtml();
-  console.log('Build complete: dist/main.js, dist/docs.js');
+  await buildDemos();
+  console.log('Build complete: dist/main.js, dist/docs.js, dist/demos/*.sedon');
 }

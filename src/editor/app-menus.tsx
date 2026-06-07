@@ -42,7 +42,7 @@ export function useAppMenus(): TopMenu[] {
     const demoEntries: MenuEntry[] = DEMOS.map((d) => ({
       kind: 'item',
       label: d.label,
-      run: () => loadDemoById(d.id),
+      run: () => { void loadDemoById(d.id); },
     }));
     const fileMenu: TopMenu = {
       label: 'File',

@@ -3,6 +3,7 @@ import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
+import { loadDemoSaveFile } from './demos/demo-loader.js';
 import { getDockviewApi } from './dockview-handle.js';
 import { loadProject, saveProject, saveProjectToUrl } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
@@ -322,12 +323,16 @@ export function cleanupActiveGraph(): void {
 
 // Load a demo project by id. Mirrors the old DemosMenu inline handler.
 // Guards on confirmDiscardIfDirty so unsaved work isn't silently lost.
-export function loadDemoById(id: string): void {
+// Async because demos now live as `dist/demos/<id>.sedon` files
+// produced at build time; we fetch + parse on demand instead of
+// shipping every demo graph in the runtime JS bundle.
+export async function loadDemoById(id: string): Promise<void> {
   const demo = DEMOS.find((d) => d.id === id);
   if (!demo) return;
   if (!confirmDiscardIfDirty()) return;
-  const { graph, rootNodeId, subgraphs, cameras } = demo.build();
-  useEditorStore.getState().setGraph(graph, rootNodeId, subgraphs, cameras);
+  const saveFile = await loadDemoSaveFile(id);
+  const { graph, rootNodeId, subgraphs, cameras } = saveFile.project;
+  useEditorStore.getState().setGraph(graph, rootNodeId, subgraphs ?? [], cameras);
 }
 
 // Slugify + create-and-edit, lifted from the old NewSubgraphButton.

@@ -35,7 +35,9 @@ const drillAndShoot = async (graphId, fname) => {
 };
 
 try {
-  await page.goto(`${server.url}?debug=1`, { waitUntil: 'networkidle2', timeout: 30000 });
+  // ?scene=basic suppresses the post-mount default demo load so the
+  // verify script's own setGraph isn't racing with the auto-load.
+  await page.goto(`${server.url}?debug=1&scene=basic`, { waitUntil: 'networkidle2', timeout: 30000 });
   await page.waitForFunction(
     () => typeof window.__sedonStore__ === 'function' && Array.isArray(window.__sedonDemos__),
     { timeout: 15000 },
@@ -49,24 +51,33 @@ try {
     throw new Error('furniture demo not registered');
   }
 
-  // Load furniture demo via store, same path as the menu action.
-  const loadResult = await page.evaluate(() => {
-    const demo = window.__sedonDemos__.find((d) => d.id === 'furniture');
-    if (!demo) return { ok: false, error: 'not found' };
+  // Load furniture demo by fetching its .sedon file — same path as
+  // the menu action under the new fetched-demos pipeline. Fetch and
+  // setGraph are split into separate evaluates so a slow fetch doesn't
+  // outlive its execution context (puppeteer's "Promise was collected"
+  // when an async evaluate awaits longer than the context survives).
+  const fetched = await page.evaluate(async () => {
+    const r = await fetch('dist/demos/furniture.sedon');
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
+    return { ok: true, text: await r.text() };
+  });
+  if (!fetched.ok) throw new Error(`fetch failed: ${fetched.error}`);
+  const loadResult = await page.evaluate((text) => {
     try {
-      const built = demo.build();
+      const file = JSON.parse(text);
+      const project = file.project;
       window.__sedonStore__
         .getState()
-        .setGraph(built.graph, built.rootNodeId, built.subgraphs, built.cameras);
+        .setGraph(project.graph, project.rootNodeId, project.subgraphs ?? [], project.cameras);
       return {
         ok: true,
-        nodes: built.graph.nodes.length,
-        subgraphs: built.subgraphs.map((s) => ({ id: s.id, label: s.label, nodes: s.graph.nodes.length })),
+        nodes: project.graph.nodes.length,
+        subgraphs: (project.subgraphs ?? []).map((s) => ({ id: s.id, label: s.label, nodes: s.graph.nodes.length })),
       };
     } catch (e) {
       return { ok: false, error: String(e), stack: e.stack };
     }
-  });
+  }, fetched.text);
   console.log('[verify] load result:', JSON.stringify(loadResult, null, 2));
   if (!loadResult.ok) throw new Error(`load failed: ${loadResult.error}`);
 

@@ -1,12 +1,16 @@
 import { addEdge, addNode, createGraph, type Graph } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
-import { DEMOS } from './demos/index.js';
 import type { CameraState } from './store.js';
 
-// Default scene when no URL override is present. Pick a meaningful
-// demo so first-time visitors see something interesting rather than a
-// trivial sphere.
-const DEFAULT_SCENE_ID = 'forest';
+// Default scene loaded async after first paint when no URL override
+// is present. The synchronous boot path uses `createBasicScene` so
+// the store has SOMETHING valid before React mounts — the default
+// demo loads on top of that a few ms later via fetch. This is the
+// price of moving demo graphs out of the bundle: a one-frame flash
+// of the basic sphere on first load. A small regression vs. shipping
+// forest's graph data in JS, but ~3MB of bundle traded for ~16ms of
+// UX is the right call.
+export const DEFAULT_SCENE_ID = 'forest';
 
 // "Basic" starter graph (the original initial scene): grid texture +
 // sphere → material → scene-entity → output. Still available via the
@@ -46,34 +50,38 @@ export function createBasicScene(): { graph: Graph; rootNodeId: string } {
   return { graph: g, rootNodeId: output.id };
 }
 
-// Picks which demo to seed the store with. Reads `?scene=<id>` from
-// the URL synchronously (so the store has the right initial state by
-// the time React mounts and no placeholder flashes), falls back to
-// the default. The `?json=<…>` URL-load path bypasses this entirely:
-// main.tsx checks for that param BEFORE rendering and overrides via
-// `setGraph` once async decompression completes.
+// Synchronous initial state for the editor store. ALWAYS returns the
+// basic scene now — every other demo has moved out of the bundle and
+// into fetched .sedon files, so we can't build them synchronously
+// here without re-importing the build-time module (which would pull
+// every demo's graph data back into the JS payload).
 //
-// Returning the broader demo shape `{ graph, rootNodeId, subgraphs?,
-// cameras? }` means store init goes through `projectStateSlice` and
-// picks up subgraphs/cameras automatically — same path as runtime
-// demo loads via the Demos menu.
+// main.tsx is responsible for the post-mount async load: it reads
+// `?scene=<id>` / falls back to DEFAULT_SCENE_ID and calls
+// `loadDemoById` once React is rendered. The user sees a single
+// frame of the basic sphere before the chosen demo replaces it —
+// acceptable for the ~3MB bundle win.
 export function createInitialGraph(): {
   graph: Graph;
   rootNodeId: string;
   subgraphs?: SubgraphDef[];
   cameras?: Record<string, CameraState>;
 } {
-  let requested: string | null = null;
-  if (typeof window !== 'undefined') {
-    requested = new URLSearchParams(window.location.search).get('scene');
-  }
-  const id = requested ?? DEFAULT_SCENE_ID;
-  const demo = DEMOS.find((d) => d.id === id);
-  if (demo) return demo.build();
-  // Unknown id → fall back to default. Don't throw: a bad URL
-  // shouldn't break the app, just ignore the override.
-  const fallback = DEMOS.find((d) => d.id === DEFAULT_SCENE_ID);
-  if (fallback) return fallback.build();
-  // No default registered either: emergency fallback to basic.
   return createBasicScene();
+}
+
+/**
+ * Read `?scene=<id>` from the URL, or fall back to DEFAULT_SCENE_ID
+ * when no override is present. Returns null when the URL explicitly
+ * requests the basic scene (which is already loaded synchronously)
+ * or when the `?json=<…>` URL-load path is active (handled by
+ * main.tsx before this would be consulted).
+ */
+export function getPostMountSceneToLoad(): string | null {
+  if (typeof window === 'undefined') return null;
+  const requested = new URLSearchParams(window.location.search).get('scene');
+  const id = requested ?? DEFAULT_SCENE_ID;
+  // basic is already loaded synchronously — no async work to do.
+  if (id === 'basic') return null;
+  return id;
 }

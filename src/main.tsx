@@ -146,6 +146,32 @@ void (async () => {
     } catch (e) {
       console.error('Failed to load project from URL:', e);
     }
+  } else {
+    // No ?json=… override. Demos used to be baked into the bundle and
+    // initialized synchronously in createInitialGraph; now they live as
+    // fetched .sedon files, so we kick off the load here BEFORE mount.
+    // The store starts with the basic scene (set synchronously) and
+    // gets overwritten once the .sedon file lands — a one-frame flash
+    // is possible but we still mount only once. Failures fall through
+    // and the user sees the basic scene.
+    const { getPostMountSceneToLoad } = await import('./editor/initial-graph.js');
+    const sceneId = getPostMountSceneToLoad();
+    if (sceneId) {
+      try {
+        const { loadDemoSaveFile } = await import('./editor/demos/demo-loader.js');
+        const file = await loadDemoSaveFile(sceneId);
+        useEditorStore.getState().setGraph(
+          file.project.graph,
+          file.project.rootNodeId,
+          file.project.subgraphs ?? [],
+          file.project.cameras,
+          file.project.viewports,
+          file.project.folders,
+        );
+      } catch (e) {
+        console.error(`Failed to load default demo "${sceneId}":`, e);
+      }
+    }
   }
   // `?anim=true` — start the render-bus animation loop on boot. Done
   // AFTER any URL-project load (so the loaded scene gets animated
