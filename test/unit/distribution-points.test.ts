@@ -5,6 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { pointsLineNode } from '../../src/nodes/points-line.js';
 import { radialPointsNode } from '../../src/nodes/radial-points.js';
 import { phyllotaxisPointsNode } from '../../src/nodes/phyllotaxis-points.js';
 import { stemPointsNode } from '../../src/nodes/stem-points.js';
@@ -205,4 +206,72 @@ test('stem-points: tilt=90 with axis +Y produces +Y-aligned normals', () => {
     const [nx, ny, nz] = nrm(points, i);
     assert.ok(near(ny, 1, 1e-5), `tilt=90 → normal Y should be 1, got [${nx},${ny},${nz}]`);
   }
+});
+
+// ===== core/points-line =============================================
+
+test('points-line: count=5 from start to end places first at start, last at end, evenly spaced', () => {
+  const { points } = pointsLineNode.evaluate({}, {
+    start: [0, 0, 0],
+    end: [4, 0, 0],
+    count: 5,
+  }) as { points: PointCloudValue };
+  assert.equal(points.count, 5);
+  for (let i = 0; i < 5; i++) {
+    const [x, y, z] = pos(points, i);
+    assert.ok(near(x, i), `point ${i}.x expected ${i}, got ${x}`);
+    assert.ok(near(y, 0));
+    assert.ok(near(z, 0));
+  }
+});
+
+test('points-line: count=1 sits at the midpoint of start and end', () => {
+  const { points } = pointsLineNode.evaluate({}, {
+    start: [-2, 0, 0],
+    end: [4, 6, 2],
+    count: 1,
+  }) as { points: PointCloudValue };
+  assert.equal(points.count, 1);
+  const [x, y, z] = pos(points, 0);
+  assert.ok(near(x, 1));
+  assert.ok(near(y, 3));
+  assert.ok(near(z, 1));
+});
+
+test('points-line: count=0 emits an empty cloud', () => {
+  const { points } = pointsLineNode.evaluate({}, {
+    start: [0, 0, 0],
+    end: [1, 0, 0],
+    count: 0,
+  }) as { points: PointCloudValue };
+  assert.equal(points.count, 0);
+  assert.equal(points.positions.length, 0);
+});
+
+test('points-line: normals are world-up so align-on-points keeps instances upright', () => {
+  const { points } = pointsLineNode.evaluate({}, {
+    start: [0, 0, 0],
+    // Slanted line (rises 1 in Y over X span of 3) — normals should
+    // still be (0,1,0), NOT perpendicular to the line.
+    end: [3, 1, 0],
+    count: 4,
+  }) as { points: PointCloudValue };
+  for (let i = 0; i < points.count; i++) {
+    const [nx, ny, nz] = nrm(points, i);
+    assert.ok(near(nx, 0) && near(ny, 1) && near(nz, 0),
+      `normal ${i} expected (0,1,0), got (${nx},${ny},${nz})`);
+  }
+});
+
+test('points-line: count=2 places one point at start and one at end', () => {
+  const { points } = pointsLineNode.evaluate({}, {
+    start: [1, 2, 3],
+    end: [7, 5, -1],
+    count: 2,
+  }) as { points: PointCloudValue };
+  assert.equal(points.count, 2);
+  const [x0, y0, z0] = pos(points, 0);
+  const [x1, y1, z1] = pos(points, 1);
+  assert.ok(near(x0, 1) && near(y0, 2) && near(z0, 3));
+  assert.ok(near(x1, 7) && near(y1, 5) && near(z1, -1));
 });

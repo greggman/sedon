@@ -56,6 +56,7 @@ import { rampNode } from './ramp.js';
 import { phyllotaxisPointsNode } from './phyllotaxis-points.js';
 import { planeNode } from './plane.js';
 import { pointListNode } from './point-list.js';
+import { pointsLineNode } from './points-line.js';
 import { radialPointsNode } from './radial-points.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
 import { randomVec3CloudNode } from './random-vec3-cloud.js';
@@ -145,6 +146,7 @@ export const CORE_NODES = [
   branchSpaceColonizationNode,
   branchWhorledPineNode,
   singlePointNode,
+  pointsLineNode,
   radialPointsNode,
   phyllotaxisPointsNode,
   pointListNode,
@@ -245,6 +247,7 @@ export {
   phyllotaxisPointsNode,
   planeNode,
   pointListNode,
+  pointsLineNode,
   radialPointsNode,
   randomFloatCloudNode,
   randomVec3CloudNode,
