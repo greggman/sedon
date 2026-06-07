@@ -57,7 +57,10 @@ import { paletteNode } from './palette.js';
 import { rampNode } from './ramp.js';
 import { phyllotaxisPointsNode } from './phyllotaxis-points.js';
 import { planeNode } from './plane.js';
+import { accumulateFloatCloudNode } from './accumulate-float-cloud.js';
+import { vec3CloudFromFloatsNode } from './vec3-cloud-from-floats.js';
 import { pointListNode } from './point-list.js';
+import { pointsAlongAxisNode } from './points-along-axis.js';
 import { pointsLineNode } from './points-line.js';
 import { radialPointsNode } from './radial-points.js';
 import { randomFloatCloudNode } from './random-float-cloud.js';
@@ -125,10 +128,12 @@ export const CORE_NODES = [
   instanceSceneOnPointsNode,
   randomVec3CloudNode,
   randomFloatCloudNode,
+  vec3CloudFromFloatsNode,
   cloudAltitudeNode,
   cloudSlopeNode,
   cloudStepNode,
   cloudMultiplyNode,
+  accumulateFloatCloudNode,
   textureConvertNode,
   textureMapRangeNode,
   textureToHeightfieldMeshNode,
@@ -153,6 +158,7 @@ export const CORE_NODES = [
   branchWhorledPineNode,
   singlePointNode,
   pointsLineNode,
+  pointsAlongAxisNode,
   radialPointsNode,
   phyllotaxisPointsNode,
   pointListNode,
@@ -202,6 +208,7 @@ export {
   branchTubeNode,
   branchWhorledPineNode,
   distanceTransformNode,
+  accumulateFloatCloudNode,
   cloudAltitudeNode,
   cloudMultiplyNode,
   cloudSlopeNode,
@@ -255,10 +262,12 @@ export {
   phyllotaxisPointsNode,
   planeNode,
   pointListNode,
+  pointsAlongAxisNode,
   pointsLineNode,
   radialPointsNode,
   randomFloatCloudNode,
   randomVec3CloudNode,
+  vec3CloudFromFloatsNode,
   ridgedNoiseNode,
   sceneEntityNode,
   sceneMergeNode,

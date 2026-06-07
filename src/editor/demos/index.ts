@@ -7,6 +7,7 @@ import { createCityDemo } from './city.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
 import { createForEachPointDemo } from './for-each-point.js';
 import { createForestDemo } from './forest.js';
+import { createFurnitureDemo } from './furniture.js';
 import { createGrassTestDemo } from './grass-test.js';
 import { createLeafDemo } from './leaf.js';
 import { createMultiLayerTerrainDemo } from './multi-layer-terrain.js';
@@ -32,6 +33,7 @@ export interface Demo {
 export const DEMOS: Demo[] = [
   { id: 'basic', label: 'Basic', build: createBasicScene },
   { id: 'forest', label: 'Forest', build: createForestDemo },
+  { id: 'furniture', label: 'Furniture', build: createFurnitureDemo },
   { id: 'city', label: 'City', build: createCityDemo },
   { id: 'leaf', label: 'Leaf', build: createLeafDemo },
   { id: 'tree-bush', label: 'Tree & Bush', build: createTreeBushDemo },

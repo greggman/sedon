@@ -97,6 +97,22 @@ ONLY touches entity world matrices.
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
+      // Materials are required on scene-entity — without a basecolor
+      // texture + material wire, the entity's standalone preview
+      // would fall back to a flat-grey debug material and the sample
+      // would visually lie about what transform-scene does. Solid
+      // tan reads as plain wood and renders crisply at the docs
+      // preview's framing.
+      const basecolor = addNode(g, 'core/solid-color', {
+        id: 'basecolor',
+        position: { x: 0, y: 200 },
+        inputValues: { color: [0.65, 0.5, 0.35, 1], resolution: 4 },
+      });
+      const material = addNode(g, 'core/material', {
+        id: 'material',
+        position: { x: 280, y: 200 },
+        inputValues: { roughness: 0.6, metallic: 0 },
+      });
       const entity = addNode(g, 'core/scene-entity', {
         id: 'entity',
         position: { x: 280, y: 0 },
@@ -104,9 +120,11 @@ ONLY touches entity world matrices.
       const tx = addNode(g, 'core/transform-scene', {
         id: 'transform-scene',
         position: { x: 560, y: 0 },
-        inputValues: { translate: [2, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+        inputValues: { translate: [0, 0, 0], rotate: [-0.5, 0.5, 0.7], scale: [1, 1.2, 1.5] },
       });
       addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
+      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
+      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
       addEdge(g, { node: entity.id, socket: 'scene' }, { node: tx.id, socket: 'scene' });
       return { graph: g, rootNodeId: 'transform-scene' };
     },
