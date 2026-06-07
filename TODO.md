@@ -1,6 +1,7 @@
 # TODOs
 
 - [ ] need LODs so trees work?
+- [ ] move options to hash
 - [ ] extrude options
   - [ ] by face normal (not until really needed)
   - [*] scale
