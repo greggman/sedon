@@ -9,6 +9,7 @@ import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
 import { useLayoutStore } from './layout-store.js';
 import { openGraphInCanvas } from './open-graph.js';
+import { applyLookAround } from './orbit-camera.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
@@ -323,6 +324,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     const pointers = new Map<number, { x: number; y: number }>();
     let mode: 'idle' | 'drag' | 'pinch' = 'idle';
     let panning = false;       // ctrl/meta-modified drag (single-pointer)
+    let lookingAround = false; // shift-modified drag (single-pointer) — FPS-style mouse-look
     let pinchDist = 0;          // last frame's finger separation (pixels)
     // Click-vs-drag discrimination: pointerdown captures the start
     // position; pointermove past `CLICK_SLOP_PX` knocks `couldBeClick`
@@ -351,10 +353,16 @@ export function Preview({ panelId }: PreviewProps = {}) {
       if (pointers.size === 1) {
         mode = 'drag';
         panning = e.metaKey || e.ctrlKey;
+        // Shift held at drag-start ⇒ FPS-style mouse-look (camera
+        // rotates in place; orbit target slides along the new view
+        // direction so subsequent orbit/pan starts from the new
+        // viewpoint). Modifier is sampled at pointerdown and latches
+        // for the rest of the drag, matching the `panning` convention.
+        lookingAround = e.shiftKey && !panning;
         // Single-pointer down WITHOUT a modifier could be the start of
         // a click-to-select. A subsequent pointermove past the slop
         // threshold cancels it; pointerup before then runs the select.
-        couldBeClick = !panning;
+        couldBeClick = !panning && !lookingAround;
         clickStartX = e.clientX;
         clickStartY = e.clientY;
       } else if (pointers.size === 2) {
@@ -363,6 +371,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
         // doesn't snap.
         mode = 'pinch';
         panning = false;
+        lookingAround = false;
         pinchDist = fingerDistance();
         couldBeClick = false;
       }
@@ -415,6 +424,8 @@ export function Preview({ panelId }: PreviewProps = {}) {
         cam.target[0] += rightX * px + upX * py;
         cam.target[1] += rightY * px + upY * py;
         cam.target[2] += rightZ * px + upZ * py;
+      } else if (lookingAround) {
+        applyLookAround(cam, dx, dy, 0.005);
       } else {
         const sens = 0.005;
         cam.yaw += dx * sens;

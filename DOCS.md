@@ -26,9 +26,11 @@
 
 * Camera Controls
   * Drag orbits the camera around its target
+  * <kbd>shift</kbd> drag looks around from the current camera position
   * <kbd>ctrl</kbd> drag or <kbd>cmd<kbd> drag pans the camera
   * Mousewheel dollies the camera toward / away from current target
   * <kbd>w</kbd> / <kbd>s</kbd> move the camera forward, backward at the current elevation
   * <kbd>a</kbd> / <kbd>w</kbd> move the camera left / right
   * <kbd>q</kbd> / <kbd>q</kbd> move the camera up / down
+
 
