@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'distance-transform-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -147,6 +148,7 @@ from a binary mask.
         }
       | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
+      label: 'distance-transform-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -158,14 +160,20 @@ from a binary mask.
     // eval at the same resolution reuses them. Reusable textures are
     // also subject to sweep destruction when this node's outputs are
     // evicted.
-    const jfaDesc = {
+    const a = reusableTexture(device, prev?.__jfa?.[0], {
+      label: 'distance-transform-jfa-a',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
       usage,
-    };
-    const a = reusableTexture(device, prev?.__jfa?.[0], jfaDesc);
-    const b = reusableTexture(device, prev?.__jfa?.[1], jfaDesc);
+    });
+    const b = reusableTexture(device, prev?.__jfa?.[1], {
+      label: 'distance-transform-jfa-b',
+      width: resolution,
+      height: resolution,
+      format: TEXTURE_FORMAT,
+      usage,
+    });
     const aView = a.texture;
     const bView = b.texture;
 
@@ -190,6 +198,7 @@ from a binary mask.
     };
 
     const sampler = getSampler(device, {
+      label: 'distance-transform-sampler',
       magFilter: 'nearest',
       minFilter: 'nearest',
       addressModeU: 'clamp-to-edge',
@@ -209,6 +218,7 @@ from a binary mask.
         device,
         UNIFORM_TEX_SAMP_BGL,
         (layout) => ({
+          label: `distance-transform-pipeline-${entry}`,
           layout,
           vertex: { module, entryPoint: 'vs_main' },
           fragment: { module, entryPoint: entry, targets: [{ format: TEXTURE_FORMAT }] },
@@ -275,8 +285,10 @@ from a binary mask.
       pipeline: GPURenderPipeline,
       view: GPUTextureView | GPUTexture,
       bg: GPUBindGroup,
+      passLabel: string,
     ) => {
       const pass = enc.beginRenderPass({
+        label: passLabel,
         colorAttachments: [
           {
             view,
@@ -294,9 +306,9 @@ from a binary mask.
 
     // Init: read original input → write seed UVs into texture A.
     {
-      const enc = device.createCommandEncoder();
+      const enc = device.createCommandEncoder({ label: 'distance-transform-encoder-init' });
       writeStep(0);
-      fullScreen(enc, initPipeline, aView, initBg.bindGroup);
+      fullScreen(enc, initPipeline, aView, initBg.bindGroup, 'distance-transform-pass-init');
       device.queue.submit([enc.finish()]);
     }
 
@@ -310,9 +322,9 @@ from a binary mask.
     let writeBg = jfaBgB.bindGroup;
     const startStep = Math.floor(resolution / 2);
     for (let step = startStep; step >= 1; step = Math.floor(step / 2)) {
-      const enc = device.createCommandEncoder();
+      const enc = device.createCommandEncoder({ label: `distance-transform-encoder-jfa-${step}` });
       writeStep(step);
-      fullScreen(enc, jfaPipeline, writeView, readBg);
+      fullScreen(enc, jfaPipeline, writeView, readBg, `distance-transform-pass-jfa-${step}`);
       device.queue.submit([enc.finish()]);
       // Swap.
       const tmpView = readView;
@@ -331,10 +343,10 @@ from a binary mask.
     // distances and write to the output texture. Pick the bind group
     // matching whichever JFA texture ended up as `readView`.
     {
-      const enc = device.createCommandEncoder();
+      const enc = device.createCommandEncoder({ label: 'distance-transform-encoder-final' });
       writeStep(0);
       const finalBg = readView === aView ? finalBgA.bindGroup : finalBgB.bindGroup;
-      fullScreen(enc, finalPipeline, outTexture.texture, finalBg);
+      fullScreen(enc, finalPipeline, outTexture.texture, finalBg, 'distance-transform-pass-final');
       device.queue.submit([enc.finish()]);
     }
 

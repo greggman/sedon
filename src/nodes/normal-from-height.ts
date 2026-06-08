@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'normal-from-height-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -98,6 +99,7 @@ free" without modelling geometry.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'normal-from-height-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -118,6 +120,7 @@ free" without modelling geometry.
     );
 
     const sampler = getSampler(device, {
+      label: 'normal-from-height-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -129,6 +132,7 @@ free" without modelling geometry.
       device,
       UNIFORM_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'normal-from-height-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -147,8 +151,9 @@ free" without modelling geometry.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'normal-from-height-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'normal-from-height-pass',
       colorAttachments: [
         {
           view: out.texture,

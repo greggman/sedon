@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'worley-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -139,6 +140,7 @@ texture than smooth fbm noise.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'worley-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -153,8 +155,9 @@ texture than smooth fbm noise.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'worley-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'worley-pass',
       colorAttachments: [
         {
           view: outputTexture.texture,

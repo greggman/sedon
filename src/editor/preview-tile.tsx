@@ -221,7 +221,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         ),
         translation(-cam.target[0], -cam.target[1], -cam.target[2]),
       );
-      const encoder = gpu.device.createCommandEncoder();
+      const encoder = gpu.device.createCommandEncoder({ label: 'preview-tile-encoder' });
       const colorTex = ctx.getCurrentTexture();
       colorTex.label = `PreviewTile canvas "${label}"`;
       renderer.render({

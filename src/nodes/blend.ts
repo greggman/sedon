@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_2TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'blend-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -124,6 +125,7 @@ the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'blend-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -147,6 +149,7 @@ the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
     );
 
     const sampler = getSampler(device, {
+      label: 'blend-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -158,6 +161,7 @@ the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
       device,
       UNIFORM_2TEX_SAMP_BGL,
       (layout) => ({
+        label: 'blend-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -177,8 +181,9 @@ the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'blend-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'blend-pass',
       colorAttachments: [
         {
           view: out.texture,

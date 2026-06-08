@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'leaf-skeleton-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -212,12 +213,14 @@ For sample chains see the leaf subgraphs in the editor demos —
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_SRC;
     const shapeTexture = reusableTexture(device, prev?.shape, {
+      label: 'leaf-skeleton-shape-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
       usage,
     });
     const veinsTexture = reusableTexture(device, prev?.veins, {
+      label: 'leaf-skeleton-veins-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -259,6 +262,7 @@ For sample chains see the leaf subgraphs in the editor demos —
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'leaf-skeleton-pipeline-shape',
         layout,
         vertex: { module, entryPoint: 'vs_main' },
         fragment: { module, entryPoint: 'fs_shape', targets: [{ format: TEXTURE_FORMAT }] },
@@ -268,6 +272,7 @@ For sample chains see the leaf subgraphs in the editor demos —
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'leaf-skeleton-pipeline-veins',
         layout,
         vertex: { module, entryPoint: 'vs_main' },
         fragment: { module, entryPoint: 'fs_veins', targets: [{ format: TEXTURE_FORMAT }] },
@@ -295,9 +300,10 @@ For sample chains see the leaf subgraphs in the editor demos —
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'leaf-skeleton-encoder' });
     {
       const pass = encoder.beginRenderPass({
+        label: 'leaf-skeleton-pass-shape',
         colorAttachments: [
           {
             view: shapeTexture.texture,
@@ -314,6 +320,7 @@ For sample chains see the leaf subgraphs in the editor demos —
     }
     {
       const pass = encoder.beginRenderPass({
+        label: 'leaf-skeleton-pass-veins',
         colorAttachments: [
           {
             view: veinsTexture.texture,

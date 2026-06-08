@@ -70,6 +70,7 @@ function ensureDefaults(device: GPUDevice): DefaultLayerTextures {
   const format: GPUTextureFormat = 'rgba8unorm';
   const make = (rgba: [number, number, number, number]): Texture2DValue => {
     const texture = device.createTexture({
+      label: 'terrain-multi-layer-default-1x1',
       size: [1, 1],
       format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -99,6 +100,7 @@ export function createTerrainMultiLayerKind(
   sceneBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<TerrainMultiLayerMaterial> {
   const materialBindGroupLayout = getBindGroupLayout(device, {
+    label: 'terrain-multi-layer-material-bgl',
     entries: [
       // 4 texture-2d-arrays — one per channel, depth = MAX_LAYERS.
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: '2d-array' } },
@@ -113,11 +115,13 @@ export function createTerrainMultiLayerKind(
   });
 
   const pipelineLayout = getPipelineLayout(device, {
+    label: 'terrain-multi-layer-pipeline-layout',
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
   const module = getShaderModule(device, `${shadowPcfCode}\n${shaderCode}`);
   const pipeline = getRenderPipeline(device, {
+    label: 'terrain-multi-layer-color-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -130,6 +134,7 @@ export function createTerrainMultiLayerKind(
   // kind so the layout / pipeline are created once and reused for every
   // material instance.
   const blitGroupLayout = device.createBindGroupLayout({
+    label: 'terrain-multi-layer-blit-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -137,7 +142,11 @@ export function createTerrainMultiLayerKind(
   });
   const blitModule = getShaderModule(device, BLIT_SHADER);
   const blitPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [blitGroupLayout] }),
+    label: 'terrain-multi-layer-blit-pipeline',
+    layout: device.createPipelineLayout({
+      label: 'terrain-multi-layer-blit-pipeline-layout',
+      bindGroupLayouts: [blitGroupLayout],
+    }),
     vertex: { module: blitModule, entryPoint: 'vs_main' },
     fragment: {
       module: blitModule,
@@ -146,6 +155,7 @@ export function createTerrainMultiLayerKind(
     },
   });
   const blitSampler = getSampler(device, {
+    label: 'terrain-multi-layer-blit-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -224,10 +234,10 @@ export function createTerrainMultiLayerKind(
           format: arrayFormat,
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
         });
-      const albedoArr = makeArray('terrain-multi-layer albedos');
-      const normalArr = makeArray('terrain-multi-layer normals');
-      const heightArr = makeArray('terrain-multi-layer heights');
-      const roughArr  = makeArray('terrain-multi-layer roughness');
+      const albedoArr = makeArray('terrain-multi-layer-albedo-array');
+      const normalArr = makeArray('terrain-multi-layer-normal-array');
+      const heightArr = makeArray('terrain-multi-layer-height-array');
+      const roughArr  = makeArray('terrain-multi-layer-roughness-array');
 
       const defaults = ensureDefaults(device);
 
@@ -236,7 +246,7 @@ export function createTerrainMultiLayerKind(
       // blit it into the matching array slice. One render pass per
       // (slot, channel) — MAX_LAYERS * 4 passes total per material
       // build. Material-build runs on cache miss only.
-      const encoder = device.createCommandEncoder();
+      const encoder = device.createCommandEncoder({ label: 'terrain-multi-layer-blit-encoder' });
       const blit = (
         targetArr: GPUTexture,
         slot: number,
@@ -248,6 +258,7 @@ export function createTerrainMultiLayerKind(
           arrayLayerCount: 1,
         });
         const bg = device.createBindGroup({
+          label: 'terrain-multi-layer-blit-bg',
           layout: blitGroupLayout,
           entries: [
             { binding: 0, resource: source.texture },
@@ -255,6 +266,7 @@ export function createTerrainMultiLayerKind(
           ],
         });
         const pass = encoder.beginRenderPass({
+          label: 'terrain-multi-layer-blit-pass',
           colorAttachments: [{
             view,
             loadOp: 'clear',
@@ -277,12 +289,14 @@ export function createTerrainMultiLayerKind(
       device.queue.submit([encoder.finish()]);
 
       const paramBuffer = device.createBuffer({
+        label: 'terrain-multi-layer-material-params',
         size: 16,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);
 
       const bindGroup = device.createBindGroup({
+        label: 'terrain-multi-layer-material-bg',
         layout: materialBindGroupLayout,
         entries: [
           {

@@ -58,6 +58,7 @@ function getPipelines(device: GPUDevice, format: SupportedFormat): PipelineSet {
   if (existing) return existing;
 
   const layout = device.createBindGroupLayout({
+    label: `hydraulic-erosion-bgl-${format}`,
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
@@ -70,11 +71,15 @@ function getPipelines(device: GPUDevice, format: SupportedFormat): PipelineSet {
       },
     ],
   });
-  const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+  const pipelineLayout = device.createPipelineLayout({
+    label: `hydraulic-erosion-pipeline-layout-${format}`,
+    bindGroupLayouts: [layout],
+  });
   const code = shader.replace(/\{\{STORAGE_FORMAT\}\}/g, format);
-  const module = device.createShaderModule({ code });
+  const module = device.createShaderModule({ label: `hydraulic-erosion-shader-${format}`, code });
   const make = (entryPoint: string) =>
     device.createComputePipeline({
+      label: `hydraulic-erosion-pipeline-${entryPoint}-${format}`,
       layout: pipelineLayout,
       compute: { module, entryPoint },
     });
@@ -252,6 +257,7 @@ or [terrain/renderer](../../terrain/renderer).
     // we have to abandon the cached texture — it has the wrong format.
     const reusableTexCandidate = prev?.__format === format ? prev?.texture : undefined;
     const out = reusableTexture(device, reusableTexCandidate, {
+      label: 'hydraulic-erosion-output-tex',
       width,
       height,
       format,
@@ -297,6 +303,7 @@ or [terrain/renderer](../../terrain/renderer).
     if (!heightBuffer || heightBuffer.size !== heightBufBytes) {
       heightBuffer?.destroy();
       heightBuffer = device.createBuffer({
+        label: 'hydraulic-erosion-height-buffer',
         size: heightBufBytes,
         usage: GPUBufferUsage.STORAGE,
       });
@@ -304,12 +311,14 @@ or [terrain/renderer](../../terrain/renderer).
 
     const { initPipeline, simPipeline, writePipeline, layout } = getPipelines(device, format);
     const sampler = getSampler(device, {
+      label: 'hydraulic-erosion-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
     });
     const bindGroup = device.createBindGroup({
+      label: 'hydraulic-erosion-bg',
       layout,
       entries: [
         { binding: 0, resource: uniformBuffer },
@@ -320,8 +329,8 @@ or [terrain/renderer](../../terrain/renderer).
       ],
     });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
+    const encoder = device.createCommandEncoder({ label: 'hydraulic-erosion-encoder' });
+    const pass = encoder.beginComputePass({ label: 'hydraulic-erosion-pass' });
     pass.setBindGroup(0, bindGroup);
     // 1. Init the fixed-point buffer from the source texture.
     pass.setPipeline(initPipeline);

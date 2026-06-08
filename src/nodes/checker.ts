@@ -18,6 +18,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // bind groups created from that exact pipeline's
 // getBindGroupLayout call, defeating any cross-evaluation reuse.
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'checker-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -109,6 +110,7 @@ instead — it draws strokes between cells.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'checker-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -139,6 +141,7 @@ instead — it draws strokes between cells.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'checker-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -153,8 +156,9 @@ instead — it draws strokes between cells.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'checker-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'checker-pass',
       colorAttachments: [
         {
           view: out.texture,

@@ -84,14 +84,16 @@ const autoLevelCacheByDevice = new WeakMap<GPUDevice, AutoLevelCache>();
 function getPlainBlit(device: GPUDevice, format: GPUTextureFormat): PlainBlitCache {
   const cached = plainCacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
-  const module = device.createShaderModule({ code: blitShader });
+  const module = device.createShaderModule({ label: 'texture-preview-blit', code: blitShader });
   const bgl = getBindGroupLayout(device, BLIT_PLAIN_BGL);
   const pipeline = device.createRenderPipeline({
+    label: 'texture-preview-blit-pipeline',
     layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
   const sampler = device.createSampler({
+    label: 'texture-preview-blit-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -105,24 +107,28 @@ function getPlainBlit(device: GPUDevice, format: GPUTextureFormat): PlainBlitCac
 function getAutoLevel(device: GPUDevice, format: GPUTextureFormat): AutoLevelCache {
   const cached = autoLevelCacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
-  const module = device.createShaderModule({ code: autoLevelShader });
+  const module = device.createShaderModule({ label: 'texture-preview-autolevel', code: autoLevelShader });
   const resetBgl = getBindGroupLayout(device, RESET_BGL);
   const reduceBgl = getBindGroupLayout(device, REDUCE_BGL);
   const blitBgl = getBindGroupLayout(device, BLIT_AUTOLEVEL_BGL);
   const resetPipeline = device.createComputePipeline({
+    label: 'texture-preview-autolevel-reset',
     layout: getPipelineLayout(device, { bindGroupLayouts: [resetBgl] }),
     compute: { module, entryPoint: 'reset' },
   });
   const reducePipeline = device.createComputePipeline({
+    label: 'texture-preview-autolevel-reduce',
     layout: getPipelineLayout(device, { bindGroupLayouts: [reduceBgl] }),
     compute: { module, entryPoint: 'reduce' },
   });
   const blitPipeline = device.createRenderPipeline({
+    label: 'texture-preview-autolevel-blit',
     layout: getPipelineLayout(device, { bindGroupLayouts: [blitBgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
   const sampler = device.createSampler({
+    label: 'texture-preview-autolevel-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -211,7 +217,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
     const canvasFormat = formatRef.current;
     if (!ctx || !canvasFormat) return;
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'texture-preview-encoder' });
     const colorTex = ctx.getCurrentTexture();
     colorTex.label = 'TexturePreview canvas';
 
@@ -223,16 +229,19 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
         // build a fresh pair of bind groups bound to the new texture.
         autoLevelResRef.current?.buffer.destroy();
         const buffer = device.createBuffer({
+          label: 'texture-preview-autolevel-minmax',
           size: 8,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
         });
         const resetBindGroup = device.createBindGroup({
+          label: 'texture-preview-autolevel-reset-bg',
           layout: cache.resetBgl,
           entries: [
             { binding: 1, resource: buffer },
           ],
         });
         const reduceBindGroup = device.createBindGroup({
+          label: 'texture-preview-autolevel-reduce-bg',
           layout: cache.reduceBgl,
           entries: [
             { binding: 0, resource: value.texture },
@@ -240,6 +249,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
           ],
         });
         const blitBindGroup = device.createBindGroup({
+          label: 'texture-preview-autolevel-blit-bg',
           layout: cache.blitBgl,
           entries: [
             { binding: 2, resource: value.texture },
@@ -254,7 +264,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
       // Reset sentinels + reduce in one compute pass. Doing the reset
       // here (instead of via writeBuffer) keeps everything inside the
       // encoder so the ordering is unambiguous.
-      const cpass = encoder.beginComputePass();
+      const cpass = encoder.beginComputePass({ label: 'texture-preview-autolevel-pass' });
       cpass.setPipeline(cache.resetPipeline);
       cpass.setBindGroup(0, res.resetBindGroup);
       cpass.dispatchWorkgroups(1);
@@ -267,6 +277,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
       cpass.end();
 
       const rpass = encoder.beginRenderPass({
+        label: 'texture-preview-autolevel-blit-pass',
         colorAttachments: [
           {
             view: colorTex,
@@ -285,6 +296,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
       let res = plainResRef.current;
       if (!res || res.tex !== value.texture) {
         const blitBindGroup = device.createBindGroup({
+          label: 'texture-preview-blit-bg',
           layout: cache.bgl,
           entries: [
             { binding: 0, resource: value.texture },
@@ -295,6 +307,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
         plainResRef.current = res;
       }
       const rpass = encoder.beginRenderPass({
+        label: 'texture-preview-blit-pass',
         colorAttachments: [
           {
             view: colorTex,

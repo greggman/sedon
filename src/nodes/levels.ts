@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'levels-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -111,6 +112,7 @@ Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'levels-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -133,6 +135,7 @@ Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
     );
 
     const sampler = getSampler(device, {
+      label: 'levels-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -144,6 +147,7 @@ Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
       device,
       UNIFORM_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'levels-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -162,8 +166,9 @@ Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'levels-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'levels-pass',
       colorAttachments: [
         {
           view: out.texture,

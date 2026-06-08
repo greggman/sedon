@@ -199,7 +199,7 @@ export function ScenePreview({
       ),
       translation(-cam.target[0], -cam.target[1], -cam.target[2]),
     );
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'scene-preview-encoder' });
     const colorTex = ctx.getCurrentTexture();
     colorTex.label = 'ScenePreview canvas';
     renderer.render({

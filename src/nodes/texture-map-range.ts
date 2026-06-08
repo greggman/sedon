@@ -13,6 +13,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'texture-map-range-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -171,6 +172,7 @@ For Float-to-Float remapping see [core/map-range](../../core/map-range).
     );
 
     const sampler = getSampler(device, {
+      label: 'texture-map-range-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
@@ -182,6 +184,7 @@ For Float-to-Float remapping see [core/map-range](../../core/map-range).
       device,
       UNIFORM_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'texture-map-range-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: src.format }] },
@@ -200,8 +203,9 @@ For Float-to-Float remapping see [core/map-range](../../core/map-range).
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'texture-map-range-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'texture-map-range-pass',
       colorAttachments: [
         {
           view: out.texture,

@@ -168,6 +168,7 @@ function buildShared(
   const cardGeom: GeometryValue = uploadMeshToGpu(device, generateGrassCard(2));
 
   const sampler = getSampler(device, {
+    label: 'grass-card-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -176,6 +177,7 @@ function buildShared(
 
   // ---- Compute pipeline (cull/populate) ----
   const computeGroupLayout = device.createBindGroupLayout({
+    label: 'grass-cull-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
@@ -186,14 +188,16 @@ function buildShared(
       { binding: 6, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
     ],
   });
-  const cullModule = device.createShaderModule({ code: grassCullCode });
+  const cullModule = device.createShaderModule({ label: 'grass-cull-module', code: grassCullCode });
   const computePipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [computeGroupLayout] }),
+    label: 'grass-cull-pipeline',
+    layout: device.createPipelineLayout({ label: 'grass-cull-pl', bindGroupLayouts: [computeGroupLayout] }),
     compute: { module: cullModule, entryPoint: 'main' },
   });
 
   // ---- Render pipeline (drawIndexedIndirect) ----
   const renderGroupLayout = device.createBindGroupLayout({
+    label: 'grass-render-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
@@ -205,9 +209,11 @@ function buildShared(
   // has no #include) so grass can call sample_shadow() against the same
   // shadow map the rest of the scene uses — see pbr-kind.ts for the
   // same pattern.
-  const renderModule = device.createShaderModule({ code: `${shadowPcfCode}\n${grassCode}` });
+  const renderModule = device.createShaderModule({ label: 'grass-render-module', code: `${shadowPcfCode}\n${grassCode}` });
   const renderPipeline = device.createRenderPipeline({
+    label: 'grass-render-pipeline',
     layout: device.createPipelineLayout({
+      label: 'grass-render-pl',
       bindGroupLayouts: [sceneBindGroupLayout, renderGroupLayout],
     }),
     vertex: {
@@ -227,8 +233,9 @@ function buildShared(
   });
 
   // ---- Card-array assembly blit ----
-  const blitModule = device.createShaderModule({ code: BLIT_WGSL });
+  const blitModule = device.createShaderModule({ label: 'grass-blit-module', code: BLIT_WGSL });
   const blitGroupLayout = device.createBindGroupLayout({
+    label: 'grass-blit-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
@@ -241,7 +248,8 @@ function buildShared(
     let p = blitPipelines.get(format);
     if (!p) {
       p = device.createRenderPipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [blitGroupLayout] }),
+        label: `grass-blit-pipeline:${format}`,
+        layout: device.createPipelineLayout({ label: 'grass-blit-pl', bindGroupLayouts: [blitGroupLayout] }),
         vertex: { module: blitModule, entryPoint: 'vs' },
         fragment: { module: blitModule, entryPoint: 'fs', targets: [{ format }] },
         primitive: { topology: 'triangle-list' },
@@ -254,6 +262,7 @@ function buildShared(
   // 1×1 placeholder so the type-map binding is always valid even when a
   // field has no typeMap.
   const dummyType = device.createTexture({
+    label: 'grass-dummy-typemap',
     size: [1, 1],
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -301,7 +310,7 @@ export function createGrassSystem(
     const layers = field.cards.length;
     const format = field.cards[0]!.format;
     const cardArray = device.createTexture({
-      label: 'grass card array',
+      label: 'grass-card-array',
       size: [w, h, layers],
       format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -314,6 +323,7 @@ export function createGrassSystem(
       );
       blitBindGroups.push(
         device.createBindGroup({
+          label: `grass-blit-bg:layer-${i}`,
           layout: blitGroupLayout,
           entries: [
             { binding: 0, resource: field.cards[i]!.texture.createView() },
@@ -336,9 +346,10 @@ export function createGrassSystem(
     grassBlitCount++;
     const format = field.cards[0]!.format;
     const pipeline = blitPipelineFor(format);
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'grass-blit-cards' });
     for (let i = 0; i < field.cards.length; i++) {
       const pass = encoder.beginRenderPass({
+        label: `grass-blit-pass:layer-${i}`,
         colorAttachments: [
           { view: slot.cardLayerViews[i]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
         ],
@@ -356,15 +367,18 @@ export function createGrassSystem(
     if (!slot) {
       slot = {
         uniformBuffer: device.createBuffer({
+          label: `grass-uniform:field-${i}`,
           size: UNIFORM_BYTES,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }),
         instanceBuffer: device.createBuffer({
+          label: `grass-instance:field-${i}`,
           size: instanceCapacity * INSTANCE_BYTES,
           usage: GPUBufferUsage.STORAGE,
         }),
         instanceCapacity,
         indirectBuffer: device.createBuffer({
+          label: `grass-indirect:field-${i}`,
           size: INDIRECT_BYTES,
           usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         }),
@@ -388,6 +402,7 @@ export function createGrassSystem(
     if (instanceCapacity > slot.instanceCapacity) {
       slot.instanceBuffer.destroy();
       slot.instanceBuffer = device.createBuffer({
+        label: `grass-instance:field-${i}`,
         size: instanceCapacity * INSTANCE_BYTES,
         usage: GPUBufferUsage.STORAGE,
       });
@@ -420,6 +435,7 @@ export function createGrassSystem(
 
     if (bindGroupsStale) {
       slot.computeBindGroup = device.createBindGroup({
+        label: `grass-cull-bg:field-${i}`,
         layout: computeGroupLayout,
         entries: [
           { binding: 0, resource: slot.uniformBuffer },
@@ -432,6 +448,7 @@ export function createGrassSystem(
         ],
       });
       slot.renderBindGroup = device.createBindGroup({
+        label: `grass-render-bg:field-${i}`,
         layout: renderGroupLayout,
         entries: [
           { binding: 0, resource: slot.uniformBuffer },
@@ -507,7 +524,7 @@ export function createGrassSystem(
       indirectScratch[4] = 0;
       device.queue.writeBuffer(slot.indirectBuffer, 0, indirectScratch as BufferSource);
 
-      const pass = encoder.beginComputePass();
+      const pass = encoder.beginComputePass({ label: `grass-cull-pass:field-${i}` });
       pass.setPipeline(computePipeline);
       pass.setBindGroup(0, slot.computeBindGroup!);
       pass.dispatchWorkgroups(Math.ceil(candidateCount / 64));

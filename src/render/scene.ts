@@ -54,6 +54,7 @@ function getShadowTexture(device: GPUDevice): GPUTexture {
   let tex = shadowTextureCache.get(device);
   if (!tex) {
     tex = device.createTexture({
+      label: 'shadow-map',
       size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
       format: 'depth32float',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -436,7 +437,7 @@ function ensureSharedRendererState(
   }
   const sceneBindGroupLayout = createSceneBindGroupLayout(device);
   const waterExtrasBindGroupLayout = device.createBindGroupLayout({
-    label: 'water-extras bind group layout',
+    label: 'water-extras-bgl',
     entries: [
       // Binding 0: copy of the opaque-pass depth buffer, sampled in
       // SCREEN SPACE for SSR ray marching. depth32float bound as a
@@ -462,6 +463,7 @@ function ensureSharedRendererState(
   const shadowSampler = createShadowSampler(device);
   const shadowTexture = getShadowTexture(device);
   const sceneUniformBuffer = device.createBuffer({
+    label: 'scene-uniform',
     // 192 (3 mat4) + 80 (lighting block) + 16 (time/pad).
     //
     // Time lands at offset 272 as a single f32 — water.wgsl declares
@@ -474,6 +476,7 @@ function ensureSharedRendererState(
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const sceneBindGroup = device.createBindGroup({
+    label: 'scene-bg',
     layout: sceneBindGroupLayout,
     entries: [
       { binding: 0, resource: sceneUniformBuffer },
@@ -483,15 +486,18 @@ function ensureSharedRendererState(
     ],
   });
   const shadowBindGroupLayout = device.createBindGroupLayout({
+    label: 'shadow-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ],
   });
   const shadowUniformBuffer = device.createBuffer({
+    label: 'shadow-uniform',
     size: 64,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const shadowBindGroup = device.createBindGroup({
+    label: 'shadow-bg',
     layout: shadowBindGroupLayout,
     entries: [{ binding: 0, resource: shadowUniformBuffer }],
   });
@@ -501,7 +507,7 @@ function ensureSharedRendererState(
   // the colour-pass basecolor sampler (linear + repeat) so cutout
   // discards land on the same texels the colour pass shades against.
   const cutoutBindGroupLayout = device.createBindGroupLayout({
-    label: 'cutout bind group',
+    label: 'cutout-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -509,6 +515,7 @@ function ensureSharedRendererState(
     ],
   });
   const cutoutSampler = getSampler(device, {
+    label: 'cutout-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'repeat',
@@ -529,10 +536,12 @@ function ensureSharedRendererState(
   const { pipeline: skyPipeline, bindGroupLayout: skyBgl } = createSkyPipeline(device, HDR_FORMAT);
   const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
   const skyUniformBuffer = device.createBuffer({
+    label: 'sky-uniform',
     size: 80,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const skyBindGroup = device.createBindGroup({
+    label: 'sky-bg',
     layout: skyBgl,
     entries: [{ binding: 0, resource: skyUniformBuffer }],
   });
@@ -540,28 +549,34 @@ function ensureSharedRendererState(
   const compositeLayout = createCompositeLayout(device);
   const brightPassPipeline = createPostProcessPipeline(
     device, singleInputLayout, brightPassShaderCode, HDR_FORMAT,
+    { label: 'bright-pass' },
   );
   const downsamplePipeline = createPostProcessPipeline(
     device, singleInputLayout, bloomDownsampleShaderCode, HDR_FORMAT,
+    { label: 'bloom-downsample' },
   );
   const upsamplePipeline = createPostProcessPipeline(
     device, singleInputLayout, bloomUpsampleShaderCode, HDR_FORMAT,
-    { additive: true },
+    { additive: true, label: 'bloom-upsample' },
   );
   const compositePipeline = createPostProcessPipeline(
     device, compositeLayout, compositeShaderCode, format,
+    { label: 'composite' },
   );
   const postSampler = getSampler(device, {
+    label: 'post-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   });
   const brightPassUniform = device.createBuffer({
+    label: 'bright-pass-uniform',
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const compositeUniform = device.createBuffer({
+    label: 'composite-uniform',
     // 8 bytes bloom_intensity + tonemap_enabled, then 8 bytes
     // underwater_active + underwater_strength, then 16 bytes
     // underwater_color (vec4), then 16 bytes depth_unproject (vec4
@@ -574,11 +589,13 @@ function ensureSharedRendererState(
   // uvs, materials, lighting. Reverse-Z depth32float so the closest-on-
   // screen instance wins on overlap, matching the colour pass's depth.
   const pickSceneLayout = device.createBindGroupLayout({
+    label: 'pick-scene-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ],
   });
   const pickBatchLayout = device.createBindGroupLayout({
+    label: 'pick-batch-bgl',
     entries: [
       {
         binding: 0,
@@ -587,9 +604,11 @@ function ensureSharedRendererState(
       },
     ],
   });
-  const pickModule = device.createShaderModule({ code: pickShaderCode });
+  const pickModule = device.createShaderModule({ label: 'pick-module', code: pickShaderCode });
   const pickPipeline = device.createRenderPipeline({
+    label: 'pick-pipeline',
     layout: device.createPipelineLayout({
+      label: 'pick-pl',
       bindGroupLayouts: [pickSceneLayout, pickBatchLayout, cutoutBindGroupLayout],
     }),
     vertex: {
@@ -621,14 +640,17 @@ function ensureSharedRendererState(
   const pickBatchStride = Math.max(16, device.limits.minUniformBufferOffsetAlignment);
 
   // ---- Selection-outline pipelines (see outline.wgsl) ----
-  const outlineModule = device.createShaderModule({ code: outlineShaderCode });
+  const outlineModule = device.createShaderModule({ label: 'outline-module', code: outlineShaderCode });
   const outlineMaskLayout = device.createBindGroupLayout({
+    label: 'outline-mask-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ],
   });
   const outlineMaskPipeline = device.createRenderPipeline({
+    label: 'outline-mask-pipeline',
     layout: device.createPipelineLayout({
+      label: 'outline-mask-pl',
       bindGroupLayouts: [outlineMaskLayout, cutoutBindGroupLayout],
     }),
     vertex: {
@@ -659,6 +681,7 @@ function ensureSharedRendererState(
   });
 
   const outlineCompositeLayout = device.createBindGroupLayout({
+    label: 'outline-composite-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -666,7 +689,8 @@ function ensureSharedRendererState(
     ],
   });
   const outlineCompositePipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [outlineCompositeLayout] }),
+    label: 'outline-composite-pipeline',
+    layout: device.createPipelineLayout({ label: 'outline-composite-pl', bindGroupLayouts: [outlineCompositeLayout] }),
     vertex: { module: outlineModule, entryPoint: 'composite_vs' },
     fragment: {
       module: outlineModule,
@@ -764,6 +788,7 @@ function buildIntermediates(
 ): SizeIntermediates {
   const { device } = shared;
   const depthTexture = device.createTexture({
+    label: `scene-depth:${width}x${height}`,
     size: [width, height],
     format: 'depth32float',
     // TEXTURE_BINDING so the composite pass can sample depth values
@@ -776,6 +801,7 @@ function buildIntermediates(
       | GPUTextureUsage.COPY_SRC,
   });
   const hdrColor = device.createTexture({
+    label: `hdr-color:${width}x${height}`,
     size: [width, height],
     format: HDR_FORMAT,
     // COPY_SRC so the refraction step can snapshot the opaque scene
@@ -794,6 +820,7 @@ function buildIntermediates(
     const w = Math.max(1, Math.floor(width / scale));
     const h = Math.max(1, Math.floor(height / scale));
     const tex = device.createTexture({
+      label: `bloom-mip-${i}`,
       size: [w, h],
       format: HDR_FORMAT,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -801,6 +828,7 @@ function buildIntermediates(
     bloomMips.push(tex);
     bloomMipViews.push(tex);
     const buf = device.createBuffer({
+      label: `bloom-mip-uniform-${i}`,
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -813,6 +841,7 @@ function buildIntermediates(
   const pyramidBindGroups: GPUBindGroup[] = [];
   for (let i = 0; i < BLOOM_MIP_COUNT; i++) {
     pyramidBindGroups.push(device.createBindGroup({
+      label: `bloom-pyramid-bg:mip-${i}`,
       layout: shared.singleInputLayout,
       entries: [
         { binding: 0, resource: bloomMipViews[i]! },
@@ -822,6 +851,7 @@ function buildIntermediates(
     }));
   }
   const brightPassBindGroup = device.createBindGroup({
+    label: 'bright-pass-bg',
     layout: shared.singleInputLayout,
     entries: [
       { binding: 0, resource: hdrColorView },
@@ -830,6 +860,7 @@ function buildIntermediates(
     ],
   });
   const compositeBindGroup = device.createBindGroup({
+    label: 'composite-bg',
     layout: shared.compositeLayout,
     entries: [
       { binding: 0, resource: hdrColorView },
@@ -844,18 +875,19 @@ function buildIntermediates(
   // draw. Same dims as hdrColor / depthTexture so the copies are
   // straight (no scale or aspect translation).
   const refractionTexture = device.createTexture({
-    label: 'refraction source',
+    label: `refraction-source:${width}x${height}`,
     size: [width, height],
     format: HDR_FORMAT,
     usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
   });
   const sceneDepthCopy = device.createTexture({
-    label: 'scene depth copy',
+    label: `scene-depth-copy:${width}x${height}`,
     size: [width, height],
     format: 'depth32float',
     usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
   });
   const waterExtrasBindGroup = device.createBindGroup({
+    label: 'water-extras-bg',
     layout: shared.waterExtrasBindGroupLayout,
     entries: [
       { binding: 0, resource: sceneDepthCopy.createView() },
@@ -896,6 +928,7 @@ function acquireInstanceBuffer(
     debug('[pool INSTANCE BUILD]', key, byteLength);
     entry = {
       value: device.createBuffer({
+        label: `instance-vb:${key}`,
         size: byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       }),
@@ -1019,6 +1052,7 @@ function acquireCutoutBindGroup(
       isCutoutPbr ? material.basecolor : shared.cutoutPlaceholderTexture;
     const cutoff = isCutoutPbr ? material.alphaCutoff! : 0;
     const uniformBuffer = device.createBuffer({
+      label: `cutout-uniform:${key}`,
       size: 16, // f32 cutoff + 12 bytes std140 padding
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -1028,6 +1062,7 @@ function acquireCutoutBindGroup(
       new Float32Array([cutoff, 0, 0, 0]) as BufferSource,
     );
     const bindGroup = device.createBindGroup({
+      label: `cutout-bg:${key}`,
       layout: shared.cutoutBindGroupLayout,
       entries: [
         // Direct texture binding (project convention — no .createView()).
@@ -1046,8 +1081,9 @@ function createShadowPipeline(
   shadowBindGroupLayout: GPUBindGroupLayout,
   cutoutBindGroupLayout: GPUBindGroupLayout,
 ): GPURenderPipeline {
-  const module = device.createShaderModule({ code: shadowShaderCode });
+  const module = device.createShaderModule({ label: 'shadow-module', code: shadowShaderCode });
   const layout = device.createPipelineLayout({
+    label: 'shadow-pl',
     bindGroupLayouts: [shadowBindGroupLayout, cutoutBindGroupLayout],
   });
   // Fragment stage exists ONLY to host the alpha-cutout discard. No
@@ -1057,6 +1093,7 @@ function createShadowPipeline(
   // meshes are single-sided; if we culled back faces, terrain would
   // vanish from the shadow map.
   return device.createRenderPipeline({
+    label: 'shadow-pipeline',
     layout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [] },
@@ -1080,14 +1117,16 @@ function createSkyPipeline(
   device: GPUDevice,
   format: GPUTextureFormat,
 ): { pipeline: GPURenderPipeline; bindGroupLayout: GPUBindGroupLayout } {
-  const module = device.createShaderModule({ code: skyShaderCode });
+  const module = device.createShaderModule({ label: 'sky-module', code: skyShaderCode });
   const bgl = device.createBindGroupLayout({
+    label: 'sky-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     ],
   });
   const pipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+    label: 'sky-pipeline',
+    layout: device.createPipelineLayout({ label: 'sky-pl', bindGroupLayouts: [bgl] }),
     vertex: { module, entryPoint: 'vs_main' },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -1109,9 +1148,10 @@ function createFlatBackgroundPipeline(
   device: GPUDevice,
   format: GPUTextureFormat,
 ): GPURenderPipeline {
-  const module = device.createShaderModule({ code: flatBackgroundShaderCode });
-  const emptyLayout = device.createPipelineLayout({ bindGroupLayouts: [] });
+  const module = device.createShaderModule({ label: 'flat-background-module', code: flatBackgroundShaderCode });
+  const emptyLayout = device.createPipelineLayout({ label: 'flat-background-pl', bindGroupLayouts: [] });
   return device.createRenderPipeline({
+    label: 'flat-background-pipeline',
     layout: emptyLayout,
     vertex: { module, entryPoint: 'vs_main' },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -1130,6 +1170,7 @@ function createFlatBackgroundPipeline(
 // its own layout below.
 function createSingleInputLayout(device: GPUDevice): GPUBindGroupLayout {
   return device.createBindGroupLayout({
+    label: 'single-input-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -1140,6 +1181,7 @@ function createSingleInputLayout(device: GPUDevice): GPUBindGroupLayout {
 
 function createCompositeLayout(device: GPUDevice): GPUBindGroupLayout {
   return device.createBindGroupLayout({
+    label: 'composite-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -1162,9 +1204,10 @@ function createPostProcessPipeline(
   layout: GPUBindGroupLayout,
   code: string,
   outputFormat: GPUTextureFormat,
-  options: { additive?: boolean } = {},
+  options: { additive?: boolean; label?: string } = {},
 ): GPURenderPipeline {
-  const module = device.createShaderModule({ code });
+  const labelPrefix = options.label ?? 'postprocess';
+  const module = device.createShaderModule({ label: `${labelPrefix}-module`, code });
   // Upsample chain blends additively so each pyramid level's
   // contribution sums into the larger mip rather than overwriting.
   // The bright-pass and downsample pipelines do plain replace.
@@ -1178,7 +1221,8 @@ function createPostProcessPipeline(
       }
     : { format: outputFormat };
   return device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    label: `${labelPrefix}-pipeline`,
+    layout: device.createPipelineLayout({ label: `${labelPrefix}-pl`, bindGroupLayouts: [layout] }),
     vertex: { module, entryPoint: 'vs_main' },
     fragment: { module, entryPoint: 'fs_main', targets: [target] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -1384,27 +1428,29 @@ export function createSceneRenderer(
     outlineResources?.sceneBuffer.destroy();
     outlineResources?.uniformBuffer.destroy();
     const mask = device.createTexture({
-      label: 'outline mask',
+      label: `outline-mask:${width}x${height}`,
       size: [width, height],
       format: 'r8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
     const sceneBuffer = device.createBuffer({
-      label: 'outline scene uniform',
+      label: 'outline-scene-uniform',
       size: 128, // mat4 modelView + mat4 projection
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     const sceneBindGroup = device.createBindGroup({
+      label: 'outline-mask-scene-bg',
       layout: shared.outlineMaskLayout,
       entries: [{ binding: 0, resource: sceneBuffer }],
     });
     const uniformBuffer = device.createBuffer({
-      label: 'outline composite uniform',
+      label: 'outline-composite-uniform',
       // texelSize (vec2) + _pad (vec2) + colour (vec4) = 32 bytes
       size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     const compositeBindGroup = device.createBindGroup({
+      label: 'outline-composite-bg',
       layout: shared.outlineCompositeLayout,
       entries: [
         { binding: 0, resource: mask.createView() },
@@ -1499,38 +1545,40 @@ export function createSceneRenderer(
   function ensurePickResources(batchCount: number): PickResources {
     if (!pickResources) {
       const sceneBuffer = device.createBuffer({
-        label: 'pick scene uniform',
+        label: 'pick-scene-uniform',
         size: 128, // mat4 modelView + mat4 pickProjection
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       const sceneBindGroup = device.createBindGroup({
+        label: 'pick-scene-bg',
         layout: shared.pickSceneLayout,
         entries: [{ binding: 0, resource: sceneBuffer }],
       });
       const colorTex = device.createTexture({
-        label: 'pick id (1x1 r32uint)',
+        label: 'pick-id-1x1',
         size: [1, 1],
         format: 'r32uint',
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       });
       const depthTex = device.createTexture({
-        label: 'pick depth (1x1)',
+        label: 'pick-depth-1x1',
         size: [1, 1],
         format: 'depth32float',
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
       });
       const readback = device.createBuffer({
-        label: 'pick readback',
+        label: 'pick-readback',
         size: 256, // copyTextureToBuffer rows are 256-aligned
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
       });
       const cap = Math.max(16, batchCount);
       const batchBuffer = device.createBuffer({
-        label: 'pick batch uniforms',
+        label: 'pick-batch-uniform',
         size: cap * shared.pickBatchStride,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       const batchBindGroup = device.createBindGroup({
+        label: 'pick-batch-bg',
         layout: shared.pickBatchLayout,
         entries: [
           { binding: 0, resource: { buffer: batchBuffer, size: 16 } },
@@ -1548,11 +1596,12 @@ export function createSceneRenderer(
       pickResources.batchBuffer.destroy();
       const cap = Math.max(pickResources.batchCapacity * 2, batchCount);
       pickResources.batchBuffer = device.createBuffer({
-        label: 'pick batch uniforms',
+        label: 'pick-batch-uniform',
         size: cap * shared.pickBatchStride,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       pickResources.batchBindGroup = device.createBindGroup({
+        label: 'pick-batch-bg',
         layout: shared.pickBatchLayout,
         entries: [{ binding: 0, resource: { buffer: pickResources.batchBuffer, size: 16 } }],
       });
@@ -1851,6 +1900,7 @@ export function createSceneRenderer(
 
     const encoder = device.createCommandEncoder({ label: 'pick' });
     const pass = encoder.beginRenderPass({
+      label: 'pick-pass',
       colorAttachments: [
         {
           view: pr.colorTex.createView(),
@@ -2104,6 +2154,7 @@ export function createSceneRenderer(
       // buffers per batch. No pipeline switch per kind: one shadow shader
       // handles everything.
       const shadowPass = encoder.beginRenderPass({
+        label: 'shadow-pass',
         colorAttachments: [],
         depthStencilAttachment: {
           view: shadowTexture,
@@ -2169,6 +2220,7 @@ export function createSceneRenderer(
 
       // Main color pass — writes linear-HDR into hdrColor.
       const pass = encoder.beginRenderPass({
+        label: 'opaque-color-pass',
         colorAttachments: [
           {
             view: hdrColorView!,
@@ -2303,6 +2355,7 @@ export function createSceneRenderer(
       // SSR ray marching.
       if (deferredWater.length > 0) {
         const waterPass = encoder.beginRenderPass({
+          label: 'water-pass',
           colorAttachments: [
             {
               view: hdrColorView!,
@@ -2338,6 +2391,7 @@ export function createSceneRenderer(
 
       // Bright-pass: scene HDR → mip 0 (half-res, replace).
       const bright = encoder.beginRenderPass({
+        label: 'bright-pass',
         colorAttachments: [
           { view: bloomMips[0]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
         ],
@@ -2351,6 +2405,7 @@ export function createSceneRenderer(
       // reads the larger mip and writes a fresh smaller one.
       for (let i = 0; i < BLOOM_MIP_COUNT - 1; i++) {
         const pass = encoder.beginRenderPass({
+          label: `bloom-downsample-pass:mip-${i + 1}`,
           colorAttachments: [
             { view: bloomMips[i + 1]!, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
           ],
@@ -2368,6 +2423,7 @@ export function createSceneRenderer(
       // it, so by the time we land on mip 0 it holds the full pyramid.
       for (let i = BLOOM_MIP_COUNT - 1; i > 0; i--) {
         const pass = encoder.beginRenderPass({
+          label: `bloom-upsample-pass:mip-${i - 1}`,
           colorAttachments: [
             { view: bloomMips[i - 1]!, loadOp: 'load', storeOp: 'store' },
           ],
@@ -2381,6 +2437,7 @@ export function createSceneRenderer(
       // Composite: scene HDR + mip 0 (accumulated bloom) → swapchain
       // (tone-map + sRGB encode).
       const composite = encoder.beginRenderPass({
+        label: 'composite-pass',
         colorAttachments: [
           { view: colorView, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' },
         ],
@@ -2414,6 +2471,7 @@ export function createSceneRenderer(
         device.queue.writeBuffer(ol.uniformBuffer, 0, oU as BufferSource);
 
         const maskPass = encoder.beginRenderPass({
+          label: 'outline-mask-pass',
           colorAttachments: [{
             view: ol.mask, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store',
           }],
@@ -2454,6 +2512,7 @@ export function createSceneRenderer(
         // 'load' preserves whatever composite wrote; src-over blend on
         // the pipeline draws the outline ring on top.
         const outlinePass = encoder.beginRenderPass({
+          label: 'outline-composite-pass',
           colorAttachments: [
             { view: colorView, loadOp: 'load', storeOp: 'store' },
           ],

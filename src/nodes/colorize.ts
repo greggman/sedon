@@ -9,6 +9,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const TWO_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'colorize-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -122,6 +123,7 @@ ends up in the [0, 1] range.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'colorize-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -136,6 +138,7 @@ ends up in the [0, 1] range.
     // colours). Repeat addressing for factor only affects authoring
     // edge cases; clamp would also be fine here.
     const sampler = getSampler(device, {
+      label: 'colorize-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -147,6 +150,7 @@ ends up in the [0, 1] range.
       device,
       TWO_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'colorize-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -165,8 +169,9 @@ ends up in the [0, 1] range.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'colorize-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'colorize-pass',
       colorAttachments: [
         {
           view: out.texture,

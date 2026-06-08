@@ -35,6 +35,7 @@ function getResources(device: GPUDevice): PreviewResources {
 
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
+    label: 'preview-synth-white-1x1',
     size: [1, 1],
     format,
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,

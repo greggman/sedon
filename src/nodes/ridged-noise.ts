@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'ridged-noise-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -119,6 +120,7 @@ plateau.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const outputTexture = reusableTexture(device, prev?.texture, {
+      label: 'ridged-noise-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -151,6 +153,7 @@ plateau.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'ridged-noise-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -165,8 +168,9 @@ plateau.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'ridged-noise-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'ridged-noise-pass',
       colorAttachments: [
         {
           view: outputTexture.texture,

@@ -108,6 +108,7 @@ export const ALPHA_BLEND_STATE: GPUBlendState = {
 //   3: shadow comparison sampler (linear filter → free 2×2 PCF)
 export function createSceneBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
   return device.createBindGroupLayout({
+    label: 'scene-bgl',
     entries: [
       {
         binding: 0,
@@ -140,6 +141,7 @@ export function createSceneBindGroupLayout(device: GPUDevice): GPUBindGroupLayou
 // during edit-time scrubbing, and there's no reason these vary at all.
 export function createSharedSampler(device: GPUDevice): GPUSampler {
   return getSampler(device, {
+    label: 'shared-color-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     mipmapFilter: 'linear',
@@ -157,6 +159,7 @@ export function createSharedSampler(device: GPUDevice): GPUSampler {
 // don't wrap to garbage.
 export function createShadowSampler(device: GPUDevice): GPUSampler {
   return getSampler(device, {
+    label: 'shadow-compare-sampler',
     compare: 'greater-equal',
     magFilter: 'linear',
     minFilter: 'linear',
@@ -212,6 +215,7 @@ export function createFlatNormalTexture(device: GPUDevice): Texture2DValue {
   if (cached) return cached;
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
+    label: 'flat-normal-1x1',
     size: [1, 1],
     format,
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -242,6 +246,7 @@ export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
   if (cached) return cached;
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
+    label: 'flat-half-1x1',
     size: [1, 1],
     format,
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -272,6 +277,7 @@ export function createFlatBlackTexture(device: GPUDevice): Texture2DValue {
   if (cached) return cached;
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({
+    label: 'flat-black-1x1',
     size: [1, 1],
     format,
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,

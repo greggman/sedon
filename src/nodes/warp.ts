@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_2TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'warp-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -135,6 +136,7 @@ modulating intensity over time, or to roughen the edges of a hand-built
     );
 
     const sampler = getSampler(device, {
+      label: 'warp-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -146,6 +148,7 @@ modulating intensity over time, or to roughen the edges of a hand-built
       device,
       UNIFORM_2TEX_SAMP_BGL,
       (layout) => ({
+        label: 'warp-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -165,8 +168,9 @@ modulating intensity over time, or to roughen the edges of a hand-built
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'warp-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'warp-pass',
       colorAttachments: [
         {
           view: out.texture,

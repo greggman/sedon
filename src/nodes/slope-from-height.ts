@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'slope-from-height-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -108,6 +109,7 @@ here" or "spawn foam here" mask.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'slope-from-height-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -129,6 +131,7 @@ here" or "spawn foam here" mask.
     );
 
     const sampler = getSampler(device, {
+      label: 'slope-from-height-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -140,6 +143,7 @@ here" or "spawn foam here" mask.
       device,
       UNIFORM_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'slope-from-height-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -158,8 +162,9 @@ here" or "spawn foam here" mask.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'slope-from-height-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'slope-from-height-pass',
       colorAttachments: [
         {
           view: out.texture,

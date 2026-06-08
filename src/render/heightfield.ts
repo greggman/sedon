@@ -24,11 +24,12 @@ export async function readHeightTexture(
   const bytesPerRow = Math.ceil((width * bytesPerPixel) / 256) * 256;
 
   const staging = device.createBuffer({
+    label: 'heightfield-readback-staging',
     size: bytesPerRow * height,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
 
-  const encoder = device.createCommandEncoder();
+  const encoder = device.createCommandEncoder({ label: 'heightfield-readback' });
   encoder.copyTextureToBuffer(
     { texture: texture.texture },
     { buffer: staging, bytesPerRow, rowsPerImage: height },

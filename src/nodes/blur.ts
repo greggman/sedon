@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'blur-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -122,12 +123,14 @@ surface slopes.
         }
       | undefined;
     const outTexture = reusableTexture(device, prev?.texture, {
+      label: 'blur-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
       usage,
     });
     const intermediate = reusableTexture(device, prev?.__intermediate, {
+      label: 'blur-intermediate-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -150,6 +153,7 @@ surface slopes.
     );
 
     const sampler = getSampler(device, {
+      label: 'blur-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
@@ -161,6 +165,7 @@ surface slopes.
       device,
       UNIFORM_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'blur-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -187,8 +192,9 @@ surface slopes.
       ],
     );
     {
-      const encoder = device.createCommandEncoder();
+      const encoder = device.createCommandEncoder({ label: 'blur-encoder-h' });
       const pass = encoder.beginRenderPass({
+        label: 'blur-pass-h',
         colorAttachments: [
           {
             view: intermediateView,
@@ -222,8 +228,9 @@ surface slopes.
       ],
     );
     {
-      const encoder = device.createCommandEncoder();
+      const encoder = device.createCommandEncoder({ label: 'blur-encoder-v' });
       const pass = encoder.beginRenderPass({
+        label: 'blur-pass-v',
         colorAttachments: [
           {
             view: outTexture.texture,

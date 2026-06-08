@@ -17,6 +17,7 @@ import gridShader from './grid.wgsl';
 // Explicit (and cached via gpu-cache) gives a stable layout
 // identity that the bind-group cache can rely on.
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'grid-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -114,6 +115,7 @@ tile/brick/checker effects.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'grid-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -144,6 +146,7 @@ tile/brick/checker effects.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'grid-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -158,8 +161,9 @@ tile/brick/checker effects.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'grid-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'grid-pass',
       colorAttachments: [
         {
           view: out.texture,

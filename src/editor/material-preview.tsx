@@ -112,7 +112,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
       // atmosphere shader for in-node previews.
       const previewLighting = defaultLighting();
 
-      const encoder = device.createCommandEncoder();
+      const encoder = device.createCommandEncoder({ label: 'material-preview-encoder' });
       const colorTex = ctx.getCurrentTexture();
       colorTex.label = 'MaterialPreview canvas';
       renderer.render({

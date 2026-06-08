@@ -9,6 +9,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 
 const THREE_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'blend-mask-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
     { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
@@ -115,6 +116,7 @@ mask), or any blend where the strength varies across the texture.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'blend-mask-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -125,6 +127,7 @@ mask), or any blend where the strength varies across the texture.
     });
 
     const sampler = getSampler(device, {
+      label: 'blend-mask-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'repeat',
@@ -136,6 +139,7 @@ mask), or any blend where the strength varies across the texture.
       device,
       THREE_TEX_SAMP_BGL,
       (layout) => ({
+        label: 'blend-mask-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -155,8 +159,9 @@ mask), or any blend where the strength varies across the texture.
       ],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'blend-mask-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'blend-mask-pass',
       colorAttachments: [
         {
           view: out.texture,

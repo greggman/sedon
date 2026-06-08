@@ -37,6 +37,7 @@ let pipelineCache: {
 function getPipelines(device: GPUDevice) {
   if (pipelineCache && pipelineCache.device === device) return pipelineCache;
   const layout = device.createBindGroupLayout({
+    label: 'texture-to-heightfield-mesh-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
@@ -47,16 +48,24 @@ function getPipelines(device: GPUDevice) {
       { binding: 6, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'filtering' } },
     ],
   });
-  const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
-  const module = device.createShaderModule({ code: shader });
+  const pl = device.createPipelineLayout({
+    label: 'texture-to-heightfield-mesh-pipeline-layout',
+    bindGroupLayouts: [layout],
+  });
+  const module = device.createShaderModule({
+    label: 'texture-to-heightfield-mesh-shader',
+    code: shader,
+  });
   const cache = {
     device,
     layout,
     vertPipeline: device.createComputePipeline({
+      label: 'texture-to-heightfield-mesh-vert-pipeline',
       layout: pl,
       compute: { module, entryPoint: 'write_vertices' },
     }),
     indexPipeline: device.createComputePipeline({
+      label: 'texture-to-heightfield-mesh-index-pipeline',
       layout: pl,
       compute: { module, entryPoint: 'write_indices' },
     }),
@@ -70,10 +79,11 @@ function allocOrReuseBuffer(
   prev: GPUBuffer | undefined,
   size: number,
   usage: GPUBufferUsageFlags,
+  label: string,
 ): GPUBuffer {
   if (prev && prev.size === size) return prev;
   prev?.destroy();
-  return device.createBuffer({ size, usage });
+  return device.createBuffer({ label, size, usage });
 }
 
 export const textureToHeightfieldMeshNode: NodeDef = {
@@ -208,10 +218,10 @@ readback is a few hundred ms and async.
     const vertexUsage = GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC;
     const indexUsage = GPUBufferUsage.INDEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC;
 
-    const positionBuffer = allocOrReuseBuffer(device, prev?.geometry?.positionBuffer, posBytes, vertexUsage);
-    const normalBuffer = allocOrReuseBuffer(device, prev?.geometry?.normalBuffer, normBytes, vertexUsage);
-    const uvBuffer = allocOrReuseBuffer(device, prev?.geometry?.uvBuffer, uvBytes, vertexUsage);
-    const indexBuffer = allocOrReuseBuffer(device, prev?.geometry?.indexBuffer, idxBytes, indexUsage);
+    const positionBuffer = allocOrReuseBuffer(device, prev?.geometry?.positionBuffer, posBytes, vertexUsage, 'texture-to-heightfield-mesh-position-buffer');
+    const normalBuffer = allocOrReuseBuffer(device, prev?.geometry?.normalBuffer, normBytes, vertexUsage, 'texture-to-heightfield-mesh-normal-buffer');
+    const uvBuffer = allocOrReuseBuffer(device, prev?.geometry?.uvBuffer, uvBytes, vertexUsage, 'texture-to-heightfield-mesh-uv-buffer');
+    const indexBuffer = allocOrReuseBuffer(device, prev?.geometry?.indexBuffer, idxBytes, indexUsage, 'texture-to-heightfield-mesh-index-buffer');
 
     // Pack params (matches WGSL Params struct: 8 × 4 bytes).
     const paramData = new ArrayBuffer(32);
@@ -228,6 +238,7 @@ readback is a few hundred ms and async.
     if (!uniformBuffer || uniformBuffer.size !== paramData.byteLength) {
       uniformBuffer?.destroy();
       uniformBuffer = device.createBuffer({
+        label: 'texture-to-heightfield-mesh-uniform',
         size: paramData.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
@@ -235,6 +246,7 @@ readback is a few hundred ms and async.
     device.queue.writeBuffer(uniformBuffer, 0, paramData);
 
     const sampler = getSampler(device, {
+      label: 'texture-to-heightfield-mesh-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
@@ -243,6 +255,7 @@ readback is a few hundred ms and async.
 
     const { layout, vertPipeline, indexPipeline } = getPipelines(device);
     const bindGroup = device.createBindGroup({
+      label: 'texture-to-heightfield-mesh-bg',
       layout,
       entries: [
         { binding: 0, resource: uniformBuffer },
@@ -255,8 +268,8 @@ readback is a few hundred ms and async.
       ],
     });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
+    const encoder = device.createCommandEncoder({ label: 'texture-to-heightfield-mesh-encoder' });
+    const pass = encoder.beginComputePass({ label: 'texture-to-heightfield-mesh-pass' });
     pass.setBindGroup(0, bindGroup);
     pass.setPipeline(vertPipeline);
     pass.dispatchWorkgroups(Math.ceil(numX / 8), Math.ceil(numZ / 8));

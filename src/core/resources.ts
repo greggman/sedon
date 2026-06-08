@@ -837,6 +837,7 @@ export function getColorTexture(
     return existing.value;
   }
   const texture = device.createTexture({
+    label: `color-slot-1x1:${slotKey}`,
     size: [1, 1],
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -937,7 +938,7 @@ export function reusableBindGroup(
     if (same) return previous;
   }
   return {
-    bindGroup: device.createBindGroup({ layout, entries: buildEntries() }),
+    bindGroup: device.createBindGroup({ label: 'reusable-bind-group', layout, entries: buildEntries() }),
     refs,
   };
 }
@@ -974,7 +975,7 @@ export function reusableBuffer(
     if (data.byteLength > 0) device.queue.writeBuffer(previous, 0, data);
     return previous;
   }
-  const buffer = device.createBuffer({ size, usage });
+  const buffer = device.createBuffer({ label: 'reusable-buffer', size, usage });
   if (data.byteLength > 0) device.queue.writeBuffer(buffer, 0, data);
   return buffer;
 }
@@ -1039,10 +1040,10 @@ export function reusableTexture(
     prev === undefined ? 'no-prev' : !prev.texture ? 'no-prev-texture' : `dim-mismatch(${prev.width}x${prev.height}/${prev.format})`}`,
   );
   const texture = device.createTexture({
+    label: desired.label ?? 'reusable-texture',
     size: [desired.width, desired.height],
     format: desired.format,
     usage: desired.usage,
-    ...(desired.label !== undefined ? { label: desired.label } : {}),
   });
   return {
     texture,

@@ -13,6 +13,7 @@ import shader from './solid-color.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'solid-color-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -78,6 +79,7 @@ you only want to feed it a colour.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'solid-color-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -102,6 +104,7 @@ you only want to feed it a colour.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'solid-color-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },

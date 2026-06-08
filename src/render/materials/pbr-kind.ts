@@ -24,6 +24,7 @@ export function createPbrKind(
   sceneBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<PbrMaterial> {
   const materialBindGroupLayout = getBindGroupLayout(device, {
+    label: 'pbr-material-bgl',
     entries: [
       // basecolor
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -46,6 +47,7 @@ export function createPbrKind(
   });
 
   const pipelineLayout = getPipelineLayout(device, {
+    label: 'pbr-pipeline-layout',
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
@@ -55,6 +57,7 @@ export function createPbrKind(
   // `shadow_samp` from the host shader.
   const module = getShaderModule(device, `${shadowPcfCode}\n${shaderCode}`);
   const pipeline = getRenderPipeline(device, {
+    label: 'pbr-color-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -71,6 +74,7 @@ export function createPbrKind(
   // two-sided since the user wants to see the silhouette from either
   // side during authoring.
   const pipelineBlended = getRenderPipeline(device, {
+    label: 'pbr-blended-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: {
@@ -87,6 +91,7 @@ export function createPbrKind(
   // cutout doesn't need back-to-front sorting. Selected per-batch when
   // a material's `alphaCutoff > 0` (leaf cards, fronds, decals).
   const pipelineCutout = getRenderPipeline(device, {
+    label: 'pbr-cutout-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -154,12 +159,14 @@ export function createPbrKind(
       // WGSL UBO). Layout: roughness, metallic, detailScale,
       // detailStrength, unlit, alphaCutoff, emissiveIntensity.
       const paramBuffer = device.createBuffer({
+        label: 'pbr-material-params',
         size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);
 
       const bindGroup = device.createBindGroup({
+        label: 'pbr-material-bg',
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: material.basecolor.texture },

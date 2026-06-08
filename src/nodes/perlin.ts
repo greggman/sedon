@@ -10,6 +10,7 @@ import {
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'perlin-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -112,6 +113,7 @@ visible grid.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const outputTexture = reusableTexture(device, prev?.texture, {
+      label: 'perlin-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -143,6 +145,7 @@ visible grid.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'perlin-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -157,8 +160,9 @@ visible grid.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'perlin-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'perlin-pass',
       colorAttachments: [
         {
           view: outputTexture.texture,

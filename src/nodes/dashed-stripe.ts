@@ -11,6 +11,7 @@ import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/g
 import dashedStripeShader from './dashed-stripe.wgsl';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  label: 'dashed-stripe-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -148,6 +149,7 @@ you get road surface + lane marking in one sample.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
+      label: 'dashed-stripe-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -178,6 +180,7 @@ you get road surface + lane marking in one sample.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
+        label: 'dashed-stripe-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -192,8 +195,9 @@ you get road surface + lane marking in one sample.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'dashed-stripe-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'dashed-stripe-pass',
       colorAttachments: [
         {
           view: out.texture,

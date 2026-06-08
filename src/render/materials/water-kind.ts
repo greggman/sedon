@@ -30,6 +30,7 @@ export function createWaterKind(
   waterExtrasBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<WaterMaterial> {
   const materialBindGroupLayout = getBindGroupLayout(device, {
+    label: 'water-material-bgl',
     entries: [
       // Uniform visible to both stages — vertex shader reads wave
       // params for vertical displacement; fragment reads colour +
@@ -46,10 +47,12 @@ export function createWaterKind(
   // pass.setBindGroup(2, ...) at draw time is scene.ts's main
   // render loop (right before each water draw).
   const pipelineLayout = getPipelineLayout(device, {
+    label: 'water-pipeline-layout',
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout, waterExtrasBindGroupLayout],
   });
   const module = getShaderModule(device, shaderCode);
   const pipeline = getRenderPipeline(device, {
+    label: 'water-color-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: {
@@ -80,6 +83,7 @@ export function createWaterKind(
   });
 
   const heightSampler = getSampler(device, {
+    label: 'water-height-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -94,6 +98,7 @@ export function createWaterKind(
   const ensureFlatHeight = (): Texture2DValue => {
     if (flatHeight) return flatHeight;
     const tex = device.createTexture({
+      label: 'water-flat-height-1x1',
       size: [1, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -168,12 +173,14 @@ export function createWaterKind(
     },
     buildBindGroup(material) {
       const paramBuffer = device.createBuffer({
+        label: 'water-material-params',
         size: 128,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.writeMaterialParams(material, paramBuffer);
       const heightTex = material.heightTexture ?? ensureFlatHeight();
       const bindGroup = device.createBindGroup({
+        label: 'water-material-bg',
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: paramBuffer },

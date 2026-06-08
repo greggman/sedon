@@ -153,6 +153,7 @@ export function createTerrainSystem(
   // Solution: declare only the truly-read bindings in the render-side
   // layout, omit 3 and 4.
   const fieldComputeLayout = device.createBindGroupLayout({
+    label: 'terrain-lod-compute-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
@@ -162,6 +163,7 @@ export function createTerrainSystem(
     ],
   });
   const fieldRenderLayout = device.createBindGroupLayout({
+    label: 'terrain-render-bgl',
     entries: [
       // Uniform also visible to the fragment so it can read debugMode.
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -171,16 +173,21 @@ export function createTerrainSystem(
   });
 
   const module = device.createShaderModule({
+    label: 'terrain-render-module',
     code: `${shadowPcfCode}\n${terrainCode}`,
   });
   const computePipeline = device.createComputePipeline({
+    label: 'terrain-lod-select-pipeline',
     layout: device.createPipelineLayout({
+      label: 'terrain-compute-pl',
       bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout, fieldComputeLayout],
     }),
     compute: { module, entryPoint: 'lod_select' },
   });
   const renderPipeline = device.createRenderPipeline({
+    label: 'terrain-render-pipeline',
     layout: device.createPipelineLayout({
+      label: 'terrain-render-pl',
       bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout, fieldRenderLayout],
     }),
     vertex: {
@@ -199,6 +206,7 @@ export function createTerrainSystem(
   });
 
   const heightSampler = getSampler(device, {
+    label: 'terrain-height-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -251,11 +259,13 @@ export function createTerrainSystem(
       const vertsPerEdge = Math.max(2, (field.baseDivisions >> lod) + 1);
       const { positions, indices } = buildUnitGrid(vertsPerEdge);
       const vb = device.createBuffer({
+        label: `terrain-lod-vb:lod-${lod}`,
         size: positions.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       });
       device.queue.writeBuffer(vb, 0, positions as BufferSource);
       const ib = device.createBuffer({
+        label: `terrain-lod-ib:lod-${lod}`,
         size: indices.byteLength,
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
       });
@@ -272,11 +282,13 @@ export function createTerrainSystem(
     // VERTEX (per-instance attribute on draw). Worst-case all chunks
     // pick the same LOD, so lodLevels × totalChunks u32s.
     const chunkInstanceBuffer = device.createBuffer({
+      label: 'terrain-chunk-instance',
       size: lodLevels * totalChunks * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
     const drawArgsBuffer = device.createBuffer({
+      label: 'terrain-draw-args',
       size: lodLevels * DRAW_ARGS_STRIDE,
       // COPY_SRC lets test repros read back the indirect args to
       // verify LOD selection — cheap to enable, never used in
@@ -306,11 +318,13 @@ export function createTerrainSystem(
     device.queue.writeBuffer(drawArgsBuffer, 0, drawArgsScratch as BufferSource);
 
     const uniformBuffer = device.createBuffer({
+      label: 'terrain-uniform',
       size: UNIFORM_BYTES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const fieldComputeBindGroup = device.createBindGroup({
+      label: 'terrain-compute-bg',
       layout: fieldComputeLayout,
       entries: [
         { binding: 0, resource: uniformBuffer },
@@ -321,6 +335,7 @@ export function createTerrainSystem(
       ],
     });
     const fieldRenderBindGroup = device.createBindGroup({
+      label: 'terrain-render-bg',
       layout: fieldRenderLayout,
       entries: [
         { binding: 0, resource: uniformBuffer },
@@ -404,7 +419,7 @@ export function createTerrainSystem(
       device.queue.writeBuffer(slot.drawArgsBuffer, 0, slot.drawArgsScratch as BufferSource);
 
       const materialBg = buildMaterialBindGroup(field.material);
-      const pass = encoder.beginComputePass();
+      const pass = encoder.beginComputePass({ label: `terrain-lod-select-pass:field-${i}` });
       pass.setPipeline(computePipeline);
       pass.setBindGroup(0, sceneBindGroup);
       pass.setBindGroup(1, materialBg);

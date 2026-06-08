@@ -33,14 +33,16 @@ const cacheByDevice = new WeakMap<GPUDevice, CompositeCache>();
 function getComposite(device: GPUDevice, format: GPUTextureFormat): CompositeCache {
   const cached = cacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
-  const module = device.createShaderModule({ code: compositeShader });
+  const module = device.createShaderModule({ label: 'leaf-skeleton-preview-composite', code: compositeShader });
   const bgl = getBindGroupLayout(device, TWO_TEX_SAMP_BGL);
   const pipeline = device.createRenderPipeline({
+    label: 'leaf-skeleton-preview-pipeline',
     layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
   const sampler = device.createSampler({
+    label: 'leaf-skeleton-preview-sampler',
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
@@ -108,6 +110,7 @@ export function LeafSkeletonPreview({ device, shape, veins, size = 128 }: LeafSk
         shapeTex: shape.texture,
         veinsTex: veins.texture,
         bg: device.createBindGroup({
+          label: 'leaf-skeleton-preview-bg',
           layout: getBindGroupLayout(device, TWO_TEX_SAMP_BGL),
           entries: [
             { binding: 0, resource: shape.texture },
@@ -118,10 +121,11 @@ export function LeafSkeletonPreview({ device, shape, veins, size = 128 }: LeafSk
       };
       bindGroupRef.current = bindGroup;
     }
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'leaf-skeleton-preview-encoder' });
     const colorTex = ctx.getCurrentTexture();
     colorTex.label = 'LeafSkeletonPreview canvas';
     const pass = encoder.beginRenderPass({
+      label: 'leaf-skeleton-preview-blit-pass',
       colorAttachments: [
         {
           view: colorTex,

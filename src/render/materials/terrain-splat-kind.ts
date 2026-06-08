@@ -21,6 +21,7 @@ export function createTerrainSplatKind(
   sceneBindGroupLayout: GPUBindGroupLayout,
 ): MaterialKindImpl<TerrainSplatMaterial> {
   const materialBindGroupLayout = getBindGroupLayout(device, {
+    label: 'terrain-splat-material-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // layerA basecolor
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} }, // layerB basecolor
@@ -37,6 +38,7 @@ export function createTerrainSplatKind(
   });
 
   const pipelineLayout = getPipelineLayout(device, {
+    label: 'terrain-splat-pipeline-layout',
     bindGroupLayouts: [sceneBindGroupLayout, materialBindGroupLayout],
   });
 
@@ -46,6 +48,7 @@ export function createTerrainSplatKind(
   // `shadow_samp` from the host shader.
   const module = getShaderModule(device, `${shadowPcfCode}\n${shaderCode}`);
   const pipeline = getRenderPipeline(device, {
+    label: 'terrain-splat-color-pipeline',
     layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs_main', buffers: instanceVertexBuffers() },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
@@ -82,6 +85,7 @@ export function createTerrainSplatKind(
       // Layout: roughnessA, roughnessB at offsets 0/4; tile_scale vec2f at
       // offset 8 (naturally aligned) — total 16 bytes.
       const paramBuffer = device.createBuffer({
+        label: 'terrain-splat-material-params',
         size: 16,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
@@ -91,6 +95,7 @@ export function createTerrainSplatKind(
       const normalB = material.normalB ?? ensureFlat();
 
       const bindGroup = device.createBindGroup({
+        label: 'terrain-splat-material-bg',
         layout: materialBindGroupLayout,
         entries: [
           { binding: 0, resource: material.layerA.texture },

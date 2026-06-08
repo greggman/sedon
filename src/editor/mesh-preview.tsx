@@ -52,9 +52,10 @@ const pipelineByDevice = new WeakMap<GPUDevice, PipelineCache>();
 function getPipeline(device: GPUDevice, format: GPUTextureFormat): GPURenderPipeline {
   const cached = pipelineByDevice.get(device);
   if (cached && cached.format === format) return cached.pipeline;
-  const module = device.createShaderModule({ code: wireframeShader });
+  const module = device.createShaderModule({ label: 'mesh-preview-wireframe', code: wireframeShader });
   const bgl = getBindGroupLayout(device, VERTEX_UNIFORM_BGL);
   const pipeline = device.createRenderPipeline({
+    label: 'mesh-preview-wireframe-pipeline',
     layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: {
       module,
@@ -276,8 +277,9 @@ export function MeshPreview({
     device.queue.writeBuffer(ubuf, 0, uniformData as BufferSource);
 
     const pipeline = getPipeline(device, format);
-    const encoder = device.createCommandEncoder();
+    const encoder = device.createCommandEncoder({ label: 'mesh-preview-encoder' });
     const pass = encoder.beginRenderPass({
+      label: 'mesh-preview-color-pass',
       colorAttachments: [{
         view: ctx.getCurrentTexture().createView(),
         loadOp: 'clear',
@@ -316,8 +318,9 @@ export function MeshPreview({
       // data — bail. Caller's UI typically replaces us with a
       // "no preview" fallback; render a single clear frame so we
       // don't flash stale pixels.
-      const enc = device.createCommandEncoder();
+      const enc = device.createCommandEncoder({ label: 'mesh-preview-empty-encoder' });
       const pass = enc.beginRenderPass({
+        label: 'mesh-preview-empty-clear-pass',
         colorAttachments: [{
           view: ctx.getCurrentTexture().createView(),
           loadOp: 'clear',
@@ -334,6 +337,7 @@ export function MeshPreview({
     vertexCountRef.current = mesh.indices.length;
 
     const vbuf = device.createBuffer({
+      label: 'mesh-preview-positions',
       size: expanded.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
@@ -357,6 +361,7 @@ export function MeshPreview({
     }
     selectionActiveRef.current = anySelected;
     const ebuf = device.createBuffer({
+      label: 'mesh-preview-edge-flags',
       size: edgeFlags.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
@@ -364,6 +369,7 @@ export function MeshPreview({
     ebufRef.current = ebuf;
 
     const ubuf = device.createBuffer({
+      label: 'mesh-preview-uniform',
       // 32 floats = mvp(16) + back(4) + front(4) + back_sel(4) + front_sel(4)
       size: 32 * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -371,11 +377,13 @@ export function MeshPreview({
     ubufRef.current = ubuf;
 
     bindGroupRef.current = device.createBindGroup({
+      label: 'mesh-preview-uniform-bg',
       layout: getBindGroupLayout(device, VERTEX_UNIFORM_BGL),
       entries: [{ binding: 0, resource: ubuf }],
     });
 
     const depth = device.createTexture({
+      label: 'mesh-preview-depth',
       size: [canvas.width, canvas.height],
       format: 'depth32float',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
@@ -460,6 +468,7 @@ export function MeshPreview({
       // Depth texture must match the colour attachment dimensions.
       const oldDepth = depthRef.current;
       depthRef.current = device.createTexture({
+        label: 'mesh-preview-depth',
         size: [w, h],
         format: 'depth32float',
         usage: GPUTextureUsage.RENDER_ATTACHMENT,

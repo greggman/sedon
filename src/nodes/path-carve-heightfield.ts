@@ -59,6 +59,7 @@ function getPipeline(device: GPUDevice, format: SupportedFormat): PipelineSet {
   const existing = byFormat.get(format);
   if (existing) return existing;
   const layout = device.createBindGroupLayout({
+    label: 'path-carve-heightfield-bgl',
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
@@ -69,9 +70,10 @@ function getPipeline(device: GPUDevice, format: SupportedFormat): PipelineSet {
   });
   const code = shader.replace(/\{\{STORAGE_FORMAT\}\}/g, format);
   const pipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    label: 'path-carve-heightfield-pipeline',
+    layout: device.createPipelineLayout({ label: 'path-carve-heightfield-pl', bindGroupLayouts: [layout] }),
     compute: {
-      module: device.createShaderModule({ code }),
+      module: device.createShaderModule({ label: 'path-carve-heightfield-module', code }),
       entryPoint: 'carve',
     },
   });
@@ -202,6 +204,7 @@ Path from spline samples, so it follows any control-point layout.
     const prev = ctx.previousOutput as PrevCache | undefined;
     const reusableTexCandidate = prev?.__format === format ? prev?.texture : undefined;
     const out = reusableTexture(device, reusableTexCandidate, {
+      label: 'path-carve-heightfield-output-tex',
       width,
       height,
       format,
@@ -243,6 +246,7 @@ Path from spline samples, so it follows any control-point layout.
     if (!samplesBuffer || samplesBuffer.size !== samplesBytes) {
       samplesBuffer?.destroy();
       samplesBuffer = device.createBuffer({
+        label: 'path-carve-heightfield-samples',
         size: samplesBytes,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
@@ -252,6 +256,7 @@ Path from spline samples, so it follows any control-point layout.
     }
 
     const sampler = getSampler(device, {
+      label: 'path-carve-heightfield-sampler',
       magFilter: 'linear',
       minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
@@ -260,6 +265,7 @@ Path from spline samples, so it follows any control-point layout.
 
     const { layout, pipeline } = getPipeline(device, format);
     const bindGroup = device.createBindGroup({
+      label: 'path-carve-heightfield-bg',
       layout,
       entries: [
         { binding: 0, resource: uniformBuffer },
@@ -270,8 +276,8 @@ Path from spline samples, so it follows any control-point layout.
       ],
     });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
+    const encoder = device.createCommandEncoder({ label: 'path-carve-heightfield-encoder' });
+    const pass = encoder.beginComputePass({ label: 'path-carve-heightfield-pass' });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(Math.ceil(width / WORKGROUP), Math.ceil(height / WORKGROUP));
