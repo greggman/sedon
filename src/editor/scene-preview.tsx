@@ -11,7 +11,7 @@ import {
 } from '../render/mat4.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { requestRender, subscribeRender } from './render-bus.js';
+import { currentForceSerial, requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 const PREVIEW_FOV_Y = (60 * Math.PI) / 180;
@@ -142,6 +142,28 @@ export function ScenePreview({
   //   • the render-bus subscription (so other consumers that mutate
   //     GPU textures in place can poke us to repaint without changing
   //     our `scene` reference).
+  //
+  // Per-tile dirty short-circuit. The bus fires every subscriber on
+  // every tick (it's a coalescing rAF, not per-tile dirty tracking);
+  // with 30+ in-node thumbnails on screen and SOMETHING in the editor
+  // poking the bus per frame, the editor melted to ~15fps. We snapshot
+  // what this tile actually consumes (scene ref, camera, canvas size,
+  // and the bus's force-serial) and skip everything when nothing has
+  // changed.
+  //
+  // The force-serial covers the legitimate in-place texture-mutation
+  // case (the comment near subscribeRender below): a colorize / blend
+  // / normal-map node deep inside a subgraph rewrites its output GPU
+  // texture but the Scene wrapper stays reference-equal. Such call
+  // sites use `requestRender({ force: true })` to bump the serial, and
+  // we redraw on the mismatch.
+  const lastDrawRef = useRef({
+    scene: null as SceneValue | null,
+    yaw: Number.NaN, pitch: Number.NaN, distance: Number.NaN,
+    tx: Number.NaN, ty: Number.NaN, tz: Number.NaN,
+    width: 0, height: 0,
+    forceSerial: -1,
+  });
   const drawRef = useRef<() => void>(() => {});
   drawRef.current = () => {
     const canvas = canvasRef.current;
@@ -151,6 +173,23 @@ export function ScenePreview({
       return;
     }
     const cam = cameraRef.current;
+    const fs = currentForceSerial();
+    const last = lastDrawRef.current;
+    const wasFirstPaint = last.scene === null;
+    if (
+      last.scene === scene
+      && last.yaw === cam.yaw
+      && last.pitch === cam.pitch
+      && last.distance === cam.distance
+      && last.tx === cam.target[0]
+      && last.ty === cam.target[1]
+      && last.tz === cam.target[2]
+      && last.width === canvas.width
+      && last.height === canvas.height
+      && last.forceSerial === fs
+    ) {
+      return;
+    }
     const aspect = canvas.width / canvas.height;
     const projection = perspective(PREVIEW_FOV_Y, aspect, 0.1, Math.max(200, cam.distance * 4));
     const modelView = multiply(
@@ -180,6 +219,21 @@ export function ScenePreview({
       time: 0,
     });
     device.queue.submit([encoder.finish()]);
+    last.scene = scene;
+    last.yaw = cam.yaw;
+    last.pitch = cam.pitch;
+    last.distance = cam.distance;
+    last.tx = cam.target[0];
+    last.ty = cam.target[1];
+    last.tz = cam.target[2];
+    last.width = canvas.width;
+    last.height = canvas.height;
+    last.forceSerial = fs;
+    // See preview-tile.tsx for the same one-extra-paint warmup: some
+    // WebGPU canvas swap chains don't show the first submit until the
+    // second compositing pass. One extra rAF after the first paint
+    // guarantees the initial scene becomes visible.
+    if (wasFirstPaint) requestRender();
   };
 
   // Repaint on scene / camera changes — the existing fast-path.

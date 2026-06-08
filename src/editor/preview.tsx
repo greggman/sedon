@@ -1007,7 +1007,9 @@ export function Preview({ panelId }: PreviewProps = {}) {
       // some other render trigger (camera move, resize) fires. The
       // render bus coalesces multiple requestRender calls in the same
       // frame, so this is cheap when the PreviewTile effect also fires.
-      requestRender();
+      // `force: true` bumps the bus's force-serial so per-tile dirty
+      // checks redraw despite the unchanged scene reference.
+      requestRender({ force: true });
     })();
     return () => {
       cancelled = true;

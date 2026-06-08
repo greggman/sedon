@@ -253,7 +253,12 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         // that don't re-eval on this change (their `resolved`/`graph`
         // didn't change, so their effects don't fire under the ref-
         // pattern fix) would still show the pre-edit pixels.
-        requestRender();
+        //
+        // `force: true` bumps the bus's force-serial so per-tile dirty
+        // checks redraw even when scene-ref/camera/size all match.
+        // Without it, the dirty check would skip — the in-place texture
+        // write is invisible to ref-equality.
+        requestRender({ force: true });
       } catch (e) {
         // Eval errors are common in mid-edit graphs (missing required
         // input, type mismatch). Log but keep the canvas usable —

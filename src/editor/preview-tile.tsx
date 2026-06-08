@@ -11,7 +11,7 @@ import {
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
-import { animationTime, requestRender, subscribeRender } from './render-bus.js';
+import { animationTime, currentForceSerial, requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
 interface PreviewTileProps {
@@ -63,8 +63,17 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     const win = canvas.ownerDocument.defaultView ?? window;
     const dpr = win.devicePixelRatio || 1;
     const resize = () => {
-      canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-      canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+      const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      // Guard same-size writes. Assigning canvas.width (or .height)
+      // CLEARS the canvas's backbuffer, even when the value is
+      // unchanged. ResizeObserver fires unconditionally on subtree
+      // layout changes, so an unguarded write here black-frames the
+      // canvas every layout tick. Render-on-demand then leaves the
+      // canvas blank until the next non-resize redraw.
+      if (canvas.width === w && canvas.height === h) return;
+      canvas.width = w;
+      canvas.height = h;
       requestRender();
     };
     resize();
@@ -134,12 +143,42 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
   // The SceneRenderer owns depth + HDR + bloom intermediates internally
   // and (re)allocates them when we hand it a new size — we just pass
   // canvas.width/height each render.
+  // Per-tile dirty short-circuit. Without this, every requestRender()
+  // call from anywhere in the editor causes EVERY subscribed preview
+  // tile to redraw — at 30+ tiles, the editor melts.
+  const lastDrawRef = useRef({
+    scene: null as SceneValue | null,
+    yaw: Number.NaN, pitch: Number.NaN, distance: Number.NaN,
+    tx: Number.NaN, ty: Number.NaN, tz: Number.NaN,
+    width: 0, height: 0,
+    time: Number.NaN,
+    forceSerial: -1,
+  });
   useEffect(() => {
     const draw = () => {
       const canvas = canvasRef.current;
       let ctx = ctxRef.current;
       let renderer = rendererRef.current;
       if (!canvas || !ctx || !renderer || canvas.width === 0 || canvas.height === 0) {
+        return;
+      }
+      const cam = cameraRef.current;
+      const t = animationTime();
+      const fs = currentForceSerial();
+      const last = lastDrawRef.current;
+      if (
+        last.scene === scene
+        && last.yaw === cam.yaw
+        && last.pitch === cam.pitch
+        && last.distance === cam.distance
+        && last.tx === cam.target[0]
+        && last.ty === cam.target[1]
+        && last.tz === cam.target[2]
+        && last.width === canvas.width
+        && last.height === canvas.height
+        && last.time === t
+        && last.forceSerial === fs
+      ) {
         return;
       }
       // Lazy popout recovery: if the canvas moved to a different
@@ -166,7 +205,6 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         ctx = fresh;
         renderer = next;
       }
-      const cam = cameraRef.current;
       debug(() => `[PreviewTile draw] label="${label}" yaw=${cam.yaw.toFixed(3)} pitch=${cam.pitch.toFixed(3)} dist=${cam.distance.toFixed(3)} target=[${cam.target.map((v) => v.toFixed(2)).join(',')}]`);
       const aspect = canvas.width / canvas.height;
       // zFar scales with orbit distance so the far plane never clips
@@ -195,9 +233,20 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
         lighting,
         flatPreview,
-        time: animationTime(),
+        time: t,
       });
       gpu.device.queue.submit([encoder.finish()]);
+      last.scene = scene;
+      last.yaw = cam.yaw;
+      last.pitch = cam.pitch;
+      last.distance = cam.distance;
+      last.tx = cam.target[0];
+      last.ty = cam.target[1];
+      last.tz = cam.target[2];
+      last.width = canvas.width;
+      last.height = canvas.height;
+      last.time = t;
+      last.forceSerial = fs;
     };
     const unsubscribe = subscribeRender(draw);
     // Initial paint for this scene/lighting/flatPreview combination.
