@@ -25,59 +25,76 @@ import { useEditorStore } from './store.js';
 // ===== Copy / Paste =====================================================
 
 /**
- * Copy the active canvas's selected nodes to the OS clipboard.
+ * Copy nodes to the OS clipboard. When `ids` is omitted, copies the
+ * active canvas's current RF selection; pass an explicit set to
+ * copy just those nodes (e.g. the right-clicked node from the
+ * canvas context menu, even when it isn't in the canvas selection).
+ *
  * Returns `true` when something was written, `false` when the
- * selection was empty (caller can use this to suppress a "copied" UI
- * indicator that'd otherwise lie). Throws on clipboard write failure
- * — clipboard.writeText can reject (insecure context, permission
+ * resolved id set is empty. Throws on clipboard write failure —
+ * clipboard.writeText can reject (insecure context, permission
  * denied) and the caller should surface that.
  */
-export async function copySelection(): Promise<boolean> {
-  const fragment = buildSelectionFragment();
+export async function copySelection(ids?: ReadonlySet<string>): Promise<boolean> {
+  const fragment = buildFragmentForIds(ids);
   if (!fragment) return false;
   await navigator.clipboard.writeText(serializeFragment(fragment));
   return true;
 }
 
 /**
- * Cut = copy then remove. Same selection semantics as copySelection.
- * Returns `true` when something was cut.
+ * Cut = copy then remove. Same id-set semantics as copySelection.
  */
-export async function cutSelection(): Promise<boolean> {
-  const rf = getActiveCanvasRf();
-  if (!rf) return false;
-  const selectedIds = new Set<string>();
-  for (const n of rf.getNodes()) {
-    if (n.selected) selectedIds.add(n.id);
-  }
-  if (selectedIds.size === 0) return false;
+export async function cutSelection(ids?: ReadonlySet<string>): Promise<boolean> {
+  const resolved = ids ?? collectActiveCanvasSelection();
+  if (!resolved || resolved.size === 0) return false;
   // Copy first so a clipboard-write failure doesn't leave the user
   // with a deleted selection and nothing to paste.
-  const ok = await copySelection();
+  const ok = await copySelection(resolved);
   if (!ok) return false;
-  useEditorStore.getState().removeNodes(selectedIds);
+  useEditorStore.getState().removeNodes(resolved);
   return true;
 }
 
 /**
- * Context-menu helper: if the right-clicked node isn't already part
- * of the canvas selection, replace the selection with just it. This
- * gives the "right-click on an unselected node and Cut/Copy operates
- * on that node alone" UX that every native editor uses, without
- * needing a separate single-node code path in cut/copy.
- *
- * No-op when the node is already selected (so cut/copy on a multi-
- * selection right-clicked through one of its members still acts on
- * the whole selection).
+ * Context-menu helper: returns the right set of node ids to operate
+ * on given a right-clicked node id. If the node is already part of
+ * the canvas selection (or no canvas selection exists yet),
+ * preserves "operate on selection" semantics by returning the full
+ * selection (or just the clicked node if no selection). If the
+ * clicked node isn't in the selection, returns just the clicked
+ * node — Finder-style "right-click-not-on-selection acts on that
+ * one item alone."
  */
-export function ensureNodeInSelection(nodeId: string): void {
+export function idsForRightClickedNode(nodeId: string): ReadonlySet<string> {
+  const selection = collectActiveCanvasSelection();
+  if (!selection || selection.size === 0) return new Set([nodeId]);
+  if (selection.has(nodeId)) return selection;
+  return new Set([nodeId]);
+}
+
+function collectActiveCanvasSelection(): Set<string> | undefined {
   const rf = getActiveCanvasRf();
-  if (!rf) return;
-  const nodes = rf.getNodes();
-  const target = nodes.find((n) => n.id === nodeId);
-  if (!target) return;
-  if (target.selected) return;
-  rf.setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === nodeId })));
+  if (!rf) return undefined;
+  const out = new Set<string>();
+  for (const n of rf.getNodes()) {
+    if (n.selected) out.add(n.id);
+  }
+  return out;
+}
+
+function buildFragmentForIds(ids?: ReadonlySet<string>): Fragment | undefined {
+  const rf = getActiveCanvasRf();
+  if (!rf) return undefined;
+  let targetIds: Set<string>;
+  if (ids !== undefined) {
+    targetIds = new Set(ids);
+  } else {
+    targetIds = collectActiveCanvasSelection() ?? new Set();
+  }
+  if (targetIds.size === 0) return undefined;
+  const state = useEditorStore.getState();
+  return buildFragment(state.graph, targetIds, state.subgraphs);
 }
 
 /**
@@ -151,7 +168,7 @@ function activeCanvasCentre(): { x: number; y: number } | undefined {
  * `false` when nothing's selected (caller should no-op silently).
  */
 export function saveSelectionToFile(): boolean {
-  const fragment = buildSelectionFragment();
+  const fragment = buildFragmentForIds();
   if (!fragment) return false;
   downloadFragment(fragment, `sedon-selection-${timestamp()}.sedon`);
   return true;
@@ -211,22 +228,6 @@ export function mergeFromFile(): Promise<void> {
 
 // ===== internals ========================================================
 
-/**
- * Build a fragment from the active canvas's selection. Returns
- * `undefined` when there's no active canvas or nothing's selected.
- * Common factor of Copy + Save Selected.
- */
-function buildSelectionFragment(): Fragment | undefined {
-  const rf = getActiveCanvasRf();
-  if (!rf) return undefined;
-  const selectedIds = new Set<string>();
-  for (const n of rf.getNodes()) {
-    if (n.selected) selectedIds.add(n.id);
-  }
-  if (selectedIds.size === 0) return undefined;
-  const state = useEditorStore.getState();
-  return buildFragment(state.graph, selectedIds, state.subgraphs);
-}
 
 /**
  * Run a fragment through the importer (id remap + collision-renamed

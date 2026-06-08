@@ -2,7 +2,7 @@ import type { CanvasContextMenuItem } from './canvas-context-menu.js';
 import {
   copySelection,
   cutSelection,
-  ensureNodeInSelection,
+  idsForRightClickedNode,
   pasteFromClipboard,
 } from './clipboard-ops.js';
 import { createSubgraphAt } from './commands.js';
@@ -57,10 +57,26 @@ export interface CanvasMenuNode {
   onEdit?: () => void;
   /** Drill-in callback for for-each-point bridges. */
   onEditIteration?: () => void;
+  /** Set on nodes whose def carries a `doc` block — enables
+   *  "Open Docs". Same URL the inline `?` header link uses. */
+  docsUrl?: string;
 }
+
+// When invoked from a node context menu, Add Node / Add Subgraph /
+// Paste land slightly offset from the click point so the new node
+// doesn't sit directly on top of the one the user right-clicked.
+// Pane-menu invocations land exactly at the click (the user clicked
+// empty space — no overlap risk).
+const NODE_DROP_OFFSET = 60;
 
 export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuItem[] {
   const items: CanvasContextMenuItem[] = [];
+
+  // Where new / pasted nodes land. From the empty pane this is the
+  // click point itself; from a node menu it's offset so the new
+  // arrival doesn't overlap the one the user right-clicked.
+  const dropX = ctx.node ? ctx.flowX + NODE_DROP_OFFSET : ctx.flowX;
+  const dropY = ctx.node ? ctx.flowY + NODE_DROP_OFFSET : ctx.flowY;
 
   // ── Always-on items ──────────────────────────────────────
   items.push({
@@ -69,30 +85,34 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
   });
   items.push({
     label: 'Add Subgraph',
-    run: () => createSubgraphAt({ x: ctx.flowX, y: ctx.flowY }),
+    run: () => createSubgraphAt({ x: dropX, y: dropY }),
   });
   items.push({ kind: 'separator' });
   items.push({
     label: 'Cut',
     hint: '⌘X',
     run: () => {
-      if (ctx.node) ensureNodeInSelection(ctx.node.id);
-      void cutSelection();
+      // When right-clicked on a node not in the canvas selection,
+      // cut just that node. When on a selected node (or any member
+      // of a multi-selection), cut the whole selection. Pane-menu
+      // invocation falls back to the current canvas selection.
+      const ids = ctx.node ? idsForRightClickedNode(ctx.node.id) : undefined;
+      void cutSelection(ids);
     },
   });
   items.push({
     label: 'Copy',
     hint: '⌘C',
     run: () => {
-      if (ctx.node) ensureNodeInSelection(ctx.node.id);
-      void copySelection();
+      const ids = ctx.node ? idsForRightClickedNode(ctx.node.id) : undefined;
+      void copySelection(ids);
     },
   });
   items.push({
     label: 'Paste',
     hint: '⌘V',
     run: () => {
-      void pasteFromClipboard({ pasteAt: { x: ctx.flowX, y: ctx.flowY } });
+      void pasteFromClipboard({ pasteAt: { x: dropX, y: dropY } });
     },
   });
 
@@ -114,6 +134,15 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
       items.push({
         label: 'Edit iteration',
         run: ctx.node.onEditIteration,
+      });
+    }
+    if (ctx.node.docsUrl) {
+      const url = ctx.node.docsUrl;
+      items.push({
+        label: 'Open Docs',
+        run: () => {
+          window.open(url, '_blank', 'noreferrer');
+        },
       });
     }
   }

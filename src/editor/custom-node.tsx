@@ -1014,12 +1014,18 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         ...(isForEachPoint && forEachBridgeId !== ''
           ? { onEditIteration: () => onEditIteration() }
           : {}),
+        // Same URL the inline `?` header link uses. Only set when
+        // the node's def actually carries a doc block, so the menu
+        // suppresses "Open Docs" for nodes that have no page.
+        ...(def?.doc
+          ? { docsUrl: docsUrlFor(def.id, docsLocation) }
+          : {}),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     nodeMenu, id, canvasPanelId, isSubgraphWrapper, subgraphId,
-    isForEachPoint, forEachBridgeId,
+    isForEachPoint, forEachBridgeId, def?.doc, def?.id, docsLocation,
   ]);
 
   return (
