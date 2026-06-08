@@ -152,6 +152,20 @@ export interface PbrMaterial {
    */
   alphaCutoff?: number;
   /**
+   * Self-illumination texture. Sampled in the fragment shader and added
+   * on top of the lit color BEFORE fog (so glowing surfaces glow through
+   * fog the same as direct light does). Authored as sRGB like basecolor;
+   * default unwired-state is a flat-black 1×1 texture and contributes
+   * nothing. Pair with `emissiveIntensity > 1` for HDR values that feed
+   * the bloom pass.
+   */
+  emissive?: Texture2DValue;
+  /**
+   * Scale on the emissive texture sample. >1 pushes the sample into HDR
+   * so bloom picks it up. Defaults to 1.
+   */
+  emissiveIntensity?: number;
+  /**
    * When true, the shader outputs the basecolor (× tint × detail) directly,
    * skipping all lighting math (sun, ambient, fog, shadows). Used by the
    * preview pane's flat synthesized tiles so a user authoring a texture

@@ -57,6 +57,10 @@ struct Material {
   // below this value are discarded. The renderer pairs this with a
   // cull-none pipeline so cutout cards show from both sides.
   alphaCutoff: f32,
+  // Multiplier on the emissive texture sample. Values >1 push the
+  // emissive contribution into HDR so the bloom pass picks it up
+  // (lit windows at night, neon signs). Default 1 = sample as-is.
+  emissiveIntensity: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -69,6 +73,7 @@ struct Material {
 @group(1) @binding(2) var normal_map: texture_2d<f32>;
 @group(1) @binding(3) var detail_basecolor: texture_2d<f32>;
 @group(1) @binding(4) var detail_normal: texture_2d<f32>;
+@group(1) @binding(5) var emissive_map: texture_2d<f32>;
 
 struct VsIn {
   @location(0) position: vec3f,
@@ -280,7 +285,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let shadow = sample_shadow(in.world_pos);
 
   let lit = apply_lighting(albedo, in.view_pos, n, material.roughness, material.metallic, shadow);
-  let final_color = apply_fog(lit, in.view_pos.z);
+  // Emissive is authored as sRGB (a colour swatch / texture) and adds
+  // to the lit colour BEFORE fog — so a glowing window dims through
+  // atmosphere the same way direct sun does. `emissiveIntensity > 1`
+  // pushes the contribution into HDR so the bloom pass picks it up.
+  let emissive_sample = srgb_to_linear(textureSample(emissive_map, samp, in.uv).rgb);
+  let lit_with_emissive = lit + emissive_sample * material.emissiveIntensity;
+  let final_color = apply_fog(lit_with_emissive, in.view_pos.z);
   // Linear HDR output. Composite pass handles tone-map + sRGB.
   return vec4f(final_color, albedo_sample.a);
 }

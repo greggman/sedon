@@ -56,10 +56,15 @@ function addFloorBox(
     baseY: number;
     materialInputs: Record<string, unknown>;
     textureNode?: ReturnType<typeof addNode>;
+    /** Optional emissive texture (lit-window glow, neon, etc.). The
+     *  texture's `texture` output wires into the material's emissive
+     *  input. Use `emissiveIntensity` to push the sample into HDR for
+     *  bloom. */
+    emissiveTextureNode?: ReturnType<typeof addNode>;
     yOffset: number; // RF graph y position
   },
 ): ReturnType<typeof addNode> {
-  const { width, depth, height, baseY, materialInputs, textureNode, yOffset } = opts;
+  const { width, depth, height, baseY, materialInputs, textureNode, emissiveTextureNode, yOffset } = opts;
   const geo = addNode(g, 'core/box', {
     position: { x: COL, y: yOffset },
     inputValues: { width, height, depth },
@@ -84,6 +89,9 @@ function addFloorBox(
   addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
   if (textureNode) {
     addEdge(g, { node: textureNode.id, socket: 'texture' }, { node: mat.id, socket: 'basecolor' });
+  }
+  if (emissiveTextureNode) {
+    addEdge(g, { node: emissiveTextureNode.id, socket: 'texture' }, { node: mat.id, socket: 'emissive' });
   }
   return ent;
 }
@@ -119,6 +127,23 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
     },
   });
 
+  // Emissive window-light texture. SAME grid topology as windowTex
+  // but with the window/mullion roles inverted: mullions are black
+  // (no glow) and windows emit a warm yellow. Paired with the
+  // `emissive_intensity` value below this pushes lit-window pixels
+  // into HDR so the bloom pass picks them up — the city skyline
+  // reads as having warm office lights at dusk.
+  const officeLightTex = addNode(g, 'core/grid', {
+    position: { x: 0, y: ROW },
+    inputValues: {
+      fg: [0, 0, 0, 1],          // mullions stay dark
+      bg: [1.0, 0.78, 0.45, 1],  // warm tungsten office light
+      divisions: [7, 7],
+      line_width: 0.10,
+      resolution: 256,
+    },
+  });
+
   // Ground floor: 5m tall, slightly wider than the upper floors so
   // the upper body reads as a setback. Vertical-mullion glass.
   const groundTex = addNode(g, 'core/grid', {
@@ -140,8 +165,11 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
   });
   const bodyEnt = addFloorBox(g, {
     width: 20, depth: 25, height: 24.5, baseY: 5,
-    materialInputs: { roughness: 0.4, metallic: 0.2 },
+    // emissive_intensity = 2 nudges the glow above 1.0 in linear HDR
+    // so bloom picks up the window pixels. Lower values stay subtle.
+    materialInputs: { roughness: 0.4, metallic: 0.2, emissive_intensity: 2 },
     textureNode: windowTex,
+    emissiveTextureNode: officeLightTex,
     yOffset: 0,
   });
   const roofEnt = addFloorBox(g, {

@@ -8,6 +8,7 @@ import {
 } from '../gpu-cache.js';
 import {
   ALPHA_BLEND_STATE,
+  createFlatBlackTexture,
   createFlatHalfTexture,
   createFlatNormalTexture,
   DEPTH_STENCIL,
@@ -26,7 +27,8 @@ export function createPbrKind(
     entries: [
       // basecolor
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      // material params (roughness, metallic, detailScale, detailStrength)
+      // material params (roughness, metallic, detailScale, detailStrength,
+      // unlit, alphaCutoff, emissiveIntensity)
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
@@ -38,6 +40,8 @@ export function createPbrKind(
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       // detail normal map
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      // emissive (self-illumination, added on top of lit color)
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
 
@@ -91,10 +95,12 @@ export function createPbrKind(
   });
 
   // Lazy-create placeholder textures for materials without authored
-  // normal / detail inputs. Flat-half (0.5 grey) is the albedo-detail
-  // no-op; flat-normal ((0, 0, 1) in tangent space) is the normal no-op.
+  // normal / detail / emissive inputs. Flat-half (0.5 grey) is the
+  // albedo-detail no-op; flat-normal ((0, 0, 1) in tangent space) is
+  // the normal no-op; flat-black is the emissive no-op.
   let flatNormal: Texture2DValue | null = null;
   let flatHalf: Texture2DValue | null = null;
+  let flatBlack: Texture2DValue | null = null;
 
   return {
     id: 'pbr',
@@ -122,7 +128,8 @@ export function createPbrKind(
       const detailN = material.detailNormal
         ? gpuObjectId(material.detailNormal.texture)
         : 'flat';
-      return `pbr|${basecolor}|${normal}|${detailB}|${detailN}`;
+      const emissive = material.emissive ? gpuObjectId(material.emissive.texture) : 'flat';
+      return `pbr|${basecolor}|${normal}|${detailB}|${detailN}|${emissive}`;
     },
     writeMaterialParams(material, paramBuffer) {
       const paramData = new Float32Array(8);
@@ -132,6 +139,7 @@ export function createPbrKind(
       paramData[3] = material.detailStrength ?? 1;
       paramData[4] = material.unlit ? 1 : 0;
       paramData[5] = material.alphaCutoff ?? 0;
+      paramData[6] = material.emissiveIntensity ?? 1;
       device.queue.writeBuffer(paramBuffer, 0, paramData as BufferSource);
     },
     buildBindGroup(material) {
@@ -140,10 +148,11 @@ export function createPbrKind(
         material.detailBasecolor ?? (flatHalf ??= createFlatHalfTexture(device));
       const detailNormalTex =
         material.detailNormal ?? (flatNormal ??= createFlatNormalTexture(device));
+      const emissiveTex = material.emissive ?? (flatBlack ??= createFlatBlackTexture(device));
 
-      // 6 floats used, padded to 32 bytes (next 16-byte boundary for
+      // 7 floats used, padded to 32 bytes (next 16-byte boundary for
       // WGSL UBO). Layout: roughness, metallic, detailScale,
-      // detailStrength, unlit, alphaCutoff.
+      // detailStrength, unlit, alphaCutoff, emissiveIntensity.
       const paramBuffer = device.createBuffer({
         size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -158,6 +167,7 @@ export function createPbrKind(
           { binding: 2, resource: normalTex.texture },
           { binding: 3, resource: detailBasecolorTex.texture },
           { binding: 4, resource: detailNormalTex.texture },
+          { binding: 5, resource: emissiveTex.texture },
         ],
       });
       return { bindGroup, paramBuffer };

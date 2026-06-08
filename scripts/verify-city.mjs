@@ -11,13 +11,13 @@ const browser = await puppeteer.launch({
   defaultViewport: { width: 1400, height: 900 },
   // City demo has ~1700 entities to scatter on first eval; default
   // 30s protocol timeout occasionally trips on cold runs.
-  protocolTimeout: 120_000,
+  protocolTimeout: 240_000,
 });
 const page = await browser.newPage();
 const errors = [];
-page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
+page.on('pageerror', (e) => { errors.push(`[pageerror] ${e.message}`); console.error('PAGEERROR:', e.message); });
 page.on('console', (msg) => {
-  if (msg.type() === 'error') errors.push(`[err] ${msg.text()}`);
+  if (msg.type() === 'error') { errors.push(`[err] ${msg.text()}`); console.error('CONSOLE-ERR:', msg.text()); }
 });
 
 try {
@@ -80,7 +80,9 @@ try {
     { waitUntil: 'networkidle2', timeout: 60000 },
   );
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 10000));
+  // 20s — the dense city has ~1700 entities and 5+ texture bindings
+  // per material; cold init pushes past 10s after the emissive change.
+  await new Promise((r) => setTimeout(r, 20000));
 
   // ── Idle-frames probe. After the city has rendered, with no input,
   // how many submits do we see in 2s? With per-tile dirty short-circuit

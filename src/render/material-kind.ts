@@ -202,6 +202,7 @@ export function instanceVertexBuffers(): GPUVertexBufferLayout[] {
 // stream of 1×1 createTexture calls visible while debugging edits.
 const flatNormalCache = new WeakMap<GPUDevice, Texture2DValue>();
 const flatHalfCache = new WeakMap<GPUDevice, Texture2DValue>();
+const flatBlackCache = new WeakMap<GPUDevice, Texture2DValue>();
 
 // Tangent-space "no perturbation": (0, 0, 1) → (0.5, 0.5, 1.0) when packed
 // into rgba8unorm. PBR materials with no normal map use this so the bind
@@ -260,6 +261,36 @@ export function createFlatHalfTexture(device: GPUDevice): Texture2DValue {
     revision: 0, // static cached fallback — content never changes
   };
   flatHalfCache.set(device, result);
+  return result;
+}
+
+// 1×1 black. Used as the no-op placeholder for the emissive slot:
+// the shader adds `emissive_sample * intensity` to the lit color, so
+// (0,0,0) × anything = 0 contribution regardless of intensity.
+export function createFlatBlackTexture(device: GPUDevice): Texture2DValue {
+  const cached = flatBlackCache.get(device);
+  if (cached) return cached;
+  const format: GPUTextureFormat = 'rgba8unorm';
+  const texture = device.createTexture({
+    size: [1, 1],
+    format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const pixel = new Uint8Array([0, 0, 0, 255]);
+  device.queue.writeTexture(
+    { texture },
+    pixel as BufferSource,
+    { bytesPerRow: 4 },
+    [1, 1],
+  );
+  const result: Texture2DValue = {
+    texture,
+    format,
+    width: 1,
+    height: 1,
+    revision: 0,
+  };
+  flatBlackCache.set(device, result);
   return result;
 }
 

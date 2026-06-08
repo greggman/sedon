@@ -66,6 +66,22 @@ export const materialNode: NodeDef = {
       default: 0,
       description: '>0 enables hard cutout — discards fragments with basecolor alpha below this threshold and renders two-sided. 0.5 is standard foliage. 0 = opaque, back-face-culled',
     },
+    {
+      name: 'emissive',
+      type: 'Texture2D',
+      // Unwired: black colour picker. Auto-promoted to a 1×1 texture
+      // by evaluate.ts, same pattern as `basecolor`. Black contributes
+      // nothing to the lit output, so leaving this unwired keeps the
+      // material visually identical to a no-emissive material.
+      default: [0, 0, 0, 1],
+      description: 'self-illumination texture, added on top of the lit output (before fog). Unwired: shows a color picker, defaults to black (no emission). Wire a texture for window patterns, neon signs, etc.',
+    },
+    {
+      name: 'emissive_intensity',
+      type: 'Float',
+      default: 1,
+      description: 'multiplier on the emissive sample. >1 pushes the value into HDR so bloom picks it up (good for night windows, neon signs)',
+    },
   ],
   outputs: [
     {
@@ -155,6 +171,8 @@ opaque and back-face-culled.
     const detailBasecolor = inputs.detail_basecolor as Texture2DValue | undefined;
     const detailNormal = inputs.detail_normal as Texture2DValue | undefined;
     const alphaCutoff = inputs.alpha_cutoff as number;
+    const emissive = inputs.emissive as Texture2DValue;
+    const emissiveIntensity = inputs.emissive_intensity as number;
     const material: MaterialValue = {
       kind: 'pbr',
       basecolor: inputs.basecolor as Texture2DValue,
@@ -162,6 +180,8 @@ opaque and back-face-culled.
       metallic: inputs.metallic as number,
       detailScale: inputs.detail_scale as number,
       detailStrength: inputs.detail_strength as number,
+      emissive,
+      emissiveIntensity,
     };
     if (normal) material.normal = normal;
     if (detailBasecolor) material.detailBasecolor = detailBasecolor;
