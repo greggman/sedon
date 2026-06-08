@@ -6,7 +6,15 @@ import {
   reusableBindGroup,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
+
+const TWO_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 import shader from './colorize.wgsl';
 
 // Remap a single-channel input through a 1D RAMP TEXTURE. Pairs with
@@ -135,16 +143,20 @@ ends up in the [0, 1] range.
     });
 
     const module = getShaderModule(device, shader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      TWO_TEX_SAMP_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [factor.texture, ramp.texture, sampler],
       () => [
         { binding: 0, resource: factor.texture },

@@ -1,7 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { Texture2DValue } from '../core/resources.js';
+import { ShaderStage, getBindGroupLayout, getPipelineLayout } from '../render/gpu-cache.js';
 import compositeShader from './leaf-skeleton-preview.wgsl';
 import { subscribeRender } from './render-bus.js';
+
+const TWO_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 
 // Node-only composite preview for `leaf/skeleton`. The node has two
 // Texture2D outputs (shape + veins); the generic TexturePreview only
@@ -25,8 +34,9 @@ function getComposite(device: GPUDevice, format: GPUTextureFormat): CompositeCac
   const cached = cacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
   const module = device.createShaderModule({ code: compositeShader });
+  const bgl = getBindGroupLayout(device, TWO_TEX_SAMP_BGL);
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
@@ -98,7 +108,7 @@ export function LeafSkeletonPreview({ device, shape, veins, size = 128 }: LeafSk
         shapeTex: shape.texture,
         veinsTex: veins.texture,
         bg: device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
+          layout: getBindGroupLayout(device, TWO_TEX_SAMP_BGL),
           entries: [
             { binding: 0, resource: shape.texture },
             { binding: 1, resource: veins.texture },

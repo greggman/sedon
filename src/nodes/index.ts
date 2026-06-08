@@ -32,6 +32,8 @@ import { distributeInVolumeNode } from './distribute-in-volume.js';
 import { distributeOnFacesNode } from './distribute-on-faces.js';
 import { forEachPointNode } from './for-each-point.js';
 import { gridDistributeNode } from './grid-distribute.js';
+import { checkerNode } from './checker.js';
+import { dashedStripeNode } from './dashed-stripe.js';
 import { gridNode } from './grid.js';
 import { imageNode } from './image.js';
 import { textureConvertNode } from './texture-convert.js';
@@ -139,6 +141,8 @@ export const CORE_NODES = [
   textureToHeightfieldMeshNode,
   solidColorNode,
   gridNode,
+  checkerNode,
+  dashedStripeNode,
   imageNode,
   perlinNode,
   paletteNode,
@@ -238,6 +242,8 @@ export {
   forEachPointNode,
   gridDistributeNode,
   gridNode,
+  checkerNode,
+  dashedStripeNode,
   imageNode,
   textureConvertNode,
   textureMapRangeNode,

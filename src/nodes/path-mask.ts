@@ -7,7 +7,13 @@ import {
   reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
+
+const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ],
+};
 import shader from './path-mask.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -135,16 +141,20 @@ side, then export a mask separately.
     );
 
     const module = getShaderModule(device, shader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      UNIFORM_FRAG_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [uniformBuffer],
       () => [{ binding: 0, resource: uniformBuffer }],
     );

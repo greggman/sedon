@@ -7,7 +7,15 @@ import {
   reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
+
+const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 import shader from './distance-transform.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -190,17 +198,30 @@ from a binary mask.
 
     // Three pipelines share the same shader module + bind group layout
     // (one uniform, one texture, one sampler at @group(0)). Only the
-    // fragment entry point differs between them.
+    // fragment entry point differs between them. The explicit BGL is
+    // mandatory here — `layout: 'auto'` would produce three
+    // structurally-identical-but-distinct layouts, defeating
+    // reusableBindGroup across evaluations.
     const module = getShaderModule(device, shader);
-    const makePipeline = (entry: string): GPURenderPipeline =>
-      getRenderPipeline(device, {
-        layout: 'auto',
-        vertex: { module, entryPoint: 'vs_main' },
-        fragment: { module, entryPoint: entry, targets: [{ format: TEXTURE_FORMAT }] },
-      });
+    let bgl: GPUBindGroupLayout | undefined;
+    const makePipeline = (entry: string): GPURenderPipeline => {
+      const result = getPipelineWithLayout(
+        device,
+        UNIFORM_TEX_SAMP_BGL,
+        (layout) => ({
+          layout,
+          vertex: { module, entryPoint: 'vs_main' },
+          fragment: { module, entryPoint: entry, targets: [{ format: TEXTURE_FORMAT }] },
+        }),
+      );
+      bgl = result.bindGroupLayout;
+      return result.pipeline;
+    };
     const initPipeline = makePipeline('fs_init');
     const jfaPipeline = makePipeline('fs_jfa');
     const finalPipeline = makePipeline('fs_final');
+    // `bgl` is the cached BGL shared by all three pipelines.
+    const sharedBgl = bgl!;
 
     const buildEntries = (srcView: GPUTexture) => () => [
       { binding: 0, resource: uniformBuffer },
@@ -216,35 +237,35 @@ from a binary mask.
     const initBg = reusableBindGroup(
       device,
       prev?.__initBg,
-      initPipeline.getBindGroupLayout(0),
+      sharedBgl,
       [uniformBuffer, src.texture, sampler],
       buildEntries(src.texture),
     );
     const jfaBgA = reusableBindGroup(
       device,
       prev?.__jfaBgA,
-      jfaPipeline.getBindGroupLayout(0),
+      sharedBgl,
       [uniformBuffer, aView, sampler],
       buildEntries(aView),
     );
     const jfaBgB = reusableBindGroup(
       device,
       prev?.__jfaBgB,
-      jfaPipeline.getBindGroupLayout(0),
+      sharedBgl,
       [uniformBuffer, bView, sampler],
       buildEntries(bView),
     );
     const finalBgA = reusableBindGroup(
       device,
       prev?.__finalBgA,
-      finalPipeline.getBindGroupLayout(0),
+      sharedBgl,
       [uniformBuffer, aView, sampler],
       buildEntries(aView),
     );
     const finalBgB = reusableBindGroup(
       device,
       prev?.__finalBgB,
-      finalPipeline.getBindGroupLayout(0),
+      sharedBgl,
       [uniformBuffer, bView, sampler],
       buildEntries(bView),
     );

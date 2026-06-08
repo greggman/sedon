@@ -6,7 +6,16 @@ import {
   reusableBindGroup,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
+
+const THREE_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 import shader from './blend-mask.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -123,16 +132,20 @@ mask), or any blend where the strength varies across the texture.
     });
 
     const module = getShaderModule(device, shader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      THREE_TEX_SAMP_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [a.texture, b.texture, mask.texture, sampler],
       () => [
         { binding: 0, resource: a.texture },

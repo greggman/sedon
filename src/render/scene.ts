@@ -526,14 +526,14 @@ function ensureSharedRendererState(
     ['terrain-multi-layer', createTerrainMultiLayerKind(device, HDR_FORMAT, sceneBindGroupLayout)],
     ['water', createWaterKind(device, HDR_FORMAT, sceneBindGroupLayout, waterExtrasBindGroupLayout)],
   ]);
-  const skyPipeline = createSkyPipeline(device, HDR_FORMAT);
+  const { pipeline: skyPipeline, bindGroupLayout: skyBgl } = createSkyPipeline(device, HDR_FORMAT);
   const flatBackgroundPipeline = createFlatBackgroundPipeline(device, HDR_FORMAT);
   const skyUniformBuffer = device.createBuffer({
     size: 80,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const skyBindGroup = device.createBindGroup({
-    layout: skyPipeline.getBindGroupLayout(0),
+    layout: skyBgl,
     entries: [{ binding: 0, resource: skyUniformBuffer }],
   });
   const singleInputLayout = createSingleInputLayout(device);
@@ -1069,13 +1069,25 @@ function createShadowPipeline(
   });
 }
 
+// Single uniform buffer at @binding(0) for the sky shader. Explicit
+// so callers don't depend on pipeline.getBindGroupLayout(0) — that
+// API is identity-locked to the creating pipeline under `'auto'`
+// layout, and even structurally-identical bind groups created from
+// a sibling pipeline get rejected on bind. Returns both layout and
+// pipeline so the caller can build the sky bind group against the
+// SAME layout object.
 function createSkyPipeline(
   device: GPUDevice,
   format: GPUTextureFormat,
-): GPURenderPipeline {
+): { pipeline: GPURenderPipeline; bindGroupLayout: GPUBindGroupLayout } {
   const module = device.createShaderModule({ code: skyShaderCode });
-  return device.createRenderPipeline({
-    layout: 'auto',
+  const bgl = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    ],
+  });
+  const pipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
     vertex: { module, entryPoint: 'vs_main' },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -1085,20 +1097,22 @@ function createSkyPipeline(
       depthCompare: 'always',
     },
   });
+  return { pipeline, bindGroupLayout: bgl };
 }
 
 // Background pipeline for flat-preview tiles. Same depth/format setup
 // as the sky pipeline (so the renderer can swap one for the other in
-// the main pass without other changes), but draws a screen-space
-// checkerboard with no uniforms — auto layout gives it an empty bind
-// group that we never bind.
+// the main pass without other changes), but reads no uniforms — pure
+// screen-space checkerboard. Explicit empty layout sidesteps the
+// 'auto'-layout identity-lock issue.
 function createFlatBackgroundPipeline(
   device: GPUDevice,
   format: GPUTextureFormat,
 ): GPURenderPipeline {
   const module = device.createShaderModule({ code: flatBackgroundShaderCode });
+  const emptyLayout = device.createPipelineLayout({ bindGroupLayouts: [] });
   return device.createRenderPipeline({
-    layout: 'auto',
+    layout: emptyLayout,
     vertex: { module, entryPoint: 'vs_main' },
     fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },

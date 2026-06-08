@@ -7,8 +7,20 @@ import {
   reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
 import gridShader from './grid.wgsl';
+
+// Explicit bind-group layout for "single uniform buffer at binding
+// 0, fragment-only." `layout: 'auto'` was the shorthand here, but
+// auto layouts are identity-locked to their creating pipeline, so
+// reusable bind groups across evaluations trip Dawn validation.
+// Explicit (and cached via gpu-cache) gives a stable layout
+// identity that the bind-group cache can rely on.
+const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ],
+};
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
@@ -128,16 +140,20 @@ tile/brick/checker effects.
     );
 
     const module = getShaderModule(device, gridShader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      UNIFORM_FRAG_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [uniformBuffer],
       () => [{ binding: 0, resource: uniformBuffer }],
     );

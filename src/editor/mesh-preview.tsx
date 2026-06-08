@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { GeometryValue } from '../core/resources.js';
+import { ShaderStage, getBindGroupLayout, getPipelineLayout } from '../render/gpu-cache.js';
 import { lookAt, multiply, perspective } from '../render/mat4.js';
 import wireframeShader from './mesh-preview.wgsl';
+
+const VERTEX_UNIFORM_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.VERTEX | ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ],
+};
 
 // Small static preview of a Geometry mesh, rendered as a wireframe. Used
 // by the docs page so any node that outputs a Geometry has something
@@ -46,8 +53,9 @@ function getPipeline(device: GPUDevice, format: GPUTextureFormat): GPURenderPipe
   const cached = pipelineByDevice.get(device);
   if (cached && cached.format === format) return cached.pipeline;
   const module = device.createShaderModule({ code: wireframeShader });
+  const bgl = getBindGroupLayout(device, VERTEX_UNIFORM_BGL);
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: {
       module,
       entryPoint: 'vs_main',
@@ -362,10 +370,9 @@ export function MeshPreview({
     });
     ubufRef.current = ubuf;
 
-    const pipeline = getPipeline(device, format);
     bindGroupRef.current = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: ubuf } }],
+      layout: getBindGroupLayout(device, VERTEX_UNIFORM_BGL),
+      entries: [{ binding: 0, resource: ubuf }],
     });
 
     const depth = device.createTexture({

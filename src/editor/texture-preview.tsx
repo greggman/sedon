@@ -1,8 +1,44 @@
 import { useEffect, useRef } from 'react';
 import type { Texture2DValue } from '../core/resources.js';
+import {
+  ShaderStage,
+  getBindGroupLayout,
+  getPipelineLayout,
+} from '../render/gpu-cache.js';
 import autoLevelShader from './texture-auto-level.wgsl';
 import blitShader from './blit.wgsl';
 import { subscribeRender } from './render-bus.js';
+
+// Per-pipeline explicit bind-group layouts. Each pipeline declares
+// only the bindings it actually reads — the bind group's entries
+// must match the layout's entries exactly. `layout: 'auto'` would
+// have inferred these from the shader's actual usage, but auto
+// layouts are pipeline-identity-locked and a cached bind group
+// can be rejected on later draws.
+const RESET_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 1, visibility: ShaderStage.COMPUTE, buffer: { type: 'storage' } },
+  ],
+};
+const REDUCE_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 1, visibility: ShaderStage.COMPUTE, buffer: { type: 'storage' } },
+  ],
+};
+const BLIT_AUTOLEVEL_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+    { binding: 4, visibility: ShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+  ],
+};
+const BLIT_PLAIN_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 
 // Whether a format carries values outside [0, 1] in the natural display
 // sense (HDR colour, heightfields in metres, signed normal data, etc.).
@@ -18,6 +54,7 @@ interface PlainBlitCache {
   pipeline: GPURenderPipeline;
   format: GPUTextureFormat;
   sampler: GPUSampler;
+  bgl: GPUBindGroupLayout;
 }
 
 interface AutoLevelCache {
@@ -26,6 +63,9 @@ interface AutoLevelCache {
   blitPipeline: GPURenderPipeline;
   format: GPUTextureFormat;
   sampler: GPUSampler;
+  resetBgl: GPUBindGroupLayout;
+  reduceBgl: GPUBindGroupLayout;
+  blitBgl: GPUBindGroupLayout;
 }
 
 // One cache per device per output format. The output format is the
@@ -39,8 +79,9 @@ function getPlainBlit(device: GPUDevice, format: GPUTextureFormat): PlainBlitCac
   const cached = plainCacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
   const module = device.createShaderModule({ code: blitShader });
+  const bgl = getBindGroupLayout(device, BLIT_PLAIN_BGL);
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [bgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
@@ -50,7 +91,7 @@ function getPlainBlit(device: GPUDevice, format: GPUTextureFormat): PlainBlitCac
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   });
-  const fresh: PlainBlitCache = { pipeline, format, sampler };
+  const fresh: PlainBlitCache = { pipeline, format, sampler, bgl };
   plainCacheByDevice.set(device, fresh);
   return fresh;
 }
@@ -59,16 +100,19 @@ function getAutoLevel(device: GPUDevice, format: GPUTextureFormat): AutoLevelCac
   const cached = autoLevelCacheByDevice.get(device);
   if (cached && cached.format === format) return cached;
   const module = device.createShaderModule({ code: autoLevelShader });
+  const resetBgl = getBindGroupLayout(device, RESET_BGL);
+  const reduceBgl = getBindGroupLayout(device, REDUCE_BGL);
+  const blitBgl = getBindGroupLayout(device, BLIT_AUTOLEVEL_BGL);
   const resetPipeline = device.createComputePipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [resetBgl] }),
     compute: { module, entryPoint: 'reset' },
   });
   const reducePipeline = device.createComputePipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [reduceBgl] }),
     compute: { module, entryPoint: 'reduce' },
   });
   const blitPipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: getPipelineLayout(device, { bindGroupLayouts: [blitBgl] }),
     vertex: { module },
     fragment: { module, targets: [{ format }] },
   });
@@ -78,7 +122,10 @@ function getAutoLevel(device: GPUDevice, format: GPUTextureFormat): AutoLevelCac
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   });
-  const fresh: AutoLevelCache = { resetPipeline, reducePipeline, blitPipeline, format, sampler };
+  const fresh: AutoLevelCache = {
+    resetPipeline, reducePipeline, blitPipeline, format, sampler,
+    resetBgl, reduceBgl, blitBgl,
+  };
   autoLevelCacheByDevice.set(device, fresh);
   return fresh;
 }
@@ -174,20 +221,20 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
         });
         const resetBindGroup = device.createBindGroup({
-          layout: cache.resetPipeline.getBindGroupLayout(0),
+          layout: cache.resetBgl,
           entries: [
             { binding: 1, resource: buffer },
           ],
         });
         const reduceBindGroup = device.createBindGroup({
-          layout: cache.reducePipeline.getBindGroupLayout(0),
+          layout: cache.reduceBgl,
           entries: [
             { binding: 0, resource: value.texture },
             { binding: 1, resource: buffer },
           ],
         });
         const blitBindGroup = device.createBindGroup({
-          layout: cache.blitPipeline.getBindGroupLayout(0),
+          layout: cache.blitBgl,
           entries: [
             { binding: 2, resource: value.texture },
             { binding: 3, resource: cache.sampler },
@@ -232,7 +279,7 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
       let res = plainResRef.current;
       if (!res || res.tex !== value.texture) {
         const blitBindGroup = device.createBindGroup({
-          layout: cache.pipeline.getBindGroupLayout(0),
+          layout: cache.bgl,
           entries: [
             { binding: 0, resource: value.texture },
             { binding: 1, resource: cache.sampler },

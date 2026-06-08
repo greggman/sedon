@@ -20,6 +20,19 @@
 // shader/pipeline descriptors the renderer actually uses, which is
 // small (≈ a dozen total across all material kinds).
 
+// WebGPU's `GPUShaderStage` global is only defined in browsers
+// (and Deno/wgpu-compat backends). Node-side imports of any module
+// that builds a bind-group-layout descriptor at module scope would
+// crash with "ReferenceError: GPUShaderStage is not defined" before
+// they ever ran a test. Re-export the spec'd numeric bit flags as
+// plain integer constants so any caller can compose visibility
+// masks without touching the global.
+export const ShaderStage = {
+  VERTEX: 0x1,
+  FRAGMENT: 0x2,
+  COMPUTE: 0x4,
+} as const;
+
 // Stable id table for GPU objects we want to use as keys. WeakMap so
 // the entry vanishes if the GPU object itself is GC'd.
 const gpuObjectIds = new WeakMap<object, number>();
@@ -137,6 +150,39 @@ export function getRenderPipeline(
     cache.set(key, pipeline);
   }
   return pipeline;
+}
+
+/**
+ * One-shot helper for the common "one bind group, build a pipeline
+ * against it" case: caches the bind-group layout, the pipeline
+ * layout, and the render pipeline; hands back the pipeline plus the
+ * single bind-group layout so the caller can build matching bind
+ * groups. The caller's `buildDescriptor` callback receives the
+ * pipeline layout so it can plug it in.
+ *
+ * Replaces the `layout: 'auto'` shorthand at every texture node
+ * call site. `'auto'` produces a fresh bind-group-layout per
+ * pipeline that is identity-locked to that pipeline — reusing a
+ * bind group across evaluations (even with the same content-hashed
+ * pipeline back from the cache) trips Dawn's "BindGroupLayout was
+ * not created by the pipeline" validation. Explicit layouts have
+ * stable identity, so reusable bind groups stay valid across
+ * evaluations.
+ *
+ * For multi-bind-group pipelines, fall through to
+ * getBindGroupLayout + getPipelineLayout + getRenderPipeline
+ * directly — this helper is just a convenience for the one-bgl
+ * majority case.
+ */
+export function getPipelineWithLayout(
+  device: GPUDevice,
+  bindGroupLayoutDesc: GPUBindGroupLayoutDescriptor,
+  buildDescriptor: (layout: GPUPipelineLayout) => GPURenderPipelineDescriptor,
+): { bindGroupLayout: GPUBindGroupLayout; pipeline: GPURenderPipeline } {
+  const bgl = getBindGroupLayout(device, bindGroupLayoutDesc);
+  const pipelineLayout = getPipelineLayout(device, { bindGroupLayouts: [bgl] });
+  const pipeline = getRenderPipeline(device, buildDescriptor(pipelineLayout));
+  return { bindGroupLayout: bgl, pipeline };
 }
 
 // Samplers are stateless — two callers asking for the same filter/wrap

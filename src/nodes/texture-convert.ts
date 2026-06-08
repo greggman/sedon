@@ -9,8 +9,15 @@ import {
   reusableBindGroup,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
 import blitShader from '../editor/blit.wgsl';
+
+const TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 
 // Convert a Texture2D's format. The two formats we support are:
 //   • rgba8unorm — 8-bit per channel, values clamped to [0, 1]. The
@@ -127,16 +134,20 @@ cheap enough not to bother optimising.
     });
 
     const module = getShaderModule(device, blitShader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      TEX_SAMP_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [src.texture, sampler],
       () => [
         { binding: 0, resource: src.texture },

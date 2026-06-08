@@ -7,7 +7,13 @@ import {
   reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
+
+const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ],
+};
 import shader from './leaf-skeleton.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -249,31 +255,42 @@ For sample chains see the leaf subgraphs in the editor demos —
     );
 
     const module = getShaderModule(device, shader);
-    const shapePipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module, entryPoint: 'vs_main' },
-      fragment: { module, entryPoint: 'fs_shape', targets: [{ format: TEXTURE_FORMAT }] },
-    });
-    const veinsPipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module, entryPoint: 'vs_main' },
-      fragment: { module, entryPoint: 'fs_veins', targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline: shapePipeline } = getPipelineWithLayout(
+      device,
+      UNIFORM_FRAG_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module, entryPoint: 'vs_main' },
+        fragment: { module, entryPoint: 'fs_shape', targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
+    const { pipeline: veinsPipeline } = getPipelineWithLayout(
+      device,
+      UNIFORM_FRAG_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module, entryPoint: 'vs_main' },
+        fragment: { module, entryPoint: 'fs_veins', targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
-    // Each pipeline has its own bind group layout (auto-derived from
-    // its entry point), but the bindings are identical — same uniform
-    // buffer on @binding(0) — so we build one bind group per pipeline.
+    // Both pipelines share the same explicit bind-group layout, so
+    // a single bind group is bindable on either — but we still keep
+    // two cache slots (shape + veins) because reusableBindGroup
+    // wraps the layout-identity check around the buffer refs and
+    // only one slot would prematurely invalidate when both pass
+    // identical refs.
     const shapeBindGroup = reusableBindGroup(
       device,
       prev?.__shapeBindGroup,
-      shapePipeline.getBindGroupLayout(0),
+      bgl,
       [uniformBuffer],
       () => [{ binding: 0, resource: uniformBuffer }],
     );
     const veinsBindGroup = reusableBindGroup(
       device,
       prev?.__veinsBindGroup,
-      veinsPipeline.getBindGroupLayout(0),
+      bgl,
       [uniformBuffer],
       () => [{ binding: 0, resource: uniformBuffer }],
     );

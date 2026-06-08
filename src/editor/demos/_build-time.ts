@@ -17,6 +17,7 @@ import type { CameraState } from '../store.js';
 import { createBasicScene } from '../initial-graph.js';
 import { createBevelTestDemo } from './bevel-test.js';
 import { createCityDemo } from './city.js';
+import { createCityFurniturePreviewDemo } from './city-furniture-preview.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
 import { createForEachPointDemo } from './for-each-point.js';
 import { createForestDemo } from './forest.js';
@@ -41,6 +42,7 @@ export const BUILD_TIME_DEMOS: BuildableDemo[] = [
   { id: 'forest', build: createForestDemo },
   { id: 'furniture', build: createFurnitureDemo },
   { id: 'city', build: createCityDemo },
+  { id: 'city-furniture-preview', build: createCityFurniturePreviewDemo },
   { id: 'leaf', build: createLeafDemo },
   { id: 'tree-bush', build: createTreeBushDemo },
   { id: 'grass-test', build: createGrassTestDemo },

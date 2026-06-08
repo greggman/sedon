@@ -8,59 +8,88 @@ import {
   reusableTexture,
 } from '../core/resources.js';
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
-import shader from './solid-color.wgsl';
+import checkerShader from './checker.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
+// Single uniform at binding 0, fragment-only. Explicit so the
+// pipeline layout is a stable identity — `layout: 'auto'` would
+// hand out a new layout per pipeline that's only compatible with
+// bind groups created from that exact pipeline's
+// getBindGroupLayout call, defeating any cross-evaluation reuse.
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
 };
 
-export const solidColorNode: NodeDef = {
-  id: 'core/solid-color',
+// Two-tone checkerboard. Same GPU plumbing as core/grid (full-
+// screen triangle + one tiny uniform buffer); the fragment shader
+// just toggles between the two colours based on cell parity instead
+// of drawing line strokes. Useful for crosswalk stripes, tiled
+// floors, and any "alternating two-colour" cell pattern that a
+// `core/grid` with line_width=0.5 would approximate but not nail.
+export const checkerNode: NodeDef = {
+  id: 'core/checker',
   category: 'Texture/Generators',
   inputs: [
     {
-      name: 'color',
+      name: 'fg',
       type: 'Color',
       default: [1, 1, 1, 1],
-      description: 'the colour every pixel will be set to (RGBA, alpha included)',
+      description: 'colour of the cells where (col + row) is even',
+    },
+    {
+      name: 'bg',
+      type: 'Color',
+      default: [0, 0, 0, 1],
+      description: 'colour of the cells where (col + row) is odd',
+    },
+    {
+      name: 'divisions',
+      type: 'Vec2i',
+      default: [8, 8],
+      description: 'number of cells along X and Y. [8, 8] = 8×8 board; can be asymmetric ([16, 1] gives alternating vertical stripes)',
     },
     {
       name: 'resolution',
       type: 'Int',
       default: 512,
       min: 1,
-      description: 'output texture width and height in pixels. Keep small (32) when only the colour matters; bump up only if a downstream filter actually needs more pixels',
+      description: 'output texture width and height in pixels',
     },
   ],
   outputs: [
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'a texture where every pixel equals `color`',
+      description: 'a checkerboard texture: fg and bg alternating per cell',
     },
   ],
   doc: {
-    summary: 'A flat colour as a Texture2D.',
+    summary: 'A 2D checkerboard texture — two cell colours, divisions, resolution.',
     description: `
-Renders one solid colour into every pixel of an N×N texture. Useful as the
-\`a\` or \`b\` input to a [core/blend](../../core/blend) /
-[core/blend-mask](../../core/blend-mask) when you want to test "what does
-this look like tinted purple", as a stand-in albedo while you build out the
-rest of a material, or anywhere a downstream consumer wants a texture but
-you only want to feed it a colour.
+Renders a configurable checkerboard into an N×N texture. The two colours
+alternate per cell; \`divisions\` picks how many cells span the texture.
+
+The natural fit for crosswalk stripes (set \`divisions: [8, 1]\` with
+white-on-asphalt), tile floors, and any other two-tone alternating
+pattern. For grid LINES (rather than alternating cells), use \`core/grid\`
+instead — it draws strokes between cells.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/solid-color', {
-        id: 'solid',
+      addNode(g, 'core/checker', {
+        id: 'checker',
         position: { x: 0, y: 0 },
-        inputValues: { color: [0.36, 0.58, 0.85, 1], resolution: 256 },
+        inputValues: {
+          fg: [0.95, 0.95, 0.97, 1],
+          bg: [0.10, 0.10, 0.12, 1],
+          divisions: [8, 8],
+          resolution: 256,
+        },
       });
-      return { graph: g, rootNodeId: 'solid' };
+      return { graph: g, rootNodeId: 'checker' };
     },
   },
   evaluate(ctx, inputs): {
@@ -69,7 +98,9 @@ you only want to feed it a colour.
     __bindGroup?: ReusableBindGroup;
   } {
     const device = requireDevice(ctx);
-    const color = inputs.color as [number, number, number, number];
+    const fg = inputs.fg as [number, number, number, number];
+    const bg = inputs.bg as [number, number, number, number];
+    const divisions = inputs.divisions as [number, number];
     const resolution = inputs.resolution as number;
 
     const prev = ctx.previousOutput as {
@@ -87,17 +118,23 @@ you only want to feed it a colour.
         GPUTextureUsage.COPY_SRC,
     });
 
-    const uniformData = new Float32Array(4);
-    uniformData.set(color, 0);
+    // 16-byte-aligned uniform: vec4 fg, vec4 bg, vec2 divisions, 2×f32 pad.
+    const uniformData = new Float32Array(12);
+    uniformData.set(fg, 0);
+    uniformData.set(bg, 4);
+    uniformData[8] = divisions[0];
+    uniformData[9] = divisions[1];
+    uniformData[10] = 0;
+    uniformData[11] = 0;
 
     const uniformBuffer = reusableBuffer(
       device,
-      prev?.__uniformBuffer as GPUBuffer | undefined,
+      prev?.__uniformBuffer,
       uniformData as BufferSource,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     );
 
-    const module = getShaderModule(device, shader);
+    const module = getShaderModule(device, checkerShader);
     const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
       device,
       UNIFORM_FRAG_BGL,

@@ -7,7 +7,16 @@ import {
   reusableBuffer,
   reusableTexture,
 } from '../core/resources.js';
-import { getRenderPipeline, getSampler, getShaderModule } from '../render/gpu-cache.js';
+import { ShaderStage, getPipelineWithLayout, getSampler, getShaderModule } from '../render/gpu-cache.js';
+
+const UNIFORM_2TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
+  entries: [
+    { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+  ],
+};
 import shader from './warp.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -133,16 +142,20 @@ modulating intensity over time, or to roughen the edges of a hand-built
     });
 
     const module = getShaderModule(device, shader);
-    const pipeline = getRenderPipeline(device, {
-      layout: 'auto',
-      vertex: { module },
-      fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
-    });
+    const { bindGroupLayout: bgl, pipeline } = getPipelineWithLayout(
+      device,
+      UNIFORM_2TEX_SAMP_BGL,
+      (layout) => ({
+        layout,
+        vertex: { module },
+        fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
+      }),
+    );
 
     const bindGroup = reusableBindGroup(
       device,
       prev?.__bindGroup,
-      pipeline.getBindGroupLayout(0),
+      bgl,
       [uniformBuffer, src.texture, warp.texture, sampler],
       () => [
         { binding: 0, resource: uniformBuffer },
