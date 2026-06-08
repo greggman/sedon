@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useCommands, type PaletteCommand } from './commands.js';
+import type { Action } from './action.js';
+import { useActions } from './actions.js';
 
 // VSCode-style command palette. Cmd/Ctrl+Shift+P opens it; typing
 // substring-filters the list; Up/Down/Enter selects; Escape closes;
@@ -15,7 +16,9 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const commands = useCommands();
+  // Same registry the menu bar consumes — adding an action in
+  // ./actions.ts makes it palette-searchable without a touch here.
+  const actions = useActions();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -26,15 +29,15 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   // present), the way a VSCode-ish palette does it. A plain substring
   // search would force the user to know our exact label format
   // ("Add:" vs "Add").
-  const filtered = useMemo<PaletteCommand[]>(() => {
+  const filtered = useMemo<Action[]>(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return commands;
+    if (!q) return actions;
     const tokens = q.split(/\s+/).filter(Boolean);
-    return commands.filter((c) => {
-      const label = c.label.toLowerCase();
+    return actions.filter((a) => {
+      const label = a.label.toLowerCase();
       return tokens.every((t) => label.includes(t));
     });
-  }, [commands, query]);
+  }, [actions, query]);
 
   // Reset state + focus the input every time the palette opens. Without
   // resetting, reopening retains the previous query — not what users
@@ -56,9 +59,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   if (!open) return null;
 
-  const run = (cmd: PaletteCommand) => {
+  const run = (action: Action) => {
+    if (action.enabled === false) return;
     onClose();
-    void cmd.run();
+    void action.run();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -79,8 +83,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      const cmd = filtered[activeIndex];
-      if (cmd) run(cmd);
+      const action = filtered[activeIndex];
+      if (action) run(action);
     }
   };
 
@@ -105,25 +109,29 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           {filtered.length === 0 ? (
             <div className="sedon-palette-empty">No matching commands</div>
           ) : (
-            filtered.map((cmd, i) => (
-              <button
-                type="button"
-                key={cmd.id}
-                className={`sedon-palette-item${i === activeIndex ? ' sedon-palette-item--active' : ''}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                // mousedown rather than click — by click time the input
-                // has blurred and we'd race the input's blur handlers.
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  run(cmd);
-                }}
-              >
-                <span className="sedon-palette-label">{cmd.label}</span>
-                {cmd.shortcut && (
-                  <span className="sedon-palette-shortcut">{cmd.shortcut}</span>
-                )}
-              </button>
-            ))
+            filtered.map((action, i) => {
+              const disabled = action.enabled === false;
+              return (
+                <button
+                  type="button"
+                  key={action.id}
+                  disabled={disabled}
+                  className={`sedon-palette-item${i === activeIndex ? ' sedon-palette-item--active' : ''}${disabled ? ' sedon-palette-item--disabled' : ''}`}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  // mousedown rather than click — by click time the input
+                  // has blurred and we'd race the input's blur handlers.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    run(action);
+                  }}
+                >
+                  <span className="sedon-palette-label">{action.label}</span>
+                  {action.shortcut && (
+                    <span className="sedon-palette-shortcut">{action.shortcut}</span>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>

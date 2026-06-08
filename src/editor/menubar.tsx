@@ -2,21 +2,30 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import type { Action } from './action.js';
 
 // Generic app-style menu bar primitive.
 //
-// Data model is a flat tree:
+// Public data model is a flat tree where leaves are ACTION REFERENCES
+// (not inline handlers). The MenuBar takes an `actions` map and
+// resolves each `{ kind: 'action', actionId }` leaf into its label /
+// shortcut / enabled / run by id. Anyone tempted to inline a `run`
+// handler must instead register an Action in ./actions.ts and
+// reference it here — that's the structural invariant that keeps the
+// menu bar and the command palette in sync.
+//
 //   MenuBar [TopMenu]
 //     TopMenu { label, items: MenuEntry[] }
 //       MenuEntry =
-//         | { kind: 'item',      label, shortcut?, disabled?, run() }
+//         | { kind: 'action',    actionId, label? }
 //         | { kind: 'separator' }
-//         | { kind: 'submenu',   label, disabled?, items: MenuEntry[] }
+//         | { kind: 'submenu',   label, enabled?, items: MenuEntry[] }
 //
 // Behavior:
 //   • Click a top-level label → opens its menu. While any top-level menu
@@ -31,14 +40,17 @@ import {
 //     menu system.
 //   • Click outside or press Esc closes everything.
 
-export type MenuEntry = MenuLeaf | MenuSeparator | MenuSubmenu;
+export type MenuEntry = MenuActionRef | MenuSeparator | MenuSubmenu;
 
-export interface MenuLeaf {
-  kind: 'item';
-  label: string;
-  shortcut?: string;
-  disabled?: boolean;
-  run: () => void;
+export interface MenuActionRef {
+  kind: 'action';
+  /** Foreign key into the actions map passed to MenuBar. */
+  actionId: string;
+  /** Override the displayed text for this menu position. Defaults to
+   *  the resolved action's label. Use when the action's category
+   *  prefix is already implicit ("Undo" inside the Edit menu instead
+   *  of the palette's "Edit: Undo"). */
+  label?: string;
 }
 
 export interface MenuSeparator {
@@ -48,7 +60,7 @@ export interface MenuSeparator {
 export interface MenuSubmenu {
   kind: 'submenu';
   label: string;
-  disabled?: boolean;
+  enabled?: boolean;
   items: MenuEntry[];
 }
 
@@ -57,11 +69,84 @@ export interface TopMenu {
   items: MenuEntry[];
 }
 
-interface MenuBarProps {
-  menus: TopMenu[];
+// Internal post-resolution shape. The Menu / MenuRow components below
+// were written against this shape pre-refactor; instead of touching
+// them, MenuBar resolves action refs once at the top and the inner
+// components keep operating on materialized leaves.
+type ResolvedEntry = ResolvedLeaf | MenuSeparator | ResolvedSubmenu;
+
+interface ResolvedLeaf {
+  kind: 'item';
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  run: () => void | Promise<void>;
 }
 
-export function MenuBar({ menus }: MenuBarProps) {
+interface ResolvedSubmenu {
+  kind: 'submenu';
+  label: string;
+  disabled?: boolean;
+  items: ResolvedEntry[];
+}
+
+interface ResolvedTopMenu {
+  label: string;
+  items: ResolvedEntry[];
+}
+
+function resolveEntries(
+  items: MenuEntry[],
+  actions: ReadonlyMap<string, Action>,
+): ResolvedEntry[] {
+  return items.map((e): ResolvedEntry => {
+    if (e.kind === 'separator') return e;
+    if (e.kind === 'submenu') {
+      return {
+        kind: 'submenu',
+        label: e.label,
+        ...(e.enabled === false ? { disabled: true } : {}),
+        items: resolveEntries(e.items, actions),
+      };
+    }
+    // kind === 'action'
+    const action = actions.get(e.actionId);
+    if (!action) {
+      // Dev-only signal: the menu tree references an actionId that
+      // isn't in the registry. Render it greyed out with the broken
+      // id so the regression is visible at a glance instead of
+      // silently disappearing.
+      return {
+        kind: 'item',
+        label: `<missing action: ${e.actionId}>`,
+        disabled: true,
+        run: () => {},
+      };
+    }
+    const leaf: ResolvedLeaf = {
+      kind: 'item',
+      label: e.label ?? action.label,
+      run: action.run,
+    };
+    if (action.shortcut !== undefined) leaf.shortcut = action.shortcut;
+    if (action.enabled === false) leaf.disabled = true;
+    return leaf;
+  });
+}
+
+interface MenuBarProps {
+  menus: TopMenu[];
+  actions: ReadonlyMap<string, Action>;
+}
+
+export function MenuBar({ menus, actions }: MenuBarProps) {
+  // Resolve action refs once per render. The expensive O(n) walk is
+  // the cost of decoupling menu trees from inline handlers — fine,
+  // n is well under 200 entries even with the Add: <kind> expansion.
+  const resolvedMenus = useMemo<ResolvedTopMenu[]>(
+    () => menus.map((m) => ({ label: m.label, items: resolveEntries(m.items, actions) })),
+    [menus, actions],
+  );
   // `openIndex === null` → no menu is open and the bar is in "idle"
   // (click-to-open) mode. Once any menu opens, the bar is "hot" and a
   // hover over another top-level label switches to it without needing a
@@ -111,7 +196,7 @@ export function MenuBar({ menus }: MenuBarProps) {
 
   return (
     <div className="sedon-menubar" ref={barRef}>
-      {menus.map((menu, i) => {
+      {resolvedMenus.map((menu, i) => {
         const isOpen = openIndex === i;
         return (
           <div key={menu.label} className="sedon-menubar-item-wrap">
@@ -154,12 +239,12 @@ export function MenuBar({ menus }: MenuBarProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Menu (popup): renders a list of MenuEntry, handles its own active
-// item + open submenu state.
+// Menu (popup): renders a list of resolved entries, handles its own
+// active item + open submenu state.
 // ─────────────────────────────────────────────────────────────────────
 
 interface MenuProps {
-  items: MenuEntry[];
+  items: ResolvedEntry[];
   /** 'below' for top-level menus (drops down from the bar);
    *  'right' for submenus (flies out from the parent item). */
   anchor: 'below' | 'right';
@@ -250,7 +335,7 @@ function Menu({ items, anchor, parentRect, onCommit }: MenuProps) {
 
   // Hover-open logic with safe-triangle override.
   const onRowEnter = useCallback(
-    (index: number, entry: MenuEntry, rowRect: DOMRect, e: React.MouseEvent) => {
+    (index: number, entry: ResolvedEntry, rowRect: DOMRect, e: React.MouseEvent) => {
       // If the cursor is heading toward the currently-open submenu, do
       // nothing — the existing submenu stays open until the user either
       // arrives at it or comes to rest outside the triangle.
@@ -300,9 +385,9 @@ function Menu({ items, anchor, parentRect, onCommit }: MenuProps) {
 
   // When the user clicks a leaf, propagate "everything closes" upward.
   const runLeaf = useCallback(
-    (entry: MenuLeaf) => {
+    (entry: ResolvedLeaf) => {
       if (entry.disabled) return;
-      entry.run();
+      void entry.run();
       onCommit();
     },
     [onCommit],
@@ -367,7 +452,7 @@ function Menu({ items, anchor, parentRect, onCommit }: MenuProps) {
 // ─────────────────────────────────────────────────────────────────────
 
 interface MenuRowProps {
-  entry: MenuLeaf | MenuSubmenu;
+  entry: ResolvedLeaf | ResolvedSubmenu;
   highlighted: boolean;
   onEnter: (rect: DOMRect, e: React.MouseEvent) => void;
   onLeave: () => void;

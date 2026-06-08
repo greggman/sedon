@@ -7,6 +7,7 @@ import {
   type ReactContextMenuItemConfig,
 } from 'dockview';
 import { useCallback, useEffect, useState } from 'react';
+import { useActionMap } from './actions.js';
 import { useAppMenus } from './app-menus.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { copySelection, pasteFromClipboard } from './clipboard-ops.js';
@@ -39,6 +40,11 @@ import { getCanvasRf } from './rf-registry.js';
 // external links).
 export function App() {
   const menus = useAppMenus();
+  // Resolved action map for the MenuBar — same registry the
+  // CommandPalette reads. Keeping them on one source means a new
+  // entry in actions.ts is searchable in the palette automatically
+  // and click-runnable from any menu tree that references it.
+  const actionMap = useActionMap();
   // Initial DockView layout: a canvas panel on the left, a preview
   // panel split to its right. `onReady` fires once when DockView's
   // internal model is initialised. We seed the model imperatively here
@@ -305,7 +311,7 @@ export function App() {
   return (
     <div className="sedon-app">
       <div className="sedon-top-toolbar">
-        <MenuBar menus={menus} />
+        <MenuBar menus={menus} actions={actionMap} />
         <div className="sedon-top-toolbar-spacer" />
         <GraphSwitcher />
         <GithubLink />

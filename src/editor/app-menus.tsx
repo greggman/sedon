@@ -1,247 +1,177 @@
 import { useMemo } from 'react';
+import type { NodeRegistry } from '../core/node-def.js';
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
-import { docsIndexUrl } from '../docs/doc-paths.js';
-import {
-  addNodeAtCanvasCenter,
-  cleanupActiveGraph,
-  closeActivePanel,
-  createPanel,
-  frameSelectedInActiveCanvas,
-  loadDemoById,
-  promptAndCreateSubgraph,
-  splitActivePanel,
-} from './commands.js';
+import { useActionMap } from './actions.js';
 import { DEMOS } from './demos/index.js';
-import {
-  copySelection,
-  mergeFromFile,
-  pasteFromClipboard,
-  saveSelectionToFile,
-} from './clipboard-ops.js';
-import { loadProject, newScene, saveProject, saveProjectToUrl } from './file-ops.js';
-import { startRecording, stopRecording, loadRecordingFromFile, recordingActive } from './recording.js';
+import type { Action } from './action.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
-import { useEditorStore } from './store.js';
 
-// Build the application menu tree. Lives in a hook because two of the
-// menus (Add and Edit) want live store / registry data:
-//   • Add → mirrors the right-click "Add Node" categorization, which
-//     comes from the runtime registry (subgraph wrappers appear here).
-//   • Edit → Undo/Redo are disabled when the corresponding stack is
-//     empty, so we read undoStackLen / redoStackLen.
-//
-// File and View are static once the demos list is fixed.
-export function useAppMenus(): TopMenu[] {
-  const registry = useRegistry();
-  const undoLen = useEditorStore((s) => s.undoStack.length);
-  const redoLen = useEditorStore((s) => s.redoStack.length);
+// Build the application menu tree. Leaves are ACTION REFERENCES — no
+// inline `run` handlers. Every callable here is registered once in
+// ./actions.ts, which both this menu and the command palette consume.
+// That's the structural invariant that keeps the two surfaces in
+// sync: adding an entry in actions.ts makes it palette-searchable for
+// free, and referencing it from a menu tree below makes it
+// menu-clickable. The MenuEntry type no longer permits inline
+// handlers, so the drift bug ("New Subgraph…" in the menu but not the
+// palette) is impossible by construction.
 
-  return useMemo<TopMenu[]>(() => {
-    // ── File ─────────────────────────────────────────────
-    const demoEntries: MenuEntry[] = DEMOS.map((d) => ({
-      kind: 'item',
-      label: d.label,
-      run: () => { void loadDemoById(d.id); },
-    }));
-    const fileMenu: TopMenu = {
-      label: 'File',
-      items: [
-        { kind: 'item', label: 'New Scene', run: () => newScene() },
-        { kind: 'separator' },
-        { kind: 'item', label: 'Save…', shortcut: '⌘S', run: () => saveProject() },
-        { kind: 'item', label: 'Load…', shortcut: '⌘O', run: () => loadProject() },
-        { kind: 'item', label: 'Save to URL', run: () => { void saveProjectToUrl(); } },
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: 'Save Selected…',
-          run: () => {
-            if (!saveSelectionToFile()) {
-              // eslint-disable-next-line no-alert
-              alert('Nothing selected. Click nodes in the canvas first.');
-            }
-          },
-        },
-        {
-          kind: 'item',
-          label: 'Merge…',
-          run: () => { void mergeFromFile(); },
-        },
-        { kind: 'separator' },
-        { kind: 'submenu', label: 'Demos', items: demoEntries },
-      ],
-    };
-
-    // ── Edit ─────────────────────────────────────────────
-    const editMenu: TopMenu = {
-      label: 'Edit',
-      items: [
-        {
-          kind: 'item',
-          label: 'Undo',
-          shortcut: '⌘Z',
-          disabled: undoLen === 0,
-          run: () => useEditorStore.getState().undo(),
-        },
-        {
-          kind: 'item',
-          label: 'Redo',
-          shortcut: '⇧⌘Z',
-          disabled: redoLen === 0,
-          run: () => useEditorStore.getState().redo(),
-        },
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: 'Copy',
-          shortcut: '⌘C',
-          run: () => { void copySelection(); },
-        },
-        {
-          kind: 'item',
-          label: 'Paste',
-          shortcut: '⌘V',
-          // Default reuse-deps semantics: another reference to the
-          // thing you copied, sharing dependencies with the target.
-          run: () => { void pasteFromClipboard(); },
-        },
-        {
-          kind: 'item',
-          label: 'Paste and Copy Deps',
-          // rename-all mode — every transitive subgraph dep is
-          // duplicated with a fresh id, so the pasted graph is fully
-          // independent of the target's existing defs. Useful when
-          // you intend to edit the deps without affecting the
-          // original.
-          run: () => { void pasteFromClipboard({ mode: 'rename-all' }); },
-        },
-      ],
-    };
-
-    // ── Add ──────────────────────────────────────────────
-    // Group registered NodeDefs by category. Two kinds are excluded:
-    //   • subgraph-internal (subgraph-input/*, subgraph-output/*) —
-    //     only meaningful inside a subgraph, not a top-level "add".
-    //   • subgraph wrapper instances (subgraph/<id>) — the Asset panel
-    //     is the canonical place for those, with folders, drag-to-
-    //     canvas, and thumbnails. Listing them here too creates a
-    //     second discovery surface that fills up with every wrapper.
-    // Each leaf inserts a node into the active canvas via the same
-    // path the right-click Add-Node menu uses.
-    const grouped = new Map<string, { id: string; label: string }[]>();
-    for (const def of registry.list()) {
-      if (isSubgraphInternalKind(def.id)) continue;
-      if (isSubgraphInstanceKind(def.id)) continue;
-      const list = grouped.get(def.category) ?? [];
-      list.push({ id: def.id, label: def.id });
-      grouped.set(def.category, list);
-    }
-    const categorySubmenus: MenuEntry[] = [...grouped.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([category, defs]): MenuEntry => ({
-        kind: 'submenu',
-        label: category,
-        items: defs
-          .sort((a, b) => a.label.localeCompare(b.label))
-          .map((d): MenuEntry => ({
-            kind: 'item',
-            label: d.label,
-            run: () => addNodeAtCanvasCenter(d.id),
-          })),
-      }));
-    const addMenu: TopMenu = {
-      label: 'Add',
-      items: [
-        ...categorySubmenus,
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: 'New Subgraph…',
-          run: () => promptAndCreateSubgraph(),
-        },
-      ],
-    };
-
-    // ── View ─────────────────────────────────────────────
-    const viewMenu: TopMenu = {
-      label: 'View',
-      items: [
-        { kind: 'item', label: 'Frame Selected', shortcut: 'F', run: () => frameSelectedInActiveCanvas() },
-        { kind: 'item', label: 'Cleanup (Auto-layout)', run: () => cleanupActiveGraph() },
-        { kind: 'separator' },
-        { kind: 'item', label: 'Split Right', run: () => splitActivePanel('right') },
-        { kind: 'item', label: 'Split Down', run: () => splitActivePanel('below') },
-        { kind: 'separator' },
-        { kind: 'item', label: 'New Canvas View', run: () => createPanel('node-canvas', 'Canvas') },
-        { kind: 'item', label: 'New Preview View', run: () => createPanel('preview', 'Preview') },
-        { kind: 'item', label: 'New Assets View', run: () => createPanel('assets', 'Assets') },
-        { kind: 'separator' },
-        { kind: 'item', label: 'Close Active Panel', run: () => closeActivePanel() },
-      ],
-    };
-
-    // ── Macro ────────────────────────────────────────────
-    // NOT a user-facing feature — exists so bug reports can ship a
-    // `.sedon-rec` file (a strict replay of every store-action call
-    // since Record was clicked) instead of writing out manual repro
-    // steps. The recording captures the starting project snapshot up
-    // front, so replay reconstructs exactly the state the recording
-    // was made against. See src/editor/recording.ts.
-    //
-    // Gated behind `?allow-macros=1` so the menu doesn't appear in
-    // normal sessions — recording is purely a developer / bug-repro
-    // tool right now. The wrapping mechanism in recording.ts (and
-    // `?log-commands=1`) stays available regardless of the menu gate.
-    const recording = recordingActive();
-    const macroMenu: TopMenu = {
-      label: 'Macro',
-      items: [
-        {
-          kind: 'item',
-          label: 'Record',
-          disabled: recording,
-          run: () => startRecording(),
-        },
-        {
-          kind: 'item',
-          label: 'Stop Recording',
-          disabled: !recording,
-          run: () => stopRecording(),
-        },
-        { kind: 'separator' },
-        {
-          kind: 'item',
-          label: 'Load…',
-          disabled: recording,
-          run: () => loadRecordingFromFile(),
-        },
-      ],
-    };
-    const macrosAllowed =
-      typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('allow-macros') === '1';
-
-    // ── Help ─────────────────────────────────────────────
-    const helpMenu: TopMenu = {
-      label: 'Help',
-      items: [
-        {
-          kind: 'item',
-          label: 'Node Documentation',
-          run: () => { window.open(docsIndexUrl(), '_blank', 'noreferrer'); },
-        },
-      ],
-    };
-
-    return [
-      fileMenu,
-      editMenu,
-      addMenu,
-      viewMenu,
-      ...(macrosAllowed ? [macroMenu] : []),
-      helpMenu,
-    ];
-  }, [registry, undoLen, redoLen]);
+// Sugar: a leaf that references action `actionId`, optionally
+// overriding the displayed label. Plain action refs (no label
+// override) use the action's `label` field — usually a category-
+// prefixed string like "Edit: Undo". Menu trees override when the
+// category is implicit in the menu's parent.
+function actionItem(actionId: string, label?: string): MenuEntry {
+  return label !== undefined
+    ? { kind: 'action', actionId, label }
+    : { kind: 'action', actionId };
 }
 
+const SEPARATOR: MenuEntry = { kind: 'separator' };
+
+// Live-state inputs to buildAppMenus. Held off React-context so
+// tests can build the menu tree without a renderer.
+export interface AppMenusInput {
+  /** The resolved action set, used to gate the Macro submenu so it
+   *  only appears when the gate (?allow-macros=1) actually registered
+   *  the macro.* actions. The menu builder doesn't otherwise consume
+   *  action contents — leaves carry ids only, resolved at render. */
+  actionMap: ReadonlyMap<string, Action>;
+  /** Drives the Add menu's category grouping. */
+  registry: NodeRegistry;
+}
+
+export function buildAppMenus(input: AppMenusInput): TopMenu[] {
+  const { actionMap, registry } = input;
+
+  // ── File ─────────────────────────────────────────────
+  const demoItems: MenuEntry[] = DEMOS.map((d) => actionItem(`demo.${d.id}`, d.label));
+  const fileMenu: TopMenu = {
+    label: 'File',
+    items: [
+      actionItem('file.new', 'New Scene'),
+      SEPARATOR,
+      actionItem('file.save', 'Save…'),
+      actionItem('file.load', 'Load…'),
+      actionItem('file.save-to-url', 'Save to URL'),
+      SEPARATOR,
+      actionItem('file.save-selected', 'Save Selected…'),
+      actionItem('file.merge', 'Merge…'),
+      SEPARATOR,
+      { kind: 'submenu', label: 'Demos', items: demoItems },
+    ],
+  };
+
+  // ── Edit ─────────────────────────────────────────────
+  const editMenu: TopMenu = {
+    label: 'Edit',
+    items: [
+      actionItem('edit.undo', 'Undo'),
+      actionItem('edit.redo', 'Redo'),
+      SEPARATOR,
+      actionItem('edit.copy', 'Copy'),
+      actionItem('edit.paste', 'Paste'),
+      actionItem('edit.paste-and-copy-deps', 'Paste and Copy Deps'),
+    ],
+  };
+
+  // ── Add ──────────────────────────────────────────────
+  // Group registered NodeDefs by category. Each leaf is an action
+  // ref to `add.<kind>` — those actions are auto-registered by
+  // buildActions() from the same registry, so the menu and the
+  // palette can't disagree on what's addable.
+  const grouped = new Map<string, { id: string; label: string }[]>();
+  for (const def of registry.list()) {
+    if (isSubgraphInternalKind(def.id)) continue;
+    if (isSubgraphInstanceKind(def.id)) continue;
+    const list = grouped.get(def.category) ?? [];
+    list.push({ id: def.id, label: def.id });
+    grouped.set(def.category, list);
+  }
+  const categorySubmenus: MenuEntry[] = [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([category, defs]): MenuEntry => ({
+      kind: 'submenu',
+      label: category,
+      items: defs
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .map((d): MenuEntry => actionItem(`add.${d.id}`, d.label)),
+    }));
+  const addMenu: TopMenu = {
+    label: 'Add',
+    items: [
+      ...categorySubmenus,
+      SEPARATOR,
+      actionItem('add.new-subgraph', 'New Subgraph…'),
+    ],
+  };
+
+  // ── View ─────────────────────────────────────────────
+  const viewMenu: TopMenu = {
+    label: 'View',
+    items: [
+      actionItem('view.frame-selected', 'Frame Selected'),
+      actionItem('view.cleanup', 'Cleanup (Auto-layout)'),
+      SEPARATOR,
+      actionItem('view.split-right', 'Split Right'),
+      actionItem('view.split-down', 'Split Down'),
+      SEPARATOR,
+      actionItem('view.new-canvas', 'New Canvas View'),
+      actionItem('view.new-preview', 'New Preview View'),
+      actionItem('view.new-assets', 'New Assets View'),
+      SEPARATOR,
+      actionItem('view.close', 'Close Active Panel'),
+    ],
+  };
+
+  // ── Macro (developer-only — gated to ?allow-macros=1) ─
+  // The actions themselves are only registered when the gate is on,
+  // so we test the registry for `macro.record` to decide whether to
+  // add the menu at all (avoids "<missing action>" rows).
+  const macroMenu: TopMenu = {
+    label: 'Macro',
+    items: [
+      actionItem('macro.record', 'Record'),
+      actionItem('macro.stop', 'Stop Recording'),
+      SEPARATOR,
+      actionItem('macro.load', 'Load…'),
+    ],
+  };
+  const macrosAllowed = actionMap.has('macro.record');
+
+  // ── Help ─────────────────────────────────────────────
+  const helpMenu: TopMenu = {
+    label: 'Help',
+    items: [
+      actionItem('help.docs', 'Node Documentation'),
+    ],
+  };
+
+  return [
+    fileMenu,
+    editMenu,
+    addMenu,
+    viewMenu,
+    ...(macrosAllowed ? [macroMenu] : []),
+    helpMenu,
+  ];
+}
+
+export function useAppMenus(): TopMenu[] {
+  // Subscribe to actionMap so the menu re-renders when the action
+  // set changes (e.g. recording flips macro.* enabled, or a new
+  // subgraph adds an Add: <kind> entry the Add submenu indexes).
+  const actionMap = useActionMap();
+  const registry = useRegistry();
+  return useMemo(
+    () => buildAppMenus({ actionMap, registry }),
+    [actionMap, registry],
+  );
+}
+
+// Re-export for app.tsx so the MenuBar can be wired with the same
+// resolved map the palette uses. Keeping the export here means
+// app.tsx only needs to know about one module for menus.
+export { useActionMap } from './actions.js';
+export type { Action };

@@ -1,194 +1,34 @@
-import { useMemo } from 'react';
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
-import { getActiveAssetPanel } from './asset-clipboard.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { loadDemoSaveFile } from './demos/demo-loader.js';
 import { getDockviewApi } from './dockview-handle.js';
-import { loadProject, newScene, saveProject, saveProjectToUrl } from './file-ops.js';
 import { useLayoutStore } from './layout-store.js';
-import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
-import type { NodeRegistry } from '../core/node-def.js';
-import { buildRegistry, useRegistry } from './registry.js';
+import { buildRegistry } from './registry.js';
 import { getActiveCanvasEl, getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
-// Catalog of "no-argument" actions invokable from the command palette.
-// Each entry is a callable + a human-readable label + an optional
-// keyboard shortcut hint (the palette only renders the hint — actual
-// global keybindings live in app.tsx).
+// Utility helpers shared by the action registry, the menu builder,
+// and the canvas / panel toolbars. Pure operations on the store +
+// DockView API — no UI shape. The old PaletteCommand catalog that
+// also lived here was deleted: actions are now defined in
+// ./actions.ts as the single source of truth that both the menu bar
+// and the command palette consume.
 //
-// The list is built per-render via a hook so it can close over the
-// active React Flow instance (Save/Load need rf.getNodes / setNodes).
-// Everything else reaches into the store or the DockView singleton
-// directly, so no React context is captured.
+// Convention: every function here is a noun-of-action with a clear
+// side effect (createPanel, cleanupActiveGraph, etc.) that an
+// `Action.run` can call directly. Anyone tempted to add a one-off
+// "PaletteCommand"-shaped value here should add an Action in
+// ./actions.ts instead.
 
-export interface PaletteCommand {
-  id: string;
-  label: string;
-  shortcut?: string;
-  /** False means "currently disabled" — the palette still shows it dimmed. */
-  enabled?: boolean;
-  run: () => void | Promise<void>;
-}
-
-export function useCommands(): PaletteCommand[] {
-  // The static catalog is fixed at build time; "Add: <kind>" entries
-  // are derived from the runtime registry, which changes whenever the
-  // user creates or renames a subgraph. Subscribing here keeps the
-  // palette in sync — open it after creating a subgraph and you'll see
-  // the wrapper as a searchable Add command without a reload.
-  const registry = useRegistry();
-  return useMemo(() => [...buildCommands(), ...buildAddNodeCommands(registry)], [registry]);
-}
-
-// Whether the last-active canvas's history cursor can move in the
-// given direction. Read once at command-list build time — the palette
-// computes `enabled` per render, so this reflects the user's current
-// state by the time the menu appears.
-function canvasHistoryCanGo(direction: 'back' | 'forward'): boolean {
-  const layout = useLayoutStore.getState();
-  const panelId = layout.lastActiveCanvasPanelId;
-  if (!panelId) return false;
-  const h = layout.canvasHistory[panelId];
-  if (!h) return false;
-  return direction === 'back'
-    ? h.cursor > 0
-    : h.cursor < h.entries.length - 1;
-}
-
-function buildCommands(): PaletteCommand[] {
-  return [
-    {
-      id: 'file.new',
-      label: 'File: New Scene',
-      run: () => newScene(),
-    },
-    {
-      id: 'file.save',
-      label: 'File: Save Project',
-      shortcut: 'Cmd/Ctrl+S',
-      run: () => saveProject(),
-    },
-    {
-      id: 'file.load',
-      label: 'File: Load Project…',
-      shortcut: 'Cmd/Ctrl+O',
-      run: () => loadProject(),
-    },
-    {
-      id: 'file.save-to-url',
-      label: 'File: Save to URL (copy shareable link)',
-      run: () => { void saveProjectToUrl(); },
-    },
-    {
-      id: 'edit.undo',
-      label: 'Edit: Undo',
-      shortcut: 'Cmd/Ctrl+Z',
-      run: () => useEditorStore.getState().undo(),
-    },
-    {
-      id: 'edit.redo',
-      label: 'Edit: Redo',
-      shortcut: 'Cmd/Ctrl+Shift+Z',
-      run: () => useEditorStore.getState().redo(),
-    },
-    {
-      id: 'view.canvas-back',
-      label: 'View: Back in Canvas History',
-      shortcut: 'Cmd/Ctrl+[',
-      enabled: canvasHistoryCanGo('back'),
-      run: () => {
-        const panelId = useLayoutStore.getState().lastActiveCanvasPanelId;
-        if (panelId) navigateCanvasBack(panelId);
-      },
-    },
-    {
-      id: 'view.canvas-forward',
-      label: 'View: Forward in Canvas History',
-      shortcut: 'Cmd/Ctrl+]',
-      enabled: canvasHistoryCanGo('forward'),
-      run: () => {
-        const panelId = useLayoutStore.getState().lastActiveCanvasPanelId;
-        if (panelId) navigateCanvasForward(panelId);
-      },
-    },
-    {
-      id: 'view.split-right',
-      label: 'View: Split Right',
-      run: () => splitActivePanel('right'),
-    },
-    {
-      id: 'view.split-down',
-      label: 'View: Split Down',
-      run: () => splitActivePanel('below'),
-    },
-    {
-      id: 'view.close',
-      label: 'View: Close Active Panel',
-      run: () => closeActivePanel(),
-    },
-    {
-      id: 'view.new-canvas',
-      label: 'View: Create Canvas View',
-      run: () => createPanel('node-canvas', 'Canvas'),
-    },
-    {
-      id: 'view.new-preview',
-      label: 'View: Create Preview View',
-      run: () => createPanel('preview', 'Preview'),
-    },
-    {
-      id: 'view.new-assets',
-      label: 'View: Create Asset View',
-      run: () => createPanel('assets', 'Assets'),
-    },
-    // Assets panel actions. These route through the most-recently-
-    // focused AssetsPanel via the asset-clipboard bus, so the user can
-    // run "Copy selected" from the palette without first re-focusing
-    // the panel. No-ops if no AssetsPanel is mounted.
-    {
-      id: 'assets.cut',
-      label: 'Assets: Cut Selected',
-      shortcut: 'Cmd/Ctrl+X',
-      run: () => getActiveAssetPanel()?.performCut(),
-    },
-    {
-      id: 'assets.copy',
-      label: 'Assets: Copy Selected',
-      shortcut: 'Cmd/Ctrl+C',
-      run: () => getActiveAssetPanel()?.performCopy(),
-    },
-    {
-      id: 'assets.paste',
-      label: 'Assets: Paste',
-      shortcut: 'Cmd/Ctrl+V',
-      run: () => getActiveAssetPanel()?.performPaste(),
-    },
-    {
-      id: 'assets.duplicate',
-      label: 'Assets: Duplicate Selected',
-      shortcut: 'Cmd/Ctrl+D',
-      run: () => getActiveAssetPanel()?.performDuplicate(),
-    },
-    {
-      id: 'assets.delete',
-      label: 'Assets: Delete Selected',
-      shortcut: 'Delete',
-      run: () => getActiveAssetPanel()?.performDelete(),
-    },
-    {
-      id: 'assets.select-all',
-      label: 'Assets: Select All',
-      shortcut: 'Cmd/Ctrl+A',
-      run: () => getActiveAssetPanel()?.performSelectAll(),
-    },
-  ];
-}
+// Re-exported so the asset-paste-clone (and other) implementations
+// reach the same helper isSubgraphInternalKind/isSubgraphInstanceKind
+// import some consumers used to thread through this file. They were
+// always re-exports of core/subgraph; callers should import directly.
 
 // Generate a panel id distinct from any existing panel. Used by every
-// view-creating command so reopening a panel after closing it doesn't
+// view-creating helper so reopening a panel after closing it doesn't
 // collide with a stale id elsewhere in the DockView model.
 function freshPanelId(component: string): string {
   return `${component}-${crypto.randomUUID().slice(0, 8)}`;
@@ -326,11 +166,11 @@ export function cleanupActiveGraph(): void {
   state.commitActivePositions(positions);
 }
 
-// Load a demo project by id. Mirrors the old DemosMenu inline handler.
-// Guards on confirmDiscardIfDirty so unsaved work isn't silently lost.
-// Async because demos now live as `dist/demos/<id>.sedon` files
-// produced at build time; we fetch + parse on demand instead of
-// shipping every demo graph in the runtime JS bundle.
+// Load a demo project by id. Guards on confirmDiscardIfDirty so
+// unsaved work isn't silently lost. Async because demos live as
+// `dist/demos/<id>.sedon` files produced at build time; we fetch +
+// parse on demand instead of shipping every demo graph in the
+// runtime JS bundle.
 export async function loadDemoById(id: string): Promise<void> {
   const demo = DEMOS.find((d) => d.id === id);
   if (!demo) return;
@@ -385,26 +225,11 @@ export function addNodeAtCanvasCenter(kind: string): void {
   useEditorStore.getState().addNode({ id, kind });
 }
 
-// Build a palette command per registered NodeDef. The `Add: ` prefix
-// makes them searchable as a group (typing "add " in the palette shows
-// just these). Two kinds are excluded:
-//   • Subgraph-internal (subgraph-input/*, subgraph-output/*) — they
-//     live INSIDE a subgraph and aren't user-addable.
-//   • Subgraph wrapper instances (subgraph/<id>) — wrappers have a
-//     first-class UX in the Asset panel (folders, drag-to-canvas,
-//     thumbnails, rename), and surfacing them here as well drowns the
-//     fixed library out as soon as a project grows a few subgraphs.
-function buildAddNodeCommands(registry: NodeRegistry): PaletteCommand[] {
-  const out: PaletteCommand[] = [];
-  for (const def of registry.list()) {
-    if (isSubgraphInternalKind(def.id)) continue;
-    if (isSubgraphInstanceKind(def.id)) continue;
-    out.push({
-      id: `add.${def.id}`,
-      label: `Add: ${def.id}`,
-      run: () => addNodeAtCanvasCenter(def.id),
-    });
-  }
-  out.sort((a, b) => a.label.localeCompare(b.label));
-  return out;
+// Filter helper used by both the Add menu's category grouping and
+// (indirectly, via actions.ts) the palette's Add: <kind> generator.
+// Exported for tests.
+export function isUserAddableKind(kindId: string): boolean {
+  if (isSubgraphInternalKind(kindId)) return false;
+  if (isSubgraphInstanceKind(kindId)) return false;
+  return true;
 }
