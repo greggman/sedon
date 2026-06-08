@@ -190,12 +190,28 @@ void (async () => {
     const { buildSedonTools } = await import('./editor/mcp/tools.js');
     const { registerSedonTools } = await import('./editor/mcp/webmcp.js');
     const { buildRegistry } = await import('./editor/registry.js');
+    const { buildActions } = await import('./editor/actions.js');
+    const { recordingActive } = await import('./editor/recording.js');
+    const macrosAllowed = new URLSearchParams(window.location.search).get('allow-macros') === '1';
     const tools = buildSedonTools({
       getState: () => useEditorStore.getState(),
       // Registry is per-render in the editor; the MCP surface
       // rebuilds it on every call so user-authored subgraphs added
       // mid-session are immediately visible to the agent.
       getRegistry: () => buildRegistry(useEditorStore.getState().subgraphs),
+      // Same per-call freshness for the action registry: undo/redo
+      // enabledness, recording state, and the Add: subgraph/<id>
+      // entries all track live store state.
+      getActions: () => {
+        const state = useEditorStore.getState();
+        return buildActions({
+          registry: buildRegistry(state.subgraphs),
+          undoLen: state.undoStack.length,
+          redoLen: state.redoStack.length,
+          recording: recordingActive(),
+          macrosAllowed,
+        });
+      },
     });
     const status = registerSedonTools(tools);
     // eslint-disable-next-line no-console

@@ -16,6 +16,7 @@
 
 import type { GraphNode, SocketRef } from '../../core/graph.js';
 import type { NodeRegistry } from '../../core/node-def.js';
+import type { Action } from '../action.js';
 import type { EditorState } from '../store.js';
 import { SEDON_OVERVIEW } from './overview.js';
 
@@ -36,10 +37,17 @@ export interface SedonTool {
 export interface SedonToolDeps {
   getState: () => EditorState;
   getRegistry: () => NodeRegistry;
+  /**
+   * Snapshot of the application's action registry — the same list
+   * that powers the menu bar and the command palette. Recomputed
+   * per call so an LLM that just created a subgraph sees the
+   * resulting Add: subgraph/<id> action on the next listActions.
+   */
+  getActions: () => Action[];
 }
 
 export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
-  const { getState, getRegistry } = deps;
+  const { getState, getRegistry, getActions } = deps;
 
   // ─── Read-only / introspection ────────────────────────────────
 
@@ -392,6 +400,64 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
     handler: () => ({ id: getState().currentEditingId }),
   };
 
+  // ─── Actions registry (menu bar + palette parity) ─────────────
+  //
+  // Every user-callable command in Sedon is registered in
+  // src/editor/actions.ts and consumed identically by the menu bar
+  // and the command palette. Surfacing that same registry here
+  // means a new menu item is automatically available to an LLM
+  // agent — no extra MCP wiring per command. Two tools:
+  //   • listActions — see what's available right now (and which
+  //     are currently disabled, e.g. Undo with an empty stack).
+  //   • runAction   — fire one by id.
+
+  const listActions: SedonTool = {
+    name: 'listActions',
+    description:
+      'List every registered application action — the same set the menu bar and command palette expose. Each entry includes id (use this with runAction), label (user-facing text from the palette, usually category-prefixed like "Edit: Undo"), optional shortcut hint, and an `enabled` flag (false means calling runAction will refuse). Refresh between mutations because some actions toggle enabled with live state (e.g. edit.undo follows the undo-stack length, and add.subgraph/<id> appears the moment you create a subgraph).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => {
+      const actions = getActions();
+      return {
+        actions: actions.map((a) => ({
+          id: a.id,
+          label: a.label,
+          shortcut: a.shortcut ?? '',
+          enabled: a.enabled !== false,
+        })),
+      };
+    },
+  };
+
+  const runAction: SedonTool = {
+    name: 'runAction',
+    description:
+      'Fire a registered action by its id (see listActions). Equivalent to clicking the matching menu item or picking the entry in the command palette — same undo behavior, same side effects. Returns { ok: true } when the action ran (synchronously or once its returned promise settled). Refuses with an error if the action is unknown or currently disabled. Some actions depend on UI focus (e.g. assets.copy needs the asset view focused, view.frame-selected needs a canvas active); those become no-ops when nothing is focused — not an error, just nothing visibly happens. Prefer narrower MCP tools (addNode / connect / setInputValue) when you need precise control; reach for runAction for menu-level operations like view.cleanup, file.new, edit.undo, or add.new-subgraph that have no direct MCP equivalent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Action id from listActions (e.g. "view.cleanup", "edit.undo", "add.new-subgraph").',
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    handler: async (args) => {
+      const id = String(args.id);
+      const action = getActions().find((a) => a.id === id);
+      if (!action) {
+        throw new Error(`runAction: no action with id "${id}". Call listActions for the current set.`);
+      }
+      if (action.enabled === false) {
+        throw new Error(`runAction: action "${id}" is currently disabled.`);
+      }
+      await action.run();
+      return { ok: true };
+    },
+  };
+
   return [
     // Orientation first so the LLM lands on it before mutating.
     getSedonOverview,
@@ -401,6 +467,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
     listGraphEdges,
     getNodeInputValue,
     getActiveEditing,
+    listActions,
     // Mutations.
     addNode,
     removeNodes,
@@ -411,6 +478,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
     createSubgraph,
     addSubgraphSocket,
     setActiveEditing,
+    runAction,
   ];
 }
 

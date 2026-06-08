@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { createGraph } from '../../src/core/graph.js';
 import { buildRegistry } from '../../src/editor/registry.js';
 import { useEditorStore } from '../../src/editor/store.js';
+import { buildActions } from '../../src/editor/actions.js';
 import { buildSedonTools, type SedonTool } from '../../src/editor/mcp/tools.js';
 
 function resetStore(): void {
@@ -29,6 +30,16 @@ function makeTools(): SedonTool[] {
   return buildSedonTools({
     getState: () => useEditorStore.getState(),
     getRegistry: () => buildRegistry(useEditorStore.getState().subgraphs),
+    getActions: () => {
+      const state = useEditorStore.getState();
+      return buildActions({
+        registry: buildRegistry(state.subgraphs),
+        undoLen: state.undoStack.length,
+        redoLen: state.redoStack.length,
+        recording: false,
+        macrosAllowed: false,
+      });
+    },
   });
 }
 
@@ -288,4 +299,90 @@ test('addNode + connect + setInputValue together produce 3 undo entries', () => 
   });
   const after = useEditorStore.getState().undoStack.length;
   assert.equal(after - before, 4, '2 addNode + 1 connect + 1 setInputValue (non-coalesced) = 4 entries');
+});
+
+// ─── Actions registry surfaced to MCP ───────────────────────────
+//
+// Every menu/palette command is reachable as an action; these two
+// tools expose that same registry to an LLM agent. Without them,
+// adding a new action (e.g. file.new, view.cleanup) is invisible
+// to MCP — same drift problem the menu and palette had pre-refactor.
+
+test('listActions: returns the registered actions with id/label/enabled', () => {
+  resetStore();
+  const tools = makeTools();
+  const result = tool(tools, 'listActions').handler({}) as {
+    actions: { id: string; label: string; shortcut: string; enabled: boolean }[];
+  };
+  assert.ok(result.actions.length > 0, 'no actions surfaced to MCP');
+  const ids = new Set(result.actions.map((a) => a.id));
+  // Spot-check the previously-drifted bug: add.new-subgraph must
+  // be visible to MCP just as it is to the menu and palette.
+  assert.ok(ids.has('add.new-subgraph'), 'add.new-subgraph missing from listActions');
+  assert.ok(ids.has('file.new'), 'file.new missing from listActions');
+  assert.ok(ids.has('view.cleanup'), 'view.cleanup missing from listActions');
+});
+
+test('listActions: enabled flag reflects live state', () => {
+  resetStore();
+  const tools = makeTools();
+  const first = (tool(tools, 'listActions').handler({}) as {
+    actions: { id: string; enabled: boolean }[];
+  }).actions;
+  const undoBefore = first.find((a) => a.id === 'edit.undo');
+  assert.equal(undoBefore?.enabled, false, 'edit.undo should be disabled with empty undo stack');
+
+  // Push something onto the undo stack — one addNode is enough.
+  tool(tools, 'addNode').handler({ kind: 'core/sphere' });
+  const after = (tool(tools, 'listActions').handler({}) as {
+    actions: { id: string; enabled: boolean }[];
+  }).actions;
+  const undoAfter = after.find((a) => a.id === 'edit.undo');
+  assert.equal(undoAfter?.enabled, true, 'edit.undo should be enabled after a mutation');
+});
+
+test('runAction: fires a real action through the command pipeline', async () => {
+  resetStore();
+  const tools = makeTools();
+  // addNode then runAction("edit.undo") should pop it off.
+  tool(tools, 'addNode').handler({ kind: 'core/sphere' });
+  const nodesBefore = useEditorStore.getState().graph.nodes.length;
+  assert.equal(nodesBefore, 1);
+  const result = await tool(tools, 'runAction').handler({ id: 'edit.undo' });
+  assert.deepEqual(result, { ok: true });
+  const nodesAfter = useEditorStore.getState().graph.nodes.length;
+  assert.equal(nodesAfter, 0, 'edit.undo via runAction did not unwind the addNode');
+});
+
+test('runAction: refuses unknown ids', async () => {
+  resetStore();
+  const tools = makeTools();
+  await assert.rejects(
+    () => Promise.resolve(tool(tools, 'runAction').handler({ id: 'bogus.action' })),
+    /no action with id "bogus.action"/,
+  );
+});
+
+test('runAction: refuses disabled actions', async () => {
+  resetStore();
+  const tools = makeTools();
+  // edit.undo with an empty stack is disabled.
+  await assert.rejects(
+    () => Promise.resolve(tool(tools, 'runAction').handler({ id: 'edit.undo' })),
+    /currently disabled/,
+  );
+});
+
+test('runAction: add.new-subgraph (the originally-missing one) is now LLM-callable', () => {
+  resetStore();
+  const tools = makeTools();
+  // The action exists. We can't actually FIRE it under node:test
+  // because it calls window.prompt, but verify it is enumerated
+  // and reachable via the runAction surface.
+  const actions = (tool(tools, 'listActions').handler({}) as {
+    actions: { id: string; enabled: boolean }[];
+  }).actions;
+  const newSubgraph = actions.find((a) => a.id === 'add.new-subgraph');
+  assert.ok(newSubgraph, 'add.new-subgraph not surfaced via listActions');
+  assert.equal(newSubgraph!.enabled, true);
 });
