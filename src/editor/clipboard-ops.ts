@@ -40,6 +40,47 @@ export async function copySelection(): Promise<boolean> {
 }
 
 /**
+ * Cut = copy then remove. Same selection semantics as copySelection.
+ * Returns `true` when something was cut.
+ */
+export async function cutSelection(): Promise<boolean> {
+  const rf = getActiveCanvasRf();
+  if (!rf) return false;
+  const selectedIds = new Set<string>();
+  for (const n of rf.getNodes()) {
+    if (n.selected) selectedIds.add(n.id);
+  }
+  if (selectedIds.size === 0) return false;
+  // Copy first so a clipboard-write failure doesn't leave the user
+  // with a deleted selection and nothing to paste.
+  const ok = await copySelection();
+  if (!ok) return false;
+  useEditorStore.getState().removeNodes(selectedIds);
+  return true;
+}
+
+/**
+ * Context-menu helper: if the right-clicked node isn't already part
+ * of the canvas selection, replace the selection with just it. This
+ * gives the "right-click on an unselected node and Cut/Copy operates
+ * on that node alone" UX that every native editor uses, without
+ * needing a separate single-node code path in cut/copy.
+ *
+ * No-op when the node is already selected (so cut/copy on a multi-
+ * selection right-clicked through one of its members still acts on
+ * the whole selection).
+ */
+export function ensureNodeInSelection(nodeId: string): void {
+  const rf = getActiveCanvasRf();
+  if (!rf) return;
+  const nodes = rf.getNodes();
+  const target = nodes.find((n) => n.id === nodeId);
+  if (!target) return;
+  if (target.selected) return;
+  rf.setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === nodeId })));
+}
+
+/**
  * Read the OS clipboard, parse a fragment, and import it into the
  * active canvas's current graph at the active canvas's viewport
  * centre (so pasted nodes land where the user is looking, not stacked

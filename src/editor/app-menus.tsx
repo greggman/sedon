@@ -101,9 +101,9 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const addMenu: TopMenu = {
     label: 'Add',
     items: [
-      ...categorySubmenus,
-      SEPARATOR,
       actionItem('add.new-subgraph', 'New Subgraph…'),
+      SEPARATOR,
+      ...categorySubmenus,
     ],
   };
 

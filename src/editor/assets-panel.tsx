@@ -17,6 +17,7 @@ import { AssetThumbnail } from './asset-thumbnail.js';
 import { buildAssetInstancesFragment, serializeFragment } from './fragment.js';
 import { useLayoutStore } from './layout-store.js';
 import { openGraphInCanvas, openGraphInPreview } from './open-graph.js';
+import { useRenameBus } from './rename-bus.js';
 import { useEditorStore } from './store.js';
 
 // Pixel size of the live subgraph preview shown in icon-view tiles.
@@ -219,20 +220,65 @@ export function AssetsPanel() {
     });
   }, [selectedFolderId, folders]);
 
-  // Close the context menu on any outside click / Escape.
+  // Close the context menu on any outside click / Escape. Uses the
+  // menubar's CAPTURE-phase + data-menu-popup-root ancestor check
+  // because ReactFlow's pane handlers (and other subtrees) stop
+  // propagation on mousedown — a bubble-phase listener would never
+  // see clicks landing inside the canvas, leaving the menu stuck
+  // open after clicking outside the asset panel.
   useEffect(() => {
     if (!contextMenu) return;
-    const onDown = () => setContextMenu(null);
+    const onDown = (e: MouseEvent) => {
+      let n: HTMLElement | null = e.target as HTMLElement | null;
+      while (n) {
+        if (n.dataset && n.dataset.menuPopupRoot === '1') return;
+        n = n.parentElement;
+      }
+      setContextMenu(null);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setContextMenu(null);
     };
-    window.addEventListener('mousedown', onDown);
+    window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey);
     };
   }, [contextMenu]);
+
+  // Rename-bus subscriber: when something outside the panel asks to
+  // rename a subgraph (e.g. createSubgraphAction firing after a new
+  // subgraph is dropped at the project root), navigate to that
+  // subgraph's parent folder, enter rename mode on the tile, and
+  // scroll it into view. Multiple AssetsPanels would all respond;
+  // only the most-recently-active asset panel should win, which is
+  // approximated by "all panels enter rename, last one to render
+  // wins the focus" — fine for the single-panel default layout.
+  const pendingSubgraphId = useRenameBus((s) => s.pendingSubgraphId);
+  useEffect(() => {
+    if (!pendingSubgraphId) return;
+    const sg = subgraphs.find((s) => s.id === pendingSubgraphId);
+    if (!sg) return;
+    // Navigate to its parent folder so the tile is in the visible
+    // pane. ROOT_FOLDER_ID covers undefined/null parents.
+    const parent = sg.parentFolderId ?? ROOT_FOLDER_ID;
+    setSelectedFolderId(parent);
+    setRenaming({ kind: 'subgraph', id: pendingSubgraphId });
+    // Schedule the scrollIntoView for after the navigation/render
+    // settles (the tile may not exist yet in the DOM if we just
+    // switched folders).
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(
+        `[data-asset-id="${CSS.escape(pendingSubgraphId)}"]`,
+      );
+      if (el && 'scrollIntoView' in el) {
+        (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+    useRenameBus.getState().consumeSubgraphRename(pendingSubgraphId);
+    return () => cancelAnimationFrame(raf);
+  }, [pendingSubgraphId, subgraphs]);
 
   // F2 → rename the current folder-tree selection. Ignored while typing
   // in an input/textarea so it doesn't fight with text editing
@@ -1355,6 +1401,7 @@ function SubgraphTile(p: SubgraphTileProps) {
     <div
       className={tileClass(p.viewMode, 'subgraph', p.selected, p.isCut)}
       data-asset-key={p.assetKey}
+      data-asset-id={p.sg.id}
       onClick={p.onClick}
       onDoubleClick={p.onOpen}
       draggable={!p.renaming}
@@ -1544,6 +1591,11 @@ function AssetContextMenu({
     <div
       className="sedon-assets-context-menu"
       style={{ left: x, top: y }}
+      // The CAPTURE-phase dismissal listener walks the click target's
+      // ancestor chain looking for this attribute; any element it
+      // finds keeps the menu alive instead of dismissing. Matches the
+      // menubar's popup-root convention.
+      data-menu-popup-root="1"
       // Eat the click so the global mousedown listener doesn't dismiss
       // the menu before the chosen item's onClick fires.
       onMouseDown={(e) => e.stopPropagation()}

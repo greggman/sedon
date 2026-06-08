@@ -15,9 +15,9 @@ import {
   cleanupActiveGraph,
   closeActivePanel,
   createPanel,
+  createSubgraphAction,
   frameSelectedInActiveCanvas,
   loadDemoById,
-  promptAndCreateSubgraph,
   splitActivePanel,
 } from './commands.js';
 import { DEMOS } from './demos/index.js';
@@ -176,7 +176,7 @@ export function buildActions(input: ActionsInput): Action[] {
     actions.push({
       id: 'add.new-subgraph',
       label: 'Add: New Subgraph…',
-      run: () => promptAndCreateSubgraph(),
+      run: () => createSubgraphAction(),
     });
     for (const def of registry.list()) {
       if (isSubgraphInternalKind(def.id)) continue;
@@ -184,7 +184,7 @@ export function buildActions(input: ActionsInput): Action[] {
       actions.push({
         id: `add.${def.id}`,
         label: `Add: ${def.id}`,
-        run: () => addNodeAtCanvasCenter(def.id),
+        run: () => { addNodeAtCanvasCenter(def.id); },
       });
     }
 

@@ -1,5 +1,9 @@
-import { Handle, Position, useConnection, type NodeProps } from '@xyflow/react';
-import { useMemo, useState } from 'react';
+import { Handle, Position, useConnection, useReactFlow, type NodeProps } from '@xyflow/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { requestPicker } from './add-node-picker-bus.js';
+import { CanvasContextMenu } from './canvas-context-menu.js';
+import { buildCanvasMenuItems } from './canvas-menu-items.js';
+import { useRenameBus } from './rename-bus.js';
 import type { InputDef, NodeDef, NodeOutputs, OutputDef } from '../core/node-def.js';
 import type {
   GeometryValue,
@@ -553,11 +557,13 @@ export const ADD_EXTRA_INPUT_HANDLE_ID = '__add_extra_input__';
 // Double-click swaps to a text input that commits on Enter/blur
 // (Escape reverts). An empty commit clears the name back to undefined.
 function EditableNodeName({
+  nodeId,
   name,
   defaultName,
   type,
   onCommit,
 }: {
+  nodeId: string;
   name: string | undefined;
   defaultName: string;
   type: string;
@@ -565,6 +571,34 @@ function EditableNodeName({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Rename-bus subscriber: when a Finder-style "create + rename now"
+  // gesture (or the right-click → Rename context menu) targets this
+  // node, drop straight into the editing input. The bus persists the
+  // request across renders, so a request fired before this node
+  // first mounted still fires the moment it does.
+  const pendingNodeId = useRenameBus((s) => s.pendingNodeId);
+  useEffect(() => {
+    if (pendingNodeId !== nodeId) return;
+    setDraft(name ?? '');
+    setEditing(true);
+    useRenameBus.getState().consumeNodeRename(nodeId);
+  }, [pendingNodeId, nodeId, name]);
+
+  // Focus + select-all whenever we enter edit mode. Pre-selecting
+  // matches Finder / VS Code rename UX: the user can type to
+  // replace, or arrow / cmd-A out of the selection to extend.
+  // Replaces `autoFocus`, which would focus but leave the caret at
+  // the end with nothing selected.
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [editing]);
+
   if (!editing) {
     // Two-line stack when named: bold name on top, dim type subtitle
     // below. Single dim italic line (the defaultName) when unnamed —
@@ -607,9 +641,9 @@ function EditableNodeName({
   };
   return (
     <input
+      ref={inputRef}
       type="text"
       className="nodrag nopan sedon-editable-name-input"
-      autoFocus
       value={draft}
       placeholder={defaultName}
       onChange={(e) => setDraft(e.target.value)}
@@ -789,6 +823,21 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // ALWAYS runs; cost is one boolean cell.
   const [forEachDragOver, setForEachDragOver] = useState(false);
 
+  // Per-node context menu (right-click on the node body or header).
+  // `null` = closed; otherwise screen + flow coordinates of the
+  // click. Flow coords are captured at click time (via the canvas's
+  // RF instance) so "Add Node…" and "Add Subgraph" know where to
+  // drop, and "Paste" knows where to anchor. Items are unified with
+  // the pane context menu via buildCanvasMenuItems — adding an item
+  // there lights both surfaces up.
+  const [nodeMenu, setNodeMenu] = useState<{
+    screenX: number;
+    screenY: number;
+    flowX: number;
+    flowY: number;
+  } | null>(null);
+  const rf = useReactFlow();
+
   if (!def) {
     return <div className={selected ? 'sedon-node sedon-node--unknown sedon-node--selected' : 'sedon-node sedon-node--unknown'}>unknown: {kind ?? '(no kind)'}</div>;
   }
@@ -931,6 +980,48 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const editableInputs = boundary?.side === 'output';
   const editableOutputs = boundary?.side === 'input';
 
+  // Items for the per-node context menu — derived from the shared
+  // buildCanvasMenuItems so the node menu and pane menu can't drift.
+  // The shared builder always includes Add Node / Add Subgraph /
+  // Cut / Copy / Paste; when given a `node` context it appends
+  // Rename + (Edit on wrappers) + (Edit iteration on for-each
+  // points). flowX/flowY come from the click and feed Add Node /
+  // Add Subgraph / Paste so things land where the user clicked.
+  const nodeMenuItems = useMemo(() => {
+    if (!nodeMenu) return [];
+    return buildCanvasMenuItems({
+      flowX: nodeMenu.flowX,
+      flowY: nodeMenu.flowY,
+      openAddNodePicker: () => {
+        if (!canvasPanelId) return;
+        requestPicker({
+          canvasPanelId,
+          screenX: nodeMenu.screenX,
+          screenY: nodeMenu.screenY,
+          flowX: nodeMenu.flowX,
+          flowY: nodeMenu.flowY,
+        });
+      },
+      node: {
+        id,
+        isSubgraphWrapper,
+        isForEachPoint,
+        ...(subgraphId !== null ? { subgraphId } : {}),
+        ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
+        ...(isSubgraphWrapper && subgraphId !== null
+          ? { onEdit: () => onEditSubgraph() }
+          : {}),
+        ...(isForEachPoint && forEachBridgeId !== ''
+          ? { onEditIteration: () => onEditIteration() }
+          : {}),
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    nodeMenu, id, canvasPanelId, isSubgraphWrapper, subgraphId,
+    isForEachPoint, forEachBridgeId,
+  ]);
+
   return (
     <div
       className={
@@ -940,6 +1031,25 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       onDragOver={onForEachDragOver}
       onDragLeave={onForEachDragLeave}
       onDrop={onForEachDrop}
+      // Right-click on the node body opens its context menu. We stop
+      // propagation so RF's pane handler (which would otherwise show
+      // the "Add Node" search popup on the bare canvas) doesn't also
+      // fire. preventDefault suppresses the browser's native menu.
+      // The node's root div is NOT marked as a menu-popup-root —
+      // clicking the node body (when the menu is open) should
+      // dismiss, matching how clicking outside the menubar's open
+      // submenu dismisses it.
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const flow = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        setNodeMenu({
+          screenX: e.clientX,
+          screenY: e.clientY,
+          flowX: flow.x,
+          flowY: flow.y,
+        });
+      }}
     >
       <div
         className="sedon-node-output-bar"
@@ -952,6 +1062,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       />
       <div className="sedon-node-header" style={{ height: HEADER_HEIGHT }}>
         <EditableNodeName
+          nodeId={id}
           name={headerName}
           defaultName={defaultName}
           type={typeLabel}
@@ -1355,6 +1466,14 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             {def.extraInputsSpec.addLabel ?? '+ Add input'}
           </button>
         </>
+      )}
+      {nodeMenu && (
+        <CanvasContextMenu
+          x={nodeMenu.screenX}
+          y={nodeMenu.screenY}
+          items={nodeMenuItems}
+          onClose={() => setNodeMenu(null)}
+        />
       )}
     </div>
   );

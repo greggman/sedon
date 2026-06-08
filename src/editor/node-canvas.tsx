@@ -26,7 +26,11 @@ import { useImageLoadGeneration } from '../nodes/image.js';
 import { canonicalJson } from '../core/eval-cache.js';
 import { findNode, findOutputOnNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
+import { AddNodePicker } from './add-node-picker.js';
+import { usePickerBus } from './add-node-picker-bus.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
+import { CanvasContextMenu } from './canvas-context-menu.js';
+import { buildCanvasMenuItems } from './canvas-menu-items.js';
 import { CanvasPanelContext } from './canvas-panel-context.js';
 import { clearCanvasData, setCanvasGraph, setCanvasOutputs } from './canvas-data.js';
 import {
@@ -814,6 +818,61 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const onBackClick = useCallback(() => navigateCanvasBack(panelId), [panelId]);
   const onForwardClick = useCallback(() => navigateCanvasForward(panelId), [panelId]);
 
+  // Right-click on the empty canvas → context menu at the cursor.
+  // "Add Node…" opens the searchable picker anchored at the same
+  // point, dropping the new node where the user right-clicked
+  // (not the canvas center). RF's onPaneContextMenu fires only when
+  // the click target is the pane itself — node right-clicks land
+  // on CustomNode's own onContextMenu, so this stays out of their
+  // way.
+  const [paneMenu, setPaneMenu] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
+  const [picker, setPicker] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault();
+      const flow = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setPaneMenu({
+        screenX: event.clientX,
+        screenY: event.clientY,
+        flowX: flow.x,
+        flowY: flow.y,
+      });
+    },
+    [rf],
+  );
+  const paneMenuItems = useMemo(() => {
+    if (!paneMenu) return [];
+    return buildCanvasMenuItems({
+      flowX: paneMenu.flowX,
+      flowY: paneMenu.flowY,
+      openAddNodePicker: () => {
+        setPicker({
+          screenX: paneMenu.screenX,
+          screenY: paneMenu.screenY,
+          flowX: paneMenu.flowX,
+          flowY: paneMenu.flowY,
+        });
+      },
+    });
+  }, [paneMenu]);
+
+  // Subscribe to the picker bus so the per-node context menu (which
+  // lives deep in the CustomNode tree, below this canvas) can ask US
+  // to open the picker. Keyed by panelId so only the canvas that
+  // owns the node receives the request.
+  const pickerPending = usePickerBus((s) => s.pending);
+  useEffect(() => {
+    if (!pickerPending || pickerPending.canvasPanelId !== panelId) return;
+    const req = usePickerBus.getState().consume(panelId);
+    if (!req) return;
+    setPicker({
+      screenX: req.screenX,
+      screenY: req.screenY,
+      flowX: req.flowX,
+      flowY: req.flowY,
+    });
+  }, [pickerPending, panelId]);
+
   return (
     <CanvasPanelContext.Provider value={canvasPanelInfo}>
       <div
@@ -835,6 +894,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           onMoveEnd={onMoveEnd}
           onNodeDragStop={onNodeDragStop}
           onSelectionDragStop={onSelectionDragStop}
+          onPaneContextMenu={onPaneContextMenu}
           proOptions={{ hideAttribution: true }}
           selectionMode={SelectionMode.Partial}
           minZoom={0.1}
@@ -874,6 +934,23 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
             </div>
           </Controls>
         </ReactFlow>
+        {paneMenu && (
+          <CanvasContextMenu
+            x={paneMenu.screenX}
+            y={paneMenu.screenY}
+            items={paneMenuItems}
+            onClose={() => setPaneMenu(null)}
+          />
+        )}
+        {picker && (
+          <AddNodePicker
+            anchorX={picker.screenX}
+            anchorY={picker.screenY}
+            flowX={picker.flowX}
+            flowY={picker.flowY}
+            onClose={() => setPicker(null)}
+          />
+        )}
       </div>
     </CanvasPanelContext.Provider>
   );

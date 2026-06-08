@@ -6,6 +6,7 @@ import { getDockviewApi } from './dockview-handle.js';
 import { useLayoutStore } from './layout-store.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
 import { buildRegistry } from './registry.js';
+import { requestNodeRename, requestSubgraphRename } from './rename-bus.js';
 import { getActiveCanvasEl, getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
 import { useEditorStore } from './store.js';
 
@@ -180,17 +181,94 @@ export async function loadDemoById(id: string): Promise<void> {
   useEditorStore.getState().setGraph(graph, rootNodeId, subgraphs ?? [], cameras);
 }
 
-// Slugify + create-and-edit, lifted from the old NewSubgraphButton.
-// Uses window.prompt for the label — same low-fi UX as before.
-export function promptAndCreateSubgraph(): void {
-  const label = window.prompt('New subgraph name:', 'Custom');
-  if (label === null) return;
-  const trimmed = label.trim();
-  if (trimmed.length === 0) return;
-  const existing = new Set(useEditorStore.getState().subgraphs.map((s) => s.id));
-  const id = slugifyForSubgraph(trimmed, existing);
-  useEditorStore.getState().createSubgraph(id, trimmed);
+// Default name for a fresh subgraph. Finder-style: the rename UI
+// pops up immediately on creation, so the placeholder only needs to
+// be reasonable for the half-second before the user starts typing.
+const NEW_SUBGRAPH_LABEL = 'untitled subgraph';
+
+// Create a new subgraph; behavior is context-sensitive based on
+// which DockView panel is focused:
+//
+//   • Canvas focused  → create the subgraph, hop back to the parent
+//                       graph the user was just editing, drop a
+//                       wrapper node referencing the new subgraph
+//                       into that canvas, frame the canvas on it,
+//                       and immediately enter rename mode on the
+//                       wrapper's header.
+//   • Asset focused / no focus → create the subgraph standalone.
+//                       The store hops into the new subgraph so the
+//                       user can start wiring its insides. The asset
+//                       panel auto-navigates to where the new tile
+//                       lives, scrolls it into view, and starts
+//                       inline rename.
+//
+// No prompt — the name defaults to "untitled subgraph" and the rename
+// UI handles the actual naming, the way Finder does for new folders.
+export function createSubgraphAction(): void {
+  const store = useEditorStore.getState();
+  const existing = new Set(store.subgraphs.map((s) => s.id));
+  const id = slugifyForSubgraph(NEW_SUBGRAPH_LABEL, existing);
+
+  const api = getDockviewApi();
+  const onCanvas = api?.activePanel?.view.contentComponent === 'node-canvas';
+
+  if (!onCanvas) {
+    store.createSubgraph(id, NEW_SUBGRAPH_LABEL);
+    // Ask the asset panel to enter rename mode on the new tile.
+    // Persists across renders until consumed, so an asset panel that
+    // hasn't mounted yet still picks it up the moment it does.
+    requestSubgraphRename(id);
+    return;
+  }
+
+  // Canvas context: wrapper at canvas center; frame on it; rename.
+  createSubgraphAt(undefined);
 }
+
+// Create-subgraph-and-place-wrapper-at-a-specific-flow-position
+// variant. `flowPos === undefined` falls back to the canvas center
+// (the menu's Add Subgraph item uses an explicit position from the
+// right-click; the menubar / palette use the center).
+export function createSubgraphAt(flowPos: { x: number; y: number } | undefined): void {
+  const store = useEditorStore.getState();
+  const existing = new Set(store.subgraphs.map((s) => s.id));
+  const id = slugifyForSubgraph(NEW_SUBGRAPH_LABEL, existing);
+
+  const parentGraphId = store.currentEditingId;
+  store.createSubgraph(id, NEW_SUBGRAPH_LABEL);
+  store.setActiveEditing(parentGraphId);
+
+  const newNodeId =
+    flowPos !== undefined
+      ? addNodeAtFlowPosition(`subgraph/${id}`, flowPos.x, flowPos.y)
+      : addNodeAtCanvasCenter(`subgraph/${id}`);
+
+  if (!newNodeId) return;
+
+  // Frame the canvas on the new wrapper so the user can see what
+  // they're about to rename. A short animation reads better than
+  // a jump cut even though the wrapper is the only thing changing
+  // on screen.
+  const rf = getActiveCanvasRf();
+  if (rf) {
+    // Defer so RF's internal layout pass picks up the just-added
+    // node's measured dimensions before fitView centers on it.
+    requestAnimationFrame(() => {
+      rf.fitView({
+        padding: 0.6,
+        nodes: [{ id: newNodeId }],
+        duration: 250,
+        maxZoom: 1.5,
+      });
+    });
+  }
+  requestNodeRename(newNodeId);
+}
+
+// Old name kept as an alias for any imports we missed (and a hint
+// to future readers about what changed). New code should call
+// createSubgraphAction directly.
+export const promptAndCreateSubgraph = createSubgraphAction;
 
 function slugifyForSubgraph(label: string, existing: ReadonlySet<string>): string {
   const base = label
@@ -204,25 +282,46 @@ function slugifyForSubgraph(label: string, existing: ReadonlySet<string>): strin
   }
 }
 
-// Insert a node of the given kind into the active canvas, positioned at
-// the visible center. Mirrors the right-click AddNodeMenu's placement —
-// the active canvas's RF instance maps the canvas-center screen point
-// to flow coordinates. No-op if no canvas is registered.
-export function addNodeAtCanvasCenter(kind: string): void {
+// Insert a node of the given kind at an explicit flow-coordinate
+// position on the active canvas. Returns the new node's id (or null
+// if no canvas is registered).
+export function addNodeAtFlowPosition(
+  kind: string,
+  flowX: number,
+  flowY: number,
+): string | null {
   const rf = getActiveCanvasRf();
-  if (!rf) return;
+  if (!rf) return null;
   const id = crypto.randomUUID();
-  let position = { x: 100, y: 100 };
+  const position = { x: flowX, y: flowY };
+  rf.addNodes({ id, type: 'sedon', position, data: { kind } });
+  // Pass position through to the store too; the RF instance has it
+  // locally, but the store's GraphNode is what gets serialised at
+  // save time, and without this the position wouldn't survive a
+  // reload until the user dragged the node at least once.
+  useEditorStore.getState().addNode({ id, kind, position });
+  return id;
+}
+
+// Insert a node positioned at the active canvas's visible center.
+// Used by the toolbar "+ Add Node" button and any action that lacks
+// an explicit position.
+export function addNodeAtCanvasCenter(kind: string): string | null {
+  const rf = getActiveCanvasRf();
+  if (!rf) return null;
+  let flowX = 100;
+  let flowY = 100;
   const el = getActiveCanvasEl();
   if (el) {
     const r = el.getBoundingClientRect();
-    position = rf.screenToFlowPosition({
+    const pos = rf.screenToFlowPosition({
       x: r.left + r.width / 2,
       y: r.top + r.height / 2,
     });
+    flowX = pos.x;
+    flowY = pos.y;
   }
-  rf.addNodes({ id, type: 'sedon', position, data: { kind } });
-  useEditorStore.getState().addNode({ id, kind });
+  return addNodeAtFlowPosition(kind, flowX, flowY);
 }
 
 // Filter helper used by both the Add menu's category grouping and
