@@ -6,7 +6,13 @@ const OUT = '/tmp/city';
 fs.mkdirSync(OUT, { recursive: true });
 
 const server = await startDevServer({ prod: false });
-const browser = await puppeteer.launch({ headless: 'new', defaultViewport: { width: 1400, height: 900 } });
+const browser = await puppeteer.launch({
+  headless: 'new',
+  defaultViewport: { width: 1400, height: 900 },
+  // City demo has ~1700 entities to scatter on first eval; default
+  // 30s protocol timeout occasionally trips on cold runs.
+  protocolTimeout: 120_000,
+});
 const page = await browser.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
@@ -154,6 +160,26 @@ try {
   });
   await new Promise((r) => setTimeout(r, 2500));
   await page.screenshot({ path: `${OUT}/top-down.png` });
+
+  // Close-up on one intersection so cars / lamps / signals all show.
+  // Intersection centres are at ((c-1.5)*118, 0, (r-1.5)*218); pick
+  // (c=2, r=2) → (59, 0, 109) so we're looking at a real intersection,
+  // not the empty centre of a block.
+  await page.evaluate(() => {
+    const s = window.__sedonStore__.getState();
+    s.saveCameraFor('main', { yaw: 0.7, pitch: 0.6, distance: 40, target: [59, 5, 109] });
+  });
+  await new Promise((r) => setTimeout(r, 2500));
+  await page.screenshot({ path: `${OUT}/intersection.png` });
+
+  // Looking down a long street so a whole lane's worth of cars
+  // shows. Long-street X = 59; aim along Z from a low pitch.
+  await page.evaluate(() => {
+    const s = window.__sedonStore__.getState();
+    s.saveCameraFor('main', { yaw: 0, pitch: 0.1, distance: 80, target: [59, 5, 0] });
+  });
+  await new Promise((r) => setTimeout(r, 2500));
+  await page.screenshot({ path: `${OUT}/cars.png` });
 
   const state = await page.evaluate(() => {
     const s = window.__sedonStore__.getState();

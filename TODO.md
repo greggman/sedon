@@ -2,24 +2,20 @@
 
 - [ ] need LODs so trees work?
 - [ ] move options to hash
-- [ ] extrude options
-  - [ ] by face normal (not until really needed)
-  - [*] scale
-- [ ] transform - should work on selection (probably no. Needs a real use-case)
-  needs half-edge connectivity (face-adjacency, vertex valence). Sedon
-  meshes are indexed triangle lists — to bevel edges we'd first need
-  a connectivity builder (positions + indices → edge list with
-  left/right faces). That's a separable, foundational change. Once
-  built, both edge-bevel and inset-faces fall out naturally.
+- [ ] scene-merge needs to work even if it's missing an input
 - [ ] flip-normals node
+- [ ] points needs to be able to zoom out further
+- [ ] points probably needs a points only mode - no lines
+- [ ] need a way to include scenes so they can be updated in separate files?
+- [*] actions should carry descriptions - vs menus having different descriptions?
+- [ ] Test rename with multiple asset views open. 
+  Also test Add New Subgraph which indirectly does a rename
+- [ ] dragging and dropping cushion from asset to canvas in furniture scene shows no node preview. Should it? It has defaults right? Did I forgot why this doesn't work or is it a bug?
+- [ ] deleting subgraph node from street bugs
+  - [ ] stops displaying preview
+  - [ ] undo does not restore
 - [ ] subdivision, loop-cut, smooth, edge-split
   same blocker as bevel — needs the connectivity layer.
-- [ ] need a "convert to subgraph" option
-  This is a shortcut. Instead copy and pasting nodes into a subgraph
-  and then wiring some existing graph to use it, you just select a portion
-  of an existing graph and say "convert to subgraph" and it builds a subgraph
-  with those nodes, and whatever inputs and outputs are needed to replace
-  them in the existing graph and wires it up.
 - [ ] add nodes for city
   What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
 - [*] import png, jpg, webp (use URL where # is local)
@@ -74,9 +70,7 @@ based on distance from the camera.
   - [ ] list, icon
   - [ ] drag into graph
 - [ ] double click frames?
-- [*] copy/copy/paste nodes
 - [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
-- [*] need to be able to set default on subgraph-input
 - [ ] future nodes
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
@@ -104,10 +98,6 @@ based on distance from the camera.
   should be link to docs. Generate docs for each node. Docs should have live
   sample. Sample could be specified in URL as in `url?json={..}` or `url?deflate=base64` or `url?src=url` 
 - [ ] allow drag and drop of scene file
-- [*] name scene .sedon
-- [ ] need "new scene"
-  - [ ] verify before deleting work
-  - [ ] offer various kinds of starting scenes
 - [ ] need a way to make a point cloud with more constraints
   - [ ] example: want random x,y,z but want x == z
 
@@ -138,6 +128,35 @@ based on distance from the camera.
 
 ## --- done ---
 
+- [*] remove `layout: 'auto'`
+- [*] copy/copy/paste nodes
+- [*] need to be able to set default on subgraph-input
+- [*] name scene .sedon
+- [*] need "new scene"
+  - [*] verify before deleting work
+  - [ ] offer various kinds of starting scenes
+- [*] asset context menu does not disappear if clicking on canvas
+- [*] new subgraph needs to add a subgraph wrapper if in canvas
+- [*] When I pick rename on a node in the canvas it should have the entire name text pre-selected
+- [*] need a "convert to subgraph" option
+  This is a shortcut. Instead copy and pasting nodes into a subgraph
+  and then wiring some existing graph to use it, you just select a portion
+  of an existing graph and say "convert to subgraph" and it builds a subgraph
+  with those nodes, and whatever inputs and outputs are needed to replace
+  them in the existing graph and wires it up.
+- [*] need a New Scene option
+- [*] fix issue that menu commands are not based on actions
+- [*] make sure WebMCP can issue actions
+- [*] fix issue that "new subgraph" is missing from command palette
+- [ ] extrude options
+  - [ ] by face normal (not until really needed)
+  - [*] scale
+- [ ] transform - should work on selection (probably no. Needs a real use-case)
+  needs half-edge connectivity (face-adjacency, vertex valence). Sedon
+  meshes are indexed triangle lists — to bevel edges we'd first need
+  a connectivity builder (positions + indices → edge list with
+  left/right faces). That's a separable, foundational change. Once
+  built, both edge-bevel and inset-faces fall out naturally.
 - [ ] add API for WebMCP
 - [ ] curve-2d: per-point handle-type UI
   data model already supports `[x, y, handleType]` (0 = smooth, 1 =
