@@ -472,7 +472,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
       e.preventDefault();
       const cam = cameraRef.current;
       const factor = Math.exp(e.deltaY * 0.001);
-      cam.distance = Math.max(0.5, Math.min(250, cam.distance * factor));
+      cam.distance = Math.max(0.5, Math.min(2500, cam.distance * factor));
       const id = effectiveGraphIdRef.current;
       commitCamera(id, cameraRef.current);
       requestRender();
