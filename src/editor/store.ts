@@ -24,6 +24,7 @@ import {
   type Command,
   type ProjectSnapshot,
 } from './command.js';
+import { extractSelectionAsSubgraph } from './extract-subgraph.js';
 import { createInitialGraph } from './initial-graph.js';
 import { useLayoutStore } from './layout-store.js';
 import { wrapActionsSlice } from './recording.js';
@@ -315,6 +316,22 @@ export interface EditorState {
    * dedupe — collisions would silently shadow an existing subgraph).
    */
   createSubgraph: (id: string, label: string) => void;
+
+  /**
+   * Encapsulate the given nodes from the current editing graph into
+   * a brand-new subgraph. The selected nodes move into the subgraph
+   * (with their internal edges + per-node `inputValues`); a fresh
+   * wrapper node replaces them in the parent graph, with each
+   * cross-boundary edge rewired through the wrapper's mirrored I/O
+   * sockets. Single undoable step — atomic via dispatchProject.
+   * Returns the new subgraph's id + the new wrapper's id (in the
+   * parent graph), or null when the selection was empty or
+   * contained only boundary nodes.
+   */
+  extractSelectionAsSubgraph: (
+    selectedIds: ReadonlySet<string>,
+    registry: import('../core/node-def.js').NodeRegistry,
+  ) => { subgraphId: string; wrapperId: string } | null;
 
   /**
    * Add an input or output socket to an existing subgraph. Both the
@@ -1286,6 +1303,67 @@ export const useEditorStore = create<EditorState>((set, get) => {
         rootNodeId: sg.outputNodeId,
         currentEditingId: id,
       });
+    },
+
+    extractSelectionAsSubgraph: (selectedIds, registry) => {
+      const state = get();
+      // Mint a unique subgraph id. Same slugify rule createSubgraph
+      // uses — collision-rename with "-2", "-3", … when "untitled-
+      // subgraph" is already taken. Inline-renamed by the rename
+      // bus immediately after dispatch, so the default label only
+      // shows for a frame.
+      const existing = new Set(state.subgraphs.map((s) => s.id));
+      let base = 'untitled-subgraph';
+      let sgId = base;
+      for (let i = 2; existing.has(sgId) || sgId === 'main'; i++) {
+        sgId = `${base}-${i}`;
+      }
+
+      const result = extractSelectionAsSubgraph(
+        state.graph,
+        selectedIds,
+        registry,
+        { newSubgraphId: sgId, newSubgraphLabel: 'untitled subgraph' },
+      );
+      if (!result) return null;
+      const { newSubgraph, newParentGraph, wrapperId } = result;
+
+      // The user might be editing main or any subgraph — the
+      // "parent graph" returned above is whichever graph
+      // currentEditingId points at. Splice it back into the right
+      // slot (mainGraph or one of subgraphs[].graph).
+      const editingId = state.currentEditingId;
+      const isMain = editingId === 'main';
+
+      // If the previous root pointed at a selected node, the
+      // wrapper inherits the root role — it produces the same
+      // observable output the selection used to.
+      const prevRoot = state.rootNodeId;
+      const rootWasRemoved =
+        selectedIds.has(prevRoot) ||
+        // boundary nodes filtered out by the extractor — those
+        // can't be roots anyway, but be conservative.
+        false;
+      const newRootForEditing = rootWasRemoved ? wrapperId : prevRoot;
+
+      const updatedSubgraphs: SubgraphDef[] = isMain
+        ? [...state.subgraphs, newSubgraph]
+        : state.subgraphs.map((sg) =>
+            sg.id === editingId ? { ...sg, graph: newParentGraph } : sg,
+          ).concat(newSubgraph);
+
+      dispatchProject({
+        subgraphs: updatedSubgraphs,
+        folders: state.folders,
+        mainGraph: isMain ? newParentGraph : state.mainGraph,
+        mainRootNodeId: isMain ? newRootForEditing : state.mainRootNodeId,
+        graph: newParentGraph,
+        rootNodeId: newRootForEditing,
+        currentEditingId: editingId,
+      });
+      // Caller (the menu handler) can use these to frame the canvas
+      // on the new wrapper and start the rename gesture on it.
+      return { subgraphId: sgId, wrapperId };
     },
 
     addSubgraphSocket: (subgraphId, side, socket) => {

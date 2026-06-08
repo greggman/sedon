@@ -16,6 +16,7 @@ import {
   closeActivePanel,
   createPanel,
   createSubgraphAction,
+  extractSelectionToSubgraph,
   frameSelectedInActiveCanvas,
   loadDemoById,
   splitActivePanel,
@@ -177,6 +178,11 @@ export function buildActions(input: ActionsInput): Action[] {
       id: 'add.new-subgraph',
       label: 'Add: New Subgraph…',
       run: () => createSubgraphAction(),
+    });
+    actions.push({
+      id: 'selection.extract-subgraph',
+      label: 'Selection: Extract to Subgraph',
+      run: () => { extractSelectionToSubgraph(); },
     });
     for (const def of registry.list()) {
       if (isSubgraphInternalKind(def.id)) continue;

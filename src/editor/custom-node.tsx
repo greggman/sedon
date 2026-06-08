@@ -987,46 +987,47 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // Rename + (Edit on wrappers) + (Edit iteration on for-each
   // points). flowX/flowY come from the click and feed Add Node /
   // Add Subgraph / Paste so things land where the user clicked.
-  const nodeMenuItems = useMemo(() => {
-    if (!nodeMenu) return [];
-    return buildCanvasMenuItems({
-      flowX: nodeMenu.flowX,
-      flowY: nodeMenu.flowY,
-      openAddNodePicker: () => {
-        if (!canvasPanelId) return;
-        requestPicker({
-          canvasPanelId,
-          screenX: nodeMenu.screenX,
-          screenY: nodeMenu.screenY,
-          flowX: nodeMenu.flowX,
-          flowY: nodeMenu.flowY,
-        });
-      },
-      node: {
-        id,
-        isSubgraphWrapper,
-        isForEachPoint,
-        ...(subgraphId !== null ? { subgraphId } : {}),
-        ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
-        ...(isSubgraphWrapper && subgraphId !== null
-          ? { onEdit: () => onEditSubgraph() }
-          : {}),
-        ...(isForEachPoint && forEachBridgeId !== ''
-          ? { onEditIteration: () => onEditIteration() }
-          : {}),
-        // Same URL the inline `?` header link uses. Only set when
-        // the node's def actually carries a doc block, so the menu
-        // suppresses "Open Docs" for nodes that have no page.
-        ...(def?.doc
-          ? { docsUrl: docsUrlFor(def.id, docsLocation) }
-          : {}),
-      },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    nodeMenu, id, canvasPanelId, isSubgraphWrapper, subgraphId,
-    isForEachPoint, forEachBridgeId, def?.doc, def?.id, docsLocation,
-  ]);
+  // Plain const, not useMemo — buildCanvasMenuItems is a cheap
+  // function call and putting a hook here would land BELOW the
+  // `if (!def)` early return above, violating React's
+  // hooks-must-run-in-the-same-order rule. The few-millis savings
+  // a useMemo would buy aren't worth a refactor of where the
+  // bail-out lives.
+  const nodeMenuItems = !nodeMenu
+    ? []
+    : buildCanvasMenuItems({
+        flowX: nodeMenu.flowX,
+        flowY: nodeMenu.flowY,
+        openAddNodePicker: () => {
+          if (!canvasPanelId) return;
+          requestPicker({
+            canvasPanelId,
+            screenX: nodeMenu.screenX,
+            screenY: nodeMenu.screenY,
+            flowX: nodeMenu.flowX,
+            flowY: nodeMenu.flowY,
+          });
+        },
+        node: {
+          id,
+          isSubgraphWrapper,
+          isForEachPoint,
+          ...(subgraphId !== null ? { subgraphId } : {}),
+          ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
+          ...(isSubgraphWrapper && subgraphId !== null
+            ? { onEdit: () => onEditSubgraph() }
+            : {}),
+          ...(isForEachPoint && forEachBridgeId !== ''
+            ? { onEditIteration: () => onEditIteration() }
+            : {}),
+          // Same URL the inline `?` header link uses. Only set when
+          // the node's def actually carries a doc block, so the menu
+          // suppresses "Open Docs" for nodes that have no page.
+          ...(def?.doc
+            ? { docsUrl: docsUrlFor(def.id, docsLocation) }
+            : {}),
+        },
+      });
 
   return (
     <div

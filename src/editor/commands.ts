@@ -332,3 +332,53 @@ export function isUserAddableKind(kindId: string): boolean {
   if (isSubgraphInstanceKind(kindId)) return false;
   return true;
 }
+
+// "Extract to Subgraph" / "Create subscene from selection." Takes
+// the current canvas selection (or an explicit override id set),
+// builds a new subgraph that encapsulates those nodes, and replaces
+// them in the parent graph with a wrapper. Single undoable step.
+//
+// On success: frames the active canvas on the new wrapper and asks
+// the rename bus to start the inline rename — Finder-style. On
+// empty / all-boundary selection, alerts the user instead of
+// silently no-opping (the menu doesn't gate visibility on selection
+// state, so a friendly nudge is better than a dead click).
+export function extractSelectionToSubgraph(
+  ids?: ReadonlySet<string>,
+): { subgraphId: string; wrapperId: string } | null {
+  const rf = getActiveCanvasRf();
+  let targetIds = ids;
+  if (!targetIds) {
+    if (!rf) return null;
+    const selected = new Set<string>();
+    for (const n of rf.getNodes()) {
+      if (n.selected) selected.add(n.id);
+    }
+    targetIds = selected;
+  }
+  if (targetIds.size === 0) {
+    // eslint-disable-next-line no-alert
+    alert('Select one or more nodes first, then run "Extract to Subgraph".');
+    return null;
+  }
+  const state = useEditorStore.getState();
+  const registry = buildRegistry(state.subgraphs);
+  const result = state.extractSelectionAsSubgraph(targetIds, registry);
+  if (!result) return null;
+  if (rf) {
+    requestAnimationFrame(() => {
+      rf.fitView({
+        padding: 0.6,
+        nodes: [{ id: result.wrapperId }],
+        duration: 250,
+        maxZoom: 1.5,
+      });
+    });
+  }
+  // Start inline rename on the new wrapper so the user can name the
+  // freshly-extracted subgraph immediately, just like New Subgraph.
+  void import('./rename-bus.js').then((m) => {
+    m.requestNodeRename(result.wrapperId);
+  });
+  return result;
+}

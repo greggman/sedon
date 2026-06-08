@@ -5,7 +5,7 @@ import {
   idsForRightClickedNode,
   pasteFromClipboard,
 } from './clipboard-ops.js';
-import { createSubgraphAt } from './commands.js';
+import { createSubgraphAt, extractSelectionToSubgraph } from './commands.js';
 import { requestNodeRename } from './rename-bus.js';
 
 // Single source of truth for "what does the canvas right-click menu
@@ -122,6 +122,16 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
     items.push({
       label: 'Rename',
       run: () => requestNodeRename(ctx.node!.id),
+    });
+    items.push({
+      label: 'Extract to Subgraph',
+      run: () => {
+        // Same selection semantics as Cut/Copy: if the right-clicked
+        // node isn't in the canvas selection, encapsulate just it;
+        // otherwise extract the whole selection.
+        const ids = idsForRightClickedNode(ctx.node!.id);
+        extractSelectionToSubgraph(ids);
+      },
     });
     if (ctx.node.isSubgraphWrapper && ctx.node.subgraphId && ctx.node.onEdit) {
       items.push({
