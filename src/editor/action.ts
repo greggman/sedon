@@ -18,10 +18,20 @@ export interface Action {
   id: string;
   /** User-facing text shown in the command palette. Conventionally
    *  carries a category prefix ("Edit: Undo", "File: Save Project")
-   *  so the user can type the category to filter. Menu trees can
-   *  override this display via MenuActionRef.label when the category
-   *  is already implicit in the menu's parent. */
+   *  so the user can type the category to filter. */
   label: string;
+  /** Optional shorter form shown when the action is referenced from
+   *  a menu tree. Useful when the palette label carries a category
+   *  prefix that's redundant in a menu (the menu IS the category) or
+   *  when the menu's wording differs from the palette's verbose form
+   *  ("Load…" in the File menu vs "Load Project…" in the palette).
+   *
+   *  When omitted, the menu uses `label` with its leading
+   *  "Category: " prefix stripped, so most actions don't need this.
+   *  Defining it here keeps menu rendering DRY — the menu tree
+   *  itself just references actions by id, never restating their
+   *  display strings. */
+  menuLabel?: string;
   /** Optional keyboard-hint string. Display-only — the actual global
    *  keymap lives in app.tsx. */
   shortcut?: string;
@@ -30,4 +40,14 @@ export interface Action {
    *  suppressed. */
   enabled?: boolean;
   run: () => void | Promise<void>;
+}
+
+// What a menu shows for this action. Derived once at render time so
+// the rule lives in one place: explicit menuLabel wins; otherwise
+// strip the leading "Category: " from label; otherwise show label.
+export function actionMenuLabel(action: Action): string {
+  if (action.menuLabel !== undefined) return action.menuLabel;
+  const idx = action.label.indexOf(': ');
+  if (idx < 0) return action.label;
+  return action.label.slice(idx + 2);
 }

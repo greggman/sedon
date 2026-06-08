@@ -17,15 +17,13 @@ import { useRegistry } from './registry.js';
 // handlers, so the drift bug ("New Subgraph…" in the menu but not the
 // palette) is impossible by construction.
 
-// Sugar: a leaf that references action `actionId`, optionally
-// overriding the displayed label. Plain action refs (no label
-// override) use the action's `label` field — usually a category-
-// prefixed string like "Edit: Undo". Menu trees override when the
-// category is implicit in the menu's parent.
-function actionItem(actionId: string, label?: string): MenuEntry {
-  return label !== undefined
-    ? { kind: 'action', actionId, label }
-    : { kind: 'action', actionId };
+// Sugar: a leaf that references action `actionId`. Display text /
+// shortcut / enabled state all come from the resolved action (see
+// `actionMenuLabel` in ./action.ts for the category-prefix-strip
+// rule). The menu tree never restates display text — actions are
+// the single source of truth.
+function actionItem(actionId: string): MenuEntry {
+  return { kind: 'action', actionId };
 }
 
 const SEPARATOR: MenuEntry = { kind: 'separator' };
@@ -46,18 +44,18 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const { actionMap, registry } = input;
 
   // ── File ─────────────────────────────────────────────
-  const demoItems: MenuEntry[] = DEMOS.map((d) => actionItem(`demo.${d.id}`, d.label));
+  const demoItems: MenuEntry[] = DEMOS.map((d) => actionItem(`demo.${d.id}`));
   const fileMenu: TopMenu = {
     label: 'File',
     items: [
-      actionItem('file.new', 'New Scene'),
+      actionItem('file.new'),
       SEPARATOR,
-      actionItem('file.save', 'Save…'),
-      actionItem('file.load', 'Load…'),
-      actionItem('file.save-to-url', 'Save to URL'),
+      actionItem('file.save'),
+      actionItem('file.load'),
+      actionItem('file.save-to-url'),
       SEPARATOR,
-      actionItem('file.save-selected', 'Save Selected…'),
-      actionItem('file.merge', 'Merge…'),
+      actionItem('file.save-selected'),
+      actionItem('file.merge'),
       SEPARATOR,
       { kind: 'submenu', label: 'Demos', items: demoItems },
     ],
@@ -67,14 +65,14 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const editMenu: TopMenu = {
     label: 'Edit',
     items: [
-      actionItem('edit.undo', 'Undo'),
-      actionItem('edit.redo', 'Redo'),
+      actionItem('edit.undo'),
+      actionItem('edit.redo'),
       SEPARATOR,
-      actionItem('edit.copy', 'Copy'),
-      actionItem('edit.paste', 'Paste'),
-      actionItem('edit.paste-and-copy-deps', 'Paste and Copy Deps'),
+      actionItem('edit.copy'),
+      actionItem('edit.paste'),
+      actionItem('edit.paste-and-copy-deps'),
       SEPARATOR,
-      actionItem('selection.extract-subgraph', 'Extract to Subgraph'),
+      actionItem('selection.extract-subgraph'),
     ],
   };
 
@@ -83,27 +81,27 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   // ref to `add.<kind>` — those actions are auto-registered by
   // buildActions() from the same registry, so the menu and the
   // palette can't disagree on what's addable.
-  const grouped = new Map<string, { id: string; label: string }[]>();
+  const grouped = new Map<string, string[]>();
   for (const def of registry.list()) {
     if (isSubgraphInternalKind(def.id)) continue;
     if (isSubgraphInstanceKind(def.id)) continue;
     const list = grouped.get(def.category) ?? [];
-    list.push({ id: def.id, label: def.id });
+    list.push(def.id);
     grouped.set(def.category, list);
   }
   const categorySubmenus: MenuEntry[] = [...grouped.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([category, defs]): MenuEntry => ({
+    .map(([category, kinds]): MenuEntry => ({
       kind: 'submenu',
       label: category,
-      items: defs
-        .sort((a, b) => a.label.localeCompare(b.label))
-        .map((d): MenuEntry => actionItem(`add.${d.id}`, d.label)),
+      items: kinds
+        .sort((a, b) => a.localeCompare(b))
+        .map((kind): MenuEntry => actionItem(`add.${kind}`)),
     }));
   const addMenu: TopMenu = {
     label: 'Add',
     items: [
-      actionItem('add.new-subgraph', 'New Subgraph…'),
+      actionItem('add.new-subgraph'),
       SEPARATOR,
       ...categorySubmenus,
     ],
@@ -113,17 +111,17 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const viewMenu: TopMenu = {
     label: 'View',
     items: [
-      actionItem('view.frame-selected', 'Frame Selected'),
-      actionItem('view.cleanup', 'Cleanup (Auto-layout)'),
+      actionItem('view.frame-selected'),
+      actionItem('view.cleanup'),
       SEPARATOR,
-      actionItem('view.split-right', 'Split Right'),
-      actionItem('view.split-down', 'Split Down'),
+      actionItem('view.split-right'),
+      actionItem('view.split-down'),
       SEPARATOR,
-      actionItem('view.new-canvas', 'New Canvas View'),
-      actionItem('view.new-preview', 'New Preview View'),
-      actionItem('view.new-assets', 'New Assets View'),
+      actionItem('view.new-canvas'),
+      actionItem('view.new-preview'),
+      actionItem('view.new-assets'),
       SEPARATOR,
-      actionItem('view.close', 'Close Active Panel'),
+      actionItem('view.close'),
     ],
   };
 
@@ -134,10 +132,10 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const macroMenu: TopMenu = {
     label: 'Macro',
     items: [
-      actionItem('macro.record', 'Record'),
-      actionItem('macro.stop', 'Stop Recording'),
+      actionItem('macro.record'),
+      actionItem('macro.stop'),
       SEPARATOR,
-      actionItem('macro.load', 'Load…'),
+      actionItem('macro.load'),
     ],
   };
   const macrosAllowed = actionMap.has('macro.record');
@@ -146,7 +144,7 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const helpMenu: TopMenu = {
     label: 'Help',
     items: [
-      actionItem('help.docs', 'Node Documentation'),
+      actionItem('help.docs'),
     ],
   };
 

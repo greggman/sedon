@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import type { Action } from './action.js';
+import { actionMenuLabel, type Action } from './action.js';
 
 // Generic app-style menu bar primitive.
 //
@@ -44,13 +44,14 @@ export type MenuEntry = MenuActionRef | MenuSeparator | MenuSubmenu;
 
 export interface MenuActionRef {
   kind: 'action';
-  /** Foreign key into the actions map passed to MenuBar. */
+  /** Foreign key into the actions map passed to MenuBar. The
+   *  displayed text, shortcut, and enabled state ALL come from the
+   *  resolved action — the menu tree never restates them.
+   *  Category-prefix stripping ("Edit: Undo" → "Undo" inside the
+   *  Edit menu) happens automatically via {@link actionMenuLabel};
+   *  set `Action.menuLabel` for cases where the menu form differs
+   *  more substantially from the palette form. */
   actionId: string;
-  /** Override the displayed text for this menu position. Defaults to
-   *  the resolved action's label. Use when the action's category
-   *  prefix is already implicit ("Undo" inside the Edit menu instead
-   *  of the palette's "Edit: Undo"). */
-  label?: string;
 }
 
 export interface MenuSeparator {
@@ -125,7 +126,7 @@ function resolveEntries(
     }
     const leaf: ResolvedLeaf = {
       kind: 'item',
-      label: e.label ?? action.label,
+      label: actionMenuLabel(action),
       run: action.run,
     };
     if (action.shortcut !== undefined) leaf.shortcut = action.shortcut;

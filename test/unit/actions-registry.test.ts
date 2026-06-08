@@ -15,6 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildActions } from '../../src/editor/actions.js';
+import { actionMenuLabel } from '../../src/editor/action.js';
 import { buildAppMenus } from '../../src/editor/app-menus.js';
 import { buildRegistry } from '../../src/editor/registry.js';
 import type { MenuEntry, TopMenu } from '../../src/editor/menubar.js';
@@ -137,11 +138,68 @@ test('action ids are unique', () => {
 
 // ─── The structural lock: MenuEntry doesn't permit inline `run` ──
 
-test('MenuEntry shape: leaves are action refs (no inline run permitted)', () => {
-  // This is a compile-time guarantee via the MenuEntry union, but
-  // we mirror it at runtime in case anyone bypasses TS. Walk every
-  // menu and assert no leaf has a `run` property — only `kind:
-  // action` references.
+// ─── Menu-label derivation ─────────────────────────────────────
+
+test('actionMenuLabel: strips "Category: " prefix from palette label', () => {
+  assert.equal(
+    actionMenuLabel({ id: 'x', label: 'Edit: Undo', run: () => {} }),
+    'Undo',
+  );
+  assert.equal(
+    actionMenuLabel({ id: 'x', label: 'File: Save Project', run: () => {} }),
+    'Save Project',
+  );
+});
+
+test('actionMenuLabel: passes through labels with no prefix', () => {
+  assert.equal(
+    actionMenuLabel({ id: 'x', label: 'No prefix here', run: () => {} }),
+    'No prefix here',
+  );
+});
+
+test('actionMenuLabel: explicit menuLabel beats auto-strip', () => {
+  assert.equal(
+    actionMenuLabel({
+      id: 'x',
+      label: 'File: Save Project',
+      menuLabel: 'Save…',
+      run: () => {},
+    }),
+    'Save…',
+  );
+});
+
+test('actions.ts: divergent file actions carry a menuLabel', () => {
+  // These actions show different text in the File menu than in the
+  // palette; the action def has to declare both so the menu tree
+  // stays oblivious.
+  const actions = makeActions();
+  const byId = new Map(actions.map((a) => [a.id, a]));
+  assert.equal(byId.get('file.save')?.menuLabel, 'Save…');
+  assert.equal(byId.get('file.load')?.menuLabel, 'Load…');
+  assert.equal(byId.get('file.save-to-url')?.menuLabel, 'Save to URL');
+});
+
+test('actions.ts: demo actions carry the bare demo label for menus', () => {
+  const actions = makeActions();
+  const demoActions = actions.filter((a) => a.id.startsWith('demo.'));
+  assert.ok(demoActions.length > 0);
+  for (const a of demoActions) {
+    assert.ok(a.menuLabel, `demo action ${a.id} missing menuLabel`);
+    // Palette form is the searchable phrase; menu form is just the
+    // demo's name (no "Load Demo — " or "File: " prefix).
+    assert.match(a.label, /^File: Load Demo —/);
+    assert.ok(!a.menuLabel.includes(':'));
+  }
+});
+
+test('MenuEntry shape: leaves are pure action refs (no inline run, no label override)', () => {
+  // Compile-time guarantee via the MenuEntry union; mirror it at
+  // runtime in case anyone bypasses TS. A leaf must be ONLY
+  // { kind: 'action', actionId } — no display strings at the menu
+  // tree level. The action itself owns label / menuLabel / shortcut
+  // / enabled; the menu just references by id.
   const actions = makeActions({ macrosAllowed: true });
   const menus = makeMenus(actions);
   const walk = (items: MenuEntry[]): void => {
@@ -152,10 +210,9 @@ test('MenuEntry shape: leaves are action refs (no inline run permitted)', () => 
         continue;
       }
       assert.equal(e.kind, 'action');
-      // Action refs may carry a label override; that's it.
       const keys = Object.keys(e).sort();
-      const allowed = keys.every((k) => k === 'kind' || k === 'actionId' || k === 'label');
-      assert.ok(allowed, `MenuEntry has unexpected keys: ${keys.join(',')}`);
+      const allowed = keys.every((k) => k === 'kind' || k === 'actionId');
+      assert.ok(allowed, `MenuEntry leaf has unexpected keys: ${keys.join(',')}`);
     }
   };
   for (const m of menus) walk(m.items);

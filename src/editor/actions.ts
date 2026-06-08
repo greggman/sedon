@@ -96,13 +96,18 @@ export function buildActions(input: ActionsInput): Action[] {
   const actions: Action[] = [];
 
     // ── File ─────────────────────────────────────────────
+    // menuLabel set where the menu form differs more than just
+    // "drop the category prefix" — the File menu prefers terser
+    // wording ("Save…" / "Load…") than the palette form, and the
+    // shareable-URL parenthetical reads as noise inside the menu.
     actions.push(
       { id: 'file.new', label: 'File: New Scene', run: () => newScene() },
-      { id: 'file.save', label: 'File: Save Project', shortcut: '⌘S', run: () => saveProject() },
-      { id: 'file.load', label: 'File: Load Project…', shortcut: '⌘O', run: () => loadProject() },
+      { id: 'file.save', label: 'File: Save Project', menuLabel: 'Save…', shortcut: '⌘S', run: () => saveProject() },
+      { id: 'file.load', label: 'File: Load Project…', menuLabel: 'Load…', shortcut: '⌘O', run: () => loadProject() },
       {
         id: 'file.save-to-url',
         label: 'File: Save to URL (copy shareable link)',
+        menuLabel: 'Save to URL',
         run: () => { void saveProjectToUrl(); },
       },
       {
@@ -125,7 +130,10 @@ export function buildActions(input: ActionsInput): Action[] {
     for (const d of DEMOS) {
       actions.push({
         id: `demo.${d.id}`,
+        // Palette form is the searchable phrase; menu form is just
+        // the demo's name (the Demos submenu is the category).
         label: `File: Load Demo — ${d.label}`,
+        menuLabel: d.label,
         run: () => { void loadDemoById(d.id); },
       });
     }
