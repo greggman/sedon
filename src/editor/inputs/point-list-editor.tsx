@@ -264,6 +264,20 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
     setViewZoom(1);
     setViewOffset({ x: 0, y: 0 });
   }, []);
+  // "Show segment lines" toggle. Lines are meaningful for path / spline
+  // authoring (terrain roads, lathe profiles) but read as random
+  // spaghetti for scatter point lists (city building / lamp / car
+  // positions, where the point ORDER is incidental). Default true to
+  // match historical behavior; the footer button flips it. In bezier
+  // mode (curve-2d) the toggle is ignored — the curve IS the output.
+  const [showLines, setShowLines] = useState(true);
+
+  // "Fit all" — frames every point in the current `value` with a small
+  // pixel-margin of breathing room. Solves "I opened a 500-point city
+  // scatter and see nothing" — the natural 40×40m canvas can't show
+  // points hundreds of metres apart without manual zoom.
+  // (Reads `value` and the mapping params; declared further down so
+  // pxToWorld/worldToPx are unaffected.)
 
   // Pixel ↔ world mapping. World origin at canvas centre; X grows right.
   // Vertical axis: terrain-path mode (default) has Z growing DOWN the
@@ -302,6 +316,46 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
     const rect = svg.getBoundingClientRect();
     return { x: clientX - rect.left, y: clientY - rect.top };
   }, []);
+
+  // Frame all points: pick (zoom, offset) so every point fits inside
+  // the canvas with a 10% margin. Empty list → reset to defaults.
+  // Inverse of worldToPx for a chosen (zoom, offset) — see the
+  // derivation in worldToPx above.
+  const fitView = useCallback(() => {
+    if (value.length === 0) {
+      setViewZoom(1);
+      setViewOffset({ x: 0, y: 0 });
+      return;
+    }
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of value) {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[2] < minZ) minZ = p[2];
+      if (p[2] > maxZ) maxZ = p[2];
+    }
+    const cx = (minX + maxX) / 2;
+    const cz = (minZ + maxZ) / 2;
+    // Span — use a small floor so a single point doesn't try to fit at
+    // infinite zoom. 1m floor matches the editor's typical click-add
+    // granularity.
+    const spanX = Math.max(1, maxX - minX);
+    const spanZ = Math.max(1, maxZ - minZ);
+    // worldSize[0]/spanX is the zoom that EXACTLY fits the X extent;
+    // dividing by 1.1 gives a 10% margin on each side. min() so the
+    // tighter axis decides.
+    const fit = Math.min(worldSize[0] / spanX, worldSize[1] / spanZ) / 1.1;
+    const newZoom = Math.min(20, Math.max(0.005, fit));
+    // Offset to put (cx, cz) at the canvas centre.
+    const ux = (cx / worldSize[0] + 0.5) * canvasW;
+    const vy = flipY ? -cz / worldSize[1] + 0.5 : cz / worldSize[1] + 0.5;
+    const uy = vy * canvasH;
+    setViewZoom(newZoom);
+    setViewOffset({
+      x: canvasW / 2 - ux * newZoom,
+      y: canvasH / 2 - uy * newZoom,
+    });
+  }, [value, worldSize, canvasW, canvasH, flipY]);
 
   // Displayed points: during a handle-drag, the selected points are
   // translated by the live delta; everything else is unchanged. Commit
@@ -524,7 +578,11 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       const cursorY = e.clientY - rect.top;
       const factor = (e.deltaY < 0 ? 1.01 : 1 / 1.01);
       setViewZoom((prevZoom) => {
-        const newZoom = Math.min(20, Math.max(0.1, prevZoom * factor));
+        // Lower bound at 0.005 so a 40×40m canvas can fit point lists
+        // hundreds of metres across (city scatters span ~1100m, so the
+        // worst case needs ≈30× zoom-out). Upper bound at 20× matches
+        // the wheel sensitivity for path-detail work.
+        const newZoom = Math.min(20, Math.max(0.005, prevZoom * factor));
         const ratio = newZoom / prevZoom;
         // Solve for the new offset such that the world coord currently
         // under the cursor still maps to the cursor position.
@@ -1092,8 +1150,12 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
           {/* Segment lines. Two passes: a thick invisible hit-target
               that catches clicks for insert-between, and a thin
               visible stroke that doesn't intercept (pointer-events
-              none) so handles take priority. */}
-          {handlePositions.map((h, i) => {
+              none) so handles take priority. Hidden when `showLines`
+              is off and we're not in bezier mode — scatter point
+              lists don't have meaningful segment ordering.
+              The bezier curve itself stays visible regardless of the
+              toggle because it IS the node's output. */}
+          {(showLines || bezierHandles) && handlePositions.map((h, i) => {
             const next = handlePositions[i + 1];
             if (!next) return null;
             return (
@@ -1105,7 +1167,7 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
               />
             );
           })}
-          {pathD && (
+          {pathD && (showLines || bezierHandles) && (
             <path d={pathD} className="sedon-pointlist-segments" />
           )}
           {/* Bezier tangent handles for selected anchors (curve-2d).
@@ -1191,6 +1253,26 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
         <span>{bezierHandles
           ? 'click=add · drag=marquee · ⇧+click=toggle · T=cycle handle · ⌘C/⌘V · Del=remove · wheel=zoom · space-drag=pan'
           : 'click=add · drag=marquee · ⇧+click=toggle · ⌘C/⌘V · Del=remove · wheel=zoom · space-drag=pan'}</span>
+        <button
+          type="button"
+          className="sedon-pointlist-reset-view"
+          onClick={fitView}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="Frame all points in the canvas"
+        >
+          fit
+        </button>
+        {!bezierHandles && (
+          <button
+            type="button"
+            className="sedon-pointlist-reset-view"
+            onClick={() => setShowLines((v) => !v)}
+            onPointerDown={(e) => e.stopPropagation()}
+            title="Toggle the segment polyline connecting consecutive points (off when the point order is incidental — scatter, not path)"
+          >
+            {showLines ? 'lines: on' : 'lines: off'}
+          </button>
+        )}
         {(viewZoom !== 1 || viewOffset.x !== 0 || viewOffset.y !== 0) && (
           <button
             type="button"
@@ -1199,7 +1281,7 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
             onPointerDown={(e) => e.stopPropagation()}
             title="Reset zoom + pan"
           >
-            reset view ({viewZoom.toFixed(2)}×)
+            reset ({viewZoom.toFixed(2)}×)
           </button>
         )}
       </div>
