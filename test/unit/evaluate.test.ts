@@ -112,3 +112,58 @@ test('a node with required-but-missing inputs is skipped, not fatal', async () =
   assert.ok(result.allOutputs.has(red.id));
   assert.ok(!result.allOutputs.has(orphan.id));
 });
+
+test('a broken upstream on an OPTIONAL input is treated as unwired (downstream still evaluates)', async () => {
+  // Regression: deleting the Fire Hydrant subgraph wrapper in the
+  // city demo used to blank the whole preview. The hydrant scatter
+  // lost its required `instance` input and stopped evaluating; the
+  // city's scene-merge had that scatter wired to `scene_N` (an
+  // OPTIONAL Scene), and the eval used to bail on the merge as soon
+  // as it saw an upstream with no output — without consulting
+  // `optional`. Fixed by treating a broken upstream the same as an
+  // unwired socket: the optional / default / required logic now
+  // applies uniformly. This test pins the working-branch case.
+  const nodes = createRegistryForTests();
+  const g = createGraph();
+  const good = addNode(g, 'test/scene-source', { inputValues: { tag: 1 } });
+  // distance-transform has a required Texture2D input with no default
+  // and no inputValue → can't evaluate.
+  const broken = addNode(g, 'core/distance-transform');
+  const merge = addNode(g, 'core/scene-merge', {
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+    ],
+  });
+  addEdge(g, { node: good.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  // Wire scene_1 to a node that won't evaluate. The fact that the
+  // socket TYPES don't match (broken outputs Texture2D, scene_1
+  // expects Scene) is incidental — eval propagates whatever upstream
+  // produced, and here upstream produces nothing.
+  addEdge(g, { node: broken.id, socket: 'texture' }, { node: merge.id, socket: 'scene_1' });
+
+  const result = await evaluateGraph(g, nodes, { rootNodeId: merge.id });
+  assert.ok(result.allOutputs.has(merge.id), 'scene-merge must still evaluate when one input is broken');
+  const scene = result.outputs.scene as { entities: { tag: number }[] };
+  assert.equal(scene.entities.length, 1, 'merged scene contains only the working branch');
+  assert.equal(scene.entities[0]!.tag, 1);
+});
+
+test('a broken upstream on a REQUIRED input still kills the consumer (when there is no default)', async () => {
+  // The flip side of the fix: "broken upstream = treated as unwired"
+  // means a required-with-no-default input STILL fails — same
+  // behavior as deleting the wire entirely. This pins that we
+  // didn't accidentally make required inputs forgiving.
+  const nodes = createRegistryForTests();
+  const g = createGraph();
+  const broken = addNode(g, 'core/distance-transform');
+  // core/mix has a required `factor` Float — but it has a default,
+  // so this scenario uses distance-transform itself (no default on
+  // `input`).
+  const consumer = addNode(g, 'core/distance-transform');
+  // Wire consumer.input to broken.texture. Both fail.
+  addEdge(g, { node: broken.id, socket: 'texture' }, { node: consumer.id, socket: 'input' });
+  const result = await evaluateGraph(g, nodes, { rootNodeId: consumer.id });
+  assert.ok(!result.allOutputs.has(broken.id));
+  assert.ok(!result.allOutputs.has(consumer.id));
+});

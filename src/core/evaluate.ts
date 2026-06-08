@@ -208,34 +208,49 @@ export async function evaluateGraph(
     let canEvaluate = true;
     for (const input of effectiveInputs) {
       const upstream = incomingBySocket.get(`${nodeId}/${input.name}`);
+      // Try the upstream wire first. If the upstream node failed to
+      // evaluate (it itself had missing required inputs, threw, etc.)
+      // FALL THROUGH to the fallback chain (inputValue → default →
+      // optional → fail) as if the wire weren't there. This is what
+      // keeps a broken sub-branch from blacking out the rest of the
+      // graph: e.g. deleting the Fire Hydrant wrapper in the city demo
+      // leaves the hydrant scatter unable to evaluate; the city's
+      // scene-merge has its `scene_N` for hydrants wired to that
+      // scatter and marked `optional: true`. Previously the merge
+      // failed too because we treated "broken upstream" as a hard
+      // error before consulting `optional` — now the merge drops the
+      // broken slot and the rest of the city still renders.
+      let resolved = false;
       if (upstream) {
         const upstreamOutputs = outputs.get(upstream.node);
-        if (!upstreamOutputs) {
+        if (upstreamOutputs) {
+          inputs[input.name] = upstreamOutputs[upstream.socket];
+          const upFp = fingerprints.get(upstream.node);
+          if (upFp !== undefined) upstreamFingerprints[input.name] = upFp;
+          resolved = true;
+        }
+      }
+      if (!resolved) {
+        if (node.inputValues !== undefined && input.name in node.inputValues) {
+          const val = node.inputValues[input.name];
+          inputs[input.name] = val;
+          // Hash inputValue-only inputs into upstreamFingerprints so
+          // downstream consumers' fingerprints react to per-instance
+          // overrides. Critically: this is what makes a subgraph
+          // wrapper's child (the boundary-input node) re-evaluate when
+          // the wrapper's inputValue changes — without this hop, the
+          // wrapper's own fp moves (it includes inputValues) but the
+          // boundary's fp inside the inner eval doesn't, and the
+          // boundary cache-hits on a stale outputs map.
+          upstreamFingerprints[input.name] = `iv:${canonicalJson(val)}`;
+        } else if (input.default !== undefined) {
+          inputs[input.name] = input.default;
+        } else if (input.optional) {
+          inputs[input.name] = undefined;
+        } else {
           canEvaluate = false;
           break;
         }
-        inputs[input.name] = upstreamOutputs[upstream.socket];
-        const upFp = fingerprints.get(upstream.node);
-        if (upFp !== undefined) upstreamFingerprints[input.name] = upFp;
-      } else if (node.inputValues !== undefined && input.name in node.inputValues) {
-        const val = node.inputValues[input.name];
-        inputs[input.name] = val;
-        // Hash inputValue-only inputs into upstreamFingerprints so
-        // downstream consumers' fingerprints react to per-instance
-        // overrides. Critically: this is what makes a subgraph
-        // wrapper's child (the boundary-input node) re-evaluate when
-        // the wrapper's inputValue changes — without this hop, the
-        // wrapper's own fp moves (it includes inputValues) but the
-        // boundary's fp inside the inner eval doesn't, and the
-        // boundary cache-hits on a stale outputs map.
-        upstreamFingerprints[input.name] = `iv:${canonicalJson(val)}`;
-      } else if (input.default !== undefined) {
-        inputs[input.name] = input.default;
-      } else if (input.optional) {
-        inputs[input.name] = undefined;
-      } else {
-        canEvaluate = false;
-        break;
       }
       // Single point of constraint enforcement: declared `min`/`max`
       // clamp the value regardless of its source (wire, inputValue,

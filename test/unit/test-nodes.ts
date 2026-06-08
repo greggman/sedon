@@ -14,5 +14,17 @@ export function createRegistryForTests(): NodeRegistry {
     outputs: [{ name: 'color', type: 'Color' }],
     evaluate: (_ctx, inputs) => ({ color: inputs.value }),
   });
+  // Minimal Scene emitter for tests that need to verify merge / branch
+  // behavior without spinning up a renderer-grade scene-entity chain.
+  // `tag` distinguishes one emitter from another in the merged output.
+  r.register({
+    id: 'test/scene-source',
+    category: 'Test',
+    inputs: [{ name: 'tag', type: 'Float', default: 0 }],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    evaluate: (_ctx, inputs) => ({
+      scene: { entities: [{ tag: inputs.tag } as unknown as never] },
+    }),
+  });
   return r;
 }
