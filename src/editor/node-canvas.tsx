@@ -818,16 +818,23 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const onBackClick = useCallback(() => navigateCanvasBack(panelId), [panelId]);
   const onForwardClick = useCallback(() => navigateCanvasForward(panelId), [panelId]);
 
-  // Right-click on the empty canvas → context menu at the cursor.
-  // "Add Node…" opens the searchable picker anchored at the same
-  // point, dropping the new node where the user right-clicked
-  // (not the canvas center). RF's onPaneContextMenu fires only when
-  // the click target is the pane itself — node right-clicks land
-  // on CustomNode's own onContextMenu, so this stays out of their
-  // way.
+  // Right-click on the empty canvas OR on the multi-selection box
+  // → context menu at the cursor. ReactFlow routes these to two
+  // separate props:
+  //   • onPaneContextMenu       — right-click on bare canvas.
+  //   • onSelectionContextMenu  — right-click on the multi-select
+  //                               box that RF draws around 2+
+  //                               selected nodes. Without wiring
+  //                               this, the browser's default menu
+  //                               appears on multi-select right-
+  //                               click and our menu never shows.
+  // Single-node right-clicks land on CustomNode's own onContextMenu
+  // (which is what handles Rename / Edit / Open Docs context). The
+  // multi-select case intentionally omits those node-only items —
+  // they'd be ambiguous with several nodes under the cursor.
   const [paneMenu, setPaneMenu] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
   const [picker, setPicker] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
-  const onPaneContextMenu = useCallback(
+  const onCanvasOrSelectionContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault();
       const flow = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -840,6 +847,8 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     },
     [rf],
   );
+  const onPaneContextMenu = onCanvasOrSelectionContextMenu;
+  const onSelectionContextMenu = onCanvasOrSelectionContextMenu;
   const paneMenuItems = useMemo(() => {
     if (!paneMenu) return [];
     return buildCanvasMenuItems({
@@ -895,6 +904,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           onNodeDragStop={onNodeDragStop}
           onSelectionDragStop={onSelectionDragStop}
           onPaneContextMenu={onPaneContextMenu}
+          onSelectionContextMenu={onSelectionContextMenu}
           proOptions={{ hideAttribution: true }}
           selectionMode={SelectionMode.Partial}
           minZoom={0.1}

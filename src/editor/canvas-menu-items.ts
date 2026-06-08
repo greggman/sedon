@@ -115,6 +115,22 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
       void pasteFromClipboard({ pasteAt: { x: dropX, y: dropY } });
     },
   });
+  items.push({ kind: 'separator' });
+  items.push({
+    label: 'Extract to Subgraph',
+    run: () => {
+      // Three call sites:
+      //   • Pane / multi-select menu (no `ctx.node`) → operate on
+      //     the current canvas selection.
+      //   • Single-node menu, node is part of a selection → operate
+      //     on the whole selection (idsForRightClickedNode returns
+      //     it).
+      //   • Single-node menu, node NOT in selection → extract just
+      //     that node.
+      const ids = ctx.node ? idsForRightClickedNode(ctx.node.id) : undefined;
+      extractSelectionToSubgraph(ids);
+    },
+  });
 
   // ── Node-only items ──────────────────────────────────────
   if (ctx.node) {
@@ -122,16 +138,6 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
     items.push({
       label: 'Rename',
       run: () => requestNodeRename(ctx.node!.id),
-    });
-    items.push({
-      label: 'Extract to Subgraph',
-      run: () => {
-        // Same selection semantics as Cut/Copy: if the right-clicked
-        // node isn't in the canvas selection, encapsulate just it;
-        // otherwise extract the whole selection.
-        const ids = idsForRightClickedNode(ctx.node!.id);
-        extractSelectionToSubgraph(ids);
-      },
     });
     if (ctx.node.isSubgraphWrapper && ctx.node.subgraphId && ctx.node.onEdit) {
       items.push({

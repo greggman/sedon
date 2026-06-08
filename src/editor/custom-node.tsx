@@ -993,6 +993,24 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // hooks-must-run-in-the-same-order rule. The few-millis savings
   // a useMemo would buy aren't worth a refactor of where the
   // bail-out lives.
+  // When this node's right-click is part of a MULTI-selection
+  // (this node is selected + at least one other node is selected
+  // too), drop the node-only items (Rename, Edit, Open Docs) since
+  // they're ambiguous over multiple nodes. Cut / Copy / Extract
+  // still operate on the whole selection.
+  //
+  // RF normally dispatches multi-select right-clicks to its
+  // `onSelectionContextMenu` prop, but events on the node's own
+  // DOM land here first (CustomNode's stopPropagation in
+  // onContextMenu prevents RF's selection handler from firing).
+  // Branching here means a single code path produces the right
+  // menu for both single- and multi-selection right-clicks.
+  const isMultiSelectActive = !nodeMenu
+    ? false
+    : (() => {
+        const selectedIds = rf.getNodes().filter((n) => n.selected).map((n) => n.id);
+        return selectedIds.length > 1 && selectedIds.includes(id);
+      })();
   const nodeMenuItems = !nodeMenu
     ? []
     : buildCanvasMenuItems({
@@ -1008,25 +1026,34 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             flowY: nodeMenu.flowY,
           });
         },
-        node: {
-          id,
-          isSubgraphWrapper,
-          isForEachPoint,
-          ...(subgraphId !== null ? { subgraphId } : {}),
-          ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
-          ...(isSubgraphWrapper && subgraphId !== null
-            ? { onEdit: () => onEditSubgraph() }
-            : {}),
-          ...(isForEachPoint && forEachBridgeId !== ''
-            ? { onEditIteration: () => onEditIteration() }
-            : {}),
-          // Same URL the inline `?` header link uses. Only set when
-          // the node's def actually carries a doc block, so the menu
-          // suppresses "Open Docs" for nodes that have no page.
-          ...(def?.doc
-            ? { docsUrl: docsUrlFor(def.id, docsLocation) }
-            : {}),
-        },
+        // Omit the node-only context entirely when multi-selected;
+        // the shared items (Add Node, Add Subgraph, Cut, Copy,
+        // Paste, Extract) still apply and operate on the full
+        // selection, which is what the user wants.
+        ...(isMultiSelectActive
+          ? {}
+          : {
+              node: {
+                id,
+                isSubgraphWrapper,
+                isForEachPoint,
+                ...(subgraphId !== null ? { subgraphId } : {}),
+                ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
+                ...(isSubgraphWrapper && subgraphId !== null
+                  ? { onEdit: () => onEditSubgraph() }
+                  : {}),
+                ...(isForEachPoint && forEachBridgeId !== ''
+                  ? { onEditIteration: () => onEditIteration() }
+                  : {}),
+                // Same URL the inline `?` header link uses. Only
+                // set when the node's def actually carries a doc
+                // block, so the menu suppresses "Open Docs" for
+                // nodes that have no page.
+                ...(def?.doc
+                  ? { docsUrl: docsUrlFor(def.id, docsLocation) }
+                  : {}),
+              },
+            }),
       });
 
   return (

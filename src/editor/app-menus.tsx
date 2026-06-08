@@ -73,6 +73,8 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
       actionItem('edit.copy', 'Copy'),
       actionItem('edit.paste', 'Paste'),
       actionItem('edit.paste-and-copy-deps', 'Paste and Copy Deps'),
+      SEPARATOR,
+      actionItem('selection.extract-subgraph', 'Extract to Subgraph'),
     ],
   };
 
