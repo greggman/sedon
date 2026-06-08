@@ -1,126 +1,343 @@
 import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
+import type { SubgraphDef } from '../../core/subgraph.js';
+import type { CameraState } from '../store.js';
+import {
+  buildApartmentBuildingSubgraph,
+  buildOfficeBuildingSubgraph,
+  buildShopBuildingSubgraph,
+  buildTowerBuildingSubgraph,
+} from './city-buildings.js';
+import {
+  buildCarSubgraph,
+  buildFireHydrantSubgraph,
+  buildLampPostSubgraph,
+  buildTrafficSignalSubgraph,
+} from './city-furniture.js';
+import {
+  buildBlockSidewalkSubgraph,
+  buildIntersectionSubgraph,
+  buildStreetSegmentLongSubgraph,
+  buildStreetSegmentShortSubgraph,
+} from './city-streets.js';
 
-// City demo: a 12×12 grid of building-shaped scaled cubes on a flat asphalt
-// plane, each with random width/height/depth and a random color tint. The
-// cube's basecolor is a grid texture (windows-on-walls), so per-point scale
-// stretches windows differently per face — taller buildings get taller
-// vertical-rectangle windows on their sides, which reads as "skyscraper."
+// The actual 5×5 city demo. Composes every subgraph from chunks
+// 1-3 into one big scene: a grid of 25 blocks (100×200m each)
+// separated by 18m streets, with intersections at every crossing,
+// 100 buildings (4 per block — one of each type, rotated per block
+// so adjacent blocks aren't visually identical), lamp posts on every
+// intersection corner, traffic signals at every intersection, fire
+// hydrants on most sidewalks, and a sprinkle of stationary cars on
+// the streets.
 //
-// Same instancing/tint machinery as the forest demo, just on a grid layout
-// with cube buildings instead of cylinder-trunk-plus-sphere-foliage trees.
-// Renders as 2 draw calls (1 ground + 1 buildings batch) regardless of N.
-export function createCityDemo(): { graph: Graph; rootNodeId: string } {
+// World units are metres throughout. City footprint:
+//   • Block grid: 5 × 5
+//   • Block centres: ±2 × 118m apart along X (column spacing),
+//                    ±2 × 218m apart along Z (row spacing).
+//   • Outer extent: ~600m × ~1100m.
+//
+// All instances are individual wrappers + transform-scene pairs
+// rather than a scatter, because the 4 building types per block
+// need per-quadrant placement (a uniform scatter would put the
+// same building at every grid point). Total node count comes in
+// around ~700 — large for a demo but well within the editor's
+// per-scene budget, and a single scene-merge at the end means the
+// renderer batches every shared-material entity automatically.
+
+const STREET_WIDTH = 18;
+const BLOCK_SHORT = 100;
+const BLOCK_LONG = 200;
+const COLS = 5;
+const ROWS = 5;
+// Block-to-block centre spacing along each axis. The X axis maps to
+// block SHORT (100m) + street, Z to block LONG (200m) + street.
+const X_SPACING = BLOCK_SHORT + STREET_WIDTH;  // 118
+const Z_SPACING = BLOCK_LONG + STREET_WIDTH;   // 218
+
+// Building positions inside a block (relative to block centre).
+// Block interior is roughly 94×194m (3m sidewalk inset on each
+// side). Four quadrants of ~47×97m fit one building each with
+// room to spare.
+const QUAD_OFFSETS: { x: number; z: number }[] = [
+  { x: -25, z: -50 },  // NW
+  { x:  25, z: -50 },  // NE
+  { x: -25, z:  50 },  // SW
+  { x:  25, z:  50 },  // SE
+];
+
+export function createCityDemo(): {
+  graph: Graph;
+  rootNodeId: string;
+  subgraphs: SubgraphDef[];
+  cameras: Record<string, CameraState>;
+} {
+  // ── Subgraph definitions ────────────────────────────────────────
+  const sidewalk = buildBlockSidewalkSubgraph();
+  const longStreet = buildStreetSegmentLongSubgraph();
+  const shortStreet = buildStreetSegmentShortSubgraph();
+  const intersection = buildIntersectionSubgraph();
+  const office = buildOfficeBuildingSubgraph();
+  const apartment = buildApartmentBuildingSubgraph();
+  const shop = buildShopBuildingSubgraph();
+  const tower = buildTowerBuildingSubgraph();
+  const lampPost = buildLampPostSubgraph();
+  const trafficSignal = buildTrafficSignalSubgraph();
+  const fireHydrant = buildFireHydrantSubgraph();
+  const car = buildCarSubgraph();
+
+  const buildingDefs = [tower, office, apartment, shop];
+
   const g = createGraph();
+  const COL_X = 280;
+  const ROW_Y = 60;
 
-  const COL = 280;
-  const ROW = 180;
+  // Accumulated scene refs. Every wrapper / transform-scene chain
+  // produces one Scene that we'll merge at the end. Pushing them
+  // all into one list lets the final merge have a deterministic
+  // input order.
+  const sceneRefs: { nodeId: string; socket: string }[] = [];
 
-  // Ground plane.
-  const plane = addNode(g, 'core/plane', {
-    position: { x: 0, y: 0 },
-    inputValues: { size: [24, 24], divisions: [1, 1] },
-  });
-  const groundMat = addNode(g, 'core/material', {
-    position: { x: COL, y: ROW * 1.2 },
-    inputValues: {
-      basecolor: [0.13, 0.13, 0.15, 1],
-      roughness: 0.92,
-      metallic: 0,
-    },
-  });
-  const groundEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 2, y: ROW * 0.6 },
+  // Layout cursor for the node positions in the editor canvas.
+  // Each placed instance gets a fresh column on the canvas so the
+  // graph reads top-to-bottom even with hundreds of nodes.
+  let layoutY = 0;
+  const nextLayoutY = () => {
+    layoutY += ROW_Y;
+    return layoutY;
+  };
+
+  // ── Helper: place one wrapper instance of `sg` at (tx, ty, tz)
+  //    with optional Y rotation. Returns the transform-scene output
+  //    socket reference.
+  const place = (
+    sg: SubgraphDef,
+    tx: number,
+    ty: number,
+    tz: number,
+    ry = 0,
+    extraInputValues?: Record<string, unknown>,
+  ): void => {
+    const y = nextLayoutY();
+    const wrap = addNode(g, `subgraph/${sg.id}`, {
+      position: { x: 0, y },
+      ...(extraInputValues ? { inputValues: extraInputValues } : {}),
+    });
+    const lift = addNode(g, 'core/transform-scene', {
+      position: { x: COL_X, y },
+      inputValues: { translate: [tx, ty, tz], rotate: [0, ry, 0], scale: [1, 1, 1] },
+    });
+    addEdge(g, { node: wrap.id, socket: 'scene' }, { node: lift.id, socket: 'scene' });
+    sceneRefs.push({ nodeId: lift.id, socket: 'scene' });
+  };
+
+  // ── Ground plane: a wide grass-coloured plane just below the
+  // street layer to avoid z-fighting with sidewalks / stripes.
+  // The city footprint is ~600×1100m; the plane extends to 1200×1800
+  // so the ground stretches well past the outer blocks (no visible
+  // plane edges from any reasonable overview camera angle).
+  {
+    const y = nextLayoutY();
+    const plane = addNode(g, 'core/plane', {
+      position: { x: 0, y },
+      inputValues: { size: [1200, 1800], divisions: [1, 1] },
+    });
+    const lift = addNode(g, 'core/transform-geometry', {
+      position: { x: COL_X, y },
+      inputValues: { translate: [0, -0.1, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+    });
+    const mat = addNode(g, 'core/material', {
+      position: { x: COL_X, y: y + 30 },
+      inputValues: {
+        basecolor: [0.30, 0.36, 0.26, 1],  // grass-tinted ground
+        roughness: 0.95,
+        metallic: 0,
+      },
+    });
+    const ent = addNode(g, 'core/scene-entity', {
+      position: { x: COL_X * 2, y },
+    });
+    addEdge(g, { node: plane.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
+    addEdge(g, { node: lift.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
+    addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
+    sceneRefs.push({ nodeId: ent.id, socket: 'scene' });
+  }
+
+  // Block centre at (col, row). col, row ∈ 0..4.
+  const blockCentre = (col: number, row: number) => ({
+    x: (col - (COLS - 1) / 2) * X_SPACING,
+    z: (row - (ROWS - 1) / 2) * Z_SPACING,
   });
 
-  // Grid placement of points → per-building variation clouds.
-  const grid = addNode(g, 'core/grid-distribute', {
-    position: { x: COL, y: 0 },
-    inputValues: { cols: 12, rows: 12, spacing: 2, jitter: 0.15, seed: 0.4 },
+  // ── 25 block sidewalks (one per block) ──────────────────────────
+  for (let col = 0; col < COLS; col++) {
+    for (let row = 0; row < ROWS; row++) {
+      const { x, z } = blockCentre(col, row);
+      place(sidewalk, x, 0, z);
+    }
+  }
+
+  // ── 100 buildings: 4 per block, one in each quadrant. The
+  // quadrant→type mapping rotates per block so adjacent blocks
+  // don't share the same layout. (col + row) % 4 picks the rotation
+  // amount; the building at quadrant q goes to type[(q + rot) % 4].
+  for (let col = 0; col < COLS; col++) {
+    for (let row = 0; row < ROWS; row++) {
+      const { x, z } = blockCentre(col, row);
+      const rot = (col + row) % 4;
+      for (let q = 0; q < 4; q++) {
+        const type = buildingDefs[(q + rot) % 4]!;
+        const off = QUAD_OFFSETS[q]!;
+        place(type, x + off.x, 0, z + off.z);
+      }
+    }
+  }
+
+  // ── 20 long-street segments (4 columns × 5 rows). Streets sit
+  // between block columns, so X is the midpoint between two
+  // adjacent block centres.
+  for (let col = 0; col < COLS - 1; col++) {
+    const x = (col - (COLS - 1) / 2 + 0.5) * X_SPACING;
+    for (let row = 0; row < ROWS; row++) {
+      const z = (row - (ROWS - 1) / 2) * Z_SPACING;
+      place(longStreet, x, 0, z);
+    }
+  }
+
+  // ── 20 short-street segments (5 columns × 4 rows). Same idea
+  // along Z. Rotated 90° around Y so the segment's internal long
+  // axis (Z) becomes X.
+  for (let col = 0; col < COLS; col++) {
+    const x = (col - (COLS - 1) / 2) * X_SPACING;
+    for (let row = 0; row < ROWS - 1; row++) {
+      const z = (row - (ROWS - 1) / 2 + 0.5) * Z_SPACING;
+      place(shortStreet, x, 0, z, Math.PI / 2);
+    }
+  }
+
+  // ── 16 intersections at every street crossing.
+  for (let col = 0; col < COLS - 1; col++) {
+    const x = (col - (COLS - 1) / 2 + 0.5) * X_SPACING;
+    for (let row = 0; row < ROWS - 1; row++) {
+      const z = (row - (ROWS - 1) / 2 + 0.5) * Z_SPACING;
+      place(intersection, x, 0, z);
+    }
+  }
+
+  // ── 16 traffic signals — one per intersection. Place at the
+  // SW corner of the intersection, pole vertical, arm extending
+  // NE over the road. (The traffic-signal subgraph's internal
+  // arm extends in +X with the head at the far end, so positioning
+  // the wrapper at the intersection's SW corner and rotating
+  // 0° puts the head over the road's centre.)
+  for (let col = 0; col < COLS - 1; col++) {
+    const xCenter = (col - (COLS - 1) / 2 + 0.5) * X_SPACING;
+    for (let row = 0; row < ROWS - 1; row++) {
+      const zCenter = (row - (ROWS - 1) / 2 + 0.5) * Z_SPACING;
+      const cornerX = xCenter - STREET_WIDTH / 2 + 0.5;
+      const cornerZ = zCenter - STREET_WIDTH / 2 + 0.5;
+      place(trafficSignal, cornerX, 0, cornerZ);
+    }
+  }
+
+  // ── 64 lamp posts: one at each of the 4 corners of every
+  // intersection (on the sidewalk side, just inside the block).
+  for (let col = 0; col < COLS - 1; col++) {
+    const xMid = (col - (COLS - 1) / 2 + 0.5) * X_SPACING;
+    for (let row = 0; row < ROWS - 1; row++) {
+      const zMid = (row - (ROWS - 1) / 2 + 0.5) * Z_SPACING;
+      const dx = STREET_WIDTH / 2 + 1.5;  // 1.5m into the sidewalk
+      const dz = STREET_WIDTH / 2 + 1.5;
+      place(lampPost, xMid - dx, 0, zMid - dz);
+      place(lampPost, xMid + dx, 0, zMid - dz);
+      place(lampPost, xMid - dx, 0, zMid + dz);
+      place(lampPost, xMid + dx, 0, zMid + dz);
+    }
+  }
+
+  // ── 25 fire hydrants: one per block, on the south sidewalk
+  // halfway along the block's east-west extent.
+  for (let col = 0; col < COLS; col++) {
+    for (let row = 0; row < ROWS; row++) {
+      const { x, z } = blockCentre(col, row);
+      // South-edge sidewalk midpoint.
+      place(fireHydrant, x - 30, 0, z + BLOCK_LONG / 2 - 1.5);
+    }
+  }
+
+  // ── 20 cars: one parked on each long-street segment at a small
+  // jitter along Z. Cars also get a per-instance body-colour cycle
+  // via the city-car wrapper's `body_color` input so the city has
+  // some chromatic variety on the roads.
+  const carColours: [number, number, number, number][] = [
+    [0.75, 0.18, 0.18, 1],  // red
+    [0.18, 0.20, 0.28, 1],  // dark blue
+    [0.92, 0.92, 0.94, 1],  // white
+    [0.20, 0.22, 0.20, 1],  // dark
+    [0.85, 0.78, 0.20, 1],  // yellow taxi
+  ];
+  for (let col = 0; col < COLS - 1; col++) {
+    const xStreet = (col - (COLS - 1) / 2 + 0.5) * X_SPACING;
+    for (let row = 0; row < ROWS; row++) {
+      const zBlock = (row - (ROWS - 1) / 2) * Z_SPACING;
+      // Park each car a couple metres into the lane so it doesn't
+      // sit on the centerline. Alternate sides for visual variety.
+      const lateral = row % 2 === 0 ? -3.5 : 3.5;
+      const carZ = zBlock + (row % 2 === 0 ? -40 : 40);
+      const colour = carColours[(col + row) % carColours.length]!;
+      place(car, xStreet + lateral, 0, carZ, row % 2 === 0 ? 0 : Math.PI, {
+        body_color: colour,
+      });
+    }
+  }
+
+  // ── Big scene-merge: one input per accumulated scene ref. The
+  // merge is variadic; we declare exactly N extra inputs to match.
+  const extraInputs = sceneRefs.map((_, i) => ({
+    name: `scene_${i}`,
+    type: 'Scene' as const,
+    optional: true,
+  }));
+  const mergeY = nextLayoutY();
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL_X * 4, y: mergeY },
+    extraInputs,
   });
-  // Per-building footprint (X, Z) and height (Y). Heights span 1.5..5.5
-  // so a few buildings tower while most stay ~3 units tall.
-  const scaleCloud = addNode(g, 'core/random-vec3-cloud', {
-    position: { x: COL * 2, y: 0 },
-    inputValues: { min: [0.7, 1.5, 0.7], max: [1.4, 5.5, 1.4], seed: 0.6 },
-  });
-  // Mostly-grey tint with slight color variation; multiplies into the warm
-  // wall color so each building reads as a slightly different material.
-  const tintCloud = addNode(g, 'core/random-vec3-cloud', {
-    position: { x: COL * 2, y: ROW },
-    inputValues: { min: [0.55, 0.55, 0.55], max: [1.05, 1.0, 0.95], seed: 0.9 },
+  sceneRefs.forEach((ref, i) => {
+    addEdge(g, { node: ref.nodeId, socket: ref.socket }, { node: merge.id, socket: `scene_${i}` });
   });
 
-  // Building geometry: unit cube lifted so its base sits on Y=0. Then
-  // per-point scale grows it upward (height = scale.y), keeping the base
-  // glued to the ground.
-  const cube = addNode(g, 'core/cube', {
-    position: { x: 0, y: ROW * 3 },
-    inputValues: { size: 1 },
-  });
-  const lift = addNode(g, 'core/transform-geometry', {
-    position: { x: COL, y: ROW * 3 },
-    inputValues: { translate: [0, 0.5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
-  });
-
-  // Window-grid texture: bg = dark window glass, fg = warm wall, thick lines.
-  const windows = addNode(g, 'core/grid', {
-    position: { x: 0, y: ROW * 4.5 },
-    inputValues: {
-      fg: [0.85, 0.78, 0.65, 1],
-      bg: [0.16, 0.2, 0.28, 1],
-      divisions: [4, 6],
-      line_width: 0.15,
-      resolution: 256,
-    },
-  });
-  const buildingMat = addNode(g, 'core/material', {
-    position: { x: COL * 2, y: ROW * 4.5 },
-    inputValues: { roughness: 0.55, metallic: 0.05 },
-  });
-  const buildingEntity = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 3, y: ROW * 3.5 },
-  });
-
-  const scatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 4, y: ROW * 2 },
-    inputValues: { scale: 1, align: false, seed: 0.2 },
-  });
-  const sceneMerge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 5, y: ROW * 1 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
-  });
   const output = addNode(g, 'core/output', {
-    position: { x: COL * 6, y: ROW * 1 },
+    position: { x: COL_X * 5, y: mergeY },
+    // The default light direction is too steep for an overhead city
+    // overview — the long shadows from individual buildings on
+    // adjacent buildings read as noise. Soften by raising the sun
+    // and warming it slightly.
+    inputValues: {
+      light_direction: [0.4, 0.85, 0.3],
+      light_intensity: 2.5,
+      ambient_intensity: 1.4,
+      fog_density: 0.0008,
+    },
   });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
-  // Edges.
-  // Ground.
-  addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundEntity.id, socket: 'geometry' });
-  addEdge(g, { node: groundMat.id, socket: 'material' }, { node: groundEntity.id, socket: 'material' });
-
-  // Building geometry.
-  addEdge(g, { node: cube.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
-  addEdge(g, { node: lift.id, socket: 'geometry' }, { node: buildingEntity.id, socket: 'geometry' });
-  addEdge(g, { node: windows.id, socket: 'texture' }, { node: buildingMat.id, socket: 'basecolor' });
-  addEdge(g, { node: buildingMat.id, socket: 'material' }, { node: buildingEntity.id, socket: 'material' });
-
-  // Distribution + per-point clouds.
-  addEdge(g, { node: grid.id, socket: 'points' }, { node: scaleCloud.id, socket: 'points' });
-  addEdge(g, { node: grid.id, socket: 'points' }, { node: tintCloud.id, socket: 'points' });
-
-  // Scatter buildings.
-  addEdge(g, { node: grid.id, socket: 'points' }, { node: scatter.id, socket: 'points' });
-  addEdge(g, { node: buildingEntity.id, socket: 'scene' }, { node: scatter.id, socket: 'instance' });
-  addEdge(g, { node: scaleCloud.id, socket: 'values' }, { node: scatter.id, socket: 'per_point_scale' });
-  addEdge(g, { node: tintCloud.id, socket: 'values' }, { node: scatter.id, socket: 'per_point_tint' });
-
-  // Final.
-  addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
-  addEdge(g, { node: scatter.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
-  addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
-
-  return { graph: g, rootNodeId: output.id };
+  return {
+    graph: g,
+    rootNodeId: output.id,
+    subgraphs: [
+      sidewalk, longStreet, shortStreet, intersection,
+      tower, office, apartment, shop,
+      lampPost, trafficSignal, fireHydrant, car,
+    ],
+    cameras: {
+      // High-angle overview from the south, looking north over the
+      // grid. Distance picked so the full 600×1100m footprint fits
+      // in the default field of view.
+      main: {
+        yaw: 0.5,
+        pitch: 0.55,
+        distance: 1200,
+        target: [0, 30, 0],
+      },
+    },
+  };
 }
