@@ -284,6 +284,22 @@ This wasn't the only case were I gave it screenshots.
 I expected screenshots to work for widgets in UIs. I did not expect it to
 work for graphics in general.
 
+### Perf
+
+There were a few times the entire thing was running slower than expected.
+In several cases the [Webgpu-Dev-Extension](https://github.com/greggman/webgpu-dev-extension) came in handy. For example, in one case I turned
+on "Show Calls Per Frame". It was showing 9058 calls per frame which is
+pretty high, especially for the scene we were viewing. Another thing I
+did was turn on "Show Calls". I'd then clear the console and press a key
+to move the camera and trigger a re-render. I then filtered that list with
+the DevTools and saw 96 calls to `getCurrentTexture`. That showed a bug
+that every node's preview was being re-rendered every frame. I passed that
+on to Claude to fix.
+
+Another example was turning on "Show Error" to tell Claude where a specific
+error was. I could have told it to use the debug scripts from the extension
+directly. I still may at some point.
+
 ### Failure
 
 One thing we both failed at was an algorithm for auto-layout.
