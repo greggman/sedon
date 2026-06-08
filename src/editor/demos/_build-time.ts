@@ -19,6 +19,7 @@ import { createBevelTestDemo } from './bevel-test.js';
 import { createCityBuildingsPreviewDemo } from './city-buildings-preview.js';
 import { createCityDemo } from './city.js';
 import { createCityFurniturePreviewDemo } from './city-furniture-preview.js';
+import { createCityStreetsPreviewDemo } from './city-streets-preview.js';
 import { createCubeOnWaterDemo } from './cube-on-water.js';
 import { createForEachPointDemo } from './for-each-point.js';
 import { createForestDemo } from './forest.js';
@@ -45,6 +46,7 @@ export const BUILD_TIME_DEMOS: BuildableDemo[] = [
   { id: 'city', build: createCityDemo },
   { id: 'city-furniture-preview', build: createCityFurniturePreviewDemo },
   { id: 'city-buildings-preview', build: createCityBuildingsPreviewDemo },
+  { id: 'city-streets-preview', build: createCityStreetsPreviewDemo },
   { id: 'leaf', build: createLeafDemo },
   { id: 'tree-bush', build: createTreeBushDemo },
   { id: 'grass-test', build: createGrassTestDemo },

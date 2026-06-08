@@ -19,6 +19,7 @@ export const DEMOS: DemoMeta[] = [
   { id: 'city', label: 'City' },
   { id: 'city-furniture-preview', label: 'City Furniture (preview)' },
   { id: 'city-buildings-preview', label: 'City Buildings (preview)' },
+  { id: 'city-streets-preview', label: 'City Streets (preview)' },
   { id: 'leaf', label: 'Leaf' },
   { id: 'tree-bush', label: 'Tree & Bush' },
   { id: 'grass-test', label: 'Grass Test' },
