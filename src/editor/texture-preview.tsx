@@ -28,8 +28,14 @@ const REDUCE_BGL: GPUBindGroupLayoutDescriptor = {
 };
 const BLIT_AUTOLEVEL_BGL: GPUBindGroupLayoutDescriptor = {
   entries: [
-    { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
-    { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: 'non-filtering' } },
+    // `sampleType: 'float'` (filterable) + `sampler: 'filtering'` —
+    // the autolevel blit uses `textureSample()` with a linear sampler.
+    // rgba16float is a guaranteed-filterable format in WebGPU, so the
+    // filterable variants are valid and what `layout: 'auto'` would
+    // have inferred. (REDUCE_BGL above uses 'unfilterable-float' which
+    // is fine — that path uses `textureLoad`, not textureSample.)
+    { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     { binding: 4, visibility: ShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
   ],
 };
