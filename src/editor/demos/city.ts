@@ -310,12 +310,22 @@ export function createCityDemo(): {
     { subgraph: tower,     halfInward: 26 / 2, halfEdge: 26 / 2 },
   ];
   const MAX_HALF_EDGE = Math.max(...BUILDING_TYPES.map((t) => t.halfEdge));
+  const MAX_HALF_INWARD = Math.max(...BUILDING_TYPES.map((t) => t.halfInward));
   // Spacing 1 m above the largest variant's edge extent so adjacent
   // buildings on the same edge have ≥1 m gap regardless of which
   // variant scene-switch picks.
   const PERIMETER_SPACING = MAX_HALF_EDGE * 2 + 1;
+  // Corner clearance has to cover BOTH a building's edge-axis extent
+  // (so it doesn't overhang a vertex along its own edge) AND the
+  // perpendicular building on the adjacent edge (which sticks inward
+  // by halfInward there, into our edge's airspace within halfInward
+  // of the corner). For a ~90° corner with same-size buildings the
+  // sum keeps them flush instead of interpenetrating; for sharper
+  // angles you'd need more, but the road graph here is mostly
+  // near-orthogonal so the sum suffices.
+  const CORNER_CLEARANCE = MAX_HALF_EDGE + MAX_HALF_INWARD;
   const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, BUILDING_TYPES, PERIMETER_SPACING, MAX_HALF_EDGE,
+    `body-${forEachId}`, BUILDING_TYPES, PERIMETER_SPACING, CORNER_CLEARANCE,
   );
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {
@@ -398,6 +408,12 @@ export function createCityDemo(): {
     // the road, not buried in the building line).
     const LAMP_OFFSET = ROAD_WIDTH / 2 + 1.5;
     const LAMP_END_CLEARANCE = ROAD_WIDTH / 2 + 4;
+    // Each road line runs straight through every intersection, so
+    // without this the lamp walk lands posts in the middle of the
+    // cross-street. The asphalt half-width plus a small margin clears
+    // the intersection cleanly while still letting lamps sit on the
+    // approach kerb on either side.
+    const LAMP_INTERSECTION_AVOID = ROAD_WIDTH / 2 + 4;
     const lampsLane = nextLane() * ROW_Y;
     const lampSubgraph = `subgraph/${lampPost.id}`;
     const lampWrapL = addNode(g, lampSubgraph, { position: { x: 0, y: lampsLane } });
@@ -409,6 +425,7 @@ export function createCityDemo(): {
         spacing: LAMP_SPACING,
         end_clearance: LAMP_END_CLEARANCE,
         side_offset:  LAMP_OFFSET,
+        self_avoid_radius: LAMP_INTERSECTION_AVOID,
         y: 0,
       },
     });
@@ -419,6 +436,7 @@ export function createCityDemo(): {
         spacing: LAMP_SPACING,
         end_clearance: LAMP_END_CLEARANCE,
         side_offset: -LAMP_OFFSET,
+        self_avoid_radius: LAMP_INTERSECTION_AVOID,
         y: 0,
       },
     });
@@ -481,9 +499,7 @@ export function createCityDemo(): {
       bodySubgraph, bridgeSubgraph,
     ],
     cameras: {
-      // original camera commented out for testing
-      // main: { yaw: 0.5, pitch: 0.55, distance: 1200, target: [0, 30, 0] },
-      main: { yaw: 0, pitch: Math.PI * 0.5, distance: 200, target: [-300, 30, -500] },
+      main: { yaw: 0.5, pitch: 0.55, distance: 1200, target: [0, 30, 0] },
     },
   };
 }

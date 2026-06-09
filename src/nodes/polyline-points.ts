@@ -57,6 +57,13 @@ export const polylinePointsNode: NodeDef = {
       description: 'signed perpendicular offset from the line. Positive = LEFT of travel direction (90° CCW in XZ); negative = right. Use two instances with ±offset to seed both kerbs',
     },
     {
+      name: 'self_avoid_radius',
+      type: 'Float',
+      default: 0,
+      min: 0,
+      description: 'when > 0, compute every pairwise intersection of the input lines and drop any candidate point within this radius of any intersection. Use this for "no lamp post in the middle of a road intersection" — radius = half road width + a margin clears the asphalt cleanly. Set to 0 to disable',
+    },
+    {
       name: 'y',
       type: 'Float',
       default: 0,
@@ -131,8 +138,44 @@ local +X axis lines up with the line direction.
     const spacing = Math.max(0.01, inputs.spacing as number);
     const endClearance = Math.max(0, (inputs.end_clearance as number) ?? 0);
     const sideOffset = (inputs.side_offset as number) ?? 0;
+    const selfAvoidRadius = Math.max(0, (inputs.self_avoid_radius as number) ?? 0);
     const y = (inputs.y as number) ?? 0;
     const segCount = Math.floor(flat.length / 6);
+
+    // Pre-compute pairwise intersection points (XZ only — Y is
+    // ignored as lines all sit on the ground plane). Treat each pair
+    // (a,b) as an INFINITE line and only keep intersections that
+    // fall inside BOTH segments. n² in segCount but segCount is small
+    // here (6 roads) so this stays cheap.
+    const intersections: { x: number; z: number }[] = [];
+    if (selfAvoidRadius > 0 && segCount >= 2) {
+      for (let i = 0; i < segCount; i++) {
+        const ax = flat[i * 6]!,     az = flat[i * 6 + 2]!;
+        const bx = flat[i * 6 + 3]!, bz = flat[i * 6 + 5]!;
+        const dx1 = bx - ax, dz1 = bz - az;
+        for (let j = i + 1; j < segCount; j++) {
+          const cx = flat[j * 6]!,     cz = flat[j * 6 + 2]!;
+          const dx = flat[j * 6 + 3]!, dz = flat[j * 6 + 5]!;
+          const dx2 = dx - cx, dz2 = dz - cz;
+          // Solve a + t1·d1 = c + t2·d2 in XZ. Cramer's rule, where
+          // denom = d1 × d2 (2D cross product).
+          const denom = dx1 * dz2 - dz1 * dx2;
+          if (Math.abs(denom) < 1e-9) continue;  // parallel
+          const t1 = ((cx - ax) * dz2 - (cz - az) * dx2) / denom;
+          const t2 = ((cx - ax) * dz1 - (cz - az) * dx1) / denom;
+          if (t1 < 0 || t1 > 1 || t2 < 0 || t2 > 1) continue;  // outside segment
+          intersections.push({ x: ax + dx1 * t1, z: az + dz1 * t1 });
+        }
+      }
+    }
+    const r2 = selfAvoidRadius * selfAvoidRadius;
+    function tooCloseToIntersection(x: number, z: number): boolean {
+      for (const ip of intersections) {
+        const ddx = x - ip.x, ddz = z - ip.z;
+        if (ddx * ddx + ddz * ddz < r2) return true;
+      }
+      return false;
+    }
 
     // Two-pass: count first, then allocate exact-sized arrays.
     const segs: Array<{
@@ -140,7 +183,8 @@ local +X axis lines up with the line direction.
       dx: number; dz: number;
       px: number; pz: number;  // perpendicular = 90° CCW(dx, dz) in XZ = (-dz, dx)
       startArc: number;
-      count: number;
+      count: number;          // number of accept[] entries set to true
+      accept: boolean[];      // length = numCandidates; per-candidate keep/skip
     }> = [];
     let total = 0;
     for (let s = 0; s < segCount; s++) {
@@ -160,23 +204,33 @@ local +X axis lines up with the line direction.
       const numCandidates = Math.max(1, Math.floor(usable / spacing) + 1);
       const totalSpan = (numCandidates - 1) * spacing;
       const startArc = endClearance + (usable - totalSpan) / 2;
+      const dx = dxRaw / segLen;
+      const dz = dzRaw / segLen;
+      const px = -dz, pz = dx;
       // Cull placements that land at the segment's END (= shared
-      // vertex with the next segment when polylines are chained).
+      // vertex with the next segment when polylines are chained) OR
+      // within self_avoid_radius of a self-intersection.
       let actualCount = 0;
+      const accept: boolean[] = [];
       for (let k = 0; k < numCandidates; k++) {
         const arc = startArc + k * spacing;
-        if (arc >= segLen - 1e-9) break;
+        if (arc >= segLen - 1e-9) { accept.push(false); continue; }
+        const lineX = ax + dx * arc;
+        const lineZ = az + dz * arc;
+        const px2 = lineX + px * sideOffset;
+        const pz2 = lineZ + pz * sideOffset;
+        if (tooCloseToIntersection(px2, pz2)) { accept.push(false); continue; }
+        accept.push(true);
         actualCount++;
       }
       if (actualCount === 0) continue;
-      const dx = dxRaw / segLen;
-      const dz = dzRaw / segLen;
       segs.push({
         ax, az,
         dx, dz,
-        px: -dz, pz: dx,  // 90° CCW perpendicular in XZ
+        px, pz,  // 90° CCW perpendicular in XZ
         startArc,
         count: actualCount,
+        accept,
       });
       total += actualCount;
     }
@@ -187,7 +241,8 @@ local +X axis lines up with the line direction.
     const tangents = new Float32Array(total * 3);
     let p = 0;
     for (const s of segs) {
-      for (let k = 0; k < s.count; k++) {
+      for (let k = 0; k < s.accept.length; k++) {
+        if (!s.accept[k]) continue;
         const arc = s.startArc + k * spacing;
         const lineX = s.ax + s.dx * arc;
         const lineZ = s.az + s.dz * arc;
