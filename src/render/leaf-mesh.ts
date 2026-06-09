@@ -112,11 +112,11 @@ export function generateLeafMesh(opts: LeafMeshOpts): CpuMesh {
       const a = vi * vertsX + ui;
       const b = a + vertsX;
       indices[i++] = a;
-      indices[i++] = b;
       indices[i++] = a + 1;
       indices[i++] = b;
+      indices[i++] = b;
+      indices[i++] = a + 1;
       indices[i++] = b + 1;
-      indices[i++] = a + 1;
     }
   }
 
