@@ -27,6 +27,7 @@
 //     throw at record time so we don't silently produce a broken
 //     recording.
 
+import { useSyncExternalStore } from 'react';
 import { useEditorStore } from './store.js';
 import { useLayoutStore } from './layout-store.js';
 import { snapshotProject } from './file-ops.js';
@@ -85,6 +86,21 @@ interface ActiveRecording {
   actions: RecordedEntry[];
 }
 let active: ActiveRecording | null = null;
+
+// Subscribable so React can re-render menus when recording flips.
+// Recording state is intentionally NOT in the editor store (it isn't
+// editor data and shouldn't appear in undo / save), so we maintain a
+// tiny listener-based store here for useSyncExternalStore. Without
+// this, `Macro › Stop Recording` stays disabled after `Record` —
+// nothing would tell the actions hook to re-evaluate `recordingActive()`.
+const listeners = new Set<() => void>();
+function subscribeRecording(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+function notifyRecordingChanged(): void {
+  for (const l of listeners) l();
+}
 
 function isRecording(): boolean {
   return active !== null;
@@ -181,6 +197,7 @@ export function startRecording(): void {
   }
   const { project, layout } = snapshotForRecording();
   active = { startProject: project, startLayout: layout, actions: [] };
+  notifyRecordingChanged();
   // eslint-disable-next-line no-console
   console.log('[recording] started');
 }
@@ -199,6 +216,7 @@ export function stopRecording(): void {
   };
   const count = active.actions.length;
   active = null;
+  notifyRecordingChanged();
   const json = JSON.stringify(file, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -213,6 +231,13 @@ export function stopRecording(): void {
 
 export function recordingActive(): boolean {
   return isRecording();
+}
+
+// React hook — re-renders whenever recording starts or stops. Use
+// this anywhere the UI gates on recording state (e.g. enabling
+// `Macro › Stop Recording` in the menu).
+export function useRecordingActive(): boolean {
+  return useSyncExternalStore(subscribeRecording, isRecording, isRecording);
 }
 
 // Replay a loaded recording file: reset to the captured starting

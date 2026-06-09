@@ -32,9 +32,9 @@ import { useLayoutStore } from './layout-store.js';
 import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import {
   loadRecordingFromFile,
-  recordingActive,
   startRecording,
   stopRecording,
+  useRecordingActive,
 } from './recording.js';
 import { useRegistry } from './registry.js';
 import { useEditorStore } from './store.js';
@@ -286,7 +286,7 @@ export function useActions(): Action[] {
   const registry = useRegistry();
   const undoLen = useEditorStore((s) => s.undoStack.length);
   const redoLen = useEditorStore((s) => s.redoStack.length);
-  const recording = recordingActive();
+  const recording = useRecordingActive();
   return useMemo(
     () => buildActions({
       registry,

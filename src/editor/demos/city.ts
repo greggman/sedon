@@ -70,26 +70,56 @@ function buildBuildingPerimeterBodySubgraph(
   bodyId: string,
   buildingSubgraph: SubgraphDef,
   perimeterSpacing: number,
+  // Half the building's extent along its LOCAL +X axis. The scatter
+  // aligns the source scene's LOCAL +X to the perimeter point's
+  // tangent — which polygon-perimeter-points sets to the INWARD
+  // direction — so local-+X extent maps to inward extent in world.
+  // Translating the source by +halfInward along local +X shifts the
+  // building inward by that amount, putting its OUTER face (originally
+  // at local x = -halfInward) on the polygon edge. Without this, the
+  // building's centre sits on the polygon edge and half of it
+  // overhangs the road.
+  buildingHalfInward: number,
+  // Half the building's extent along its LOCAL +Z axis. The scatter
+  // aligns local +Z to the edge direction (bitangent = cross(tangent,
+  // up)), so this is how far the building reaches ALONG the polygon
+  // edge from each perimeter point. Passed as polygon-perimeter-
+  // points' `corner_clearance` so points never land within halfEdge
+  // of a polygon corner — otherwise a building near a corner pokes
+  // past the vertex into the adjacent road's airspace.
+  buildingHalfEdge: number,
 ): SubgraphDef {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
   const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
-  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 5, y: ROW } });
+  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
   const perim = addNode(g, 'core/polygon-perimeter-points', {
     position: { x: COL, y: ROW },
-    inputValues: { spacing: perimeterSpacing, y: 0 },
+    inputValues: { spacing: perimeterSpacing, corner_clearance: buildingHalfEdge, y: 0 },
   });
   const wrap = addNode(g, `subgraph/${buildingSubgraph.id}`, {
     position: { x: COL * 2, y: 0 },
   });
+  // Shift the source scene along its LOCAL +X (which the scatter
+  // aligns to the inward perimeter tangent) by halfInward, putting
+  // the building's outer face on the polygon edge.
+  const shift = addNode(g, 'core/transform-scene', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: {
+      translate: [buildingHalfInward, 0, 0],
+      rotate: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+  });
   const scat = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 3, y: ROW },
+    position: { x: COL * 4, y: ROW },
     inputValues: { scale: 1, align: true },
   });
   addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: perim.id, socket: 'polygon' });
   addEdge(g, { node: perim.id, socket: 'points' }, { node: scat.id, socket: 'points' });
-  addEdge(g, { node: wrap.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
+  addEdge(g, { node: wrap.id, socket: 'scene' }, { node: shift.id, socket: 'scene' });
+  addEdge(g, { node: shift.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
   addEdge(g, { node: scat.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
   return {
     id: bodyId,
@@ -244,11 +274,22 @@ export function createCityDemo(): {
     inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
   const forEachId = 'city-blocks';
-  // Spacing well above the office's 21 m width keeps corner
-  // buildings from overlapping each other. Adjacent buildings along
-  // the same edge end up with ~15 m of clear gap.
+  // Office geometry: 21 m × 26 m footprint (core/box width × depth).
+  // The scatter aligns the source's LOCAL +X to the perimeter
+  // tangent (= inward) and LOCAL +Z to the edge direction, so the
+  // box's WIDTH axis ends up perpendicular to the street and its
+  // DEPTH axis runs along the street.
+  //   • inward extent in world = OFFICE_WIDTH  (21 m → ±10.5 m)
+  //   • edge   extent in world = OFFICE_DEPTH  (26 m → ±13 m)
+  const OFFICE_WIDTH = 21;
+  const OFFICE_DEPTH = 26;
+  // Spacing slightly above the building's edge-axis extent so adjacent
+  // buildings on the same edge have ~1 m of clear gap. (Was sized to
+  // OFFICE_WIDTH+3 back when we mistakenly believed width ran along
+  // the edge.)
+  const PERIMETER_SPACING = OFFICE_DEPTH + 1;
   const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, office, 36,
+    `body-${forEachId}`, office, PERIMETER_SPACING, OFFICE_WIDTH / 2, OFFICE_DEPTH / 2,
   );
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {
@@ -262,10 +303,38 @@ export function createCityDemo(): {
   addEdge(g, { node: blockInset.id, socket: 'polygons' }, { node: blocksForEach.id, socket: 'polygons' });
   sceneRefs.push({ nodeId: blocksForEach.id, socket: 'scene' });
 
-  // ── Road meshes. Take the SAME line set, clip to the city
-  // footprint, buffer each line to ROAD_WIDTH, triangulate the
-  // resulting road polygons into one combined mesh, and attach an
-  // asphalt material. One entity, one batch.
+  // ── Sidewalk + asphalt meshes. Same `linesFlat` set, buffered
+  // twice — once wide (road + sidewalks both sides) and once narrow
+  // (just the asphalt). The wide grey strip renders FIRST (lower Y),
+  // the narrow asphalt on top (higher Y), so the 3m of extra width
+  // on each side shows through as a sidewalk strip flush with the
+  // road on one side and with the building polygon edge on the other.
+  {
+    const sidewalkLane = nextLane() * ROW_Y;
+    const sidewalkBuffer = addNode(g, 'core/polyline-buffer-list', {
+      position: { x: 0, y: sidewalkLane },
+      inputValues: { lines: linesFlat, width: ROAD_WIDTH + 2 * SIDEWALK },
+    });
+    const sidewalkMesh = addNode(g, 'core/polygon-list-to-mesh', {
+      position: { x: COL_X, y: sidewalkLane },
+      // Just above the grass ground so asphalt-vs-sidewalk z-fight
+      // resolves predictably (sidewalk < asphalt < grass+0.1m).
+      inputValues: { y: 0.005 },
+    });
+    const sidewalkMat = addNode(g, 'core/material', {
+      position: { x: COL_X, y: sidewalkLane + 60 },
+      // Pale concrete grey, low metallic, high roughness.
+      inputValues: { basecolor: [0.78, 0.77, 0.74, 1], roughness: 0.9, metallic: 0 },
+    });
+    const sidewalkEnt = addNode(g, 'core/scene-entity', {
+      position: { x: COL_X * 2, y: sidewalkLane },
+    });
+    addEdge(g, { node: cityFootprint.id, socket: 'polygon' }, { node: sidewalkBuffer.id, socket: 'clip' });
+    addEdge(g, { node: sidewalkBuffer.id, socket: 'polygons' }, { node: sidewalkMesh.id, socket: 'polygons' });
+    addEdge(g, { node: sidewalkMesh.id, socket: 'geometry' }, { node: sidewalkEnt.id, socket: 'geometry' });
+    addEdge(g, { node: sidewalkMat.id, socket: 'material' }, { node: sidewalkEnt.id, socket: 'material' });
+    sceneRefs.push({ nodeId: sidewalkEnt.id, socket: 'scene' });
+  }
   {
     const roadsLane = nextLane() * ROW_Y;
     const roadBuffer = addNode(g, 'core/polyline-buffer-list', {
@@ -274,7 +343,6 @@ export function createCityDemo(): {
     });
     const roadMesh = addNode(g, 'core/polygon-list-to-mesh', {
       position: { x: COL_X, y: roadsLane },
-      // Slightly above the grass ground so the asphalt wins z-fight.
       inputValues: { y: 0.01 },
     });
     const roadMat = addNode(g, 'core/material', {
@@ -335,7 +403,9 @@ export function createCityDemo(): {
       bodySubgraph, bridgeSubgraph,
     ],
     cameras: {
-      main: { yaw: 0.5, pitch: 0.55, distance: 1200, target: [0, 30, 0] },
+      // original camera commented out for testing
+      // main: { yaw: 0.5, pitch: 0.55, distance: 1200, target: [0, 30, 0] },
+      main: { yaw: 0, pitch: Math.PI * 0.5, distance: 200, target: [-300, 30, -500] },
     },
   };
 }
