@@ -65,9 +65,12 @@ import { pointListNode } from './point-list.js';
 import { forEachPolygonNode } from './for-each-polygon.js';
 import { polygonAabbNode } from './polygon-aabb.js';
 import { polygonFromPointsNode } from './polygon-from-points.js';
+import { polygonGridSubdivideNode } from './polygon-grid-subdivide.js';
 import { polygonListNode } from './polygon-list.js';
+import { polygonListOffsetNode } from './polygon-list-offset.js';
 import { polygonOffsetNode } from './polygon-offset.js';
 import { polygonPerimeterPointsNode } from './polygon-perimeter-points.js';
+import { polygonSubdivideByLinesNode } from './polygon-subdivide-by-lines.js';
 import { polygonToMeshNode } from './polygon-to-mesh.js';
 import { pointsAlongAxisNode } from './points-along-axis.js';
 import { pointsLineNode } from './points-line.js';
@@ -175,9 +178,12 @@ export const CORE_NODES = [
   pointListNode,
   polygonFromPointsNode,
   polygonAabbNode,
+  polygonGridSubdivideNode,
   polygonListNode,
+  polygonListOffsetNode,
   polygonOffsetNode,
   polygonPerimeterPointsNode,
+  polygonSubdivideByLinesNode,
   polygonToMeshNode,
   forEachPolygonNode,
   stemPointsNode,
@@ -286,9 +292,12 @@ export {
   pointsLineNode,
   polygonAabbNode,
   polygonFromPointsNode,
+  polygonGridSubdivideNode,
   polygonListNode,
+  polygonListOffsetNode,
   polygonOffsetNode,
   polygonPerimeterPointsNode,
+  polygonSubdivideByLinesNode,
   polygonToMeshNode,
   forEachPolygonNode,
   radialPointsNode,

@@ -15,7 +15,6 @@ import { addEdge, addNode, createGraph } from '../../src/core/graph.js';
 import { evaluateGraph } from '../../src/core/evaluate.js';
 import {
   createNodeRegistry,
-  type NodeContext,
   type NodeDef,
   type NodeInputs,
   type NodeOutputs,
