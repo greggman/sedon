@@ -435,17 +435,92 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
     yOffset: ROW * 5,
   });
 
+  // ─── Rooftop fittings (HVAC scatter on the +Y face) ─────────────
+  // box-face-points lays out a 2×2 grid on the implicit box's +Y
+  // face. We give it a deliberately thin (height=1) implicit box so
+  // the face math is simple — the actual lift up to the building's
+  // top happens via `offset`, which pushes the grid points along the
+  // normal (+Y) by `roof_y - 0.5` (= total height minus half-face).
+  //
+  // Why offset+inset over a fitted box: the building's true height
+  // is `5 + num_floors*3.5 + 0.6` — a multi-step parametric value.
+  // Driving box-face-points' implicit `height` to match would force
+  // a chained map-range for the face-centre Y; tossing the same
+  // arithmetic onto `offset` (which adds directly to point Y) lets
+  // one map-range supply the whole lift. Cleaner.
+  const totalLift = addNode(g, 'core/map-range', {
+    position: { x: COL * 2, y: ROW * 5.5 },
+    // offset = (5.6 + num_floors*3.5) - 0.5 = 5.1 + num_floors*3.5
+    inputValues: { in_min: 0, in_max: 1, out_min: 5.1, out_max: 8.6 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: totalLift.id, socket: 'value' });
+
+  const roofPts = addNode(g, 'core/box-face-points', {
+    position: { x: COL * 2, y: ROW * 6 },
+    // height is a wash because we're driving offset = total_height − 0.5
+    // — the 1-m implicit height just defines the half-face Y the
+    // offset adds to. cols/rows = 2×2 fits four HVAC units even on
+    // small (~14 m) buildings; inset keeps them off the parapet edge.
+    inputValues: { axis: [0, 1, 0], height: 1, cols: 2, rows: 2, inset: 2.5 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },     { node: roofPts.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },     { node: roofPts.id, socket: 'depth' });
+  addEdge(g, { node: totalLift.id, socket: 'result' },    { node: roofPts.id, socket: 'offset' });
+
+  // The HVAC asset itself is a static subgraph (no inputs). One scene
+  // is shared across every HVAC across every roof — the renderer's
+  // ref-equality batching collapses all of them into a single GPU
+  // draw call regardless of how many roofs are in the city.
+  const hvacWrap = addNode(g, 'subgraph/city-roof-hvac', {
+    position: { x: COL * 2, y: ROW * 6.5 },
+  });
+  const hvacScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 3, y: ROW * 6 },
+    // `align: true` so the HVAC's local +Y stays world-up (matching
+    // box-face-points' normal output for the +Y face) and yaw seed
+    // jitters per-unit so the four HVACs don't all face identical.
+    inputValues: { scale: 1, align: true, seed: 13 },
+  });
+  addEdge(g, { node: roofPts.id, socket: 'points' },   { node: hvacScatter.id, socket: 'points' });
+  addEdge(g, { node: hvacWrap.id, socket: 'scene' },   { node: hvacScatter.id, socket: 'instance' });
+
+  // Water tank — ONE per roof, at the centre. Separate box-face-points
+  // with cols=1 rows=1 gives a single grid point at the roof's centre;
+  // re-using the same `totalLift` puts it at the same Y as the HVAC
+  // grid. The water tank is the most iconic NYC rooftop silhouette
+  // — even a single tank per building lifts the city's read.
+  const tankPts = addNode(g, 'core/box-face-points', {
+    position: { x: COL * 2, y: ROW * 7 },
+    inputValues: { axis: [0, 1, 0], height: 1, cols: 1, rows: 1, inset: 4 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },  { node: tankPts.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },  { node: tankPts.id, socket: 'depth' });
+  addEdge(g, { node: totalLift.id, socket: 'result' }, { node: tankPts.id, socket: 'offset' });
+  const tankWrap = addNode(g, 'subgraph/city-roof-water-tank', {
+    position: { x: COL * 2, y: ROW * 7.5 },
+  });
+  const tankScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 3, y: ROW * 7 },
+    inputValues: { scale: 1, align: true, seed: 5 },
+  });
+  addEdge(g, { node: tankPts.id, socket: 'points' }, { node: tankScatter.id, socket: 'points' });
+  addEdge(g, { node: tankWrap.id, socket: 'scene' }, { node: tankScatter.id, socket: 'instance' });
+
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 4, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
       { name: 'scene_1', type: 'Scene', optional: true },
       { name: 'scene_2', type: 'Scene', optional: true },
+      { name: 'scene_3', type: 'Scene', optional: true },
+      { name: 'scene_4', type: 'Scene', optional: true },
     ],
   });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: roofEnt.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: groundEnt.id,    socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: bodyEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: roofEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: hvacScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: tankScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_4' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

@@ -15,6 +15,10 @@ import {
   buildTrafficSignalSubgraph,
 } from './city-furniture.js';
 import {
+  buildHvacUnitSubgraph,
+  buildWaterTankSubgraph,
+} from './city-rooftop.js';
+import {
   buildBlockSidewalkSubgraph,
   buildIntersectionSubgraph,
   buildStreetSegmentLongSubgraph,
@@ -317,6 +321,12 @@ export function createCityDemo(): {
   // lots. The hand-authored variants above remain available as
   // Assets the user can drag/instantiate directly.
   const parametricOffice = buildParametricOfficeBuildingSubgraph();
+  // Rooftop fittings. The parametric office's body wires a scatter
+  // of these on its +Y face, so registering them here is what makes
+  // the `subgraph/city-roof-hvac` wrapper inside the office resolve
+  // at eval time.
+  const hvacUnit = buildHvacUnitSubgraph();
+  const waterTank = buildWaterTankSubgraph();
   const lampPost = buildLampPostSubgraph();
   const trafficSignal = buildTrafficSignalSubgraph();
   const fireHydrant = buildFireHydrantSubgraph();
@@ -611,6 +621,7 @@ export function createCityDemo(): {
     subgraphs: [
       sidewalk, longStreet, shortStreet, intersection,
       tower, office, apartment, shop, parametricOffice,
+      hvacUnit, waterTank,
       lampPost, trafficSignal, fireHydrant, car,
       // For-each-polygon's bridge → its body (= blockBody) →
       // for-each-point's bridge (lotBridgeSubgraph) → its body
