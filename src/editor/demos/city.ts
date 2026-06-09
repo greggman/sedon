@@ -206,6 +206,28 @@ export function createCityDemo(): {
   // because we haven't shipped a per-road UI yet; the user-facing
   // editor will land alongside organic-road authoring in a future
   // chunk.
+  // Shared road centerlines — fed into BOTH the block subdivision
+  // (so the streets cut the city into blocks) AND the road-mesh
+  // buffer (so we render those streets as asphalt). Authored here
+  // as a const so the two consumers stay in sync.
+  const ROAD_LINES: [number, number, number][][] = [
+    // Two N-S arteries.
+    [[-100, 0, -600], [-100, 0, 600]],
+    [[ 120, 0, -600], [ 120, 0, 600]],
+    // Two E-W arteries.
+    [[-400, 0, -180], [ 400, 0, -180]],
+    [[-400, 0,  200], [ 400, 0,  200]],
+    // Two diagonals for organic feel.
+    [[-200, 0, -350], [ 200, 0,  350]],
+    [[-150, 0,  400], [ 250, 0, -300]],
+  ];
+  const ROAD_WIDTH = 18;
+  // Inset = half road width + sidewalk so buildings sit `SIDEWALK`
+  // metres back from the asphalt edge.
+  const SIDEWALK = 3;
+  const BLOCK_INSET = ROAD_WIDTH / 2 + SIDEWALK;
+  const linesFlat = ROAD_LINES.flat();
+
   const buildingsLane = nextLane() * ROW_Y;
   const cityW = COLS * X_SPACING - STREET_WIDTH;
   const cityD = ROWS * Z_SPACING - STREET_WIDTH;
@@ -215,32 +237,18 @@ export function createCityDemo(): {
   });
   const blockSplit = addNode(g, 'core/polygon-subdivide-by-lines', {
     position: { x: COL_X, y: buildingsLane },
-    inputValues: {
-      // Each pair = one infinite road centerline.
-      lines: [
-        // Two N-S arteries.
-        [-100, 0, -600], [-100, 0, 600],
-        [ 120, 0, -600], [ 120, 0, 600],
-        // Two E-W arteries.
-        [-400, 0, -180], [ 400, 0, -180],
-        [-400, 0,  200], [ 400, 0,  200],
-        // Two diagonals for organic feel — without these the city is
-        // still a grid, just with non-uniform spacing.
-        [-200, 0, -350], [ 200, 0,  350],
-        [-150, 0,  400], [ 250, 0, -300],
-      ],
-    },
+    inputValues: { lines: linesFlat },
   });
-  // Inset of 12 m on each side = ~3 m sidewalk + ~9 m half-road
-  // clearance, so the gap between adjacent blocks reads as a wide
-  // street even though no road mesh is rendered yet.
   const blockInset = addNode(g, 'core/polygon-list-offset', {
     position: { x: COL_X * 2, y: buildingsLane },
-    inputValues: { offset: -12, miter_limit: 4 },
+    inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
   const forEachId = 'city-blocks';
+  // Spacing well above the office's 21 m width keeps corner
+  // buildings from overlapping each other. Adjacent buildings along
+  // the same edge end up with ~15 m of clear gap.
   const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, office, 24,
+    `body-${forEachId}`, office, 36,
   );
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {
@@ -253,6 +261,35 @@ export function createCityDemo(): {
   addEdge(g, { node: blockSplit.id, socket: 'polygons' }, { node: blockInset.id, socket: 'polygons' });
   addEdge(g, { node: blockInset.id, socket: 'polygons' }, { node: blocksForEach.id, socket: 'polygons' });
   sceneRefs.push({ nodeId: blocksForEach.id, socket: 'scene' });
+
+  // ── Road meshes. Take the SAME line set, clip to the city
+  // footprint, buffer each line to ROAD_WIDTH, triangulate the
+  // resulting road polygons into one combined mesh, and attach an
+  // asphalt material. One entity, one batch.
+  {
+    const roadsLane = nextLane() * ROW_Y;
+    const roadBuffer = addNode(g, 'core/polyline-buffer-list', {
+      position: { x: 0, y: roadsLane },
+      inputValues: { lines: linesFlat, width: ROAD_WIDTH },
+    });
+    const roadMesh = addNode(g, 'core/polygon-list-to-mesh', {
+      position: { x: COL_X, y: roadsLane },
+      // Slightly above the grass ground so the asphalt wins z-fight.
+      inputValues: { y: 0.01 },
+    });
+    const roadMat = addNode(g, 'core/material', {
+      position: { x: COL_X, y: roadsLane + 60 },
+      inputValues: { basecolor: [0.18, 0.18, 0.19, 1], roughness: 0.95, metallic: 0 },
+    });
+    const roadEnt = addNode(g, 'core/scene-entity', {
+      position: { x: COL_X * 2, y: roadsLane },
+    });
+    addEdge(g, { node: cityFootprint.id, socket: 'polygon' }, { node: roadBuffer.id, socket: 'clip' });
+    addEdge(g, { node: roadBuffer.id, socket: 'polygons' }, { node: roadMesh.id, socket: 'polygons' });
+    addEdge(g, { node: roadMesh.id, socket: 'geometry' }, { node: roadEnt.id, socket: 'geometry' });
+    addEdge(g, { node: roadMat.id, socket: 'material' }, { node: roadEnt.id, socket: 'material' });
+    sceneRefs.push({ nodeId: roadEnt.id, socket: 'scene' });
+  }
 
   // NOTE: chunk-4's grid-aligned overlays (rectangular sidewalks,
   // long/short street segments, intersections, traffic signals,

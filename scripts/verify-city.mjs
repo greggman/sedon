@@ -192,6 +192,7 @@ try {
   });
   console.log('\nDemo state:', JSON.stringify(state, null, 2));
 
+
   if (errors.length) {
     console.log('\nConsole errors:');
     for (const e of errors) console.log(' ', e);

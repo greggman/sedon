@@ -74,16 +74,20 @@ function buildFanMesh(polygon: PolygonValue, y: number): CpuMesh | null {
     uvs[vi * 2 + 1] = (z - minZ) / sz;
   }
 
-  // Fan triangles: (centroid, outer[i], outer[i+1]). For CCW outer
-  // ring viewed from +Y, this gives faces whose normal also points
-  // +Y — back-face culling drops the underside, matching `core/plane`.
+  // Fan triangles: (centroid, outer[i+1], outer[i]). Our polygon
+  // convention is "positive shoelace in (X, Z) coords" — which
+  // corresponds to CW order when viewed from +Y down (Z is mirrored
+  // on screen vs. the standard XY shoelace convention). To get
+  // upward-facing triangle normals we therefore have to walk the
+  // ring in REVERSE relative to the (centroid, v_i, v_{i+1}) order
+  // that would be correct in flat XY.
   const indices = new Uint32Array(ringLen * 3);
   for (let i = 0; i < ringLen; i++) {
     const a = i + 1;
     const b = ((i + 1) % ringLen) + 1;
     indices[i * 3]     = 0;
-    indices[i * 3 + 1] = a;
-    indices[i * 3 + 2] = b;
+    indices[i * 3 + 1] = b;
+    indices[i * 3 + 2] = a;
   }
   return { positions, normals, uvs, indices };
 }

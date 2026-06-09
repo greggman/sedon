@@ -17,6 +17,7 @@ const polyPerim = reg.get('core/polygon-perimeter-points')!;
 const polyGridSubdivide = reg.get('core/polygon-grid-subdivide')!;
 const polyListOffset = reg.get('core/polygon-list-offset')!;
 const polySplitLines = reg.get('core/polygon-subdivide-by-lines')!;
+const polylineBufferList = reg.get('core/polyline-buffer-list')!;
 
 // Shoelace 2×area. Positive ⇔ counter-clockwise winding in our XZ
 // frame, exactly what polygon-from-points normalises to and what
@@ -345,6 +346,75 @@ test('polygon-subdivide-by-lines: degenerate line (same point twice) is skipped'
     lines: [[5, 0, 5], [5, 0, 5]],
   }) as { polygons: { polygons: PolygonValue[] } };
   assert.equal(r.polygons.polygons.length, 1);
+});
+
+// ── polyline-buffer-list ───────────────────────────────────────────
+
+test('polyline-buffer-list: one line through the centre yields one rectangle of length=40, width=4', () => {
+  // 40×40 clip polygon, vertical line x=0 → clipped from z=-20 to z=20
+  // (length 40). width=4 → rect with bbox 4×40.
+  const aabb = polyAabb.evaluate(ctx, { center: [0, 0], size: [40, 40] }) as { polygon: PolygonValue };
+  const r = polylineBufferList.evaluate(ctx, {
+    clip: aabb.polygon,
+    lines: [[0, 0, -100], [0, 0, 100]],
+    width: 4,
+  }) as { polygons: { polygons: PolygonValue[] } };
+  assert.equal(r.polygons.polygons.length, 1);
+  const eps = 1e-3;
+  const xs = [r.polygons.polygons[0]!.outer[0]!, r.polygons.polygons[0]!.outer[2]!, r.polygons.polygons[0]!.outer[4]!, r.polygons.polygons[0]!.outer[6]!];
+  const zs = [r.polygons.polygons[0]!.outer[1]!, r.polygons.polygons[0]!.outer[3]!, r.polygons.polygons[0]!.outer[5]!, r.polygons.polygons[0]!.outer[7]!];
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 4) < eps);
+  assert.ok(Math.abs(Math.max(...zs) - Math.min(...zs) - 40) < eps);
+});
+
+test('polyline-buffer-list: line outside the clip polygon is skipped', () => {
+  const aabb = polyAabb.evaluate(ctx, { center: [0, 0], size: [40, 40] }) as { polygon: PolygonValue };
+  const r = polylineBufferList.evaluate(ctx, {
+    clip: aabb.polygon,
+    lines: [[100, 0, -100], [100, 0, 100]],
+    width: 4,
+  }) as { polygons: { polygons: PolygonValue[] } };
+  assert.equal(r.polygons.polygons.length, 0);
+});
+
+test('polyline-buffer-list: two crossing lines yield two rectangles', () => {
+  const aabb = polyAabb.evaluate(ctx, { center: [0, 0], size: [40, 40] }) as { polygon: PolygonValue };
+  const r = polylineBufferList.evaluate(ctx, {
+    clip: aabb.polygon,
+    lines: [
+      [0, 0, -100], [0, 0, 100],
+      [-100, 0, 0], [100, 0, 0],
+    ],
+    width: 4,
+  }) as { polygons: { polygons: PolygonValue[] } };
+  assert.equal(r.polygons.polygons.length, 2);
+});
+
+test('polyline-buffer-list: each road polygon is CCW', () => {
+  function signedAreaXZ(outer: Float32Array): number {
+    let sum = 0; const n = outer.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      sum += outer[i * 2]! * outer[j * 2 + 1]! - outer[j * 2]! * outer[i * 2 + 1]!;
+    }
+    return sum;
+  }
+  const aabb = polyAabb.evaluate(ctx, { center: [0, 0], size: [40, 40] }) as { polygon: PolygonValue };
+  // A line and its mirror (same line, opposite direction) — the
+  // buffer should hand out CCW for both regardless of how the user
+  // authored the endpoints.
+  const r1 = polylineBufferList.evaluate(ctx, {
+    clip: aabb.polygon,
+    lines: [[-10, 0, -10], [10, 0, 10]],
+    width: 4,
+  }) as { polygons: { polygons: PolygonValue[] } };
+  const r2 = polylineBufferList.evaluate(ctx, {
+    clip: aabb.polygon,
+    lines: [[10, 0, 10], [-10, 0, -10]],
+    width: 4,
+  }) as { polygons: { polygons: PolygonValue[] } };
+  assert.ok(signedAreaXZ(r1.polygons.polygons[0]!.outer) > 0);
+  assert.ok(signedAreaXZ(r2.polygons.polygons[0]!.outer) > 0);
 });
 
 // ── chunk-2 end-to-end ─────────────────────────────────────────────
