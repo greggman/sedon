@@ -160,7 +160,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
     for (const tile of tilesRef.current.values()) {
       tile.renderer.setSelection(sel);
     }
-    requestRender();
+    // FORCED render: selection lives inside the renderer, not in any
+    // of the inputs preview-tile.tsx's dirty short-circuit tracks
+    // (scene ref, camera, size, time). Without `force` the dirty
+    // check would short-circuit the draw and the selection outline
+    // wouldn't appear until SOMETHING else (camera nudge, eval) made
+    // a tracked input change. force-serial bypass is the same channel
+    // in-place texture mutations use — kept narrow to this one path.
+    requestRender({ force: true });
   }
   // Click-outside dismissal: any mousedown that isn't on the menu itself
   // (the menu calls e.stopPropagation() on its own mousedown) closes us.

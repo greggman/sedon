@@ -88,8 +88,14 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   // Render-bus animation toggle — repros that test time-driven
   // effects (water shimmer, grass wind) need to start the play
   // loop the same way clicking the toolbar's play button would.
+  // `__sedonForceSerial__` exposes the force-serial counter so
+  // regression tests can distinguish "a forced render happened"
+  // from "any draw happened" (e.g. picking does GPU readback work
+  // that submits regardless of whether the visual selection
+  // outline got redrawn).
   void import('./editor/render-bus.js').then((m) => {
     (window as unknown as { __sedonSetAnimating__: typeof m.setAnimating }).__sedonSetAnimating__ = m.setAnimating;
+    (window as unknown as { __sedonForceSerial__: typeof m.currentForceSerial }).__sedonForceSerial__ = m.currentForceSerial;
   });
   // Canvas-data getters so headless repros can inspect per-node eval
   // outputs (textures, scenes, …) by node id without going through
