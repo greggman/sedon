@@ -2,41 +2,40 @@ import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { FloatCloudValue, PointCloudValue, PolygonValue } from '../core/resources.js';
 
-// Subdivide each polygon edge into LOTS sized to a list of candidate
-// widths. Each lot gets one slot along the edge wide enough for one
-// building of that width; smaller widths fill the leftover at the end.
-// Compared to `polygon-perimeter-points` (uniform spacing of identical
-// instances), this emits per-lot widths so a downstream for-each-point
-// can place a DIFFERENTLY-SIZED building at each lot — the Houdini-
-// style "every lot on the block is its own thing" pattern.
+// Subdivide each polygon edge into LOTS of randomised width — one
+// building footprint per lot. Each lot emits position + inward yaw +
+// width on parallel clouds so a downstream `core/for-each-point` can
+// instantiate a parametric building sized to fit.
 //
-// Outputs three clouds, all index-aligned (cloud[i] is lot i):
-//   • points   — PointCloud (positions = lot centre on the edge,
-//                normals = (0,1,0), tangents = inward direction)
-//   • widths   — FloatCloud (each lot's edge-axis extent in metres)
-//   • type_indices — FloatCloud (which entry in `widths_list` the lot
-//                was picked from; downstream wires this into a
-//                `core/scene-switch.index` so each lot picks the
-//                matching building variant)
+// Outputs (all index-aligned):
+//   • points  — PointCloud (positions = lot centre on the edge,
+//               normals = (0,1,0), tangents = inward direction)
+//   • widths  — FloatCloud (per-lot edge-axis extent in metres)
+//   • yaws    — FloatCloud (Y-rotation in radians that aligns local
+//               +X with the lot's inward direction; feed into a
+//               `core/transform-scene.rotate.y` so a building authored
+//               with "facade along local +Z" faces outward)
+//
+// Width randomisation: each lot picks a value uniform in
+// [min_width, max_width], snapped to a multiple of `width_step`. The
+// snapping is what keeps the downstream eval cache useful — without
+// it, every lot would be a unique width → unique geometry → its own
+// GPU draw. Quantised to a small step (default 1 m) we get O(range)
+// unique geometries shared across hundreds of lots.
 //
 // Reproducibility: lot picks are deterministic from `seed` + per-edge
-// vertex coordinates, so a re-eval of the same polygon yields the same
-// lot layout. The eval cache batches identical-width buildings across
-// lots and across polygons; widths_list should therefore be SHORT (~4
-// entries) so cache hits are common and N*M lots collapse to ~N
-// unique GPU geometries.
+// counter, so a re-eval of the same polygon yields the same lot
+// layout.
 
 function len2(x: number, z: number): number {
   return Math.sqrt(x * x + z * z);
 }
 
-// Tiny deterministic hash → [0, 1). xorshift on a 32-bit state mixed
-// from the seed and per-call counter. Not cryptographic — just enough
-// scramble so a +1 in the seed reshuffles every lot's pick.
+// Tiny deterministic hash → [0, 1). Same xorshift as
+// `polyline-points` so seed semantics line up between the two.
 function hashedRand(seed: number, counter: number): number {
   let x = (seed * 2654435761 + counter * 1597334677) | 0;
   x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-  // Map to [0, 1) — divide by 2^32 with the unsigned conversion.
   return ((x >>> 0) % 1_000_003) / 1_000_003;
 }
 
@@ -50,17 +49,32 @@ export const polygonEdgeLotsNode: NodeDef = {
       description: 'polygon whose outer ring is subdivided into lots',
     },
     {
-      name: 'widths_list',
-      type: 'Vec3',
-      default: [12, 18, 24],
-      description: 'candidate lot widths to choose from. As a Vec3, each component is one candidate width in metres (so up to 3 building footprints, matching the buildings you wire into the downstream scene-switch). Lots are picked at random from this list and trimmed to fit the remaining edge length',
+      name: 'min_width',
+      type: 'Float',
+      default: 14,
+      min: 0.01,
+      description: 'minimum lot width along the polygon edge, in metres',
+    },
+    {
+      name: 'max_width',
+      type: 'Float',
+      default: 26,
+      min: 0.01,
+      description: 'maximum lot width along the polygon edge, in metres. Each lot picks a width uniform in [min_width, max_width], snapped to a `width_step` multiple',
+    },
+    {
+      name: 'width_step',
+      type: 'Float',
+      default: 1,
+      min: 0.01,
+      description: 'quantisation step for the random width pick. Keeping this coarse (≥ 1 m) makes the eval cache reuse downstream parametric-building evaluations across lots — without quantisation, every lot would be a unique width and the cache would never hit',
     },
     {
       name: 'corner_clearance',
       type: 'Float',
       default: 0,
       min: 0,
-      description: 'minimum gap from each polygon corner before the first lot can start. Set to `max_building_inward_extent` so a lot near a corner can\'t poke past the vertex into the adjacent edge',
+      description: 'minimum gap from each polygon corner before the first lot can start. Set to about `2 × max_building_inward_extent` so a corner lot\'s inward-projecting building doesn\'t poke past the vertex into the perpendicular edge',
     },
     {
       name: 'gap',
@@ -73,7 +87,7 @@ export const polygonEdgeLotsNode: NodeDef = {
       name: 'seed',
       type: 'Int',
       default: 0,
-      description: 'random seed mixed into the per-lot pick. Same seed + same polygon = same lot layout — eval cache shares geometry across re-evaluations',
+      description: 'random seed mixed into the per-lot pick. Same seed + same polygon → same lot layout',
     },
   ],
   outputs: [
@@ -85,49 +99,42 @@ export const polygonEdgeLotsNode: NodeDef = {
     {
       name: 'widths',
       type: 'FloatCloud',
-      description: 'per-lot edge-axis extent in metres (same index as `points`)',
+      description: 'per-lot edge-axis extent in metres (same index as `points`). Wire into a `core/for-each-point` broadcast input so the body sizes its building to the lot',
     },
     {
-      name: 'mask_0',
+      name: 'yaws',
       type: 'FloatCloud',
-      description: 'per-point 1/0 mask: 1 at lots picked from `widths_list.x`, 0 elsewhere. Wire into `core/instance-scene-on-points.per_point_active` for the variant-0 scatter',
-    },
-    {
-      name: 'mask_1',
-      type: 'FloatCloud',
-      description: 'per-point 1/0 mask: 1 at lots picked from `widths_list.y`, 0 elsewhere',
-    },
-    {
-      name: 'mask_2',
-      type: 'FloatCloud',
-      description: 'per-point 1/0 mask: 1 at lots picked from `widths_list.z`, 0 elsewhere',
+      description: 'per-lot Y-rotation in radians (same index as `points`). After this yaw a building authored with local +X = "edge direction" and local +Z = "outward" faces correctly. Wire into a `core/vec3-from-floats.y` to feed `core/transform-scene.rotate` inside the per-lot body',
     },
   ],
   doc: {
-    summary: 'Subdivide a polygon\'s outer ring into per-lot building footprints.',
+    summary: 'Subdivide a polygon\'s outer ring into per-lot building footprints with random widths.',
     description: `
 For each edge, walks from one corner (offset by \`corner_clearance\`)
-to the other, picking a random width from \`widths_list\` at each step
-until the remaining space is smaller than the smallest candidate.
-Each lot gets a position (centre of its slot), an inward-facing
-tangent, and the index of the variant it was assigned to.
+to the other, picking a random width uniformly in
+[\`min_width\`, \`max_width\`] (snapped to \`width_step\`) until the
+remaining space won't fit \`min_width\`. Each lot gets a position
+(centre of its slot), an inward-facing tangent, the width it was
+assigned, and the yaw rotation that aligns a downstream parametric
+building's local axes with the lot's edge.
 
-Pair with [core/for-each-point](../../core/for-each-point) and
-[core/scene-switch](../../core/scene-switch) for the canonical
-"different building per lot" composition: each lot drives a separate
-body invocation, and the variant chosen matches the reserved width.
+Pair with [core/for-each-point](../../core/for-each-point) for the
+canonical "different building per lot" composition: each lot drives
+a separate body invocation, and the parametric building scales to
+the lot's reserved width. Quantisation via \`width_step\` keeps the
+eval cache effective so identical-width lots share geometry.
 `,
     sampleGraph: () => {
       const g = createGraph();
       const aabb = addNode(g, 'core/polygon-aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
-        inputValues: { center: [0, 0], size: [80, 80] },
+        inputValues: { center: [0, 0], size: [120, 120] },
       });
       const lots = addNode(g, 'core/polygon-edge-lots', {
         id: 'lots',
         position: { x: 280, y: 0 },
-        inputValues: { widths_list: [12, 18, 24], corner_clearance: 4, gap: 1, seed: 7 },
+        inputValues: { min_width: 12, max_width: 26, width_step: 1, corner_clearance: 12, gap: 1, seed: 7 },
       });
       addEdge(g, { node: aabb.id, socket: 'polygon' }, { node: lots.id, socket: 'polygon' });
       return { graph: g, rootNodeId: 'lots' };
@@ -136,9 +143,7 @@ body invocation, and the variant chosen matches the reserved width.
   evaluate(_ctx, inputs): {
     points: PointCloudValue;
     widths: FloatCloudValue;
-    mask_0: FloatCloudValue;
-    mask_1: FloatCloudValue;
-    mask_2: FloatCloudValue;
+    yaws: FloatCloudValue;
   } {
     const emptyCloud = { count: 0, values: new Float32Array(0) };
     const empty = {
@@ -149,35 +154,25 @@ body invocation, and the variant chosen matches the reserved width.
         count: 0,
       },
       widths: emptyCloud,
-      mask_0: emptyCloud,
-      mask_1: emptyCloud,
-      mask_2: emptyCloud,
+      yaws: emptyCloud,
     };
     const poly = inputs.polygon as PolygonValue | undefined;
     if (!poly || poly.outer.length < 6) return empty;
-    // widths_list arrives as a Vec3 ([w0, w1, w2]); the index in the
-    // ORIGINAL slot matters (mask_i emits 1 for lots that picked
-    // slot i). A non-positive slot is treated as "disabled" — its
-    // mask is always empty and it doesn't get picked for any lot.
-    const widthsRaw = inputs.widths_list as unknown;
-    const slots: number[] = [];
-    if (Array.isArray(widthsRaw)) {
-      slots[0] = Number(widthsRaw[0] ?? 0);
-      slots[1] = Number(widthsRaw[1] ?? 0);
-      slots[2] = Number(widthsRaw[2] ?? 0);
-    } else if (typeof widthsRaw === 'number') {
-      slots[0] = slots[1] = slots[2] = widthsRaw;
-    } else {
-      slots[0] = slots[1] = slots[2] = 0;
-    }
-    const enabledSlots = slots
-      .map((w, i) => ({ width: w, slot: i }))
-      .filter((s) => Number.isFinite(s.width) && s.width > 0);
-    if (enabledSlots.length === 0) return empty;
-
+    const minWidth = Math.max(0.01, (inputs.min_width as number) ?? 14);
+    const rawMax = Math.max(minWidth, (inputs.max_width as number) ?? 26);
+    const step = Math.max(0.01, (inputs.width_step as number) ?? 1);
     const cornerClearance = Math.max(0, (inputs.corner_clearance as number) ?? 0);
     const gap = Math.max(0, (inputs.gap as number) ?? 0);
     const seed = ((inputs.seed as number) | 0) || 1;
+
+    // Snap min/max to the quantisation step. The set of legal widths
+    // is { ceil(min/step)*step, …, floor(max/step)*step }. If the snap
+    // collapses the range to nothing (rare — only when min ≈ max and
+    // both straddle a step boundary), bail out with empty.
+    const minSnapped = Math.ceil(minWidth / step) * step;
+    const maxSnapped = Math.floor(rawMax / step) * step;
+    if (maxSnapped < minSnapped) return empty;
+    const numSteps = Math.round((maxSnapped - minSnapped) / step) + 1;
 
     const outer = poly.outer;
     const n = outer.length / 2;
@@ -185,11 +180,9 @@ body invocation, and the variant chosen matches the reserved width.
     const positions: number[] = [];
     const tangents: number[] = [];
     const widths: number[] = [];
-    // Per-lot slot index (0..2) — used after the walk to populate the
-    // three mask outputs.
-    const slotIndices: number[] = [];
+    const yaws: number[] = [];
 
-    let counter = 0; // bumped per random pick so consecutive picks differ
+    let counter = 0; // bumped per random pick
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const startX = outer[i * 2]!;
@@ -203,32 +196,44 @@ body invocation, and the variant chosen matches the reserved width.
       const dxN = dx / edgeLen;
       const dzN = dz / edgeLen;
       // Inward = +90° (CCW) of edge direction in XZ. Matches
-      // polygon-perimeter-points' inward convention so building
-      // bodies share a single "local +X aligns to inward" rule.
+      // polygon-perimeter-points' convention.
       const inwardX = -dzN;
       const inwardZ =  dxN;
+      // Yaw that rotates local +X to point along (inwardX, 0, inwardZ).
+      // Sedon's `rotationY(θ)` (src/render/mat4.ts) maps local +X to
+      // world [cos θ, 0, sin θ] — the column-major matrix has
+      // `m[0]=c, m[2]=s`, so a vector through the matrix gets +sin in
+      // Z, not −sin. (Some conventions use the opposite sign; ours
+      // matches a left-handed +Y-up rotation.) We therefore need
+      // cos θ = inwardX and sin θ = inwardZ → atan2(inwardZ, inwardX).
+      const yaw = Math.atan2(inwardZ, inwardX);
 
-      // Walk the usable span, accumulating lots until we'd run past
-      // the end. `cursor` is the offset along the edge where the
-      // NEXT lot's leading edge sits.
       let cursor = cornerClearance;
       const endOfUsable = cornerClearance + usable;
       while (cursor < endOfUsable - 1e-6) {
         const remaining = endOfUsable - cursor;
-        const fits = enabledSlots.filter((s) => s.width <= remaining + 1e-6);
-        if (fits.length === 0) break;
+        if (remaining < minSnapped) break;
+        // Pick a random width in [minSnapped, min(maxSnapped, snapped_remaining)].
+        const snappedRemaining = Math.floor(remaining / step) * step;
+        const upper = Math.min(maxSnapped, snappedRemaining);
+        if (upper < minSnapped) break;
+        const stepsAvail = Math.round((upper - minSnapped) / step) + 1;
         const r = hashedRand(seed, counter++);
-        const chosen = fits[Math.floor(r * fits.length)]!;
-        const arcCentre = cursor + chosen.width * 0.5;
+        const chosenStep = Math.floor(r * stepsAvail) % stepsAvail;
+        const chosenWidth = minSnapped + chosenStep * step;
+        const arcCentre = cursor + chosenWidth * 0.5;
         positions.push(
           startX + dxN * arcCentre, 0,
           startZ + dzN * arcCentre,
         );
         tangents.push(inwardX, 0, inwardZ);
-        widths.push(chosen.width);
-        slotIndices.push(chosen.slot);
-        cursor += chosen.width + gap;
+        widths.push(chosenWidth);
+        yaws.push(yaw);
+        cursor += chosenWidth + gap;
       }
+      // numSteps is used at validation but not in the per-edge loop.
+      // Keep referenced so a future tweak doesn't lose track of it.
+      void numSteps;
     }
 
     const count = widths.length;
@@ -236,15 +241,6 @@ body invocation, and the variant chosen matches the reserved width.
 
     const normals = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) normals[i * 3 + 1] = 1;
-    const masks = [
-      new Float32Array(count),
-      new Float32Array(count),
-      new Float32Array(count),
-    ];
-    for (let i = 0; i < count; i++) {
-      const s = slotIndices[i]!;
-      if (s >= 0 && s < 3) masks[s]![i] = 1;
-    }
     return {
       points: {
         positions: new Float32Array(positions),
@@ -253,9 +249,7 @@ body invocation, and the variant chosen matches the reserved width.
         count,
       },
       widths: { count, values: new Float32Array(widths) },
-      mask_0: { count, values: masks[0]! },
-      mask_1: { count, values: masks[1]! },
-      mask_2: { count, values: masks[2]! },
+      yaws: { count, values: new Float32Array(yaws) },
     };
   },
 };

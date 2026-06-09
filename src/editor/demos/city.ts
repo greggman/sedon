@@ -4,6 +4,7 @@ import type { CameraState } from '../store.js';
 import {
   buildApartmentBuildingSubgraph,
   buildOfficeBuildingSubgraph,
+  buildParametricOfficeBuildingSubgraph,
   buildShopBuildingSubgraph,
   buildTowerBuildingSubgraph,
 } from './city-buildings.js';
@@ -66,106 +67,199 @@ const Z_SPACING = BLOCK_LONG + STREET_WIDTH;   // 218
 // material) pair. We don't pay 25× the GPU cost for the
 // iteration architecture.
 
-interface BuildingType {
-  subgraph: SubgraphDef;
-  // Half the geometry's X-axis extent (= half core/box width). After
-  // scatter-align, this is how far the building reaches INWARD from
-  // its origin in world space, so it doubles as the local-+X shift
-  // needed to put the building's outer face on the polygon edge.
-  halfInward: number;
-  // Half the geometry's Z-axis extent (= half core/box depth). After
-  // scatter-align, this is how far the building reaches ALONG the
-  // polygon edge. The largest such value across building variants
-  // sets the corner_clearance and perimeter spacing the body picks.
-  halfEdge: number;
+// ─── Per-lot body subgraph ────────────────────────────────────────
+// The innermost graph the for-each-point invokes ONCE per lot. Takes
+// the lot's (width, yaw, num_floors) as broadcast inputs and its
+// (position) as iteration context, and emits a parametric office
+// sized to the lot, oriented along its inward direction, with its
+// OUTER face flush against the polygon edge.
+//
+// The chain inside:
+//   1. parametric-office(width, depth=fixed, num_floors)   → office scene
+//   2. transform-scene(translate=[width/2, 0, 0])           → shift outer face to origin
+//   3. transform-scene(translate=position, rotate=[0,yaw,0]) → rotate to inward direction, place at lot centre
+//
+// Eval-cache effect: identical (width, num_floors) tuples re-use the
+// office GeometryValue from the cache. With `width_step` quantising
+// widths to whole metres and num_floors held constant per block, we
+// get O(range) unique office geometries shared across all lots.
+function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef {
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+  const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
+  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
+
+  // Parametric office wrapper. Inputs come from this body's
+  // subgraph-input boundary; the wrapper resolves to the actual
+  // city-bldg-parametric-office subgraph the bridge knows about.
+  const wrap = addNode(g, 'subgraph/city-bldg-parametric-office', {
+    position: { x: COL, y: 0 },
+    inputValues: { depth: officeDepth },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },      { node: wrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: wrap.id, socket: 'num_floors' });
+
+  // halfWidth = width * 0.5 — used for the inner shift that puts the
+  // building's outer face on the polygon edge after rotation.
+  const halfWidth = addNode(g, 'core/map-range', {
+    position: { x: COL, y: ROW * 1.5 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 0.5 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: halfWidth.id, socket: 'value' });
+
+  // [halfWidth, 0, 0] for the inner shift.
+  const shiftVec = addNode(g, 'core/vec3-from-floats', {
+    position: { x: COL * 2, y: ROW * 1.5 },
+    inputValues: { x: 0, y: 0, z: 0 },
+  });
+  addEdge(g, { node: halfWidth.id, socket: 'result' }, { node: shiftVec.id, socket: 'x' });
+
+  // [0, yaw, 0] for the rotation around Y.
+  const rotateVec = addNode(g, 'core/vec3-from-floats', {
+    position: { x: COL * 2, y: ROW * 2 },
+    inputValues: { x: 0, y: 0, z: 0 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'yaw' }, { node: rotateVec.id, socket: 'y' });
+
+  // Step 2: inner shift. Translates the office along its OWN +X so
+  // its outer face (originally at local x = -halfInward = -width/2)
+  // ends up at local x = 0, ready for the rotate+place pass.
+  const innerShift = addNode(g, 'core/transform-scene', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  addEdge(g, { node: wrap.id, socket: 'scene' },     { node: innerShift.id, socket: 'scene' });
+  addEdge(g, { node: shiftVec.id, socket: 'value' }, { node: innerShift.id, socket: 'translate' });
+
+  // Step 3: rotate then place. transform-scene applies T*R*S — its
+  // rotation pivots around the LOCAL origin of the inner-shifted
+  // scene (= the building's outer face), then translates to the
+  // lot's position. Net effect: outer face lands ON the lot centre,
+  // building extends inward.
+  const place = addNode(g, 'core/transform-scene', {
+    position: { x: COL * 4, y: 0 },
+    inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  addEdge(g, { node: innerShift.id, socket: 'scene' }, { node: place.id, socket: 'scene' });
+  addEdge(g, { node: inputNode.id, socket: 'position' }, { node: place.id, socket: 'translate' });
+  addEdge(g, { node: rotateVec.id, socket: 'value' }, { node: place.id, socket: 'rotate' });
+  addEdge(g, { node: place.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id: bodyId,
+    label: 'Lot body',
+    category: 'Subgraphs',
+    inputs: [
+      // `position` is iteration-input from for-each-point; the bridge
+      // wires iteration-input.position → this `position` input by
+      // name match. The rest are broadcast inputs whose Float wires
+      // travel through for-each-point as FloatClouds.
+      { name: 'position',   type: 'Vec3',  default: [0, 0, 0] },
+      { name: 'width',      type: 'Float', default: 20 },
+      { name: 'yaw',        type: 'Float', default: 0 },
+      { name: 'num_floors', type: 'Float', default: 7 },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
 }
 
-function buildBuildingPerimeterBodySubgraph(
+// Bridge subgraph for for-each-point. Wraps the per-lot body so the
+// outer for-each-point sees `width`/`yaw`/`num_floors` as broadcast
+// inputs (FloatClouds when wired from lots, plain Floats when
+// constant), and the iteration's `position` is routed to the body's
+// `position` input.
+function buildLotBridgeSubgraph(forEachId: string, lotBody: SubgraphDef): SubgraphDef {
+  const bridgeId = `bridge-${forEachId}`;
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+  const inputNode = addNode(g, `subgraph-input/${bridgeId}`, { position: { x: 0, y: 0 } });
+  const iterInputNode = addNode(g, `iteration-input/${bridgeId}`, { position: { x: 0, y: ROW } });
+  const iterOutputNode = addNode(g, `iteration-output/${bridgeId}`, { position: { x: COL * 3, y: ROW } });
+  const bodyNode = addNode(g, `subgraph/${lotBody.id}`, { position: { x: COL * 1.5, y: ROW } });
+  addEdge(g, { node: iterInputNode.id, socket: 'position' }, { node: bodyNode.id, socket: 'position' });
+  addEdge(g, { node: inputNode.id, socket: 'width' },        { node: bodyNode.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'yaw' },          { node: bodyNode.id, socket: 'yaw' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' },   { node: bodyNode.id, socket: 'num_floors' });
+  addEdge(g, { node: bodyNode.id, socket: 'scene' }, { node: iterOutputNode.id, socket: 'scene' });
+  return {
+    id: bridgeId,
+    label: 'Per-lot bridge',
+    category: 'Subgraphs',
+    inputs: [
+      { name: 'width',      type: 'Float', default: 20 },
+      { name: 'yaw',        type: 'Float', default: 0 },
+      { name: 'num_floors', type: 'Float', default: 7 },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: iterOutputNode.id,
+    owner: { kind: 'iteration-bridge', nodeId: forEachId },
+    iterationKind: 'core/for-each-point',
+  };
+}
+
+// Block-level body. Called ONCE per polygon by for-each-polygon.
+// Subdivides the polygon's perimeter into lots and runs a
+// for-each-point over those lots with the per-lot bridge.
+function buildBlockBodySubgraph(
   bodyId: string,
-  // Up to 3 variants, picked PER-LOT by polygon-edge-lots. The lots
-  // node assigns each lot one of the slots based on its random pick;
-  // a per-variant mask cloud gates that variant's scatter so each
-  // lot renders exactly one building. Three slots so the lots node's
-  // `widths_list` Vec3 maps 1:1 to the variant order here.
-  types: [BuildingType, BuildingType, BuildingType],
-  // Clearance from each polygon corner to the first lot, in metres.
-  // Sized to 2 × max(halfInward) so a corner lot's inward-projecting
-  // building doesn't poke past the vertex into the perpendicular
-  // edge's lots (which would otherwise share that corner airspace).
-  cornerClearance: number,
+  lotBridge: SubgraphDef,
+  opts: { minWidth: number; maxWidth: number; cornerClearance: number; numFloors: number },
 ): SubgraphDef {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
   const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
-  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW * 1.5 } });
-  // Each lot reserves edge-axis width equal to the variant's full
-  // depth (= 2 × halfEdge). polygon-edge-lots picks lots from these
-  // three widths to tile each edge.
+  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 5, y: ROW } });
+
   const lots = addNode(g, 'core/polygon-edge-lots', {
     position: { x: COL, y: ROW },
     inputValues: {
-      widths_list: types.map((t) => t.halfEdge * 2) as [number, number, number],
-      corner_clearance: cornerClearance,
+      min_width: opts.minWidth,
+      max_width: opts.maxWidth,
+      width_step: 1,
+      corner_clearance: opts.cornerClearance,
       gap: 1,
       seed: 17,
     },
   });
   addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: lots.id, socket: 'polygon' });
 
-  // One scatter per variant. Each is gated by its mask cloud
-  // (mask_i = 1 at lots assigned to variant i, 0 elsewhere), so a
-  // single lots cloud drives THREE scatters that together place one
-  // building per lot. Scatters batch their identical (geo, mat)
-  // pair into a single GPU draw call; total draw cost is N variants,
-  // not N lots.
-  const scatterIds: string[] = [];
-  types.forEach((t, i) => {
-    const wrap = addNode(g, `subgraph/${t.subgraph.id}`, {
-      position: { x: COL * 2, y: i * ROW * 1.4 },
-    });
-    // Shift the building so its OUTER face (local x = -halfInward)
-    // sits on the polygon edge after the scatter places it at the
-    // lot centre. See the original BodySubgraph comments for the
-    // axis-mapping derivation.
-    const shift = addNode(g, 'core/transform-scene', {
-      position: { x: COL * 3, y: i * ROW * 1.4 },
-      inputValues: {
-        translate: [t.halfInward, 0, 0],
-        rotate: [0, 0, 0],
-        scale: [1, 1, 1],
-      },
-    });
-    addEdge(g, { node: wrap.id, socket: 'scene' }, { node: shift.id, socket: 'scene' });
-    const scat = addNode(g, 'core/instance-scene-on-points', {
-      position: { x: COL * 4, y: i * ROW * 1.4 },
-      inputValues: { scale: 1, align: true },
-    });
-    addEdge(g, { node: lots.id, socket: 'points' }, { node: scat.id, socket: 'points' });
-    addEdge(g, { node: lots.id, socket: `mask_${i}` }, { node: scat.id, socket: 'per_point_active' });
-    addEdge(g, { node: shift.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
-    scatterIds.push(scat.id);
+  // for-each-point iterates lots. Broadcast inputs come straight
+  // from the lots node's FloatClouds (widths, yaws). num_floors is a
+  // constant for now — a future chunk can drive it from a random
+  // per-lot cloud for height variety.
+  const foreach = addNode(g, 'core/for-each-point', {
+    position: { x: COL * 3, y: ROW },
+    inputValues: {
+      __bridgeId: lotBridge.id,
+      num_floors: opts.numFloors,
+    },
+    extraInputs: [
+      { name: 'width', type: 'FloatCloud' },
+      { name: 'yaw',   type: 'FloatCloud' },
+      { name: 'num_floors', type: 'Float' },
+    ],
+    extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
+  addEdge(g, { node: lots.id, socket: 'points' }, { node: foreach.id, socket: 'points' });
+  addEdge(g, { node: lots.id, socket: 'widths' }, { node: foreach.id, socket: 'width' });
+  addEdge(g, { node: lots.id, socket: 'yaws' },   { node: foreach.id, socket: 'yaw' });
+  addEdge(g, { node: foreach.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
-  // Combine the three scatters into the body's single scene output.
-  const merge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 5, y: ROW * 1.5 },
-    extraInputs: scatterIds.map((_, i) => ({ name: `scene_${i}`, type: 'Scene' as const })),
-  });
-  scatterIds.forEach((id, i) => {
-    addEdge(g, { node: id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
-  });
-  addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
   return {
     id: bodyId,
-    label: 'Block perimeter buildings',
+    label: 'Block body (parametric lots)',
     category: 'Subgraphs',
     inputs: [
       { name: 'polygon', type: 'Polygon' },
-      // index is taken in case future variants want per-block seeding;
-      // currently unused (lots seed is fixed). Kept on the surface so
-      // the bridge still has a `index` channel to wire.
-      { name: 'index', type: 'Int' },
+      { name: 'index',   type: 'Int' },
     ],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
@@ -218,6 +312,11 @@ export function createCityDemo(): {
   const apartment = buildApartmentBuildingSubgraph();
   const shop = buildShopBuildingSubgraph();
   const tower = buildTowerBuildingSubgraph();
+  // Parametric office is the workhorse for the building lot
+  // iteration — it's the only one currently driven by polygon-edge-
+  // lots. The hand-authored variants above remain available as
+  // Assets the user can drag/instantiate directly.
+  const parametricOffice = buildParametricOfficeBuildingSubgraph();
   const lampPost = buildLampPostSubgraph();
   const trafficSignal = buildTrafficSignalSubgraph();
   const fireHydrant = buildFireHydrantSubgraph();
@@ -316,31 +415,35 @@ export function createCityDemo(): {
     inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
   const forEachId = 'city-blocks';
-  // Three building variants the per-block lot subdivision picks
-  // among. polygon-edge-lots walks each edge picking from these
-  // widths_list = [office.depth, apartment.depth, shop.depth] until
-  // the edge is filled. Each lot reserves edge-axis width matching
-  // its variant's depth (= 2 × halfEdge) so adjacent lots tile
-  // cleanly without overlap.
-  const BUILDING_TYPES: [BuildingType, BuildingType, BuildingType] = [
-    { subgraph: office,    halfInward: 21 / 2, halfEdge: 26 / 2 },
-    { subgraph: apartment, halfInward: 18 / 2, halfEdge: 22 / 2 },
-    { subgraph: shop,      halfInward: 14 / 2, halfEdge: 15 / 2 },
-  ];
-  const MAX_HALF_INWARD = Math.max(...BUILDING_TYPES.map((t) => t.halfInward));
-  // Corner clearance = 2 × max halfInward. At a ~90° corner, a
-  // lot's inward-projecting building (extending 2 × halfInward into
-  // the polygon perpendicular to its own edge) lives in the airspace
-  // ABOVE the adjacent edge's first 2 × halfInward of length. Keeping
-  // the first lot at least that far from the corner prevents the two
-  // buildings from interpenetrating. (Tower is dropped here because
-  // its 26 m halfEdge would force lot widths past what most blocks
-  // can hold.)
-  const CORNER_CLEARANCE = 2 * MAX_HALF_INWARD;
-  const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, BUILDING_TYPES, CORNER_CLEARANCE,
-  );
-  const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
+  // Continuous lot widths in [14, 28] m, quantised to 1 m steps so
+  // the eval cache batches identical-width buildings. The parametric
+  // office accepts any width and resizes its geometry + textures to
+  // match; lot width = building's edge-axis extent.
+  //
+  // Corner clearance = 2 × (parametric office's max width / 2) =
+  // max_lot_width. At a ~90° corner, the corner-most lot's inward-
+  // projecting body (extending ≈ max_lot_width into the polygon)
+  // shares airspace with the perpendicular edge's first
+  // max_lot_width of length; pushing the first lot that far in
+  // prevents interpenetration.
+  const MIN_LOT_WIDTH = 14;
+  const MAX_LOT_WIDTH = 28;
+  const NUM_FLOORS = 7;
+  // Office depth (perpendicular to street). Constant for now; future
+  // chunks can drive it from a per-lot random or a city-wide style.
+  const OFFICE_DEPTH = 22;
+  const CORNER_CLEARANCE = MAX_LOT_WIDTH;
+
+  const lotBodySubgraph = buildLotBodySubgraph(`lot-body-${forEachId}`, OFFICE_DEPTH);
+  const lotForEachId = `lot-iter-${forEachId}`;
+  const lotBridgeSubgraph = buildLotBridgeSubgraph(lotForEachId, lotBodySubgraph);
+  const blockBody = buildBlockBodySubgraph(`body-${forEachId}`, lotBridgeSubgraph, {
+    minWidth: MIN_LOT_WIDTH,
+    maxWidth: MAX_LOT_WIDTH,
+    cornerClearance: CORNER_CLEARANCE,
+    numFloors: NUM_FLOORS,
+  });
+  const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, blockBody);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {
     id: forEachId,
     position: { x: COL_X * 3, y: buildingsLane },
@@ -507,9 +610,14 @@ export function createCityDemo(): {
     rootNodeId: output.id,
     subgraphs: [
       sidewalk, longStreet, shortStreet, intersection,
-      tower, office, apartment, shop,
+      tower, office, apartment, shop, parametricOffice,
       lampPost, trafficSignal, fireHydrant, car,
-      bodySubgraph, bridgeSubgraph,
+      // For-each-polygon's bridge → its body (= blockBody) →
+      // for-each-point's bridge (lotBridgeSubgraph) → its body
+      // (= lotBodySubgraph). All four need to be in the project's
+      // subgraphs list so the registry knows how to resolve each
+      // `subgraph/<id>` wrapper at eval time.
+      lotBodySubgraph, lotBridgeSubgraph, blockBody, bridgeSubgraph,
     ],
     cameras: {
       main: { yaw: 0.5, pitch: 0.55, distance: 1200, target: [0, 30, 0] },

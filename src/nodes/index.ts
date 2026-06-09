@@ -18,6 +18,8 @@ import { cloudStepNode } from './cloud-step.js';
 import { colorizeNode } from './colorize.js';
 import { bevelNode } from './bevel.js';
 import { boxNode } from './box.js';
+import { boxFacePointsNode } from './box-face-points.js';
+import { vec3FromFloatsNode } from './vec3-from-floats.js';
 import { coneNode } from './cone.js';
 import { computeNormalsNode } from './compute-normals.js';
 import { cornerPointsNode } from './corner-points.js';
@@ -117,6 +119,8 @@ export const CORE_NODES = [
   sphereNode,
   cubeNode,
   boxNode,
+  boxFacePointsNode,
+  vec3FromFloatsNode,
   cylinderNode,
   coneNode,
   planeNode,
@@ -252,6 +256,8 @@ export {
   grassNode,
   bevelNode,
   boxNode,
+  boxFacePointsNode,
+  vec3FromFloatsNode,
   coneNode,
   computeNormalsNode,
   cornerPointsNode,
