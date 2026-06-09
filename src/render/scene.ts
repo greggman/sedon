@@ -1454,7 +1454,16 @@ export function createSceneRenderer(
       layout: shared.outlineCompositeLayout,
       entries: [
         { binding: 0, resource: mask.createView() },
-        { binding: 1, resource: shared.sampler },
+        // `postSampler` (clamp-to-edge), NOT `shared.sampler` (repeat).
+        // The composite shader samples mask at `uv ± off` to detect
+        // outline edges. When a selected pixel is near the canvas
+        // edge, `uv + off` lands outside [0,1] and a `repeat` sampler
+        // wraps to the OPPOSITE edge — finding the selection's mask
+        // there and drawing the outline on the wrong side of the
+        // preview. `shared.sampler` defaults to repeat because most
+        // callers are material basecolour samplers (where tiling IS
+        // wanted); the outline mask must clamp.
+        { binding: 1, resource: shared.postSampler },
         { binding: 2, resource: uniformBuffer },
       ],
     });
