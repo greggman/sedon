@@ -100,6 +100,17 @@ export interface InputDef {
    * plain terrain-path editor — just anchor dots.
    */
   bezierHandles?: boolean;
+  /**
+   * For `widget: 'point-list'` inputs: treat the points as a CLOSED
+   * ring (polygon outline) rather than an OPEN polyline (terrain
+   * path). The editor draws the wraparound segment from the last
+   * vertex back to the first so the user sees the polygon they're
+   * authoring. Off (default) is the original polyline behavior.
+   * Independent of `bezierHandles` — both `core/curve-2d` and
+   * `core/polygon-from-points` set this when they want closed
+   * authoring.
+   */
+  closed?: boolean;
 }
 
 export interface OutputDef {

@@ -384,26 +384,31 @@ export function createCityDemo(): {
     sceneRefs.push({ nodeId: scat.id, socket: 'scene' });
   }
 
-  // ── Ground plane: one entity, large enough to extend well past
-  // the outermost block. -0.1m Y lift to dodge z-fighting with the
-  // street/sidewalk surface at y=0.
+  // ── Ground polygon: the city's footprint as a Polygon → triangulated
+  // mesh → scene entity. Rectangular today (polygon-aabb), but the
+  // pipeline is now polygon-based — once polygon-difference /
+  // polygon-offset / for-each-polygon land, this same chain hosts a
+  // hand-drawn city outline with canals carved out as holes, all
+  // without restructuring the scene.
+  // -0.1m Y so the ground sits below the street/sidewalk surface
+  // at y=0 (no z-fighting).
   {
     const y = nextLane() * ROW_Y;
-    const plane = addNode(g, 'core/plane', {
+    const aabb = addNode(g, 'core/polygon-aabb', {
       position: { x: 0, y },
-      inputValues: { size: [1200, 1800], divisions: [1, 1] },
+      inputValues: { center: [0, 0], size: [1200, 1800] },
     });
-    const lift = addNode(g, 'core/transform-geometry', {
+    const mesh = addNode(g, 'core/polygon-to-mesh', {
       position: { x: COL_X, y },
-      inputValues: { translate: [0, -0.1, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+      inputValues: { y: -0.1 },
     });
     const mat = addNode(g, 'core/material', {
       position: { x: COL_X, y: y + 60 },
       inputValues: { basecolor: [0.30, 0.36, 0.26, 1], roughness: 0.95, metallic: 0 },
     });
     const ent = addNode(g, 'core/scene-entity', { position: { x: COL_X * 2, y } });
-    addEdge(g, { node: plane.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
-    addEdge(g, { node: lift.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
+    addEdge(g, { node: aabb.id, socket: 'polygon' }, { node: mesh.id, socket: 'polygon' });
+    addEdge(g, { node: mesh.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
     addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
     sceneRefs.push({ nodeId: ent.id, socket: 'scene' });
   }

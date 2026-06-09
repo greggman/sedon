@@ -62,6 +62,9 @@ import { planeNode } from './plane.js';
 import { accumulateFloatCloudNode } from './accumulate-float-cloud.js';
 import { vec3CloudFromFloatsNode } from './vec3-cloud-from-floats.js';
 import { pointListNode } from './point-list.js';
+import { polygonAabbNode } from './polygon-aabb.js';
+import { polygonFromPointsNode } from './polygon-from-points.js';
+import { polygonToMeshNode } from './polygon-to-mesh.js';
 import { pointsAlongAxisNode } from './points-along-axis.js';
 import { pointsLineNode } from './points-line.js';
 import { radialPointsNode } from './radial-points.js';
@@ -166,6 +169,9 @@ export const CORE_NODES = [
   radialPointsNode,
   phyllotaxisPointsNode,
   pointListNode,
+  polygonFromPointsNode,
+  polygonAabbNode,
+  polygonToMeshNode,
   stemPointsNode,
   distanceTransformNode,
   warpNode,
@@ -270,6 +276,9 @@ export {
   pointListNode,
   pointsAlongAxisNode,
   pointsLineNode,
+  polygonAabbNode,
+  polygonFromPointsNode,
+  polygonToMeshNode,
   radialPointsNode,
   randomFloatCloudNode,
   randomVec3CloudNode,

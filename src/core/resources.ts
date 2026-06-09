@@ -578,6 +578,27 @@ export interface SceneValue {
   waterLevel?: number;
 }
 
+// A closed 2D polygon on the world XZ plane. The outer ring vertices
+// are packed as [x0, z0, x1, z1, ...] — implicitly closed (last vertex
+// connects back to the first; do not repeat the start vertex). Optional
+// `holes` are inner rings (canals, parks, lake exclusions); each hole
+// is packed the same way as `outer` but wound the opposite way so
+// triangulation and inside-tests can use the even-odd rule.
+//
+// Coords are XZ (not XY) to live on the same ground plane as the rest
+// of the city tooling. The world's Y is implicit — the polygon is a
+// 2D footprint; nodes that place it in 3D (polygon-to-mesh) attach a
+// Y constant.
+//
+// Convention: outer ring is wound COUNTER-CLOCKWISE when viewed from
+// above (+Y). Inner rings wind CLOCKWISE. polygon-from-points and
+// polygon-aabb both guarantee this on output; downstream nodes
+// (offset / difference / triangulate, future chunks) can rely on it.
+export interface PolygonValue {
+  outer: Float32Array; // packed [x, z, x, z, ...], length = 2 * vertexCount
+  holes?: Float32Array[];
+}
+
 export interface PointCloudValue {
   positions: Float32Array; // 3 floats per point
   normals?: Float32Array;  // optional, surface normals at each point

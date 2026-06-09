@@ -65,6 +65,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'Lighting', color: '#fff176', description: 'scene-level sun + ambient lighting params' },
   { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
   { id: 'Path', color: '#a1887f', description: 'polyline through world space (road, river, …)' },
+  { id: 'Polygon', color: '#26a69a', description: '2D polygon on the world XZ plane (closed outer ring + optional inner ring "holes" for canals, parks, lakes)' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [

@@ -365,10 +365,19 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
   const [draggedPoints, setDraggedPoints] = useState<Point[] | null>(null);
   const points = draggedPoints ?? value;
 
-  // Whether the curve is closed (curve-2d only). Read off the node's
-  // inputValues so the editor shows the wrap-around segment + treats
-  // index 0's neighbours as wraparound for AUTO-tangent computation.
-  const closed = bezierHandles && view?.node.inputValues?.closed === true;
+  // Whether the points form a closed ring. Two ways to be closed:
+  //   • InputDef sets `closed: true` (polygon authoring — closed is
+  //     intrinsic to the node, no toggle).
+  //   • Node's inputValues.closed is true (curve-2d's per-instance
+  //     toggle, kept for back-compat).
+  // The editor uses this to draw the wraparound segment AND, in
+  // bezier mode, to treat index 0's neighbours as wraparound for
+  // AUTO-tangent computation.
+  const defClosed = useMemo(
+    () => nodeDef?.inputs.find((i) => i.widget === 'point-list')?.closed === true,
+    [nodeDef],
+  );
+  const closed = defClosed || view?.node.inputValues?.closed === true;
 
   // ─ Click-outside / Escape / keyboard ──────────────────────────────
   useEffect(() => {
@@ -1010,9 +1019,13 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       if (closed) parts.push('Z');
       return parts.join(' ');
     }
-    return handlePositions
+    const open = handlePositions
       .map((h, i) => `${i === 0 ? 'M' : 'L'}${h.px},${h.py}`)
       .join(' ');
+    // Closed-ring authoring (`closed: true` on the InputDef) shows
+    // the wraparound segment so the user sees the polygon they're
+    // drawing. SVG's `Z` closes back to the first move command.
+    return closed && handlePositions.length >= 3 ? `${open} Z` : open;
     // We depend on `points` (which already covers x/y/handleType/deltas
     // and changes whenever anchors move), `worldToPx` (zoom/pan), and
     // `closed`. `handlePositions` is recomputed every render so it's
@@ -1156,7 +1169,13 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
               The bezier curve itself stays visible regardless of the
               toggle because it IS the node's output. */}
           {(showLines || bezierHandles) && handlePositions.map((h, i) => {
-            const next = handlePositions[i + 1];
+            // For closed-ring authoring, also draw the wraparound
+            // hit-segment from the last vertex back to the first so
+            // clicking it inserts at the wraparound seam.
+            const isLast = i === handlePositions.length - 1;
+            const next = isLast
+              ? (closed && handlePositions.length >= 3 ? handlePositions[0] : undefined)
+              : handlePositions[i + 1];
             if (!next) return null;
             return (
               <line
