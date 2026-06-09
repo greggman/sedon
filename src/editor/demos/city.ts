@@ -82,34 +82,52 @@ interface BuildingType {
 
 function buildBuildingPerimeterBodySubgraph(
   bodyId: string,
-  // Building variants the body switches between by iteration index.
-  // index % types.length picks the variant for each polygon. Provide
-  // them in the visual rhythm you want (office, apartment, shop,
-  // tower) — the scene-switch wires preserve insertion order.
-  types: BuildingType[],
-  perimeterSpacing: number,
-  // Max halfEdge across `types`. Passed to polygon-perimeter-points
-  // as corner_clearance so EVERY variant fits within its edge,
-  // regardless of which one a given polygon ends up using.
-  maxHalfEdge: number,
+  // Up to 3 variants, picked PER-LOT by polygon-edge-lots. The lots
+  // node assigns each lot one of the slots based on its random pick;
+  // a per-variant mask cloud gates that variant's scatter so each
+  // lot renders exactly one building. Three slots so the lots node's
+  // `widths_list` Vec3 maps 1:1 to the variant order here.
+  types: [BuildingType, BuildingType, BuildingType],
+  // Clearance from each polygon corner to the first lot, in metres.
+  // Sized to 2 × max(halfInward) so a corner lot's inward-projecting
+  // building doesn't poke past the vertex into the perpendicular
+  // edge's lots (which would otherwise share that corner airspace).
+  cornerClearance: number,
 ): SubgraphDef {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
   const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
-  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
-  const perim = addNode(g, 'core/polygon-perimeter-points', {
+  const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW * 1.5 } });
+  // Each lot reserves edge-axis width equal to the variant's full
+  // depth (= 2 × halfEdge). polygon-edge-lots picks lots from these
+  // three widths to tile each edge.
+  const lots = addNode(g, 'core/polygon-edge-lots', {
     position: { x: COL, y: ROW },
-    inputValues: { spacing: perimeterSpacing, corner_clearance: maxHalfEdge, y: 0 },
+    inputValues: {
+      widths_list: types.map((t) => t.halfEdge * 2) as [number, number, number],
+      corner_clearance: cornerClearance,
+      gap: 1,
+      seed: 17,
+    },
   });
-  // One wrap + shift per variant. Each shift uses its variant's own
-  // halfInward so the outer face sits on the polygon edge regardless
-  // of which variant scene-switch ends up selecting.
-  const wrapEntries: { variantIndex: number; shiftId: string }[] = [];
+  addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: lots.id, socket: 'polygon' });
+
+  // One scatter per variant. Each is gated by its mask cloud
+  // (mask_i = 1 at lots assigned to variant i, 0 elsewhere), so a
+  // single lots cloud drives THREE scatters that together place one
+  // building per lot. Scatters batch their identical (geo, mat)
+  // pair into a single GPU draw call; total draw cost is N variants,
+  // not N lots.
+  const scatterIds: string[] = [];
   types.forEach((t, i) => {
     const wrap = addNode(g, `subgraph/${t.subgraph.id}`, {
       position: { x: COL * 2, y: i * ROW * 1.4 },
     });
+    // Shift the building so its OUTER face (local x = -halfInward)
+    // sits on the polygon edge after the scatter places it at the
+    // lot centre. See the original BodySubgraph comments for the
+    // axis-mapping derivation.
     const shift = addNode(g, 'core/transform-scene', {
       position: { x: COL * 3, y: i * ROW * 1.4 },
       inputValues: {
@@ -119,33 +137,34 @@ function buildBuildingPerimeterBodySubgraph(
       },
     });
     addEdge(g, { node: wrap.id, socket: 'scene' }, { node: shift.id, socket: 'scene' });
-    wrapEntries.push({ variantIndex: i, shiftId: shift.id });
+    const scat = addNode(g, 'core/instance-scene-on-points', {
+      position: { x: COL * 4, y: i * ROW * 1.4 },
+      inputValues: { scale: 1, align: true },
+    });
+    addEdge(g, { node: lots.id, socket: 'points' }, { node: scat.id, socket: 'points' });
+    addEdge(g, { node: lots.id, socket: `mask_${i}` }, { node: scat.id, socket: 'per_point_active' });
+    addEdge(g, { node: shift.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
+    scatterIds.push(scat.id);
   });
-  // scene-switch picks one variant by iteration index (mod
-  // types.length). The selected scene feeds the scatter as
-  // instance — the scatter then places it at every perimeter point.
-  const swt = addNode(g, 'core/scene-switch', {
-    position: { x: COL * 4, y: ROW },
-    extraInputs: wrapEntries.map((e) => ({ name: `scene_${e.variantIndex}`, type: 'Scene' as const })),
+
+  // Combine the three scatters into the body's single scene output.
+  const merge = addNode(g, 'core/scene-merge', {
+    position: { x: COL * 5, y: ROW * 1.5 },
+    extraInputs: scatterIds.map((_, i) => ({ name: `scene_${i}`, type: 'Scene' as const })),
   });
-  for (const e of wrapEntries) {
-    addEdge(g, { node: e.shiftId, socket: 'scene' }, { node: swt.id, socket: `scene_${e.variantIndex}` });
-  }
-  const scat = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 5, y: ROW },
-    inputValues: { scale: 1, align: true },
+  scatterIds.forEach((id, i) => {
+    addEdge(g, { node: id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
   });
-  addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: perim.id, socket: 'polygon' });
-  addEdge(g, { node: inputNode.id, socket: 'index' }, { node: swt.id, socket: 'index' });
-  addEdge(g, { node: perim.id, socket: 'points' }, { node: scat.id, socket: 'points' });
-  addEdge(g, { node: swt.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
-  addEdge(g, { node: scat.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+  addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
   return {
     id: bodyId,
     label: 'Block perimeter buildings',
     category: 'Subgraphs',
     inputs: [
       { name: 'polygon', type: 'Polygon' },
+      // index is taken in case future variants want per-block seeding;
+      // currently unused (lots seed is fixed). Kept on the surface so
+      // the bridge still has a `index` channel to wire.
       { name: 'index', type: 'Int' },
     ],
     outputs: [{ name: 'scene', type: 'Scene' }],
@@ -297,35 +316,29 @@ export function createCityDemo(): {
     inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
   const forEachId = 'city-blocks';
-  // Building footprints (core/box width × depth — width ends up
-  // INWARD in world, depth ends up ALONG the polygon edge after
-  // scatter-align; see body-subgraph builder for the axis mapping).
-  // The body cycles between these by iteration index, so each block
-  // gets a different building. corner_clearance and PERIMETER_SPACING
-  // are sized for the LARGEST variant so every variant fits.
-  const BUILDING_TYPES: BuildingType[] = [
+  // Three building variants the per-block lot subdivision picks
+  // among. polygon-edge-lots walks each edge picking from these
+  // widths_list = [office.depth, apartment.depth, shop.depth] until
+  // the edge is filled. Each lot reserves edge-axis width matching
+  // its variant's depth (= 2 × halfEdge) so adjacent lots tile
+  // cleanly without overlap.
+  const BUILDING_TYPES: [BuildingType, BuildingType, BuildingType] = [
     { subgraph: office,    halfInward: 21 / 2, halfEdge: 26 / 2 },
     { subgraph: apartment, halfInward: 18 / 2, halfEdge: 22 / 2 },
     { subgraph: shop,      halfInward: 14 / 2, halfEdge: 15 / 2 },
-    { subgraph: tower,     halfInward: 26 / 2, halfEdge: 26 / 2 },
   ];
-  const MAX_HALF_EDGE = Math.max(...BUILDING_TYPES.map((t) => t.halfEdge));
   const MAX_HALF_INWARD = Math.max(...BUILDING_TYPES.map((t) => t.halfInward));
-  // Spacing 1 m above the largest variant's edge extent so adjacent
-  // buildings on the same edge have ≥1 m gap regardless of which
-  // variant scene-switch picks.
-  const PERIMETER_SPACING = MAX_HALF_EDGE * 2 + 1;
-  // Corner clearance has to cover BOTH a building's edge-axis extent
-  // (so it doesn't overhang a vertex along its own edge) AND the
-  // perpendicular building on the adjacent edge (which sticks inward
-  // by halfInward there, into our edge's airspace within halfInward
-  // of the corner). For a ~90° corner with same-size buildings the
-  // sum keeps them flush instead of interpenetrating; for sharper
-  // angles you'd need more, but the road graph here is mostly
-  // near-orthogonal so the sum suffices.
-  const CORNER_CLEARANCE = MAX_HALF_EDGE + MAX_HALF_INWARD;
+  // Corner clearance = 2 × max halfInward. At a ~90° corner, a
+  // lot's inward-projecting building (extending 2 × halfInward into
+  // the polygon perpendicular to its own edge) lives in the airspace
+  // ABOVE the adjacent edge's first 2 × halfInward of length. Keeping
+  // the first lot at least that far from the corner prevents the two
+  // buildings from interpenetrating. (Tower is dropped here because
+  // its 26 m halfEdge would force lot widths past what most blocks
+  // can hold.)
+  const CORNER_CLEARANCE = 2 * MAX_HALF_INWARD;
   const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, BUILDING_TYPES, PERIMETER_SPACING, CORNER_CLEARANCE,
+    `body-${forEachId}`, BUILDING_TYPES, CORNER_CLEARANCE,
   );
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {

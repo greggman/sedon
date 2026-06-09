@@ -69,6 +69,7 @@ import { polygonGridSubdivideNode } from './polygon-grid-subdivide.js';
 import { polygonListNode } from './polygon-list.js';
 import { polygonListOffsetNode } from './polygon-list-offset.js';
 import { polygonListToMeshNode } from './polygon-list-to-mesh.js';
+import { polygonEdgeLotsNode } from './polygon-edge-lots.js';
 import { polylineBufferListNode } from './polyline-buffer-list.js';
 import { polylinePointsNode } from './polyline-points.js';
 import { polygonOffsetNode } from './polygon-offset.js';
@@ -187,6 +188,7 @@ export const CORE_NODES = [
   polygonListOffsetNode,
   polygonListToMeshNode,
   polygonOffsetNode,
+  polygonEdgeLotsNode,
   polygonPerimeterPointsNode,
   polygonSubdivideByLinesNode,
   polygonToMeshNode,
@@ -308,6 +310,7 @@ export {
   polygonPerimeterPointsNode,
   polygonSubdivideByLinesNode,
   polygonToMeshNode,
+  polygonEdgeLotsNode,
   polylineBufferListNode,
   polylinePointsNode,
   forEachPolygonNode,

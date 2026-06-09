@@ -23,9 +23,14 @@ export const sceneSwitchNode: NodeDef = {
   inputs: [
     {
       name: 'index',
-      type: 'Int',
+      type: 'Float',
       default: 0,
-      description: 'which connected scene to pass through. Taken modulo the number of connected `scene_*` sockets so it wraps without bounds checks',
+      // Float (not Int) so a FloatCloud broadcast input from
+      // for-each-point can drive it per-iteration (no Float→Int
+      // conversion exists in the type registry). The node floors the
+      // value internally before the modulo, so any numeric value
+      // works.
+      description: 'which connected scene to pass through. Floored to an integer, then taken modulo the number of connected `scene_*` sockets so it wraps without bounds checks',
     },
   ],
   outputs: [
@@ -85,7 +90,7 @@ without bounds checks.
     },
   },
   evaluate(_ctx, inputs): { scene: SceneValue } {
-    const index = (inputs.index as number) | 0;
+    const index = Math.floor(inputs.index as number);
     // Collect connected scenes preserving their socket order. We rely
     // on insertion order of Object.keys() reflecting `scene_0`,
     // `scene_1`, … as authored.
