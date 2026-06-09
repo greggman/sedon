@@ -599,6 +599,16 @@ export interface PolygonValue {
   holes?: Float32Array[];
 }
 
+// Ordered list of Polygons. The natural output of subdivision ops
+// (e.g. polygon-subdivide-grid produces 1 input city polygon → N
+// block polygons) and the input to `core/for-each-polygon`. We wrap
+// the array so `PolygonList` is its own SocketType (distinct from
+// `Polygon` and from a bare Polygon[]) and the type system can tell
+// "one block" from "all blocks" at the wire level.
+export interface PolygonListValue {
+  polygons: PolygonValue[];
+}
+
 export interface PointCloudValue {
   positions: Float32Array; // 3 floats per point
   normals?: Float32Array;  // optional, surface normals at each point

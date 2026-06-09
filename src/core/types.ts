@@ -66,6 +66,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
   { id: 'Path', color: '#a1887f', description: 'polyline through world space (road, river, …)' },
   { id: 'Polygon', color: '#26a69a', description: '2D polygon on the world XZ plane (closed outer ring + optional inner ring "holes" for canals, parks, lakes)' },
+  { id: 'PolygonList', color: '#00897b', description: 'an ordered list of Polygons — the natural output of subdivision ops (city → blocks → lots) and the input to `core/for-each-polygon`' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [
