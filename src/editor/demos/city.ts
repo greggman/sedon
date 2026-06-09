@@ -66,28 +66,32 @@ const Z_SPACING = BLOCK_LONG + STREET_WIDTH;   // 218
 // material) pair. We don't pay 25× the GPU cost for the
 // iteration architecture.
 
+interface BuildingType {
+  subgraph: SubgraphDef;
+  // Half the geometry's X-axis extent (= half core/box width). After
+  // scatter-align, this is how far the building reaches INWARD from
+  // its origin in world space, so it doubles as the local-+X shift
+  // needed to put the building's outer face on the polygon edge.
+  halfInward: number;
+  // Half the geometry's Z-axis extent (= half core/box depth). After
+  // scatter-align, this is how far the building reaches ALONG the
+  // polygon edge. The largest such value across building variants
+  // sets the corner_clearance and perimeter spacing the body picks.
+  halfEdge: number;
+}
+
 function buildBuildingPerimeterBodySubgraph(
   bodyId: string,
-  buildingSubgraph: SubgraphDef,
+  // Building variants the body switches between by iteration index.
+  // index % types.length picks the variant for each polygon. Provide
+  // them in the visual rhythm you want (office, apartment, shop,
+  // tower) — the scene-switch wires preserve insertion order.
+  types: BuildingType[],
   perimeterSpacing: number,
-  // Half the building's extent along its LOCAL +X axis. The scatter
-  // aligns the source scene's LOCAL +X to the perimeter point's
-  // tangent — which polygon-perimeter-points sets to the INWARD
-  // direction — so local-+X extent maps to inward extent in world.
-  // Translating the source by +halfInward along local +X shifts the
-  // building inward by that amount, putting its OUTER face (originally
-  // at local x = -halfInward) on the polygon edge. Without this, the
-  // building's centre sits on the polygon edge and half of it
-  // overhangs the road.
-  buildingHalfInward: number,
-  // Half the building's extent along its LOCAL +Z axis. The scatter
-  // aligns local +Z to the edge direction (bitangent = cross(tangent,
-  // up)), so this is how far the building reaches ALONG the polygon
-  // edge from each perimeter point. Passed as polygon-perimeter-
-  // points' `corner_clearance` so points never land within halfEdge
-  // of a polygon corner — otherwise a building near a corner pokes
-  // past the vertex into the adjacent road's airspace.
-  buildingHalfEdge: number,
+  // Max halfEdge across `types`. Passed to polygon-perimeter-points
+  // as corner_clearance so EVERY variant fits within its edge,
+  // regardless of which one a given polygon ends up using.
+  maxHalfEdge: number,
 ): SubgraphDef {
   const g = createGraph();
   const COL = 240;
@@ -96,36 +100,54 @@ function buildBuildingPerimeterBodySubgraph(
   const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
   const perim = addNode(g, 'core/polygon-perimeter-points', {
     position: { x: COL, y: ROW },
-    inputValues: { spacing: perimeterSpacing, corner_clearance: buildingHalfEdge, y: 0 },
+    inputValues: { spacing: perimeterSpacing, corner_clearance: maxHalfEdge, y: 0 },
   });
-  const wrap = addNode(g, `subgraph/${buildingSubgraph.id}`, {
-    position: { x: COL * 2, y: 0 },
+  // One wrap + shift per variant. Each shift uses its variant's own
+  // halfInward so the outer face sits on the polygon edge regardless
+  // of which variant scene-switch ends up selecting.
+  const wrapEntries: { variantIndex: number; shiftId: string }[] = [];
+  types.forEach((t, i) => {
+    const wrap = addNode(g, `subgraph/${t.subgraph.id}`, {
+      position: { x: COL * 2, y: i * ROW * 1.4 },
+    });
+    const shift = addNode(g, 'core/transform-scene', {
+      position: { x: COL * 3, y: i * ROW * 1.4 },
+      inputValues: {
+        translate: [t.halfInward, 0, 0],
+        rotate: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+    });
+    addEdge(g, { node: wrap.id, socket: 'scene' }, { node: shift.id, socket: 'scene' });
+    wrapEntries.push({ variantIndex: i, shiftId: shift.id });
   });
-  // Shift the source scene along its LOCAL +X (which the scatter
-  // aligns to the inward perimeter tangent) by halfInward, putting
-  // the building's outer face on the polygon edge.
-  const shift = addNode(g, 'core/transform-scene', {
-    position: { x: COL * 3, y: 0 },
-    inputValues: {
-      translate: [buildingHalfInward, 0, 0],
-      rotate: [0, 0, 0],
-      scale: [1, 1, 1],
-    },
-  });
-  const scat = addNode(g, 'core/instance-scene-on-points', {
+  // scene-switch picks one variant by iteration index (mod
+  // types.length). The selected scene feeds the scatter as
+  // instance — the scatter then places it at every perimeter point.
+  const swt = addNode(g, 'core/scene-switch', {
     position: { x: COL * 4, y: ROW },
+    extraInputs: wrapEntries.map((e) => ({ name: `scene_${e.variantIndex}`, type: 'Scene' as const })),
+  });
+  for (const e of wrapEntries) {
+    addEdge(g, { node: e.shiftId, socket: 'scene' }, { node: swt.id, socket: `scene_${e.variantIndex}` });
+  }
+  const scat = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 5, y: ROW },
     inputValues: { scale: 1, align: true },
   });
   addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: perim.id, socket: 'polygon' });
+  addEdge(g, { node: inputNode.id, socket: 'index' }, { node: swt.id, socket: 'index' });
   addEdge(g, { node: perim.id, socket: 'points' }, { node: scat.id, socket: 'points' });
-  addEdge(g, { node: wrap.id, socket: 'scene' }, { node: shift.id, socket: 'scene' });
-  addEdge(g, { node: shift.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
+  addEdge(g, { node: swt.id, socket: 'scene' }, { node: scat.id, socket: 'instance' });
   addEdge(g, { node: scat.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
   return {
     id: bodyId,
     label: 'Block perimeter buildings',
     category: 'Subgraphs',
-    inputs: [{ name: 'polygon', type: 'Polygon' }],
+    inputs: [
+      { name: 'polygon', type: 'Polygon' },
+      { name: 'index', type: 'Int' },
+    ],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
     inputNodeId: inputNode.id,
@@ -146,6 +168,7 @@ function buildBuildingPerimeterBridgeSubgraph(
   const iterOutputNode = addNode(g, `iteration-output/${bridgeId}`, { position: { x: COL * 3, y: ROW } });
   const bodyNode = addNode(g, `subgraph/${body.id}`, { position: { x: COL * 1.5, y: ROW } });
   addEdge(g, { node: iterInputNode.id, socket: 'polygon' }, { node: bodyNode.id, socket: 'polygon' });
+  addEdge(g, { node: iterInputNode.id, socket: 'index' },   { node: bodyNode.id, socket: 'index' });
   addEdge(g, { node: bodyNode.id, socket: 'scene' }, { node: iterOutputNode.id, socket: 'scene' });
   return {
     id: bridgeId,
@@ -274,22 +297,25 @@ export function createCityDemo(): {
     inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
   const forEachId = 'city-blocks';
-  // Office geometry: 21 m × 26 m footprint (core/box width × depth).
-  // The scatter aligns the source's LOCAL +X to the perimeter
-  // tangent (= inward) and LOCAL +Z to the edge direction, so the
-  // box's WIDTH axis ends up perpendicular to the street and its
-  // DEPTH axis runs along the street.
-  //   • inward extent in world = OFFICE_WIDTH  (21 m → ±10.5 m)
-  //   • edge   extent in world = OFFICE_DEPTH  (26 m → ±13 m)
-  const OFFICE_WIDTH = 21;
-  const OFFICE_DEPTH = 26;
-  // Spacing slightly above the building's edge-axis extent so adjacent
-  // buildings on the same edge have ~1 m of clear gap. (Was sized to
-  // OFFICE_WIDTH+3 back when we mistakenly believed width ran along
-  // the edge.)
-  const PERIMETER_SPACING = OFFICE_DEPTH + 1;
+  // Building footprints (core/box width × depth — width ends up
+  // INWARD in world, depth ends up ALONG the polygon edge after
+  // scatter-align; see body-subgraph builder for the axis mapping).
+  // The body cycles between these by iteration index, so each block
+  // gets a different building. corner_clearance and PERIMETER_SPACING
+  // are sized for the LARGEST variant so every variant fits.
+  const BUILDING_TYPES: BuildingType[] = [
+    { subgraph: office,    halfInward: 21 / 2, halfEdge: 26 / 2 },
+    { subgraph: apartment, halfInward: 18 / 2, halfEdge: 22 / 2 },
+    { subgraph: shop,      halfInward: 14 / 2, halfEdge: 15 / 2 },
+    { subgraph: tower,     halfInward: 26 / 2, halfEdge: 26 / 2 },
+  ];
+  const MAX_HALF_EDGE = Math.max(...BUILDING_TYPES.map((t) => t.halfEdge));
+  // Spacing 1 m above the largest variant's edge extent so adjacent
+  // buildings on the same edge have ≥1 m gap regardless of which
+  // variant scene-switch picks.
+  const PERIMETER_SPACING = MAX_HALF_EDGE * 2 + 1;
   const bodySubgraph = buildBuildingPerimeterBodySubgraph(
-    `body-${forEachId}`, office, PERIMETER_SPACING, OFFICE_WIDTH / 2, OFFICE_DEPTH / 2,
+    `body-${forEachId}`, BUILDING_TYPES, PERIMETER_SPACING, MAX_HALF_EDGE,
   );
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, bodySubgraph);
   const blocksForEach = addNode(g, 'core/for-each-polygon', {
@@ -359,13 +385,65 @@ export function createCityDemo(): {
     sceneRefs.push({ nodeId: roadEnt.id, socket: 'scene' });
   }
 
-  // NOTE: chunk-4's grid-aligned overlays (rectangular sidewalks,
-  // long/short street segments, intersections, traffic signals,
-  // lamp posts, fire hydrants, cars) lived on a fixed 5×5 grid and
-  // are intentionally not scattered here — they would overlap the
-  // organic Tokyo blocks visually. Road-mesh rendering on top of the
-  // polygon-defined road network is its own follow-up (polyline-
-  // buffer + per-edge polygon emission).
+  // ── Lamp posts. One per kerb, every LAMP_SPACING metres along each
+  // road centreline. polyline-points samples the same `linesFlat`
+  // (road centrelines) as the asphalt mesh, offset perpendicular by
+  // ±LAMP_OFFSET so points land just outside the asphalt on each
+  // sidewalk. Two scatters (one per side) into one scene-merge.
+  // end_clearance keeps lamps from landing exactly at a road junction
+  // where they'd clip into the cross-street.
+  {
+    const LAMP_SPACING = 25;
+    // Asphalt half-width + a touch so lamps sit at the curb (not in
+    // the road, not buried in the building line).
+    const LAMP_OFFSET = ROAD_WIDTH / 2 + 1.5;
+    const LAMP_END_CLEARANCE = ROAD_WIDTH / 2 + 4;
+    const lampsLane = nextLane() * ROW_Y;
+    const lampSubgraph = `subgraph/${lampPost.id}`;
+    const lampWrapL = addNode(g, lampSubgraph, { position: { x: 0, y: lampsLane } });
+    const lampWrapR = addNode(g, lampSubgraph, { position: { x: 0, y: lampsLane + ROW_Y * 0.4 } });
+    const ptsLeft = addNode(g, 'core/polyline-points', {
+      position: { x: COL_X, y: lampsLane },
+      inputValues: {
+        lines: linesFlat,
+        spacing: LAMP_SPACING,
+        end_clearance: LAMP_END_CLEARANCE,
+        side_offset:  LAMP_OFFSET,
+        y: 0,
+      },
+    });
+    const ptsRight = addNode(g, 'core/polyline-points', {
+      position: { x: COL_X, y: lampsLane + ROW_Y * 0.4 },
+      inputValues: {
+        lines: linesFlat,
+        spacing: LAMP_SPACING,
+        end_clearance: LAMP_END_CLEARANCE,
+        side_offset: -LAMP_OFFSET,
+        y: 0,
+      },
+    });
+    const scatL = addNode(g, 'core/instance-scene-on-points', {
+      position: { x: COL_X * 2, y: lampsLane },
+      inputValues: { scale: 1, align: true },
+    });
+    const scatR = addNode(g, 'core/instance-scene-on-points', {
+      position: { x: COL_X * 2, y: lampsLane + ROW_Y * 0.4 },
+      inputValues: { scale: 1, align: true },
+    });
+    addEdge(g, { node: ptsLeft.id,  socket: 'points' }, { node: scatL.id, socket: 'points' });
+    addEdge(g, { node: lampWrapL.id, socket: 'scene' }, { node: scatL.id, socket: 'instance' });
+    addEdge(g, { node: ptsRight.id, socket: 'points' }, { node: scatR.id, socket: 'points' });
+    addEdge(g, { node: lampWrapR.id, socket: 'scene' }, { node: scatR.id, socket: 'instance' });
+    sceneRefs.push({ nodeId: scatL.id, socket: 'scene' });
+    sceneRefs.push({ nodeId: scatR.id, socket: 'scene' });
+  }
+
+  // NOTE: chunk-4's grid-aligned overlays (long/short street segments,
+  // intersections, traffic signals, fire hydrants, cars) lived on a
+  // fixed 5×5 grid and are intentionally not scattered here — they
+  // would overlap the organic Tokyo blocks visually. Per-polyline
+  // versions of those follow the same `polyline-points` pattern this
+  // lamp pass uses.
 
   // ── Big scene-merge → output.
   const extraInputs = sceneRefs.map((_, i) => ({

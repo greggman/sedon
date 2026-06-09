@@ -70,6 +70,7 @@ import { polygonListNode } from './polygon-list.js';
 import { polygonListOffsetNode } from './polygon-list-offset.js';
 import { polygonListToMeshNode } from './polygon-list-to-mesh.js';
 import { polylineBufferListNode } from './polyline-buffer-list.js';
+import { polylinePointsNode } from './polyline-points.js';
 import { polygonOffsetNode } from './polygon-offset.js';
 import { polygonPerimeterPointsNode } from './polygon-perimeter-points.js';
 import { polygonSubdivideByLinesNode } from './polygon-subdivide-by-lines.js';
@@ -85,6 +86,7 @@ import { pathMaskNode } from './path-mask.js';
 import { ridgedNoiseNode } from './ridged-noise.js';
 import { sceneEntityNode } from './scene-entity.js';
 import { sceneMergeNode } from './scene-merge.js';
+import { sceneSwitchNode } from './scene-switch.js';
 import { selectByAngleNode } from './select-by-angle.js';
 import { selectByNormalNode } from './select-by-normal.js';
 import { selectCombineNode } from './select-combine.js';
@@ -189,6 +191,7 @@ export const CORE_NODES = [
   polygonSubdivideByLinesNode,
   polygonToMeshNode,
   polylineBufferListNode,
+  polylinePointsNode,
   forEachPolygonNode,
   stemPointsNode,
   distanceTransformNode,
@@ -210,6 +213,7 @@ export const CORE_NODES = [
   waterPlaneNode,
   sceneEntityNode,
   sceneMergeNode,
+  sceneSwitchNode,
   mergeSceneEntitiesNode,
   grassBladesNode,
   grassNode,
@@ -305,6 +309,7 @@ export {
   polygonSubdivideByLinesNode,
   polygonToMeshNode,
   polylineBufferListNode,
+  polylinePointsNode,
   forEachPolygonNode,
   radialPointsNode,
   randomFloatCloudNode,
@@ -313,6 +318,7 @@ export {
   ridgedNoiseNode,
   sceneEntityNode,
   sceneMergeNode,
+  sceneSwitchNode,
   slopeFromHeightNode,
   solidColorNode,
   sphereNode,

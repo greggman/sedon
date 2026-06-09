@@ -37,6 +37,17 @@ export function acquireGpuDevice(): Promise<GpuDevice> {
       throw new Error('No WebGPU adapter available.');
     }
     const device = await adapter.requestDevice();
+    // WebGPU validation errors fire here when no error scope captures
+    // them. Without a listener Chrome will silently log to its internal
+    // GPU log channel — invisible to puppeteer verifiers and to most
+    // users. Routing through `console.error` makes them visible in
+    // devtools AND lets every verifier's existing
+    // `page.on('console', msg => msg.type() === 'error' && …)` listener
+    // pick them up without per-script wiring.
+    device.onuncapturederror = (event) => {
+      // eslint-disable-next-line no-console
+      console.error('[webgpu] uncaptured error:', event.error.message);
+    };
     const format = navigator.gpu.getPreferredCanvasFormat();
     return { device, format };
   })().catch((e) => {
