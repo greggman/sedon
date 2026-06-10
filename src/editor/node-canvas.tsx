@@ -785,22 +785,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     [panelId],
   );
 
-  // F-key: frame selected nodes, or fit-all if nothing is selected. Lives
-  // on the wrapper div so it only fires when focus is somewhere inside
-  // this canvas (ReactFlow's viewport has tabIndex=0 and bubbles
-  // keydown). Skipped when typing in inputs/textareas so renaming a
-  // socket doesn't snap the view.
-  const onFrameKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'f' && e.key !== 'F') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault();
-    const allNodes = rf.getNodes();
-    if (allNodes.length === 0) return;
-    const selected = allNodes.filter((n) => n.selected);
-    const target = selected.length > 0 ? selected : allNodes;
-    rf.fitView({ padding: 0.2, nodes: target.map((n) => ({ id: n.id })), duration: 200 });
-  }, [rf]);
 
   // Subscribe to the history shape so the corner buttons enable /
   // disable reactively. The selector returns a small object; useShallow
@@ -895,7 +879,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         // for clicks anywhere in the canvas, including on nodes.
         style={{ width: '100%', height: '100%' }}
         onPointerDownCapture={onPointerDownCapture}
-        onKeyDown={onFrameKey}
       >
         <ReactFlow
           nodes={rfNodes}

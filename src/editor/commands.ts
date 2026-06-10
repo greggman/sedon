@@ -157,8 +157,13 @@ export function frameSelectedInActiveCanvas(): void {
   const allNodes = rf.getNodes();
   if (allNodes.length === 0) return;
   const selected = allNodes.filter((n) => n.selected);
-  const target = selected.length > 0 ? selected : allNodes;
-  rf.fitView({ padding: 0.2, nodes: target.map((n) => ({ id: n.id })), duration: 200 });
+  if (selected.length > 0) {
+    rf.fitView({ padding: 0.2, nodes: selected.map((n) => ({ id: n.id })), duration: 200 });
+  } else {
+    // No `nodes` → ReactFlow's all-nodes path. Same fix the in-canvas
+    // F-key handler uses; see node-canvas.tsx onFrameKey.
+    rf.fitView({ padding: 0.2, duration: 200 });
+  }
 }
 
 // Auto-arrange the current graph's nodes via rank-based layered layout.

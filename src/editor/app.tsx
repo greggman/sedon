@@ -11,6 +11,7 @@ import { useActionMap } from './actions.js';
 import { useAppMenus } from './app-menus.js';
 import { getActiveAssetPanel } from './asset-clipboard.js';
 import { copySelection, pasteFromClipboard } from './clipboard-ops.js';
+import { frameSelectedInActiveCanvas } from './commands.js';
 import { CommandPalette } from './command-palette.js';
 import { navigateCanvasBack, navigateCanvasForward } from './open-graph.js';
 import { GithubLink } from './github-link.js';
@@ -272,6 +273,35 @@ export function App() {
         // eslint-disable-next-line no-alert
         alert(`Clipboard ${isCopy ? 'copy' : 'paste'} failed: ${msg}`);
       }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // F : Frame Selected (or fit-all when nothing selected). Window-level
+  // so it works regardless of where focus landed inside the canvas —
+  // clicking the empty pane parks focus on dockview's container, which
+  // is OUTSIDE the React Flow wrapper, so a wrapper-level keydown never
+  // fires in that case. Routes through the same code path the View
+  // menu uses (`frameSelectedInActiveCanvas`).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== 'f' && e.key !== 'F') return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        if (t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+        if (t.tagName === 'INPUT') return;
+      }
+      const api = getDockviewApi();
+      const active = api?.activePanel;
+      if (!active) return;
+      // Preview handles its own F via the wrapper-level keydown
+      // listener in preview.tsx (it also drives the FPS WASD keys
+      // from that same listener), so we only run for the canvas case.
+      if (active.view.contentComponent !== 'node-canvas') return;
+      e.preventDefault();
+      frameSelectedInActiveCanvas();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
