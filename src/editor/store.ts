@@ -25,9 +25,25 @@ import {
   type ProjectSnapshot,
 } from './command.js';
 import { extractSelectionAsSubgraph } from './extract-subgraph.js';
+import {
+  assertConnectIsValid,
+  assertInputSocketExists,
+  assertKnownKind,
+  assertNodeExists,
+  assertNotDuplicateEdgeId,
+  assertNotDuplicateNodeId,
+  assertValueShapeForType,
+} from './graph-validation.js';
 import { createInitialGraph } from './initial-graph.js';
 import { useLayoutStore } from './layout-store.js';
 import { wrapActionsSlice } from './recording.js';
+import { buildRegistry } from './registry.js';
+import { createCoreTypeRegistry } from '../core/types.js';
+
+// Type registry is static — same set of core types and conversions
+// every time. Build once at module load; the validation helpers only
+// read from it, so sharing across actions is safe and cheap.
+const coreTypes = createCoreTypeRegistry();
 
 // Orbit camera state. `target` is the world-space point the camera orbits
 // around; yaw/pitch/distance describe its position relative to that point.
@@ -1795,12 +1811,28 @@ export const useEditorStore = create<EditorState>((set, get) => {
     markUndoBarrier: () => set({ undoBarrierPending: true }),
 
     addNode: (node) => {
-      dispatch({ kind: 'addNode', node, prevRootNodeId: get().rootNodeId });
+      const state = get();
+      // Validate before dispatching. Throws GraphValidationError on
+      // bad input — UI call sites are pre-validated (the picker only
+      // emits known kinds, fresh ids), so a throw here is a real bug;
+      // MCP wraps the throw into a structured tool error.
+      assertNotDuplicateNodeId(state.graph, node.id);
+      const registry = buildRegistry(state.subgraphs);
+      assertKnownKind(registry, node.kind);
+      dispatch({ kind: 'addNode', node, prevRootNodeId: state.rootNodeId });
     },
 
     connect: (id, from, to) => {
+      const state = get();
+      const registry = buildRegistry(state.subgraphs);
+      // Full check: both nodes exist, sockets exist on both ends,
+      // types are compatible, no self-loop. Replacing an existing
+      // edge into the same target is allowed (single-edge-per-input
+      // convention — handled below via the `replaced` field).
+      assertConnectIsValid(state.graph, registry, coreTypes, from, to);
+      assertNotDuplicateEdgeId(state.graph, id);
       const replaced =
-        get().graph.edges.find(
+        state.graph.edges.find(
           (e) => e.to.node === to.node && e.to.socket === to.socket,
         ) ?? null;
       dispatch({ kind: 'connect', edge: { id, from, to }, replaced });
@@ -1976,8 +2008,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     setInputValue: (nodeId, name, value, opts) => {
-      const node = get().graph.nodes.find((n) => n.id === nodeId);
-      if (!node) return;
+      const state = get();
+      // Throw on the "this socket doesn't exist on this node" path —
+      // it's almost always a typo on an MCP caller's side. The
+      // existing silent-return path was masking real bugs (the UI
+      // never calls this with a wrong name; only programmatic
+      // callers can). Lightweight value-shape check too: passing
+      // `"hello"` to a Float fails fast instead of corrupting eval
+      // downstream.
+      const node = assertNodeExists(state.graph, nodeId);
+      const registry = buildRegistry(state.subgraphs);
+      const def = assertKnownKind(registry, node.kind);
+      const socket = assertInputSocketExists(node, def, name);
+      assertValueShapeForType(socket.type, value);
       const before = node.inputValues?.[name];
       if (before === value) return;
       const cmd: import('./command.js').Command = { kind: 'setInputValue', nodeId, name, before, after: value };

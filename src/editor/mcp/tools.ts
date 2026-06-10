@@ -17,6 +17,7 @@
 import type { GraphNode, SocketRef } from '../../core/graph.js';
 import type { NodeRegistry } from '../../core/node-def.js';
 import type { Action } from '../action.js';
+import { GraphValidationError } from '../graph-validation.js';
 import type { EditorState } from '../store.js';
 import { SEDON_OVERVIEW } from './overview.js';
 
@@ -25,6 +26,46 @@ export interface SedonTool {
   description: string;
   inputSchema: object;
   handler: (args: Record<string, unknown>) => unknown;
+}
+
+/**
+ * Shape returned to the agent when an input violates the graph's
+ * invariants (unknown node id, type mismatch, etc.). The store's
+ * `assertX` helpers throw `GraphValidationError`; this wrapper
+ * converts that into a tool result the agent can branch on.
+ *
+ * Success returns flow through unchanged — tools already return ad-hoc
+ * shapes ({ id }, { removed: N }, { ok: true }) and we don't want to
+ * disturb those. Only the FAILURE case has a uniform shape.
+ */
+export interface ToolValidationError {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    detail: Record<string, unknown>;
+  };
+}
+
+/**
+ * Wrap a mutation handler so that throws of `GraphValidationError`
+ * become a structured `{ ok: false, error }` return. Other errors
+ * still propagate — they signal real bugs that the agent can't
+ * recover from. Synchronous handlers stay synchronous.
+ */
+function catchValidation<T>(
+  fn: (args: Record<string, unknown>) => T,
+): (args: Record<string, unknown>) => T | ToolValidationError {
+  return (args) => {
+    try {
+      return fn(args);
+    } catch (e) {
+      if (e instanceof GraphValidationError) {
+        return { ok: false, error: { code: e.code, message: e.message, detail: e.detail } };
+      }
+      throw e;
+    }
+  };
 }
 
 /**
@@ -174,7 +215,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
       required: ['kind'],
       additionalProperties: false,
     },
-    handler: (args) => {
+    handler: catchValidation((args) => {
       const kind = String(args.kind);
       const id = typeof args.id === 'string' && args.id.length > 0 ? args.id : crypto.randomUUID();
       const node: GraphNode = {
@@ -193,7 +234,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
       }
       getState().addNode(node);
       return { id };
-    },
+    }),
   };
 
   const removeNodes: SedonTool = {
@@ -224,7 +265,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
   const connect: SedonTool = {
     name: 'connect',
     description:
-      'Connect an output socket on one node to an input socket on another. Both ends are specified as { node: <id>, socket: <name> }. The edge fails (and is silently dropped) if the types are incompatible — call `listNodeKinds` first to find the right socket types. When the target input socket is already connected, the existing edge is REPLACED (this is the same single-edge-per-input convention the canvas enforces). UNDOABLE.',
+      'Connect an output socket on one node to an input socket on another. Both ends are specified as { node: <id>, socket: <name> }. The call returns `{ ok: false, error: { code, message, detail } }` if either node or socket does not exist, the types are incompatible, the source and target are the same node, or the requested edge id is taken — call `listNodeKinds` and `listGraphNodes` first to confirm socket names and types. When the target input socket is already connected, the existing edge is REPLACED (this is the same single-edge-per-input convention the canvas enforces). UNDOABLE.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -235,13 +276,13 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
       required: ['from', 'to'],
       additionalProperties: false,
     },
-    handler: (args) => {
+    handler: catchValidation((args) => {
       const from = parseSocketRef(args.from, 'from');
       const to = parseSocketRef(args.to, 'to');
       const id = typeof args.id === 'string' && args.id.length > 0 ? args.id : crypto.randomUUID();
       getState().connect(id, from, to);
       return { id };
-    },
+    }),
   };
 
   const removeEdges: SedonTool = {
@@ -288,7 +329,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
       required: ['nodeId', 'name', 'value'],
       additionalProperties: false,
     },
-    handler: (args) => {
+    handler: catchValidation((args) => {
       const nodeId = String(args.nodeId);
       const name = String(args.name);
       const value = args.value;
@@ -296,7 +337,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
       if (typeof args.coalesce === 'boolean') opts.coalesce = args.coalesce;
       getState().setInputValue(nodeId, name, value, opts);
       return { ok: true };
-    },
+    }),
   };
 
   const renameNode: SedonTool = {
