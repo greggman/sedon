@@ -44,6 +44,14 @@ export type Command =
       coalesce?: boolean;
     }
   | { kind: 'replaceGraph'; before: GraphState; after: GraphState }
+  // Groups multiple graph-scoped commands into one undo entry — what a
+  // user sees as a single operation but internally takes several
+  // commands (e.g. delete-node-with-edges, paste-with-rewire). Applied
+  // forward in order, backward in reverse. Nests freely: a `batch`
+  // command can contain other `batch` commands. `replaceProject` is
+  // intentionally NOT allowed inside a batch — it's project-scoped and
+  // its own undo-stack entry already.
+  | { kind: 'batch'; commands: Command[] }
   | {
       kind: 'replaceProject';
       before: ProjectSnapshot;
@@ -158,6 +166,15 @@ export function applyForward(state: GraphState, cmd: Command): GraphState {
     }
     case 'replaceGraph':
       return cmd.after;
+    case 'batch': {
+      // Thread state through each sub-command in declaration order.
+      // The sub-commands are graph-scoped (batches can't contain
+      // replaceProject) so applyForward returns a fresh GraphState
+      // each time and we don't need any per-step bookkeeping.
+      let s = state;
+      for (const sub of cmd.commands) s = applyForward(s, sub);
+      return s;
+    }
     case 'replaceProject':
       // Project-scoped — its blast radius is wider than GraphState. The
       // store handles it directly in undo/redo by swapping the snapshot.
@@ -207,6 +224,15 @@ export function applyBackward(state: GraphState, cmd: Command): GraphState {
     }
     case 'replaceGraph':
       return cmd.before;
+    case 'batch': {
+      // Mirror of the forward path: unwind in REVERSE order so we
+      // undo the latest sub-command first. Threads state through.
+      let s = state;
+      for (let i = cmd.commands.length - 1; i >= 0; i--) {
+        s = applyBackward(s, cmd.commands[i]!);
+      }
+      return s;
+    }
     case 'replaceProject':
       throw new Error('replaceProject must be applied at the store level, not via applyBackward');
   }

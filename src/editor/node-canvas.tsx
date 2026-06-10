@@ -13,6 +13,7 @@ import {
   type IsValidConnection,
   type Node,
   type OnConnect,
+  type OnDelete,
   type OnEdgesChange,
   type OnMove,
   type OnNodesChange,
@@ -184,8 +185,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // up on its first render of the new edges.
   const rfStore = useStoreApi();
   const connect = useEditorStore((s) => s.connect);
-  const removeEdges = useEditorStore((s) => s.removeEdges);
-  const removeNodes = useEditorStore((s) => s.removeNodes);
+  const removeNodesAndEdges = useEditorStore((s) => s.removeNodesAndEdges);
   const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
   const addNodeExtraInputWithEdge = useEditorStore((s) => s.addNodeExtraInputWithEdge);
   // Project-level viewports map — used only as the initial seed for a
@@ -556,28 +556,34 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // `remove` changes are intentionally ignored here — ReactFlow fires
+  // both `onEdgesChange(remove)` and `onNodesChange(remove)` separately
+  // when the user deletes a node with connections. Catching them
+  // independently produced two undo entries for what the user sees as
+  // one operation. We let those changes flow through `onRfNodesChange`
+  // / `onRfEdgesChange` for the visual update only and rely on the
+  // single `onDelete` callback below to dispatch one batched store
+  // command for the whole deletion.
   const onNodesChange = useCallback<OnNodesChange>(
-    (changes) => {
-      onRfNodesChange(changes);
-      const removed = new Set<string>();
-      for (const change of changes) {
-        if (change.type === 'remove') removed.add(change.id);
-      }
-      if (removed.size > 0) removeNodes(removed);
-    },
-    [onRfNodesChange, removeNodes],
+    (changes) => { onRfNodesChange(changes); },
+    [onRfNodesChange],
   );
 
   const onEdgesChange = useCallback<OnEdgesChange>(
-    (changes) => {
-      onRfEdgesChange(changes);
-      const removed = new Set<string>();
-      for (const change of changes) {
-        if (change.type === 'remove') removed.add(change.id);
-      }
-      if (removed.size > 0) removeEdges(removed);
+    (changes) => { onRfEdgesChange(changes); },
+    [onRfEdgesChange],
+  );
+
+  // Single dispatch for a delete operation — nodes + their connected
+  // edges + any independently-selected edges all collapse into one
+  // undo entry via the `batch` command. See `removeNodesAndEdges`.
+  const onDelete = useCallback<OnDelete>(
+    ({ nodes, edges }) => {
+      const nodeIds = new Set<string>(nodes.map((n) => n.id));
+      const edgeIds = new Set<string>(edges.map((e) => e.id));
+      removeNodesAndEdges(nodeIds, edgeIds);
     },
-    [onRfEdgesChange, removeEdges],
+    [removeNodesAndEdges],
   );
 
   const onConnect = useCallback<OnConnect>(
@@ -888,6 +894,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           isValidConnection={isValidConnection}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onDelete={onDelete}
           onMoveEnd={onMoveEnd}
           onNodeDragStop={onNodeDragStop}
           onSelectionDragStop={onSelectionDragStop}

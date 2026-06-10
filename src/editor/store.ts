@@ -255,6 +255,13 @@ export interface EditorState {
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
+  /**
+   * Combined node + edge removal as a single undo entry. ReactFlow
+   * fires `onDelete` once with both lists when the user presses
+   * Delete on a node with connections; routing both through a
+   * `batch` command keeps that as one Cmd-Z, not two.
+   */
+  removeNodesAndEdges: (nodeIds: ReadonlySet<string>, edgeIds: ReadonlySet<string>) => void;
   setInputValue: (nodeId: string, name: string, value: unknown, opts?: { coalesce?: boolean }) => void;
   /**
    * One-shot barrier: arms `undoBarrierPending` so the NEXT
@@ -1840,6 +1847,106 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
 
       dispatch({ kind: 'removeNodes', nodes, edges, prevRootNodeId: state.rootNodeId });
+    },
+
+    removeNodesAndEdges: (nodeIds, edgeIds) => {
+      if (nodeIds.size === 0 && edgeIds.size === 0) return;
+      const state = get();
+      const graph = state.graph;
+
+      // Filter out boundary nodes (same rule as `removeNodes`) — they
+      // can't be deleted and the action there silently skips them.
+      const removableNodeIds = new Set<string>();
+      for (const id of nodeIds) {
+        const node = graph.nodes.find((n) => n.id === id);
+        if (!node) continue;
+        if (isSubgraphInternalKind(node.kind)) continue;
+        removableNodeIds.add(id);
+      }
+
+      // Edges to be removed: explicit ones from the caller PLUS any
+      // edge attached to a node we're removing (so the node-remove
+      // command's `edges` field stays correct for undo restore).
+      // De-dup by id — an edge could appear in both sources.
+      const edgeIdSet = new Set<string>(edgeIds);
+      for (const e of graph.edges) {
+        if (removableNodeIds.has(e.from.node) || removableNodeIds.has(e.to.node)) {
+          edgeIdSet.add(e.id);
+        }
+      }
+      const removedEdges = graph.edges.filter((e) => edgeIdSet.has(e.id));
+      const removedNodes = graph.nodes.filter((n) => removableNodeIds.has(n.id));
+
+      if (removedNodes.length === 0 && removedEdges.length === 0) return;
+
+      // Bridge cleanup mirrors the `removeNodes` action. When a
+      // for-each-* (or future iteration-bridge) node is being removed,
+      // its bridge subgraph becomes unreachable — clear it as part of
+      // the same undo entry via dispatchProject. Project-scoped ops
+      // can't sit inside a `batch` so this path doesn't combine with
+      // the graph-scoped edge-remove; the edges attached to the node
+      // get folded into the nextGraph below so undo still restores
+      // them in one step.
+      const orphanedBridgeIds = new Set<string>();
+      for (const sg of state.subgraphs) {
+        if (sg.owner?.kind === 'iteration-bridge' && removableNodeIds.has(sg.owner.nodeId)) {
+          orphanedBridgeIds.add(sg.id);
+        }
+      }
+      if (orphanedBridgeIds.size > 0) {
+        const nextGraph: Graph = {
+          ...graph,
+          nodes: graph.nodes.filter((n) => !removableNodeIds.has(n.id)),
+          edges: graph.edges.filter((e) => !edgeIdSet.has(e.id)),
+        };
+        const nextMainGraph = state.currentEditingId === 'main' ? nextGraph : state.mainGraph;
+        const nextSubgraphs = state.subgraphs.filter((s) => !orphanedBridgeIds.has(s.id));
+        dispatchProject({
+          ...projectSnapshot(),
+          mainGraph: nextMainGraph,
+          graph: nextGraph,
+          subgraphs: nextSubgraphs,
+        });
+        return;
+      }
+
+      // No node-only or edge-only sub-command needed when the other
+      // list is empty — unwrap to a single command so the undo entry
+      // shape stays minimal in the common cases. Otherwise dispatch a
+      // batch so both halves undo together.
+      if (removedNodes.length === 0) {
+        dispatch({ kind: 'removeEdges', edges: removedEdges });
+        return;
+      }
+      if (removedEdges.length === 0 || edgeIds.size === 0) {
+        // Only node-attached edges → fold them into removeNodes itself
+        // (its `edges` field already exists for this purpose).
+        dispatch({
+          kind: 'removeNodes',
+          nodes: removedNodes,
+          edges: removedEdges,
+          prevRootNodeId: state.rootNodeId,
+        });
+        return;
+      }
+      // Mixed: explicit edge ids that aren't attached to a removed
+      // node need their own sub-command. Build a batch.
+      const nodeAttachedEdgeIds = new Set(
+        graph.edges
+          .filter((e) => removableNodeIds.has(e.from.node) || removableNodeIds.has(e.to.node))
+          .map((e) => e.id),
+      );
+      const nodeAttachedEdges = removedEdges.filter((e) => nodeAttachedEdgeIds.has(e.id));
+      const looseEdges = removedEdges.filter((e) => !nodeAttachedEdgeIds.has(e.id));
+      const commands: import('./command.js').Command[] = [];
+      if (looseEdges.length > 0) commands.push({ kind: 'removeEdges', edges: looseEdges });
+      commands.push({
+        kind: 'removeNodes',
+        nodes: removedNodes,
+        edges: nodeAttachedEdges,
+        prevRootNodeId: state.rootNodeId,
+      });
+      dispatch({ kind: 'batch', commands });
     },
 
     setInputValue: (nodeId, name, value, opts) => {
