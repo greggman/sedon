@@ -11,7 +11,9 @@
     "dev": "node scripts/build.mjs --serve --prod",
     "devd": "node scripts/build.mjs --serve",
     "build": "node scripts/build.mjs",
-    "test": "node --import tsx --import ./scripts/test-bootstrap.mjs --test \"test/**/*.test.ts\"",
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "node --import tsx --import ./scripts/test-bootstrap.mjs --test \"test/unit/**/*.test.ts\"",
+    "test:browser": "node --import tsx --import ./scripts/test-bootstrap.mjs --test test/browser/ux.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
