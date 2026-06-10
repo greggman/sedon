@@ -19,6 +19,12 @@ import {
   buildWaterTankSubgraph,
 } from './city-rooftop.js';
 import {
+  buildAwningSubgraph,
+} from './city-storefront.js';
+import {
+  buildWallAcUnitSubgraph,
+} from './city-wall-ac.js';
+import {
   buildBlockSidewalkSubgraph,
   buildIntersectionSubgraph,
   buildStreetSegmentLongSubgraph,
@@ -327,6 +333,13 @@ export function createCityDemo(): {
   // at eval time.
   const hvacUnit = buildHvacUnitSubgraph();
   const waterTank = buildWaterTankSubgraph();
+  // Ground-floor storefront fittings. Same pattern — registered
+  // here so the parametric office's `subgraph/city-storefront-
+  // awning` wrapper resolves at eval time.
+  const awning = buildAwningSubgraph();
+  // Wall AC units stuck on the ±Z side walls of every parametric
+  // office.
+  const wallAc = buildWallAcUnitSubgraph();
   const lampPost = buildLampPostSubgraph();
   const trafficSignal = buildTrafficSignalSubgraph();
   const fireHydrant = buildFireHydrantSubgraph();
@@ -621,7 +634,7 @@ export function createCityDemo(): {
     subgraphs: [
       sidewalk, longStreet, shortStreet, intersection,
       tower, office, apartment, shop, parametricOffice,
-      hvacUnit, waterTank,
+      hvacUnit, waterTank, awning, wallAc,
       lampPost, trafficSignal, fireHydrant, car,
       // For-each-polygon's bridge → its body (= blockBody) →
       // for-each-point's bridge (lotBridgeSubgraph) → its body

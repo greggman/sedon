@@ -24,7 +24,7 @@ await page.evaluate(() => {
     { yaw: 0.3, pitch: 0.9, distance: 180, target: [-100, 30, -100] });
 });
 await new Promise((r) => setTimeout(r, 3500));
-await page.screenshot({ path: '/tmp/city-rooftops.png' });
+await page.screenshot({ timeout: 180000, path: '/tmp/city-rooftops.png' });
 console.log('rooftops helicopter: /tmp/city-rooftops.png');
 
 // Single-building close-up — pitch 0.6 ≈ looking slightly down,
@@ -34,7 +34,7 @@ await page.evaluate(() => {
     { yaw: 0.6, pitch: 0.55, distance: 50, target: [-100, 30, -180] });
 });
 await new Promise((r) => setTimeout(r, 3500));
-await page.screenshot({ path: '/tmp/city-roof-close.png' });
+await page.screenshot({ timeout: 180000, path: '/tmp/city-roof-close.png' });
 console.log('roof close-up: /tmp/city-roof-close.png');
 
 // Spider-Man swing-by perspective — low pitch, close, looking along a
@@ -44,7 +44,7 @@ await page.evaluate(() => {
     { yaw: 0.0, pitch: 0.3, distance: 110, target: [120, 40, 0] });
 });
 await new Promise((r) => setTimeout(r, 3500));
-await page.screenshot({ path: '/tmp/city-spiderman.png' });
+await page.screenshot({ timeout: 180000, path: '/tmp/city-spiderman.png' });
 console.log('spiderman view: /tmp/city-spiderman.png');
 
 await browser.close();

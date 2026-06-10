@@ -455,65 +455,275 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: totalLift.id, socket: 'value' });
 
+  // ── HVAC grid: 4×3 = 12 potential slots, ~50% activated ─────────
+  // Per-roof variety comes from a width-seeded random mask gated by
+  // cloud-step — different `width` values produce different
+  // activation patterns across the 12 slots, so each building's
+  // HVAC layout reads as unique even though the underlying scatter
+  // shares one (geo, mat) pair across the whole city.
+  //
+  // `inset: 3` keeps the outermost row off the parapet edge; the
+  // grid collapses gracefully on small (~14 m) buildings via the
+  // node's "if inset eats the face, fall back to single point"
+  // rule. 4×3 gives an irregular non-symmetric grid that reads as
+  // unplanned (vs the centro-symmetric 2×2 or 3×3).
   const roofPts = addNode(g, 'core/box-face-points', {
     position: { x: COL * 2, y: ROW * 6 },
-    // height is a wash because we're driving offset = total_height − 0.5
-    // — the 1-m implicit height just defines the half-face Y the
-    // offset adds to. cols/rows = 2×2 fits four HVAC units even on
-    // small (~14 m) buildings; inset keeps them off the parapet edge.
-    inputValues: { axis: [0, 1, 0], height: 1, cols: 2, rows: 2, inset: 2.5 },
+    inputValues: { axis: [0, 1, 0], height: 1, cols: 4, rows: 3, inset: 3 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' },     { node: roofPts.id, socket: 'width' });
   addEdge(g, { node: inputNode.id, socket: 'depth' },     { node: roofPts.id, socket: 'depth' });
   addEdge(g, { node: totalLift.id, socket: 'result' },    { node: roofPts.id, socket: 'offset' });
 
-  // The HVAC asset itself is a static subgraph (no inputs). One scene
-  // is shared across every HVAC across every roof — the renderer's
-  // ref-equality batching collapses all of them into a single GPU
-  // draw call regardless of how many roofs are in the city.
+  // random-float-cloud over the 12 slots, seeded by the building's
+  // WIDTH. Same width → same pattern (cache-friendly); different
+  // widths produce different per-slot random values.
+  const hvacRand = addNode(g, 'core/random-float-cloud', {
+    position: { x: COL * 3, y: ROW * 6 },
+    inputValues: { min: 0, max: 1, seed: 0 },
+  });
+  addEdge(g, { node: roofPts.id, socket: 'points' }, { node: hvacRand.id, socket: 'points' });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: hvacRand.id, socket: 'seed' });
+
+  // cloud-step at 0.55 keeps the upper ~45% of slots — 5-6 HVACs
+  // per roof on average.
+  const hvacMask = addNode(g, 'core/cloud-step', {
+    position: { x: COL * 4, y: ROW * 6 },
+    inputValues: { threshold: 0.55, invert: false },
+  });
+  addEdge(g, { node: hvacRand.id, socket: 'values' }, { node: hvacMask.id, socket: 'values' });
+
+  // HVAC asset (static subgraph, no inputs). Single scene shared
+  // across every HVAC in the city via renderer ref-equality
+  // batching — one GPU draw regardless of count.
   const hvacWrap = addNode(g, 'subgraph/city-roof-hvac', {
     position: { x: COL * 2, y: ROW * 6.5 },
   });
   const hvacScatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 3, y: ROW * 6 },
-    // `align: true` so the HVAC's local +Y stays world-up (matching
-    // box-face-points' normal output for the +Y face) and yaw seed
-    // jitters per-unit so the four HVACs don't all face identical.
-    inputValues: { scale: 1, align: true, seed: 13 },
+    position: { x: COL * 5, y: ROW * 6 },
+    // Scatter seed = building width (wired below) so per-point yaw
+    // jitter varies BETWEEN buildings of different widths, not just
+    // within one building's set of HVACs.
+    inputValues: { scale: 1, align: true, seed: 0 },
   });
-  addEdge(g, { node: roofPts.id, socket: 'points' },   { node: hvacScatter.id, socket: 'points' });
+  addEdge(g, { node: roofPts.id,  socket: 'points' },  { node: hvacScatter.id, socket: 'points' });
+  addEdge(g, { node: hvacMask.id, socket: 'mask' },    { node: hvacScatter.id, socket: 'per_point_active' });
   addEdge(g, { node: hvacWrap.id, socket: 'scene' },   { node: hvacScatter.id, socket: 'instance' });
+  addEdge(g, { node: inputNode.id, socket: 'width' },  { node: hvacScatter.id, socket: 'seed' });
 
-  // Water tank — ONE per roof, at the centre. Separate box-face-points
-  // with cols=1 rows=1 gives a single grid point at the roof's centre;
-  // re-using the same `totalLift` puts it at the same Y as the HVAC
-  // grid. The water tank is the most iconic NYC rooftop silhouette
-  // — even a single tank per building lifts the city's read.
+  // ── Water tank: 2×2 = 4 candidate slots, ~50% activated ─────────
+  // 2×2 grid with a wider inset keeps tanks away from the roof's
+  // very centre AND parapet edge — they read as "set in from the
+  // corner" the way real NYC tanks do. Combined with cloud-step at
+  // 0.5, the per-roof mask gives 0-2 tanks (mostly 1-2) of varying
+  // positions. Some buildings have NO tank at all (when all four
+  // randoms fall below threshold), which is the realistic case.
   const tankPts = addNode(g, 'core/box-face-points', {
     position: { x: COL * 2, y: ROW * 7 },
-    inputValues: { axis: [0, 1, 0], height: 1, cols: 1, rows: 1, inset: 4 },
+    inputValues: { axis: [0, 1, 0], height: 1, cols: 2, rows: 2, inset: 4 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' },  { node: tankPts.id, socket: 'width' });
   addEdge(g, { node: inputNode.id, socket: 'depth' },  { node: tankPts.id, socket: 'depth' });
   addEdge(g, { node: totalLift.id, socket: 'result' }, { node: tankPts.id, socket: 'offset' });
+  // Different random seed offset (add 100 via map-range so the mask
+  // differs from HVAC's pattern — without this, tank slots would
+  // get the same activations as the HVAC slots in identical pos).
+  const tankRandSeed = addNode(g, 'core/map-range', {
+    position: { x: COL * 3, y: ROW * 6.7 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 100, out_max: 101 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: tankRandSeed.id, socket: 'value' });
+  const tankRand = addNode(g, 'core/random-float-cloud', {
+    position: { x: COL * 3, y: ROW * 7 },
+    inputValues: { min: 0, max: 1, seed: 0 },
+  });
+  addEdge(g, { node: tankPts.id, socket: 'points' }, { node: tankRand.id, socket: 'points' });
+  addEdge(g, { node: tankRandSeed.id, socket: 'result' }, { node: tankRand.id, socket: 'seed' });
+  // Higher threshold so tanks are RARER than HVAC — most roofs have
+  // 0-1 tanks, occasional double tank.
+  const tankMask = addNode(g, 'core/cloud-step', {
+    position: { x: COL * 4, y: ROW * 7 },
+    inputValues: { threshold: 0.6, invert: false },
+  });
+  addEdge(g, { node: tankRand.id, socket: 'values' }, { node: tankMask.id, socket: 'values' });
+
   const tankWrap = addNode(g, 'subgraph/city-roof-water-tank', {
     position: { x: COL * 2, y: ROW * 7.5 },
   });
   const tankScatter = addNode(g, 'core/instance-scene-on-points', {
-    position: { x: COL * 3, y: ROW * 7 },
-    inputValues: { scale: 1, align: true, seed: 5 },
+    position: { x: COL * 5, y: ROW * 7 },
+    inputValues: { scale: 1, align: true, seed: 0 },
   });
-  addEdge(g, { node: tankPts.id, socket: 'points' }, { node: tankScatter.id, socket: 'points' });
-  addEdge(g, { node: tankWrap.id, socket: 'scene' }, { node: tankScatter.id, socket: 'instance' });
+  addEdge(g, { node: tankPts.id,  socket: 'points' },  { node: tankScatter.id, socket: 'points' });
+  addEdge(g, { node: tankMask.id, socket: 'mask' },    { node: tankScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: tankWrap.id, socket: 'scene' },   { node: tankScatter.id, socket: 'instance' });
+  addEdge(g, { node: tankRandSeed.id, socket: 'result' }, { node: tankScatter.id, socket: 'seed' });
+
+  // ── Ground-floor awnings (street-facing -X wall) ────────────────
+  // Scatter awning modules along the building's outward (-X) face,
+  // at ground-floor height. The face's box-face-points grid is a
+  // single ROW (only horizontal placement varies; vertical position
+  // comes from the awning's authored Y-offset internal to its
+  // subgraph). cols=4 gives up to 4 shops along the wall on a wide
+  // building; per_point_active gates ~60% of slots so storefronts
+  // don't read as gridded.
+  //
+  // box-face-points with height=5 (just the ground floor band)
+  // emits face-points at the box's vertical CENTRE (y=0); a
+  // post-scatter transform-scene lifts everything to y=2.5 so the
+  // wall-side face of each awning lands at ground-floor mid-height.
+  // (The awning subgraph's own +Z lift then raises it to storefront-
+  // top height ≈ 4 m.)
+  const awningPts = addNode(g, 'core/box-face-points', {
+    position: { x: COL * 2, y: ROW * 8 },
+    inputValues: { axis: [-1, 0, 0], height: 5, cols: 4, rows: 1, inset: 1.5, offset: 0.05 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: awningPts.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' }, { node: awningPts.id, socket: 'depth' });
+
+  // Random per-storefront activation, width-seeded so the pattern
+  // varies across buildings while staying cache-friendly (same
+  // width → same pattern). Different seed offset (+200) from the
+  // HVAC / tank pools so no accidental correlation.
+  const awningRandSeed = addNode(g, 'core/map-range', {
+    position: { x: COL * 3, y: ROW * 7.7 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 200, out_max: 201 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: awningRandSeed.id, socket: 'value' });
+  const awningRand = addNode(g, 'core/random-float-cloud', {
+    position: { x: COL * 3, y: ROW * 8 },
+    inputValues: { min: 0, max: 1, seed: 0 },
+  });
+  addEdge(g, { node: awningPts.id, socket: 'points' }, { node: awningRand.id, socket: 'points' });
+  addEdge(g, { node: awningRandSeed.id, socket: 'result' }, { node: awningRand.id, socket: 'seed' });
+  const awningMask = addNode(g, 'core/cloud-step', {
+    position: { x: COL * 4, y: ROW * 8 },
+    inputValues: { threshold: 0.4, invert: false },
+  });
+  addEdge(g, { node: awningRand.id, socket: 'values' }, { node: awningMask.id, socket: 'values' });
+
+  // Per-awning colour: random Vec3 in [0.4, 1.0] for saturated
+  // bright colours that pop against the muted city. Same width-seed
+  // so the colour set is stable per building width.
+  const awningTint = addNode(g, 'core/random-vec3-cloud', {
+    position: { x: COL * 3, y: ROW * 8.3 },
+    inputValues: { min: [0.4, 0.4, 0.4], max: [1, 1, 1], seed: 0 },
+  });
+  addEdge(g, { node: awningPts.id, socket: 'points' }, { node: awningTint.id, socket: 'points' });
+  addEdge(g, { node: awningRandSeed.id, socket: 'result' }, { node: awningTint.id, socket: 'seed' });
+
+  const awningWrap = addNode(g, 'subgraph/city-storefront-awning', {
+    position: { x: COL * 2, y: ROW * 8.7 },
+  });
+  const awningScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 5, y: ROW * 8 },
+    inputValues: { scale: 1, align: true, seed: 0 },
+  });
+  addEdge(g, { node: awningPts.id,  socket: 'points' },         { node: awningScatter.id, socket: 'points' });
+  addEdge(g, { node: awningMask.id, socket: 'mask' },           { node: awningScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: awningTint.id, socket: 'values' },         { node: awningScatter.id, socket: 'per_point_tint' });
+  addEdge(g, { node: awningWrap.id, socket: 'scene' },          { node: awningScatter.id, socket: 'instance' });
+
+  // Lift the entire awning scatter up so the box-face-points
+  // grid (at face centre y=0) lands at ground-floor mid-height
+  // (y=2.5). Equivalent to translating the IMPLICIT box's centre
+  // up by 2.5 — but transform-scene on the final scene is simpler
+  // than chaining math into the face-points node's offset.
+  const awningLift = addNode(g, 'core/transform-scene', {
+    position: { x: COL * 6, y: ROW * 8 },
+    inputValues: { translate: [0, 2.5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  addEdge(g, { node: awningScatter.id, socket: 'scene' }, { node: awningLift.id, socket: 'scene' });
+
+  // ── Wall AC units (both ±Z side walls, body region only) ────────
+  // box-face-points on each side wall with grid extent = bodyHeight
+  // (just the upper-body floors, NOT ground floor — where awnings
+  // already live — and NOT the roof cap). A post-scatter
+  // transform-scene lifts the scatter up to the body's centre Y so
+  // the grid lands at the right vertical range.
+  //
+  // Per-wall random masks (width-seeded + per-face seed offset)
+  // make the two faces' AC placements independent — without the
+  // offset, both walls would have identical patterns and the
+  // building's symmetry would read as suspicious.
+  //
+  // For each wall: separate box-face-points + random-float-cloud +
+  // cloud-step + scatter + lift. Repetitive but clearer than a
+  // shared helper inside this already-dense function.
+  function addWallAcScatter(
+    axis: [number, number, number],
+    seedOffsetMin: number,
+    yOff: number,
+  ): ReturnType<typeof addNode> {
+    const pts = addNode(g, 'core/box-face-points', {
+      position: { x: COL * 2, y: yOff },
+      inputValues: { axis, height: 1, cols: 2, rows: 5, inset: 1, offset: 0.05 },
+    });
+    addEdge(g, { node: inputNode.id, socket: 'width' },  { node: pts.id, socket: 'width' });
+    addEdge(g, { node: inputNode.id, socket: 'depth' },  { node: pts.id, socket: 'depth' });
+    addEdge(g, { node: bodyHeight.id, socket: 'result' }, { node: pts.id, socket: 'height' });
+
+    const randSeed = addNode(g, 'core/map-range', {
+      position: { x: COL * 3, y: yOff - ROW * 0.3 },
+      inputValues: { in_min: 0, in_max: 1, out_min: seedOffsetMin, out_max: seedOffsetMin + 1 },
+    });
+    addEdge(g, { node: inputNode.id, socket: 'width' }, { node: randSeed.id, socket: 'value' });
+    const rand = addNode(g, 'core/random-float-cloud', {
+      position: { x: COL * 3, y: yOff },
+      inputValues: { min: 0, max: 1, seed: 0 },
+    });
+    addEdge(g, { node: pts.id, socket: 'points' }, { node: rand.id, socket: 'points' });
+    addEdge(g, { node: randSeed.id, socket: 'result' }, { node: rand.id, socket: 'seed' });
+    const mask = addNode(g, 'core/cloud-step', {
+      position: { x: COL * 4, y: yOff },
+      // Threshold 0.5 → ~50% activation. Real NYC walls have AC on
+      // many upper-floor windows in summer; sparser would read as
+      // "weirdly empty" at city scale.
+      inputValues: { threshold: 0.5, invert: false },
+    });
+    addEdge(g, { node: rand.id, socket: 'values' }, { node: mask.id, socket: 'values' });
+
+    const wrap = addNode(g, 'subgraph/city-wall-ac', {
+      position: { x: COL * 2, y: yOff + ROW * 0.5 },
+    });
+    const scatter = addNode(g, 'core/instance-scene-on-points', {
+      position: { x: COL * 5, y: yOff },
+      inputValues: { scale: 1, align: true, seed: 0 },
+    });
+    addEdge(g, { node: pts.id,  socket: 'points' },         { node: scatter.id, socket: 'points' });
+    addEdge(g, { node: mask.id, socket: 'mask' },           { node: scatter.id, socket: 'per_point_active' });
+    addEdge(g, { node: wrap.id, socket: 'scene' },          { node: scatter.id, socket: 'instance' });
+
+    // Lift scatter up by bodyCentreY so the box-face-points grid
+    // (centred at y=0) lands on the building body's vertical centre.
+    const liftVec = addNode(g, 'core/vec3-from-floats', {
+      position: { x: COL * 5, y: yOff + ROW * 0.3 },
+      inputValues: { x: 0, y: 0, z: 0 },
+    });
+    addEdge(g, { node: bodyCentreY.id, socket: 'result' }, { node: liftVec.id, socket: 'y' });
+    const lift = addNode(g, 'core/transform-scene', {
+      position: { x: COL * 6, y: yOff },
+      inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+    });
+    addEdge(g, { node: scatter.id, socket: 'scene' }, { node: lift.id, socket: 'scene' });
+    addEdge(g, { node: liftVec.id, socket: 'value' }, { node: lift.id, socket: 'translate' });
+    return lift;
+  }
+
+  const acPlusZ  = addWallAcScatter([0, 0,  1], 300, ROW * 9);
+  const acMinusZ = addWallAcScatter([0, 0, -1], 400, ROW * 10);
 
   const merge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 4, y: ROW * 3 },
+    position: { x: COL * 7, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
       { name: 'scene_1', type: 'Scene', optional: true },
       { name: 'scene_2', type: 'Scene', optional: true },
       { name: 'scene_3', type: 'Scene', optional: true },
       { name: 'scene_4', type: 'Scene', optional: true },
+      { name: 'scene_5', type: 'Scene', optional: true },
+      { name: 'scene_6', type: 'Scene', optional: true },
+      { name: 'scene_7', type: 'Scene', optional: true },
     ],
   });
   addEdge(g, { node: groundEnt.id,    socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
@@ -521,6 +731,9 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   addEdge(g, { node: roofEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
   addEdge(g, { node: hvacScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
   addEdge(g, { node: tankScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_4' });
+  addEdge(g, { node: awningLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_5' });
+  addEdge(g, { node: acPlusZ.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_6' });
+  addEdge(g, { node: acMinusZ.id,     socket: 'scene' }, { node: merge.id, socket: 'scene_7' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
