@@ -6,19 +6,6 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 // wooden water tank. These are the cheapest visual upgrades for the
 // Spider-Man-2-NYC silhouette goal — they put irregular shapes on
 // what would otherwise be flat concrete pads.
-//
-// Both subgraphs are pure "static" assets (no inputs). A downstream
-// `core/box-face-points` on a building's +Y face produces a small
-// grid of placement points; a `core/instance-scene-on-points` with
-// the HVAC scene as `instance` then drops one unit per point. Same
-// pattern for water tanks. Per-instance variety lives in the SCATTER
-// inputs (yaw jitter, per_point_active mask) — the asset itself is a
-// fixed mesh whose Geometry + Material refs the renderer shares
-// across every roof in the city via ref-equality batching.
-//
-// Sizes are kept generic — a "typical" rooftop fitting that reads OK
-// at distances from 5 m to 500 m. If you want bigger/smaller, scatter
-// at a per-point scale.
 
 const COL = 240;
 const ROW = 160;
@@ -70,16 +57,6 @@ function addRoofBox(
 }
 
 // === HVAC unit: rooftop AC condenser =============================
-//
-// A blocky grey-metal box that reads as "industrial fitting" from
-// any distance. Two sub-boxes: the main condenser body and a slightly
-// taller intake/grille on top. Solid metal-looking PBR (medium
-// metallic, low-medium roughness) — no texture, the form alone
-// reads correctly at city-overview scale.
-//
-// Footprint: 3 m × 2 m × 2 m main + 2.4 m × 1.6 m × 0.4 m intake.
-// Local +Y is up off the roof, base sits on Y=0 so a scatter that
-// places this on a roof point just translates to that point.
 export function buildHvacUnitSubgraph(): SubgraphDef {
   const id = 'city-roof-hvac';
   const g = createGraph();
@@ -87,7 +64,6 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
   const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW } });
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 4, y: ROW } });
 
-  // Main condenser body — weathered grey-blue metal.
   const body = addRoofBox(g, {
     width: 3, depth: 2, height: 2, baseY: 0,
     materialInputs: {
@@ -97,7 +73,6 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
     },
     yOffset: 0,
   });
-  // Intake/grille on top — slightly darker, smaller footprint.
   const intake = addRoofBox(g, {
     width: 2.4, depth: 1.6, height: 0.4, baseY: 2,
     materialInputs: {
@@ -133,38 +108,43 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
 
 // === Water tank: NYC wooden rooftop tower ========================
 //
-// Wood-stave cylindrical tank on a 4-leg steel base. The iconic NYC
-// rooftop silhouette — every Spider-Man swing-by needs at least one.
+// Built to match the user's manual fix in
+// sedon-2026-06-10-04-10-31.sedon. Key economies vs the original:
 //
-// Construction:
-//   • 4 thin legs (steel-grey boxes) lifting the tank 2 m off the roof
-//   • Tank body: 4 m tall × 1.5 m radius wooden cylinder
-//   • Conical wood cap on top (also a short cylinder; a true cone is
-//     overkill at the city distance we care about)
+//   1. ONE leg box geometry shared across all 4 legs via
+//      `core/grid-distribute` + `core/instance-geometry-on-points`.
+//      Originally we declared 4 separate boxes — same shape, four
+//      times the graph work and four times the GPU geometry.
+//   2. ONE steel material shared by the leg group (was 4 identical
+//      copies, one per leg).
+//   3. ONE wood material shared by BOTH the tank body and the cap
+//      (was 2 copies with identical values).
 //
-// Wood look comes from material colour alone (warm brown, high
-// roughness, low metallic) — a banded plank texture would be more
-// authentic but reads as noise at city overview scale.
+// The legs land at the corners of a 2 m × 2 m grid, base at Y=0,
+// top at Y=2. The tank body sits CENTRED on the legs (cylinder
+// translated up by 4 then down by 2 — a two-step lift the original
+// fix kept in case future authoring wants to drive the second
+// translate by something parametric).
 export function buildWaterTankSubgraph(): SubgraphDef {
   const id = 'city-roof-water-tank';
   const g = createGraph();
 
   const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW * 3 } });
-  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 4, y: ROW * 3 } });
+  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW * 3 } });
 
-  // Wood material — shared across body and cap.
-  const woodMat = (yOffset: number) => addNode(g, 'core/material', {
-    position: { x: COL * 2, y: yOffset + ROW * 0.5 },
+  // ─── Shared materials ────────────────────────────────────────────
+  // Wood — used by BOTH body and cap.
+  const woodMat = addNode(g, 'core/material', {
+    position: { x: COL * 2, y: ROW * 2 },
     inputValues: {
-      basecolor: [0.42, 0.27, 0.18, 1], // weathered red-brown
+      basecolor: [0.42, 0.27, 0.18, 1],
       roughness: 0.85,
       metallic: 0,
     },
   });
-
-  // Steel-leg material (the four supports below the tank).
-  const legMat = (yOffset: number) => addNode(g, 'core/material', {
-    position: { x: COL * 2, y: yOffset + ROW * 0.5 },
+  // Steel — used by the (single) leg-cluster entity.
+  const steelMat = addNode(g, 'core/material', {
+    position: { x: COL * 2, y: ROW * 0.5 },
     inputValues: {
       basecolor: [0.25, 0.27, 0.30, 1],
       roughness: 0.45,
@@ -172,91 +152,95 @@ export function buildWaterTankSubgraph(): SubgraphDef {
     },
   });
 
-  // Stack a sized cylinder + a lift transform + an entity. Tank body
-  // lives on Y so the geometry needs lifting from "centred at origin"
-  // to "base at baseY".
-  const addCylinderEntity = (opts: {
-    radius: number; height: number; segments: number; baseY: number;
-    materialNode: ReturnType<typeof addNode>;
-    yOffset: number;
-  }) => {
-    const geo = addNode(g, 'core/cylinder', {
-      position: { x: COL, y: opts.yOffset },
-      inputValues: { radius: opts.radius, height: opts.height, segments: opts.segments },
-    });
-    const lift = addNode(g, 'core/transform-geometry', {
-      position: { x: COL * 2, y: opts.yOffset },
-      inputValues: {
-        translate: [0, opts.baseY + opts.height / 2, 0],
-        rotate: [0, 0, 0],
-        scale: [1, 1, 1],
-      },
-    });
-    const ent = addNode(g, 'core/scene-entity', {
-      position: { x: COL * 3, y: opts.yOffset },
-    });
-    addEdge(g, { node: geo.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
-    addEdge(g, { node: lift.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
-    addEdge(g, { node: opts.materialNode.id, socket: 'material' }, { node: ent.id, socket: 'material' });
-    return ent;
-  };
-
-  // --- Four legs (steel boxes), 2 m tall, offset to the corners of a
-  // 2.2 m square (= just inside the tank's 1.5 m radius footprint).
-  const legPositions: [number, number][] = [
-    [-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0],
-  ];
-  const legEnts: ReturnType<typeof addNode>[] = [];
-  legPositions.forEach((p, i) => {
-    const yOff = i * ROW * 0.5;
-    const geo = addNode(g, 'core/box', {
-      position: { x: COL, y: yOff },
-      inputValues: { width: 0.18, height: 2, depth: 0.18 },
-    });
-    const lift = addNode(g, 'core/transform-geometry', {
-      position: { x: COL * 2, y: yOff },
-      inputValues: {
-        translate: [p[0], 1, p[1]],
-        rotate: [0, 0, 0],
-        scale: [1, 1, 1],
-      },
-    });
-    const ent = addNode(g, 'core/scene-entity', {
-      position: { x: COL * 3, y: yOff },
-    });
-    addEdge(g, { node: geo.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
-    addEdge(g, { node: lift.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
-    const legMatNode = legMat(yOff);
-    addEdge(g, { node: legMatNode.id, socket: 'material' }, { node: ent.id, socket: 'material' });
-    legEnts.push(ent);
+  // ─── Legs: 1 box → grid-distribute → instance-on-points → lift → entity
+  // grid-distribute(2×2, spacing 2) emits points at (±1, 0, ±1).
+  // instance-on-points stamps the box at each. The combined geometry
+  // gets translated up by 1 so the leg base sits at Y=0 (legs span
+  // Y=0..2 since each box is height=2 centred at origin).
+  const legBox = addNode(g, 'core/box', {
+    position: { x: COL, y: 0 },
+    inputValues: { width: 0.18, height: 2, depth: 0.18 },
   });
-
-  // --- Tank body: wood cylinder, base at Y = 2 (top of legs).
-  const tankBody = addCylinderEntity({
-    radius: 1.5, height: 4, segments: 16, baseY: 2,
-    materialNode: woodMat(ROW * 3),
-    yOffset: ROW * 3,
+  const legGrid = addNode(g, 'core/grid-distribute', {
+    position: { x: COL, y: ROW * 0.6 },
+    inputValues: { cols: 2, rows: 2, spacing: 2 },
   });
-  // --- Cap: shorter wider cylinder on top — a stand-in for the
-  // conical wooden cap that reads as a tank from any distance.
-  const tankCap = addCylinderEntity({
-    radius: 1.6, height: 0.4, segments: 16, baseY: 6,
-    materialNode: woodMat(ROW * 4),
-    yOffset: ROW * 4,
+  const legInst = addNode(g, 'core/instance-geometry-on-points', {
+    position: { x: COL * 2, y: 0 },
+    inputValues: { scale: 1 },
   });
+  const legLift = addNode(g, 'core/transform-geometry', {
+    position: { x: COL * 3, y: 0 },
+    inputValues: {
+      translate: [0, 1, 0],
+      rotate: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+  });
+  const legEnt = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 4, y: 0 },
+  });
+  addEdge(g, { node: legBox.id, socket: 'geometry' }, { node: legInst.id, socket: 'instance' });
+  addEdge(g, { node: legGrid.id, socket: 'points' }, { node: legInst.id, socket: 'points' });
+  addEdge(g, { node: legInst.id, socket: 'geometry' }, { node: legLift.id, socket: 'geometry' });
+  addEdge(g, { node: legLift.id, socket: 'geometry' }, { node: legEnt.id, socket: 'geometry' });
+  addEdge(g, { node: steelMat.id, socket: 'material' }, { node: legEnt.id, socket: 'material' });
 
+  // ─── Body: wood cylinder, two transforms.
+  // First translate +Y=4 puts the centred cylinder above the legs;
+  // second translate -Y=2 pulls it back so its centre is at Y=2.
+  // Kept as TWO transforms (matching the .sedon fix) so a future
+  // edit can drive the second translate parametrically.
+  const bodyCyl = addNode(g, 'core/cylinder', {
+    position: { x: COL, y: ROW * 2 },
+    inputValues: { radius: 1.5, height: 4, segments: 16 },
+  });
+  const bodyLift1 = addNode(g, 'core/transform-geometry', {
+    position: { x: COL * 2, y: ROW * 2 },
+    inputValues: { translate: [0, 4, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  const bodyLift2 = addNode(g, 'core/transform-geometry', {
+    position: { x: COL * 3, y: ROW * 2 },
+    // Matches the .sedon fix: only `translate` set (rotate/scale
+    // default to identity at eval).
+    inputValues: { translate: [0, -2, 0] },
+  });
+  const bodyEnt = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 4, y: ROW * 2 },
+  });
+  addEdge(g, { node: bodyCyl.id, socket: 'geometry' }, { node: bodyLift1.id, socket: 'geometry' });
+  addEdge(g, { node: bodyLift1.id, socket: 'geometry' }, { node: bodyLift2.id, socket: 'geometry' });
+  addEdge(g, { node: bodyLift2.id, socket: 'geometry' }, { node: bodyEnt.id, socket: 'geometry' });
+  addEdge(g, { node: woodMat.id, socket: 'material' }, { node: bodyEnt.id, socket: 'material' });
+
+  // ─── Cap: shorter wider cylinder sharing the wood material.
+  const capCyl = addNode(g, 'core/cylinder', {
+    position: { x: COL, y: ROW * 3.5 },
+    inputValues: { radius: 1.6, height: 0.4, segments: 16 },
+  });
+  const capLift = addNode(g, 'core/transform-geometry', {
+    position: { x: COL * 2, y: ROW * 3.5 },
+    inputValues: { translate: [0, 6, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  const capEnt = addNode(g, 'core/scene-entity', {
+    position: { x: COL * 4, y: ROW * 3.5 },
+  });
+  addEdge(g, { node: capCyl.id, socket: 'geometry' }, { node: capLift.id, socket: 'geometry' });
+  addEdge(g, { node: capLift.id, socket: 'geometry' }, { node: capEnt.id, socket: 'geometry' });
+  addEdge(g, { node: woodMat.id, socket: 'material' }, { node: capEnt.id, socket: 'material' });
+
+  // ─── Merge legs + body + cap.
   const merge = addNode(g, 'core/scene-merge', {
-    position: { x: COL * 3.5, y: ROW * 3 },
-    extraInputs: legEnts.map((_, i) => ({ name: `scene_${i}`, type: 'Scene' as const })).concat([
-      { name: `scene_${legEnts.length}`,     type: 'Scene' },
-      { name: `scene_${legEnts.length + 1}`, type: 'Scene' },
-    ]),
+    position: { x: COL * 4.5, y: ROW * 2 },
+    extraInputs: [
+      { name: 'scene_0', type: 'Scene', optional: true },
+      { name: 'scene_1', type: 'Scene', optional: true },
+      { name: 'scene_2', type: 'Scene', optional: true },
+    ],
   });
-  legEnts.forEach((leg, i) => {
-    addEdge(g, { node: leg.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
-  });
-  addEdge(g, { node: tankBody.id, socket: 'scene' }, { node: merge.id, socket: `scene_${legEnts.length}` });
-  addEdge(g, { node: tankCap.id,  socket: 'scene' }, { node: merge.id, socket: `scene_${legEnts.length + 1}` });
+  addEdge(g, { node: legEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: capEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
