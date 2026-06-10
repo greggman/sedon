@@ -52,6 +52,22 @@ export type Command =
   // intentionally NOT allowed inside a batch — it's project-scoped and
   // its own undo-stack entry already.
   | { kind: 'batch'; commands: Command[] }
+  // Position commit from a node drag (single or multi-selection). Lives
+  // outside GraphState because positions are kept in their own slice
+  // (`nodePositions`) — moving a node mustn't invalidate the graph
+  // reference. Handled at the store level like `replaceProject`;
+  // applyForward / applyBackward throw if called on it.
+  | {
+      kind: 'movePositions';
+      /** Which graph the positions belong to ('main' or a subgraph id). */
+      editingId: string;
+      /** Position-by-id BEFORE the drag for the moved nodes. Missing
+       *  entries mean "no position was recorded yet" — undo will delete
+       *  the entry rather than reinstating a stale one. */
+      before: Record<string, { x: number; y: number } | undefined>;
+      /** Position-by-id AFTER the drag. */
+      after: Record<string, { x: number; y: number }>;
+    }
   | {
       kind: 'replaceProject';
       before: ProjectSnapshot;
@@ -179,6 +195,8 @@ export function applyForward(state: GraphState, cmd: Command): GraphState {
       // Project-scoped — its blast radius is wider than GraphState. The
       // store handles it directly in undo/redo by swapping the snapshot.
       throw new Error('replaceProject must be applied at the store level, not via applyForward');
+    case 'movePositions':
+      throw new Error('movePositions must be applied at the store level, not via applyForward');
   }
 }
 
@@ -235,6 +253,8 @@ export function applyBackward(state: GraphState, cmd: Command): GraphState {
     }
     case 'replaceProject':
       throw new Error('replaceProject must be applied at the store level, not via applyBackward');
+    case 'movePositions':
+      throw new Error('movePositions must be applied at the store level, not via applyBackward');
   }
 }
 

@@ -1359,15 +1359,41 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const state = get();
       const editingId = state.currentEditingId;
       const prevForGraph = state.nodePositions[editingId] ?? {};
+
+      // Build before/after maps only for ids whose position actually
+      // changed — a drag that ends at the same point shouldn't push an
+      // undo entry. Use a small epsilon to absorb sub-pixel jitter from
+      // ReactFlow's drag math; same threshold the position-sync code
+      // uses elsewhere.
+      const EPS = 0.5;
+      const before: Record<string, { x: number; y: number } | undefined> = {};
+      const after: Record<string, { x: number; y: number }> = {};
       const nextForGraph: Record<string, { x: number; y: number }> = { ...prevForGraph };
-      for (const [id, p] of positionsById) nextForGraph[id] = p;
+      let changed = false;
+      for (const [id, p] of positionsById) {
+        const prev = prevForGraph[id];
+        const moved = !prev
+          || Math.abs(prev.x - p.x) > EPS
+          || Math.abs(prev.y - p.y) > EPS;
+        if (!moved) continue;
+        changed = true;
+        before[id] = prev;
+        after[id] = p;
+        nextForGraph[id] = p;
+      }
+      if (!changed) return;
+
+      // Position commits are their own discrete user action — a drag
+      // ends on pointer-up, no coalescing window. Push as its own undo
+      // entry. Dirties the project: Cmd-S now records the new layout.
+      const cmd: Command = { kind: 'movePositions', editingId, before, after };
       set({
         nodePositions: { ...state.nodePositions, [editingId]: nextForGraph },
-        // syncCounter is unchanged: NodeCanvas subscribes to
-        // `nodePositions[editingId]` directly for its merge, so we
-        // don't need the heavyweight resync that syncCounter triggers.
-        // Position-only changes don't dirty either: same rationale as
-        // before — dragging persists position but isn't a model edit.
+        undoStack: [...state.undoStack, cmd],
+        redoStack: [],
+        dirty: true,
+        // Position-only changes still don't bump syncCounter — consumers
+        // that care about positions subscribe to nodePositions directly.
       });
     },
 
@@ -2260,6 +2286,26 @@ export const useEditorStore = create<EditorState>((set, get) => {
         });
         return;
       }
+      if (cmd.kind === 'movePositions') {
+        // Position-only swap: restore the BEFORE map entry-by-entry on
+        // the affected graph's slice. Don't touch `graph` or any other
+        // project state — consumers that subscribed to graph references
+        // see no change, just like the forward commit didn't change them.
+        const state = get();
+        const slice = state.nodePositions[cmd.editingId] ?? {};
+        const restored: Record<string, { x: number; y: number }> = { ...slice };
+        for (const id of Object.keys(cmd.before)) {
+          const prev = cmd.before[id];
+          if (prev === undefined) delete restored[id];
+          else restored[id] = prev;
+        }
+        set({
+          nodePositions: { ...state.nodePositions, [cmd.editingId]: restored },
+          undoStack: stack.slice(0, -1),
+          redoStack: [...state.redoStack, cmd],
+        });
+        return;
+      }
       const state = { graph: get().graph, rootNodeId: get().rootNodeId };
       const next = applyBackward(state, cmd);
       const { currentEditingId } = get();
@@ -2284,6 +2330,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const stack = get().redoStack;
       if (stack.length === 0) return;
       const cmd = stack[stack.length - 1]!;
+      if (cmd.kind === 'movePositions') {
+        // Mirror of undo's movePositions branch: re-apply `after`.
+        const state = get();
+        const slice = state.nodePositions[cmd.editingId] ?? {};
+        const next: Record<string, { x: number; y: number }> = { ...slice };
+        for (const [id, p] of Object.entries(cmd.after)) next[id] = p;
+        set({
+          nodePositions: { ...state.nodePositions, [cmd.editingId]: next },
+          undoStack: [...state.undoStack, cmd],
+          redoStack: stack.slice(0, -1),
+        });
+        return;
+      }
       if (cmd.kind === 'replaceProject') {
         const prevPositions = get().nodePositions;
         const nodePositions: EditorState['nodePositions'] = {
