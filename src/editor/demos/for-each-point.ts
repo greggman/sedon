@@ -107,10 +107,6 @@ export function createForEachPointDemo(): {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1.7 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
   const output = addNode(g, 'core/output', { position: { x: COL * 4, y: ROW * 1.7 } });
 
@@ -123,8 +119,8 @@ export function createForEachPointDemo(): {
   addEdge(g, { node: ground.id, socket: 'geometry' }, { node: groundEntity.id, socket: 'geometry' });
   addEdge(g, { node: groundMaterial.id, socket: 'material' }, { node: groundEntity.id, socket: 'material' });
 
-  addEdge(g, { node: forEach.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: forEach.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: groundEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   return {

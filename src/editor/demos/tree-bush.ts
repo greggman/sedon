@@ -97,20 +97,15 @@ export function createTreeBushDemo(): {
   }
 
   // One variadic scene-merge collects every species into a single Scene.
-  // Pre-populate one extra socket per species so the wiring is in place
-  // before the user touches anything; clicking "+ Add scene" on the node
-  // adds more.
+  // With multi-fan-in (`scenes` socket on scene/merge) no per-instance
+  // socket setup is needed — every species output just wires into the
+  // same socket below.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1.5 },
-    extraInputs: speciesOutputs.map((_, i) => ({
-      name: `scene_${i}`,
-      type: 'Scene',
-      optional: true,
-    })),
   });
   for (let i = 0; i < speciesOutputs.length; i++) {
     const src = speciesOutputs[i]!;
-    addEdge(g, { node: src.id, socket: src.socket }, { node: merge.id, socket: `scene_${i}` });
+    addEdge(g, { node: src.id, socket: src.socket }, { node: merge.id, socket: 'scenes' });
   }
 
   const output = addNode(g, 'core/output', {

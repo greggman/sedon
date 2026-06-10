@@ -1,15 +1,16 @@
 // `addNodeExtraInput` is the MCP entry point an agent uses to grow a
-// variadic node's input list (e.g. `scene/merge` — which starts with
-// zero input sockets). Without this tool, the recipe documented in the
-// overview ("merge two scenes → wire scene_0 and scene_1") was
-// physically impossible from an MCP session because the slots didn't
-// exist and `connect` rejects unknown sockets.
+// node's variadic input list — the nodes still on the legacy
+// `extraInputsSpec` pattern (poly/list, scene/switch, tex/grass,
+// material/terrain-multi-layer). For `scene/merge` (migrated to a
+// single multi-fan-in socket) this tool is now a no-op — that variant
+// is tested below as well.
 //
-// These tests pin:
+// Tests pin:
 //   • the new socket name is returned so the caller can immediately connect
-//   • slot indices increment per call (scene_0, scene_1, …)
+//   • slot indices increment per call (polygon_0, polygon_1, …)
 //   • the connect path actually accepts the new slot afterwards
-//   • non-variadic nodes are rejected with `not_variadic`
+//   • non-variadic nodes (including the post-migration scene/merge)
+//     are rejected with `not_variadic`
 //   • unknown node id is rejected with `node_not_found`
 
 import { test } from 'node:test';
@@ -32,9 +33,9 @@ function tool(name: string): SedonTool {
   return t;
 }
 
-function seedWithSceneMerge(): string {
+function seedWithPolyList(): string {
   const g = createGraph();
-  const m = addNode(g, 'scene/merge', { id: 'merge1' });
+  const m = addNode(g, 'poly/list', { id: 'list1' });
   useEditorStore.setState({
     mainGraph: g,
     graph: g,
@@ -49,46 +50,40 @@ function seedWithSceneMerge(): string {
   return m.id;
 }
 
-test('addNodeExtraInput on scene/merge returns the new socket name (scene_0 first)', () => {
-  const mergeId = seedWithSceneMerge();
-  const result = tool('addNodeExtraInput').handler({ nodeId: mergeId }) as {
+test('addNodeExtraInput on poly/list returns polygon_0 as the new socket name', () => {
+  const listId = seedWithPolyList();
+  const result = tool('addNodeExtraInput').handler({ nodeId: listId }) as {
     socket: string;
     type: string;
   };
-  assert.equal(result.socket, 'scene_0', 'first extra slot is scene_0');
-  assert.equal(result.type, 'Scene', 'spec.type carries through');
+  assert.equal(result.socket, 'polygon_0');
+  assert.equal(result.type, 'Polygon');
 });
 
-test('addNodeExtraInput is sequential — second call returns scene_1', () => {
-  const mergeId = seedWithSceneMerge();
-  tool('addNodeExtraInput').handler({ nodeId: mergeId });
-  const result = tool('addNodeExtraInput').handler({ nodeId: mergeId }) as { socket: string };
-  assert.equal(result.socket, 'scene_1');
+test('addNodeExtraInput is sequential — second call returns polygon_1', () => {
+  const listId = seedWithPolyList();
+  tool('addNodeExtraInput').handler({ nodeId: listId });
+  const result = tool('addNodeExtraInput').handler({ nodeId: listId }) as { socket: string };
+  assert.equal(result.socket, 'polygon_1');
 });
 
 test('after addNodeExtraInput, connect to the new slot succeeds (round-trip)', () => {
-  // The whole reason this tool exists. Build the documented recipe end
-  // to end: scene/entity → scene/merge.scene_0 must connect cleanly.
-  const mergeId = seedWithSceneMerge();
-  // Need a source of type Scene. scene/entity outputs Scene.
+  // Build a real connect path: poly/from-points emits Polygon, the
+  // new slot accepts Polygon, the wire lands cleanly.
+  const listId = seedWithPolyList();
   const g = useEditorStore.getState().graph;
-  const ent = addNode(g, 'scene/entity', { id: 'ent1' });
-  // Pretend we just added it through the store; manually publish so
-  // setActiveEditing-style consumers see it. (Tests run without the
-  // store's add path because we're focused on connect+extra-input.)
-  useEditorStore.setState({ graph: { ...g, nodes: [...g.nodes, ent] } });
+  const src = addNode(g, 'poly/from-points', { id: 'src1' });
+  useEditorStore.setState({ graph: { ...g, nodes: [...g.nodes, src] } });
 
-  // Now grow scene/merge by one slot and connect.
-  tool('addNodeExtraInput').handler({ nodeId: mergeId });
+  tool('addNodeExtraInput').handler({ nodeId: listId });
   const connectResult = tool('connect').handler({
-    from: { node: ent.id, socket: 'scene' },
-    to: { node: mergeId, socket: 'scene_0' },
+    from: { node: src.id, socket: 'polygon' },
+    to: { node: listId, socket: 'polygon_0' },
   }) as { id?: string; ok?: false; error?: { code: string } };
   assert.ok(connectResult.id, `connect must succeed (got ${JSON.stringify(connectResult)})`);
-  // Verify the edge actually landed in the graph.
   const edges = useEditorStore.getState().graph.edges;
-  const newEdge = edges.find((e) => e.to.node === mergeId && e.to.socket === 'scene_0');
-  assert.ok(newEdge, 'edge to merge.scene_0 must be in the graph');
+  const newEdge = edges.find((e) => e.to.node === listId && e.to.socket === 'polygon_0');
+  assert.ok(newEdge, 'edge to list.polygon_0 must be in the graph');
 });
 
 test('addNodeExtraInput on a non-variadic node returns code "not_variadic"', () => {
@@ -114,8 +109,33 @@ test('addNodeExtraInput on a non-variadic node returns code "not_variadic"', () 
   assert.equal(result.error?.code, 'not_variadic');
 });
 
+test('addNodeExtraInput on the migrated scene/merge returns "not_variadic" (use the multi `scenes` socket directly)', () => {
+  // scene/merge migrated from extraInputsSpec to a single
+  // `scenes` multi-fan-in input. addNodeExtraInput no longer applies
+  // — agents should connect straight to `scenes`.
+  const g = createGraph();
+  const m = addNode(g, 'scene/merge', { id: 'm1' });
+  useEditorStore.setState({
+    mainGraph: g,
+    graph: g,
+    rootNodeId: m.id,
+    currentEditingId: 'main',
+    subgraphs: [],
+    folders: [],
+    undoStack: [],
+    redoStack: [],
+    nodePositions: { main: {} },
+  });
+  const result = tool('addNodeExtraInput').handler({ nodeId: m.id }) as {
+    ok?: false;
+    error?: { code: string };
+  };
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, 'not_variadic');
+});
+
 test('addNodeExtraInput on unknown nodeId returns code "node_not_found"', () => {
-  seedWithSceneMerge();
+  seedWithPolyList();
   const result = tool('addNodeExtraInput').handler({ nodeId: 'GHOST' }) as {
     ok?: false;
     error?: { code: string };

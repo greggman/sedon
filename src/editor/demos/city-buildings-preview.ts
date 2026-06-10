@@ -63,13 +63,6 @@ export function createCityBuildingsPreviewDemo(): {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-    ],
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: ROW * 2 },
@@ -77,7 +70,7 @@ export function createCityBuildingsPreviewDemo(): {
 
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundEnt.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: groundEnt.id, socket: 'material' });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   placements.forEach((p, i) => {
     const wrap = addNode(g, `subgraph/${p.sg.id}`, {
@@ -88,7 +81,7 @@ export function createCityBuildingsPreviewDemo(): {
       inputValues: { translate: [p.tx, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
     });
     addEdge(g, { node: wrap.id, socket: 'scene' }, { node: lift.id, socket: 'scene' });
-    addEdge(g, { node: lift.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i + 1}` });
+    addEdge(g, { node: lift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
 
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });

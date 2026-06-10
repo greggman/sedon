@@ -85,13 +85,9 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: body.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: intake.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: body.id,   socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: intake.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -223,15 +219,10 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   // ─── Merge legs + body + cap.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4.5, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: legEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: capEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: legEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: capEnt.id,  socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

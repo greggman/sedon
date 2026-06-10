@@ -122,7 +122,7 @@ export function createCityStreetsPreviewDemo(): {
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundLift.id, socket: 'geometry' });
   addEdge(g, { node: groundLift.id, socket: 'geometry' }, { node: groundEnt.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: groundEnt.id, socket: 'material' });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   placements.forEach((p, i) => {
     const wrap = addNode(g, `subgraph/${p.sg.id}`, {
@@ -137,7 +137,7 @@ export function createCityStreetsPreviewDemo(): {
       },
     });
     addEdge(g, { node: wrap.id, socket: 'scene' }, { node: lift.id, socket: 'scene' });
-    addEdge(g, { node: lift.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i + 1}` });
+    addEdge(g, { node: lift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
 
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });

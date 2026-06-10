@@ -118,11 +118,6 @@ export function buildFlowerSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
 
   // Wiring.
@@ -139,9 +134,9 @@ export function buildFlowerSubgraph(): SubgraphDef {
   addEdge(g, { node: centerXform.id, socket: 'geometry' }, { node: centerEntity.id, socket: 'geometry' });
   addEdge(g, { node: centerMat.id, socket: 'material' }, { node: centerEntity.id, socket: 'material' });
 
-  addEdge(g, { node: stemEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: petalEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: centerEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: stemEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: petalEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: centerEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -230,10 +225,6 @@ export function buildFernSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 2.3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
 
   addEdge(g, { node: stalkGeo.id, socket: 'geometry' }, { node: stalkXform.id, socket: 'geometry' });
@@ -245,8 +236,8 @@ export function buildFernSubgraph(): SubgraphDef {
   addEdge(g, { node: leafScatter.id, socket: 'geometry' }, { node: leafEntity.id, socket: 'geometry' });
   addEdge(g, { node: leafMat.id, socket: 'material' }, { node: leafEntity.id, socket: 'material' });
 
-  addEdge(g, { node: stalkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: stalkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: leafEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -383,12 +374,6 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 4 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-    ],
   });
 
   // Wiring.
@@ -410,10 +395,10 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
   addEdge(g, { node: petalScatter.id, socket: 'geometry' }, { node: petalEntity.id, socket: 'geometry' });
   addEdge(g, { node: petalMat.id, socket: 'material' }, { node: petalEntity.id, socket: 'material' });
 
-  addEdge(g, { node: discEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: stalkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: seedEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: petalEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: discEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: stalkEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: seedEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: petalEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

@@ -619,19 +619,14 @@ export function createCityDemo(): {
   // versions of those follow the same `polyline-points` pattern this
   // lamp pass uses.
 
-  // ── Big scene-merge → output.
-  const extraInputs = sceneRefs.map((_, i) => ({
-    name: `scene_${i}`,
-    type: 'Scene' as const,
-    optional: true,
-  }));
+  // ── Big scene-merge → output. multi-fan-in: every sceneRef wires
+  // into the single `scenes` socket below; no per-instance slots needed.
   const mergeY = nextLane() * ROW_Y;
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL_X * 5, y: mergeY },
-    extraInputs,
   });
-  sceneRefs.forEach((ref, i) => {
-    addEdge(g, { node: ref.nodeId, socket: ref.socket }, { node: merge.id, socket: `scene_${i}` });
+  sceneRefs.forEach((ref) => {
+    addEdge(g, { node: ref.nodeId, socket: ref.socket }, { node: merge.id, socket: 'scenes' });
   });
 
   const output = addNode(g, 'core/output', {

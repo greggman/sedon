@@ -85,13 +85,6 @@ export function createCityFurniturePreviewDemo(): {
   // ── Scene merge: ground + four pieces.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 2.5 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-    ],
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: ROW * 2.5 },
@@ -100,19 +93,19 @@ export function createCityFurniturePreviewDemo(): {
   // Edges.
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundEnt.id, socket: 'geometry' });
   addEdge(g, { node: groundMat.id, socket: 'material' }, { node: groundEnt.id, socket: 'material' });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: lampWrap.id, socket: 'scene' }, { node: lampLift.id, socket: 'scene' });
-  addEdge(g, { node: lampLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: lampLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: signalWrap.id, socket: 'scene' }, { node: signalLift.id, socket: 'scene' });
-  addEdge(g, { node: signalLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: signalLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: hydrantWrap.id, socket: 'scene' }, { node: hydrantLift.id, socket: 'scene' });
-  addEdge(g, { node: hydrantLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: hydrantLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: carWrap.id, socket: 'scene' }, { node: carLift.id, socket: 'scene' });
-  addEdge(g, { node: carLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_4' });
+  addEdge(g, { node: carLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 

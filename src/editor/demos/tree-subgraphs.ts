@@ -119,10 +119,6 @@ function buildTreeSubgraph(opts: {
   // Merge into a 2-entity tree scene — this is the subgraph's output.
   const treeMerge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
 
   // Edges — trunk chain (bark subgraph provides basecolor + normal +
@@ -140,8 +136,8 @@ function buildTreeSubgraph(opts: {
   addEdge(g, { node: foliageMat.id, socket: 'material' }, { node: foliageEntity.id, socket: 'material' });
 
   // Tree merge → boundary output.
-  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'scene_0' });
-  addEdge(g, { node: foliageEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'scene_1' });
+  addEdge(g, { node: trunkEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'scenes' });
+  addEdge(g, { node: foliageEntity.id, socket: 'scene' }, { node: treeMerge.id, socket: 'scenes' });
   addEdge(g, { node: treeMerge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

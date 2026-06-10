@@ -22,6 +22,20 @@ export interface InputDef {
   // is responsible for handling the undefined case.
   optional?: boolean;
   /**
+   * Multi-fan-in. When true, this socket accepts MANY edges simultaneously
+   * — the store keeps every edge instead of replacing on connect, and the
+   * evaluator hands the node's `evaluate()` a value of `Array<T>` (where
+   * T is whatever the socket's `type` resolves to). Edge order is
+   * insertion order in `graph.edges` (the order the connections were
+   * made); future work may surface a reorder UI.
+   *
+   * Replaces the older `extraInputsSpec` pattern for "I want N inputs of
+   * the same type" — one socket instead of N. Both mechanisms coexist
+   * today for the few nodes still on extraInputs; new variadic-style
+   * nodes should prefer `multi: true`.
+   */
+  multi?: boolean;
+  /**
    * For `Int` inputs that represent an enum, the closed set of valid
    * (value, label) pairs. When set, the UI renders a `<select>`
    * dropdown instead of a number scrubber, and the runtime still

@@ -92,13 +92,9 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3.5, y: ROW * 0.6 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: bodyEnt.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: grilleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: bodyEnt.id,   socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: grilleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

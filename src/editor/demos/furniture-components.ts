@@ -289,10 +289,6 @@ export function buildDrawerSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
 
   // Wire boundary → body params.
@@ -313,8 +309,8 @@ export function buildDrawerSubgraph(): SubgraphDef {
   addEdge(g, { node: inputNode.id, socket: 'material' }, { node: pullEntity.id, socket: 'material' });
 
   // Merge.
-  addEdge(g, { node: bodyEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: pullEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: bodyEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: pullEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

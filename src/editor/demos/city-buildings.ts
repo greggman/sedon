@@ -245,15 +245,10 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -783,27 +778,16 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 7, y: ROW * 3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-      { name: 'scene_5', type: 'Scene', optional: true },
-      { name: 'scene_6', type: 'Scene', optional: true },
-      { name: 'scene_7', type: 'Scene', optional: true },
-      { name: 'scene_8', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: groundEnt.id,    socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: roofEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: hvacScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
-  addEdge(g, { node: tankScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scene_4' });
-  addEdge(g, { node: awningLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_5' });
-  addEdge(g, { node: acPlusZ.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_6' });
-  addEdge(g, { node: acMinusZ.id,     socket: 'scene' }, { node: merge.id, socket: 'scene_7' });
-  addEdge(g, { node: fireLift.id,     socket: 'scene' }, { node: merge.id, socket: 'scene_8' });
+  addEdge(g, { node: groundEnt.id,    socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bodyEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: roofEnt.id,      socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: hvacScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: tankScatter.id,  socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: awningLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: acPlusZ.id,      socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: acMinusZ.id,     socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: fireLift.id,     socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -890,15 +874,10 @@ export function buildApartmentBuildingSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -976,15 +955,10 @@ export function buildShopBuildingSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -1081,17 +1055,11 @@ export function buildTowerBuildingSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2.5 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: lobbyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: curtainEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: setbackEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: lobbyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: curtainEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: setbackEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: roofEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

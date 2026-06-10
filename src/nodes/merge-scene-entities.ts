@@ -1,5 +1,5 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
-import type { InputDef, NodeDef } from '../core/node-def.js';
+import type { NodeDef } from '../core/node-def.js';
 import type {
   GeometryValue,
   MaterialValue,
@@ -148,14 +148,9 @@ Caveats:
         position: { x: 560, y: 220 },
         inputValues: {},
       });
-      const extras: InputDef[] = [
-        { name: 'scene_0', type: 'Scene' },
-        { name: 'scene_1', type: 'Scene' },
-      ];
       const sceneMerge = addNode(g, 'scene/merge', {
         id: 'scenes',
         position: { x: 840, y: 110 },
-        extraInputs: extras,
         inputValues: {},
       });
       const flatten = addNode(g, 'scene/merge-entities', {
@@ -168,8 +163,8 @@ Caveats:
       addEdge(g, { node: mat.id, socket: 'material' }, { node: entA.id, socket: 'material' });
       addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entB.id, socket: 'geometry' });
       addEdge(g, { node: mat.id, socket: 'material' }, { node: entB.id, socket: 'material' });
-      addEdge(g, { node: entA.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_0' });
-      addEdge(g, { node: entB.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scene_1' });
+      addEdge(g, { node: entA.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scenes' });
+      addEdge(g, { node: entB.id, socket: 'scene' }, { node: sceneMerge.id, socket: 'scenes' });
       addEdge(g, { node: sceneMerge.id, socket: 'scene' }, { node: flatten.id, socket: 'scene' });
       return { graph: g, rootNodeId: 'flatten' };
     },

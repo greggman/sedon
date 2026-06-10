@@ -234,10 +234,10 @@ function buildStreetSegmentImpl(
   });
 
   const merge = addMergeAndOutput(g, outputNode, 4, ROW * 2);
-  addEdge(g, { node: asphaltEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: centerEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: leftEdgeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: rightEdgeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: asphaltEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: centerEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: leftEdgeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: rightEdgeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   return {
     id,
@@ -379,11 +379,11 @@ export function buildIntersectionSubgraph(): SubgraphDef {
   });
 
   const merge = addMergeAndOutput(g, outputNode, 5, ROW * 2);
-  addEdge(g, { node: asphaltEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: northXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: southXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: eastXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
-  addEdge(g, { node: westXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scene_4' });
+  addEdge(g, { node: asphaltEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: northXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: southXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: eastXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: westXwalk.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   return {
     id,
@@ -457,10 +457,10 @@ export function buildBlockSidewalkSubgraph(): SubgraphDef {
   });
 
   const merge = addMergeAndOutput(g, outputNode, 4, ROW * 2);
-  addEdge(g, { node: northEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: southEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: eastEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: westEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: northEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: southEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: eastEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: westEdge.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   return {
     id,

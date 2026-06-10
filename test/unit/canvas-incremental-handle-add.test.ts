@@ -32,15 +32,13 @@ import { addNode, createGraph } from '../../src/core/graph.js';
 import { useEditorStore } from '../../src/editor/store.js';
 
 test('addNodeExtraInputWithEdge produces a new extraInput AND a matching incoming edge in one atomic update', () => {
+  // poly/list still uses the older extraInputsSpec pattern (no static
+  // base inputs, `polygon_<k>` extras). scene/merge migrated to a
+  // single multi-fan-in socket — addNodeExtraInputWithEdge is a no-op
+  // there, so we exercise the path on a node that still grows extras.
   const main = createGraph();
-  const source = addNode(main, 'geom/cube', { id: 'src' });
-  const merge = addNode(main, 'scene/merge', {
-    id: 'merge',
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
-  });
+  const sourcePoly = addNode(main, 'poly/from-points', { id: 'src' });
+  const polyList = addNode(main, 'poly/list', { id: 'list' });
   useEditorStore.setState({
     mainGraph: main,
     graph: main,
@@ -51,30 +49,29 @@ test('addNodeExtraInputWithEdge produces a new extraInput AND a matching incomin
     redoStack: [],
   });
 
-  const baseInputCount = 0; // scene-merge has no static base inputs
+  const baseInputCount = 0; // poly/list has no static base inputs
   useEditorStore.getState().addNodeExtraInputWithEdge(
-    merge.id,
-    'Scene',
-    'scene',
+    polyList.id,
+    'Polygon',
+    'polygon',
     baseInputCount,
-    { node: source.id, socket: 'geometry' },
+    { node: sourcePoly.id, socket: 'polygon' },
   );
 
   const state = useEditorStore.getState();
-  const updatedMerge = state.graph.nodes.find((n) => n.id === merge.id)!;
-  // Existing extras kept + one new appended.
-  assert.equal(updatedMerge.extraInputs?.length, 3);
-  const newExtra = updatedMerge.extraInputs![2]!;
-  assert.equal(newExtra.type, 'Scene');
-  // Naming follows the namePrefix_<k> convention; k = baseInputCount + existingExtras.
-  assert.equal(newExtra.name, 'scene_2');
+  const updated = state.graph.nodes.find((n) => n.id === polyList.id)!;
+  // Fresh node had no extras; one new appended.
+  assert.equal(updated.extraInputs?.length, 1);
+  const newExtra = updated.extraInputs![0]!;
+  assert.equal(newExtra.type, 'Polygon');
+  assert.equal(newExtra.name, 'polygon_0');
 
-  // The edge added in the same call must reference the new socket
-  // by name. If this asserted false, the canvas would receive an
-  // edge whose target.socket has no matching node-handle — the
-  // exact misalignment that triggered the ReactFlow error.
-  const incoming = state.graph.edges.filter((e) => e.to.node === merge.id);
+  // The edge added in the same call must reference the new socket by
+  // name. If this asserted false, the canvas would receive an edge
+  // whose target.socket has no matching node-handle — the exact
+  // misalignment that triggered the ReactFlow error.
+  const incoming = state.graph.edges.filter((e) => e.to.node === polyList.id);
   assert.equal(incoming.length, 1);
-  assert.equal(incoming[0]!.to.socket, 'scene_2');
-  assert.equal(incoming[0]!.from.node, source.id);
+  assert.equal(incoming[0]!.to.socket, 'polygon_0');
+  assert.equal(incoming[0]!.from.node, sourcePoly.id);
 });

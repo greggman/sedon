@@ -682,10 +682,21 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
 
       const id = crypto.randomUUID();
       const color = edgeColor(graph, params.source, params.sourceHandle, registry);
-      // Visual: drop any existing edge into the same input, then add the new one
-      // with the same id we'll send to the store so the two stay in sync.
+      // Visual: when the target socket is multi-fan-in (declared
+      // `multi: true` in the NodeDef OR on a per-instance extraInput),
+      // KEEP every existing edge into it; otherwise drop the previous
+      // edge so the store and RF state stay in sync after this onConnect.
+      const targetNode = findNode(graph, params.target);
+      const targetDef = targetNode ? registry.get(targetNode.kind) : undefined;
+      const targetSocket = targetDef
+        ? targetDef.inputs.find((i) => i.name === params.targetHandle)
+          ?? targetNode?.extraInputs?.find((i) => i.name === params.targetHandle)
+        : undefined;
+      const targetIsMulti = targetSocket?.multi === true;
       setRfEdges((eds) => [
-        ...eds.filter((e) => !(e.target === params.target && e.targetHandle === params.targetHandle)),
+        ...(targetIsMulti
+          ? eds
+          : eds.filter((e) => !(e.target === params.target && e.targetHandle === params.targetHandle))),
         {
           id,
           source: params.source,

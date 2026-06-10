@@ -180,10 +180,18 @@ export async function evaluateGraph(
   const roundStart = cache ? performance.now() : 0;
   if (cache) cache.stats.rounds++;
 
-  // Index incoming edges by (toNode, toSocket) for O(1) lookup.
-  const incomingBySocket = new Map<string, { node: string; socket: string }>();
+  // Index incoming edges by (toNode, toSocket) for O(1) lookup. For
+  // single-fan-in sockets there's at most one entry per key, but a
+  // `multi: true` socket may have many edges into it — the map's
+  // value is a list to handle both uniformly. Insertion order in the
+  // list mirrors `graph.edges` order, which becomes the array order
+  // the evaluator hands to a multi input.
+  const incomingBySocket = new Map<string, Array<{ node: string; socket: string }>>();
   for (const e of graph.edges) {
-    incomingBySocket.set(`${e.to.node}/${e.to.socket}`, e.from);
+    const key = `${e.to.node}/${e.to.socket}`;
+    const list = incomingBySocket.get(key);
+    if (list) list.push(e.from);
+    else incomingBySocket.set(key, [e.from]);
   }
 
   for (const nodeId of order) {
@@ -207,21 +215,43 @@ export async function evaluateGraph(
     const upstreamFingerprints: Record<string, string> = {};
     let canEvaluate = true;
     for (const input of effectiveInputs) {
-      const upstream = incomingBySocket.get(`${nodeId}/${input.name}`);
-      // Try the upstream wire first. If the upstream node failed to
-      // evaluate (it itself had missing required inputs, threw, etc.)
-      // FALL THROUGH to the fallback chain (inputValue → default →
-      // optional → fail) as if the wire weren't there. This is what
-      // keeps a broken sub-branch from blacking out the rest of the
-      // graph: e.g. deleting the Fire Hydrant wrapper in the city demo
-      // leaves the hydrant scatter unable to evaluate; the city's
-      // scene-merge has its `scene_N` for hydrants wired to that
-      // scatter and marked `optional: true`. Previously the merge
-      // failed too because we treated "broken upstream" as a hard
-      // error before consulting `optional` — now the merge drops the
-      // broken slot and the rest of the city still renders.
+      const upstreams = incomingBySocket.get(`${nodeId}/${input.name}`) ?? [];
+      // Multi-fan-in path: collect every successfully-evaluated upstream
+      // into an Array<T> and treat the input as always resolved (even
+      // zero edges → empty array). Broken upstreams are simply skipped —
+      // same "don't black out the rest of the graph" rationale as the
+      // optional-input fallback below, just applied per-element.
+      // Fingerprint is the comma-joined list of upstream fps so the
+      // node re-evaluates when ANY contributor's output changes.
       let resolved = false;
-      if (upstream) {
+      if (input.multi) {
+        const items: unknown[] = [];
+        const fpItems: string[] = [];
+        for (const u of upstreams) {
+          const upstreamOutputs = outputs.get(u.node);
+          if (upstreamOutputs) {
+            items.push(upstreamOutputs[u.socket]);
+            const upFp = fingerprints.get(u.node);
+            if (upFp !== undefined) fpItems.push(upFp);
+          }
+        }
+        inputs[input.name] = items;
+        upstreamFingerprints[input.name] = `multi:[${fpItems.join(',')}]`;
+        resolved = true;
+      } else if (upstreams[0]) {
+        // Single-fan-in: the same logic as before. If the upstream node
+        // failed to evaluate (it itself had missing required inputs,
+        // threw, etc.) FALL THROUGH to the fallback chain (inputValue
+        // → default → optional → fail) as if the wire weren't there.
+        // This is what keeps a broken sub-branch from blacking out the
+        // rest of the graph: e.g. deleting the Fire Hydrant wrapper in
+        // the city demo leaves the hydrant scatter unable to evaluate;
+        // the city's scene-merge has its `scene_N` for hydrants wired
+        // to that scatter and marked `optional: true`. Previously the
+        // merge failed too because we treated "broken upstream" as a
+        // hard error before consulting `optional` — now the merge
+        // drops the broken slot and the rest of the city still renders.
+        const upstream = upstreams[0];
         const upstreamOutputs = outputs.get(upstream.node);
         if (upstreamOutputs) {
           inputs[input.name] = upstreamOutputs[upstream.socket];

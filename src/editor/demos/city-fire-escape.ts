@@ -85,10 +85,9 @@ function mergeEntities(
 ): void {
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3.5, y: yOff },
-    extraInputs: ents.map((_, i) => ({ name: `scene_${i}`, type: 'Scene' as const })),
   });
-  ents.forEach((e, i) => {
-    addEdge(g, { node: e.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
+  ents.forEach((e) => {
+    addEdge(g, { node: e.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 }
@@ -376,15 +375,10 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   // Merge the three sub-scenes.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2.5 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: bottomShift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: floorLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: topShift.id,    socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: bottomShift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: floorLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: topShift.id,    socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

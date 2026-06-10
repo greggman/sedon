@@ -1826,15 +1826,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const state = get();
       const registry = buildRegistry(state.subgraphs);
       // Full check: both nodes exist, sockets exist on both ends,
-      // types are compatible, no self-loop. Replacing an existing
-      // edge into the same target is allowed (single-edge-per-input
-      // convention — handled below via the `replaced` field).
-      assertConnectIsValid(state.graph, registry, coreTypes, from, to);
+      // types are compatible, no self-loop. Single-edge-per-input
+      // is the default; sockets that opt in via `multi: true`
+      // accept many edges and the `replaced` field stays null.
+      const { toIn } = assertConnectIsValid(state.graph, registry, coreTypes, from, to);
       assertNotDuplicateEdgeId(state.graph, id);
-      const replaced =
-        state.graph.edges.find(
-          (e) => e.to.node === to.node && e.to.socket === to.socket,
-        ) ?? null;
+      const replaced = toIn.multi
+        ? null
+        : (state.graph.edges.find(
+            (e) => e.to.node === to.node && e.to.socket === to.socket,
+          ) ?? null);
       dispatch({ kind: 'connect', edge: { id, from, to }, replaced });
     },
 

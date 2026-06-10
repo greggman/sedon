@@ -96,11 +96,6 @@ export function buildChairSubgraph(): SubgraphDef {
   // Merge legs + seat + back.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
 
   // Texture → material.
@@ -120,9 +115,9 @@ export function buildChairSubgraph(): SubgraphDef {
   addEdge(g, { node: seat.id, socket: 'scene' }, { node: seatLift.id, socket: 'scene' });
   addEdge(g, { node: back.id, socket: 'scene' }, { node: backLift.id, socket: 'scene' });
 
-  addEdge(g, { node: legs.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: seatLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: backLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: legs.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: seatLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: backLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -188,10 +183,6 @@ export function buildTableSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
 
   addEdge(g, { node: wood.id, socket: 'basecolor' }, { node: woodMat.id, socket: 'basecolor' });
@@ -202,8 +193,8 @@ export function buildTableSubgraph(): SubgraphDef {
   addEdge(g, { node: leg.id, socket: 'scene' }, { node: legs.id, socket: 'instance' });
   addEdge(g, { node: corners.id, socket: 'points' }, { node: legs.id, socket: 'points' });
   addEdge(g, { node: top.id, socket: 'scene' }, { node: topLift.id, socket: 'scene' });
-  addEdge(g, { node: legs.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: topLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: legs.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: topLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -345,11 +336,6 @@ export function buildSofaSubgraph(): SubgraphDef {
   // 8-input merge: legs, base, armL, armR, 3 seat cushions, 3 back cushions.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
-    extraInputs: Array.from({ length: 10 }, (_, i) => ({
-      name: `scene_${i}`,
-      type: 'Scene' as const,
-      optional: true,
-    })),
   });
 
   // Texture → material wiring.
@@ -384,8 +370,8 @@ export function buildSofaSubgraph(): SubgraphDef {
     ...seatTransforms,
     ...backTransforms,
   ];
-  sources.forEach((node, i) => {
-    addEdge(g, { node: node.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
+  sources.forEach((node) => {
+    addEdge(g, { node: node.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
@@ -597,11 +583,6 @@ export function buildBookshelfSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
-    extraInputs: Array.from({ length: 8 }, (_, i) => ({
-      name: `scene_${i}`,
-      type: 'Scene' as const,
-      optional: true,
-    })),
   });
 
   addEdge(g, { node: wood.id, socket: 'basecolor' }, { node: woodMat.id, socket: 'basecolor' });
@@ -638,8 +619,8 @@ export function buildBookshelfSubgraph(): SubgraphDef {
   addEdge(g, { node: bookColors.id, socket: 'values' }, { node: books.id, socket: 'per_point_tint' });
 
   const sources = [backLift, sideLeft, sideRight, topLift, bottomLift, shelves, books];
-  sources.forEach((node, i) => {
-    addEdge(g, { node: node.id, socket: 'scene' }, { node: merge.id, socket: `scene_${i}` });
+  sources.forEach((node) => {
+    addEdge(g, { node: node.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
@@ -723,10 +704,6 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
 
   addEdge(g, { node: metal.id, socket: 'basecolor' }, { node: metalMat.id, socket: 'basecolor' });
@@ -738,8 +715,8 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
   addEdge(g, { node: drawer.id, socket: 'scene' }, { node: drawers.id, socket: 'instance' });
   addEdge(g, { node: drawerLine.id, socket: 'points' }, { node: drawers.id, socket: 'points' });
 
-  addEdge(g, { node: bodyLift.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: drawers.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: bodyLift.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: drawers.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {

@@ -79,13 +79,9 @@ export function createSingleBuildingDemo(): {
   // ── Merge ground + office into the scene.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: officeWrap.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: groundEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: officeWrap.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   const output = addNode(g, 'core/output', {
     position: { x: COL * 4, y: ROW * 1 },

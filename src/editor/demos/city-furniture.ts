@@ -102,11 +102,6 @@ export function buildLampPostSubgraph(): SubgraphDef {
   // ── Merge all three sub-scenes into one Scene the wrapper exports.
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-    ],
   });
 
   // Wire each part: geo → lift → entity, material → entity, entity → merge.
@@ -122,9 +117,9 @@ export function buildLampPostSubgraph(): SubgraphDef {
   addEdge(g, { node: bulbLift.id, socket: 'geometry' }, { node: bulbEnt.id, socket: 'geometry' });
   addEdge(g, { node: bulbMat.id, socket: 'material' }, { node: bulbEnt.id, socket: 'material' });
 
-  addEdge(g, { node: poleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: housingEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: bulbEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: poleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: housingEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: bulbEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -213,14 +208,6 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
   ];
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 3 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-      { name: 'scene_5', type: 'Scene', optional: true },
-    ],
   });
 
   // Wire pole, arm, head to dark material + merge.
@@ -236,13 +223,13 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
   addEdge(g, { node: headLift.id, socket: 'geometry' }, { node: headEnt.id, socket: 'geometry' });
   addEdge(g, { node: darkMat.id, socket: 'material' }, { node: headEnt.id, socket: 'material' });
 
-  addEdge(g, { node: poleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: armEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: headEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
+  addEdge(g, { node: poleEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: armEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: headEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   // Lights — each is geometry + material + entity, all going into
   // the merge under their respective scene_3..5 slot.
-  lights.forEach((light, i) => {
+  lights.forEach((light) => {
     const lGeo = addNode(g, 'geom/sphere', {
       position: { x: COL, y: ROW * light.row },
       inputValues: { radius: 0.14, segments: 16, rings: 12 },
@@ -261,7 +248,7 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
     addEdge(g, { node: lGeo.id, socket: 'geometry' }, { node: lLift.id, socket: 'geometry' });
     addEdge(g, { node: lLift.id, socket: 'geometry' }, { node: lEnt.id, socket: 'geometry' });
     addEdge(g, { node: lMat.id, socket: 'material' }, { node: lEnt.id, socket: 'material' });
-    addEdge(g, { node: lEnt.id, socket: 'scene' }, { node: merge.id, socket: `scene_${3 + i}` });
+    addEdge(g, { node: lEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
 
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
@@ -356,12 +343,6 @@ export function buildFireHydrantSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 1.5 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-    ],
   });
 
   // Wire all four parts to the shared red material + merge.
@@ -375,10 +356,10 @@ export function buildFireHydrantSubgraph(): SubgraphDef {
     addEdge(g, { node: lift.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
     addEdge(g, { node: redMat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
   }
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: domeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
-  addEdge(g, { node: leftCapEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_2' });
-  addEdge(g, { node: rightCapEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_3' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: domeEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: leftCapEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: rightCapEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -484,26 +465,18 @@ export function buildCarSubgraph(): SubgraphDef {
 
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2.5 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-      { name: 'scene_5', type: 'Scene', optional: true },
-    ],
   });
 
   // Body + cabin wiring.
   addEdge(g, { node: bodyGeo.id, socket: 'geometry' }, { node: bodyLift.id, socket: 'geometry' });
   addEdge(g, { node: bodyLift.id, socket: 'geometry' }, { node: bodyEnt.id, socket: 'geometry' });
   addEdge(g, { node: bodyMat.id, socket: 'material' }, { node: bodyEnt.id, socket: 'material' });
-  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: bodyEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   addEdge(g, { node: cabinGeo.id, socket: 'geometry' }, { node: cabinLift.id, socket: 'geometry' });
   addEdge(g, { node: cabinLift.id, socket: 'geometry' }, { node: cabinEnt.id, socket: 'geometry' });
   addEdge(g, { node: glassMat.id, socket: 'material' }, { node: cabinEnt.id, socket: 'material' });
-  addEdge(g, { node: cabinEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: cabinEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
 
   // body_color from the wrapper input goes into bodyMat.basecolor.
   addEdge(g, { node: inputNode.id, socket: 'body_color' }, { node: bodyMat.id, socket: 'basecolor' });
@@ -524,7 +497,7 @@ export function buildCarSubgraph(): SubgraphDef {
     addEdge(g, { node: wGeo.id, socket: 'geometry' }, { node: wLift.id, socket: 'geometry' });
     addEdge(g, { node: wLift.id, socket: 'geometry' }, { node: wEnt.id, socket: 'geometry' });
     addEdge(g, { node: wheelMat.id, socket: 'material' }, { node: wEnt.id, socket: 'material' });
-    addEdge(g, { node: wEnt.id, socket: 'scene' }, { node: merge.id, socket: `scene_${2 + i}` });
+    addEdge(g, { node: wEnt.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   });
 
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });

@@ -177,13 +177,6 @@ export function createForestDemo(): {
   // "+ Add scene" clicks. Terrain + oak + pine + rock + grass.
   const mergeAll = addNode(g, 'scene/merge', {
     position: { x: COL * 11, y: ROW * 1.8 },
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-      { name: 'scene_2', type: 'Scene', optional: true },
-      { name: 'scene_3', type: 'Scene', optional: true },
-      { name: 'scene_4', type: 'Scene', optional: true },
-    ],
   });
 
   // === Grass (camera-relative GPU) =======================================
@@ -308,10 +301,10 @@ export function createForestDemo(): {
   addEdge(g, { node: rockScale.id, socket: 'values' }, { node: rockScatter.id, socket: 'per_point_scale' });
 
   // Merge: terrain + oak + pine + rock + grass → final scene.
-  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_0' });
-  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_1' });
-  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_2' });
-  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_3' });
+  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
+  addEdge(g, { node: oakScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
+  addEdge(g, { node: pineScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
+  addEdge(g, { node: rockScatter.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
 
   // Grass: density = flatness × trail; type by altitude; two blade cards.
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: grassFlatness.id, socket: 'height' });
@@ -322,7 +315,7 @@ export function createForestDemo(): {
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: forestGrass.id, socket: 'typeMap' });
   addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_0' });
   addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_1' });
-  addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scene_4' });
+  addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
 
   // Water takes the merged Scene, appends a water entity sized to the
   // terrain's heightfield (via the scene's terrain field), and forwards

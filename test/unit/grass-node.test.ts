@@ -87,7 +87,9 @@ test('scene-merge carries grass fields through (terrain + grass → one scene)',
   const terrainScene: SceneValue = {
     entities: [{ geometry: {} as never, material: {} as never, transform: new Float32Array(16), tint: new Float32Array(4) }],
   };
-  const merged = sceneMergeNode.evaluate({}, { scene_0: terrainScene, scene_1: grassScene }) as { scene: SceneValue };
+  // scene/merge is now a single multi-fan-in input named `scenes`;
+  // the evaluator receives all wired scenes as an array.
+  const merged = sceneMergeNode.evaluate({}, { scenes: [terrainScene, grassScene] }) as { scene: SceneValue };
   assert.equal(merged.scene.entities.length, 1, 'terrain entity preserved');
   assert.equal(merged.scene.grass?.length, 1, 'grass field carried through the merge');
 });

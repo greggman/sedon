@@ -123,13 +123,8 @@ export function createGrassTestDemo(): {
     },
   });
 
-  const SM2 = [
-    { name: 'scene_0', type: 'Scene', optional: true },
-    { name: 'scene_1', type: 'Scene', optional: true },
-  ];
   const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW },
-    extraInputs: SM2,
   });
   const output = addNode(g, 'core/output', {
     position: { x: COL * 5, y: ROW },
@@ -155,8 +150,8 @@ export function createGrassTestDemo(): {
   addEdge(g, { node: cardGold.id, socket: 'texture' }, { node: grass.id, socket: 'card_1' });
 
   // Merge terrain + grass → output.
-  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
-  addEdge(g, { node: grass.id, socket: 'scene' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: grass.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: output.id, socket: 'scene' });
 
   return {

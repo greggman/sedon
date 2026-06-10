@@ -228,9 +228,15 @@ interface TypedHandleProps {
   socketType: string;
   side: 'input' | 'output';
   top: number;
+  /**
+   * Multi-fan-in. When true, the socket accepts many edges and gets a
+   * three-dot column glyph instead of the solid circle so the user can
+   * tell at a glance "this one's a list." Same colour, same hit target.
+   */
+  multi?: boolean;
 }
 
-function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
+function TypedHandle({ socketName, socketType, side, top, multi }: TypedHandleProps) {
   const connection = useConnection();
   const registry = useRegistry();
   const color = typeColor(socketType);
@@ -252,14 +258,38 @@ function TypedHandle({ socketName, socketType, side, top }: TypedHandleProps) {
     }
   }
 
-  const style: React.CSSProperties = {
-    top,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-    background: color,
-    border: '1px solid #1a1a1f',
-    boxShadow: matches ? `0 0 0 3px ${color}55, 0 0 8px ${color}` : 'none',
-  };
+  // Multi handles are a touch taller and painted as three dots stacked
+  // vertically (via layered radial-gradients), centred horizontally.
+  // Aspect change is what makes the silhouette read as "different at a
+  // glance" — the colour stays the same so the type identity is still
+  // obvious. Wire endpoints attach to the geometric centre as usual.
+  const multiHeight = HANDLE_SIZE + 6;
+  const dotRadius = `${HANDLE_SIZE * 0.28}px`;
+  const multiBackground =
+    `radial-gradient(circle ${dotRadius} at 50% 18%, ${color} 95%, transparent 100%), `
+    + `radial-gradient(circle ${dotRadius} at 50% 50%, ${color} 95%, transparent 100%), `
+    + `radial-gradient(circle ${dotRadius} at 50% 82%, ${color} 95%, transparent 100%)`;
+
+  const style: React.CSSProperties = multi
+    ? {
+        top: top - (multiHeight - HANDLE_SIZE) / 2,
+        width: HANDLE_SIZE,
+        height: multiHeight,
+        background: multiBackground,
+        backgroundColor: 'transparent',
+        border: 'none',
+        // Lift the glow on hover by colouring the dots, not the bounding box.
+        filter: matches ? `drop-shadow(0 0 4px ${color})` : 'none',
+        borderRadius: 0,
+      }
+    : {
+        top,
+        width: HANDLE_SIZE,
+        height: HANDLE_SIZE,
+        background: color,
+        border: '1px solid #1a1a1f',
+        boxShadow: matches ? `0 0 0 3px ${color}55, 0 0 8px ${color}` : 'none',
+      };
 
   return (
     <Handle
@@ -1269,6 +1299,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             socketType={input.type}
             side="input"
             top={inputsTop + i * ROW_HEIGHT + ROW_HEIGHT / 2}
+            {...(input.multi ? { multi: true } : {})}
           />
         )
       ))}

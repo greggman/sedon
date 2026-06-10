@@ -176,11 +176,6 @@ export function createFurnitureDemo(): {
   // === Merge ============================================================
   const mergeAll = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
-    extraInputs: Array.from({ length: 10 }, (_, i) => ({
-      name: `scene_${i}`,
-      type: 'Scene' as const,
-      optional: true,
-    })),
   });
 
   // Output — derives lighting from sun direction; rest of the
@@ -223,8 +218,8 @@ export function createFurnitureDemo(): {
     floorLift, backWallLift, sideWallLift,
     chairPlace, tablePlace, sofaPlace, bookshelfPlace, fileCabinetPlace,
   ];
-  allSources.forEach((node, i) => {
-    addEdge(g, { node: node.id, socket: 'scene' }, { node: mergeAll.id, socket: `scene_${i}` });
+  allSources.forEach((node) => {
+    addEdge(g, { node: node.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
   });
 
   addEdge(g, { node: mergeAll.id, socket: 'scene' }, { node: output.id, socket: 'scene' });

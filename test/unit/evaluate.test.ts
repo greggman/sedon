@@ -130,17 +130,13 @@ test('a broken upstream on an OPTIONAL input is treated as unwired (downstream s
   // and no inputValue → can't evaluate.
   const broken = addNode(g, 'tex/distance-transform');
   const merge = addNode(g, 'scene/merge', {
-    extraInputs: [
-      { name: 'scene_0', type: 'Scene', optional: true },
-      { name: 'scene_1', type: 'Scene', optional: true },
-    ],
   });
-  addEdge(g, { node: good.id, socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
+  addEdge(g, { node: good.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   // Wire scene_1 to a node that won't evaluate. The fact that the
   // socket TYPES don't match (broken outputs Texture2D, scene_1
   // expects Scene) is incidental — eval propagates whatever upstream
   // produced, and here upstream produces nothing.
-  addEdge(g, { node: broken.id, socket: 'texture' }, { node: merge.id, socket: 'scene_1' });
+  addEdge(g, { node: broken.id, socket: 'texture' }, { node: merge.id, socket: 'scenes' });
 
   const result = await evaluateGraph(g, nodes, { rootNodeId: merge.id });
   assert.ok(result.allOutputs.has(merge.id), 'scene-merge must still evaluate when one input is broken');
