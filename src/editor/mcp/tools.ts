@@ -361,6 +361,51 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
     },
   };
 
+  const addNodeExtraInput: SedonTool = {
+    name: 'addNodeExtraInput',
+    description:
+      'Append one variadic input slot to a node whose NodeDef declares an `extraInputsSpec` (e.g. `scene/merge`). The new socket is named `<namePrefix>_<k>` where `<namePrefix>` and the slot type come from the node\'s spec and `<k>` is the next free index after the static inputs plus existing extras (so the first call adds `<prefix>_0`, the second `<prefix>_1`, etc.). Returns the new socket name so the caller can immediately `connect` to it. Returns `{ ok: false, error: { code: "unknown_kind" | "node_not_found" | "not_variadic" } }` on bad input. UNDOABLE.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'id of an existing node with a variadic input spec' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+    handler: catchValidation((args) => {
+      const nodeId = String(args.nodeId);
+      const state = getState();
+      const node = state.graph.nodes.find((n) => n.id === nodeId);
+      if (!node) {
+        return { ok: false, error: { code: 'node_not_found', message: `no node "${nodeId}"`, detail: { nodeId } } };
+      }
+      const registry = getRegistry();
+      const def = registry.get(node.kind);
+      if (!def) {
+        return { ok: false, error: { code: 'unknown_kind', message: `unknown kind "${node.kind}"`, detail: { kind: node.kind } } };
+      }
+      const spec = def.extraInputsSpec;
+      if (!spec) {
+        return {
+          ok: false,
+          error: {
+            code: 'not_variadic',
+            message: `node kind "${node.kind}" does not declare extraInputsSpec; nothing to add`,
+            detail: { kind: node.kind },
+          },
+        };
+      }
+      // Slot id matches the store's naming convention: <prefix>_<k>
+      // where k = static-inputs.length + existing-extras.length. Compute
+      // BEFORE calling addNodeExtraInput so we can return the name.
+      const k = def.inputs.length + (node.extraInputs?.length ?? 0);
+      const socketName = `${spec.namePrefix}_${k}`;
+      getState().addNodeExtraInput(nodeId, spec.type, spec.namePrefix, def.inputs.length);
+      return { socket: socketName, type: spec.type };
+    }),
+  };
+
   const createSubgraph: SedonTool = {
     name: 'createSubgraph',
     description:
@@ -516,6 +561,7 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
     removeEdges,
     setInputValue,
     renameNode,
+    addNodeExtraInput,
     createSubgraph,
     addSubgraphSocket,
     setActiveEditing,

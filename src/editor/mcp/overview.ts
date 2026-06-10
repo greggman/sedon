@@ -34,9 +34,9 @@ KEY DIFFERENCES from Houdini SOPs and Blender Geometry Nodes:
    Scenes are what get rendered. \`scene/entity\` wraps a
    Geometry+Material into a one-entity Scene; \`scene/merge\`
    composes multiple Scenes; \`scene/transform\` left-multiplies
-   every entity's world transform. Most modifiers (transform-
-   geometry, bevel, extrude, inset, mirror) operate on Geometry;
-   placement and composition happen at the Scene layer.
+   every entity's world transform. Most modifiers (geom/transform,
+   geom/bevel, geom/extrude, geom/inset, geom/mirror) operate on
+   Geometry; placement and composition happen at the Scene layer.
 
 2. Subgraphs as reusable assets. A subgraph is a named, parametric
    sub-graph with its own input + output sockets. It shows up in
@@ -48,41 +48,147 @@ KEY DIFFERENCES from Houdini SOPs and Blender Geometry Nodes:
 3. Real-time eval. Mutations (add node, connect, set input value)
    trigger re-evaluation through an eval cache keyed on per-node
    fingerprints — unchanged nodes return their cached result, so
-   editing a single value re-evaluates only its dependents. This is
-   what makes the canvas feel like an interactive editor instead of
-   a render-when-asked DAG.
+   editing a single value re-evaluates only its dependents.
 
 KEY VALUE TYPES (so tool calls produce edges with matching types):
   Float, Int, Bool, Vec2, Vec3, Vec4, Color, Texture2D, Geometry,
   Material, Scene, PointCloud, Vec3Cloud, FloatCloud, Path,
   Heightfield, Lighting.
 
-Type compatibility is mostly strict; a few documented broadcasts
-exist (Float → Vec2/3/4, Int → Float, Color ↔ Vec4). Connecting
-incompatible sockets fails the edge.
+Type compatibility is mostly strict, but a few useful broadcasts
+exist — you can rely on these to skip "constant" nodes:
+  - Int → Float
+  - Float → Vec2 / Vec3 / Vec4    (broadcasts the same value to every component)
+  - Color ↔ Vec4
+  - Color → Texture2D             (a flat colour wired to a Texture2D socket auto-promotes to a 1×1 texture)
+Any other connection fails with code \`type_mismatch\`.
 
-COMMAND PATTERN. Every authoring mutation is a Command (addNode,
-removeNodes, connect, removeEdges, setInputValue, replaceGraph,
-replaceProject) that gets dispatched through a single applyForward
-function and reversibly inverted by applyBackward. That's why every
-MCP mutation tool here is undoable for free — there is no separate
-undo machinery for tool-driven edits.
+=================================================================
+HOW TO BUILD A SCENE — read this before any mutation.
+=================================================================
 
-WHEN USING THESE TOOLS to build a subgraph or scene:
-- Start by calling \`listNodeKinds\` to see available node ids and
-  their input/output socket schemas. Don't guess kind ids or socket
-  names; the registry is the source of truth.
-- Use \`createSubgraph\` to make a new asset, then call
-  \`setActiveEditing\` to focus its canvas so subsequent addNode /
-  connect calls land inside that subgraph. Subgraph inputs and
-  outputs are surfaced as \`subgraph-input/<id>\` and
-  \`subgraph-output/<id>\` boundary nodes inside the graph.
-- Wire sockets by exact name. Look at each node's inputs / outputs
-  via \`listNodeKinds\` to find the names.
-- Author values with \`setInputValue\`. Pass the raw value (number,
-  array, string) — the editor converts.
-- Always end a Scene-producing graph at a \`core/output\` node.
-  Without it, nothing renders. Subgraphs that produce Geometry or
-  Texture2D don't need core/output — they emit their final value at
-  the subgraph-output boundary.
+THE ROOT. \`core/output\` is the eval root. Its FIRST input is named
+\`scene\` and expects a Scene. Everything else (light_direction,
+light_color, light_intensity, terrain_tint, …) has sensible defaults
+— you don't have to wire them. NOTHING RENDERS unless something is
+connected to \`core/output.scene\`. Most agent-induced "I built a
+graph and nothing shows up" bugs come from skipping this wire.
+
+MINIMUM RENDER RECIPE. To make a single cube appear on screen:
+  1.  addNode geom/cube                 → id = cubeId
+  2.  addNode material/pbr              → id = matId
+  3.  addNode scene/entity              → id = entId
+  4.  connect cubeId.geometry  → entId.geometry
+  5.  connect matId.material   → entId.material
+  6.  addNode core/output               → id = outId  (auto-promoted to root)
+  7.  connect entId.scene      → outId.scene
+That's the whole pipeline. To recolour the cube, no extra node:
+\`setInputValue(matId, 'color', [1, 0.2, 0.2, 1])\`.
+
+MORE THAN ONE OBJECT. \`core/output.scene\` takes a SINGLE Scene.
+To render multiple objects, combine them with \`scene/merge\` first:
+  cube/entity → scene/merge.scene_0
+  sphere/entity → scene/merge.scene_1
+  scene/merge.scene  →  core/output.scene
+\`scene/merge\` is variadic — it starts with NO input sockets. Use
+\`addNodeExtraInput\` to grow it one slot at a time before calling
+\`connect\` on those slots. Each call appends a slot named
+\`scene_0\`, \`scene_1\`, … in order. The same pattern applies to any
+node whose listNodeKinds entry shows \`extraInputsSpec\`.
+
+DEFAULTS EXIST. Don't wire a constant node just to feed a literal
+value. Every input has a default; if you want a different scalar /
+vector / colour, call \`setInputValue\` with the raw value. For
+Texture2D inputs that declare a colour default, passing a Color is
+enough — Sedon promotes it to a 1×1 texture at eval time.
+
+LAZY EVAL FROM THE ROOT. Nodes that aren't transitively reachable
+from \`core/output\` are not evaluated, full stop. If you added
+nodes and "nothing changed," the first thing to check is whether
+the new chain reaches \`core/output.scene\`.
+
+=================================================================
+SUBGRAPHS
+=================================================================
+
+A subgraph is a reusable asset (chair, tree, building, etc.). Two
+distinct steps:
+
+DEFINE A SUBGRAPH. \`createSubgraph(id, label)\` creates an empty
+subgraph AND switches the editing context to it. After that call,
+subsequent \`addNode\` / \`connect\` calls land INSIDE the
+subgraph, not in the main graph. Use \`getActiveEditing\` to
+confirm where you are. To add input / output sockets to the
+subgraph's surface, use \`addSubgraphSocket\`. Sockets surface as
+named handles on boundary nodes inside the subgraph (kinds
+\`subgraph-input/<id>\` and \`subgraph-output/<id>\`) and on every
+wrapper instance in parent graphs.
+
+INSTANCE A SUBGRAPH. Just defining a subgraph doesn't put it in
+your scene. Switch back to "main" with \`setActiveEditing('main')\`
+and \`addNode\` the wrapper kind \`subgraph/<your-id>\`. That
+wrapper has the input/output sockets you declared via
+addSubgraphSocket; wire it like any other node.
+
+STANDALONE PREVIEW. A subgraph CAN contain a \`core/output\` node
+of its own. When present, that's what the standalone preview pane
+shows when the user drills into the subgraph. Otherwise the
+preview renders the subgraph's boundary output directly.
+
+=================================================================
+VALIDATION ERRORS
+=================================================================
+
+Mutating tools (addNode, connect, setInputValue) return
+\`{ ok: false, error: { code, message, detail } }\` on bad input.
+Codes you'll see and what to do:
+
+  node_not_found       → the nodeId doesn't exist in the active
+                         graph. Recheck via \`listGraphNodes\`. If
+                         you're inside the wrong graph, switch with
+                         \`setActiveEditing\`.
+  unknown_kind         → the node kind id is wrong. Look it up via
+                         \`listNodeKinds\`; don't guess.
+  socket_not_found     → the socket name is wrong on that node.
+                         \`detail.side\` tells you whether it's an
+                         input or output. Re-read the node's
+                         schema in listNodeKinds. For variadic
+                         nodes, the slot may not exist yet — add
+                         it with addNodeExtraInput first.
+  type_mismatch        → either the output type can't connect to
+                         the input type (check the broadcast list
+                         above), or a setInputValue got a value
+                         of the wrong shape (e.g. a string into a
+                         Float, a length-2 array into a Vec3).
+  self_loop            → can't connect a node's output back to its
+                         own input.
+  duplicate_node_id /
+  duplicate_edge_id    → the id you supplied is taken. Omit \`id\`
+                         to get a fresh uuid.
+
+=================================================================
+COMMAND PATTERN
+=================================================================
+
+Every authoring mutation is a Command that the store dispatches
+through a single applyForward function and reversibly inverts via
+applyBackward. That's why every MCP mutation tool here is undoable
+for free — there is no separate undo machinery for tool-driven
+edits.
+
+=================================================================
+TOOL USAGE TIPS
+=================================================================
+
+- Call \`listNodeKinds\` AT LEAST ONCE before mutating. It gives
+  you every available kind and its input / output socket schema —
+  the registry is the source of truth. Cache it locally; it only
+  changes when you create a subgraph (which adds a new wrapper
+  kind \`subgraph/<id>\`).
+- Wire sockets by EXACT NAME. Don't guess from the type. The
+  socket on \`core/output\` is named \`scene\`, not \`output\` or
+  \`in\`.
+- When unsure if something rendered, call \`getNodeInputValue\`
+  / \`listGraphNodes\` to inspect, or just trust the error codes
+  above.
 `.trim();
