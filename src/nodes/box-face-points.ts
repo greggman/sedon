@@ -124,14 +124,14 @@ export const boxFacePointsNode: NodeDef = {
       type: 'Int',
       default: 5,
       min: 1,
-      description: 'number of grid columns ALONG the face\'s tangent axis. For a vertical wall this is the horizontal column count',
+      description: 'number of grid columns. The axis cols distribute along depends on the face:\n• ±X face (vertical wall): cols → world Z (horizontal along wall)\n• ±Z face (vertical wall): cols → world X (horizontal along wall)\n• ±Y face (roof / floor): cols → world X',
     },
     {
       name: 'rows',
       type: 'Int',
       default: 3,
       min: 1,
-      description: 'number of grid rows along the face\'s bitangent (= cross(tangent, normal)) axis. For a vertical wall this is the row count UP the wall',
+      description: 'number of grid rows. The axis rows distribute along depends on the face:\n• ±X face (vertical wall): rows → world Y (vertical UP the wall)\n• ±Z face (vertical wall): rows → world Y (vertical UP the wall)\n• ±Y face (roof / floor): rows → world Z',
     },
     {
       name: 'inset',
@@ -164,6 +164,23 @@ The atom for facade composition. Compose a building's wall details
      \`axis\` and a (cols, rows) grid sized to your facade language.
   3. Scatter a window / AC / sign module with \`core/instance-scene-on-points\`,
      using \`align: true\` so each instance faces outward and stays upright.
+
+**Picking cols/rows for a face**
+
+The cols / rows axes vary by face. The rule: cols runs along the
+face's tangent, rows along its bitangent (= cross(tangent, normal)).
+Resolved per face:
+
+  | axis        | normal | cols (tangent)  | rows (bitangent) |
+  |-------------|--------|-----------------|------------------|
+  | ±X (wall)   | ±X     | world Z         | world Y (up)     |
+  | ±Z (wall)   | ±Z     | world X         | world Y (up)     |
+  | ±Y (floor)  | ±Y     | world X         | world Z          |
+
+So for "windows across a wall and N rows up the wall" use a vertical
+face (±X or ±Z) with cols = horizontal count, rows = floor count.
+For "a vertical stack of N points inside a composition graph" use
+the +Y face and rows = N (the bitangent there is world Z = up).
 
 The implicit box matches \`core/box\`'s ±half-extent convention so the
 same width/height/depth values that build the wall geometry build

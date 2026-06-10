@@ -54,6 +54,7 @@ import { mergeSceneEntitiesNode } from './merge-scene-entities.js';
 import { mirrorNode } from './mirror.js';
 import { mixNode } from './mix.js';
 import { multiplyNode } from './multiply.js';
+import { scalarAddNode } from './add.js';
 import { normalFromHeightNode } from './normal-from-height.js';
 import { outputNode } from './output.js';
 import { perlinNode } from './perlin.js';
@@ -115,6 +116,7 @@ import { worleyNode } from './worley.js';
 export const CORE_NODES = [
   mixNode,
   multiplyNode,
+  scalarAddNode,
   mapRangeNode,
   sphereNode,
   cubeNode,
@@ -295,6 +297,7 @@ export {
   mergeSceneEntitiesNode,
   mixNode,
   multiplyNode,
+  scalarAddNode,
   normalFromHeightNode,
   outputNode,
   pathMaskNode,

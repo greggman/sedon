@@ -27,6 +27,7 @@ import { createFurnitureDemo } from './furniture.js';
 import { createGrassTestDemo } from './grass-test.js';
 import { createLeafDemo } from './leaf.js';
 import { createMultiLayerTerrainDemo } from './multi-layer-terrain.js';
+import { createSingleBuildingDemo } from './single-building.js';
 import { createTreeBushDemo } from './tree-bush.js';
 
 export interface BuildableDemo {
@@ -46,6 +47,7 @@ export const BUILD_TIME_DEMOS: BuildableDemo[] = [
   { id: 'city', build: createCityDemo },
   { id: 'city-furniture-preview', build: createCityFurniturePreviewDemo },
   { id: 'city-buildings-preview', build: createCityBuildingsPreviewDemo },
+  { id: 'single-building', build: createSingleBuildingDemo },
   { id: 'city-streets-preview', build: createCityStreetsPreviewDemo },
   { id: 'leaf', build: createLeafDemo },
   { id: 'tree-bush', build: createTreeBushDemo },

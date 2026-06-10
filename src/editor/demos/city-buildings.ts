@@ -713,6 +713,74 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   const acPlusZ  = addWallAcScatter([0, 0,  1], 300, ROW * 9);
   const acMinusZ = addWallAcScatter([0, 0, -1], 400, ROW * 10);
 
+  // ── Fire escape (one on the +Z side wall, per-building skip) ───
+  // Single point at the wall's centre via cols=1 rows=1 box-face-
+  // points. A per-building random gates whether THIS building gets
+  // a fire escape — ~60% activation reads as "most buildings have
+  // one, some don't," which matches the NYC reality.
+  //
+  // The fire escape is sized for `num_floors=7` in its authoring —
+  // it'll look wrong if num_floors becomes variable. That's the
+  // next chunk's problem (parametric fire-escape height); for now,
+  // num_floors is constant in city.ts so the static one fits.
+  const firePts = addNode(g, 'core/box-face-points', {
+    position: { x: COL * 2, y: ROW * 11 },
+    inputValues: { axis: [0, 0, 1], height: 1, cols: 1, rows: 1, inset: 0, offset: 0.05 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: firePts.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' }, { node: firePts.id, socket: 'depth' });
+
+  const fireRandSeed = addNode(g, 'core/map-range', {
+    position: { x: COL * 3, y: ROW * 10.7 },
+    inputValues: { in_min: 0, in_max: 1, out_min: 500, out_max: 501 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: fireRandSeed.id, socket: 'value' });
+  const fireRand = addNode(g, 'core/random-float-cloud', {
+    position: { x: COL * 3, y: ROW * 11 },
+    inputValues: { min: 0, max: 1, seed: 0 },
+  });
+  addEdge(g, { node: firePts.id, socket: 'points' }, { node: fireRand.id, socket: 'points' });
+  addEdge(g, { node: fireRandSeed.id, socket: 'result' }, { node: fireRand.id, socket: 'seed' });
+  // Threshold is parametric on the subgraph's surface so a consumer
+  // (e.g. the single-building demo) can force every building to
+  // render a fire escape by passing threshold=-1, while the city
+  // demo's default 0.4 gives ~60% activation.
+  const fireMask = addNode(g, 'core/cloud-step', {
+    position: { x: COL * 4, y: ROW * 11 },
+    inputValues: { threshold: 0.4, invert: false },
+  });
+  addEdge(g, { node: fireRand.id, socket: 'values' }, { node: fireMask.id, socket: 'values' });
+  addEdge(g, { node: inputNode.id, socket: 'fire_escape_threshold' }, { node: fireMask.id, socket: 'threshold' });
+
+  const fireWrap = addNode(g, 'subgraph/fire-escape-assembled', {
+    position: { x: COL * 2, y: ROW * 11.5 },
+    // Wire the building's num_floors → assembled fire escape's
+    // num_floors so when the office is parametric in height the
+    // fire escape adapts. floor_height / bottom_height / top_height
+    // stay at the assembly's defaults for now (3.5 / 2.0 / 2.0).
+    inputValues: { floor_height: 3.5, bottom_height: 2, top_height: 2 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: fireWrap.id, socket: 'num_floors' });
+  const fireScatter = addNode(g, 'core/instance-scene-on-points', {
+    position: { x: COL * 5, y: ROW * 11 },
+    inputValues: { scale: 1, align: true, seed: 0 },
+  });
+  addEdge(g, { node: firePts.id,  socket: 'points' },         { node: fireScatter.id, socket: 'points' });
+  addEdge(g, { node: fireMask.id, socket: 'mask' },           { node: fireScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: fireWrap.id, socket: 'scene' },          { node: fireScatter.id, socket: 'instance' });
+
+  // Lift fire-escape up so its BOTTOM module sits at the top of the
+  // ground floor (= Y=5 in office local). The assembled fire-escape
+  // subgraph emits its bottom module at its OWN local Z=0 and floor
+  // modules stacked upward from there, so the lift only needs to put
+  // that local Z=0 at office-local Y=5 (not bodyCentreY, which would
+  // raise the entire stack half a body-height into the roof zone).
+  const fireLift = addNode(g, 'core/transform-scene', {
+    position: { x: COL * 6, y: ROW * 11 },
+    inputValues: { translate: [0, 5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  addEdge(g, { node: fireScatter.id, socket: 'scene' }, { node: fireLift.id, socket: 'scene' });
+
   const merge = addNode(g, 'core/scene-merge', {
     position: { x: COL * 7, y: ROW * 3 },
     extraInputs: [
@@ -724,6 +792,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
       { name: 'scene_5', type: 'Scene', optional: true },
       { name: 'scene_6', type: 'Scene', optional: true },
       { name: 'scene_7', type: 'Scene', optional: true },
+      { name: 'scene_8', type: 'Scene', optional: true },
     ],
   });
   addEdge(g, { node: groundEnt.id,    socket: 'scene' }, { node: merge.id, socket: 'scene_0' });
@@ -734,6 +803,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   addEdge(g, { node: awningLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scene_5' });
   addEdge(g, { node: acPlusZ.id,      socket: 'scene' }, { node: merge.id, socket: 'scene_6' });
   addEdge(g, { node: acMinusZ.id,     socket: 'scene' }, { node: merge.id, socket: 'scene_7' });
+  addEdge(g, { node: fireLift.id,     socket: 'scene' }, { node: merge.id, socket: 'scene_8' });
   addEdge(g, { node: merge.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -744,6 +814,11 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
       { name: 'width',      type: 'Float', default: 21 },
       { name: 'depth',      type: 'Float', default: 26 },
       { name: 'num_floors', type: 'Float', default: 7 },
+      // Threshold for the per-building fire-escape activation mask
+      // (random-float-cloud → cloud-step). 0.4 → ~60% activation
+      // (the city default). Pass -1 to force every building to get
+      // a fire escape (useful for dev demos), or 1+ to disable.
+      { name: 'fire_escape_threshold', type: 'Float', default: 0.4 },
     ],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,

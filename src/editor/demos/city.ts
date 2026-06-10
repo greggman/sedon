@@ -25,6 +25,12 @@ import {
   buildWallAcUnitSubgraph,
 } from './city-wall-ac.js';
 import {
+  buildFireEscapeAssembledSubgraph,
+  buildFireEscapeBottomModuleSubgraph,
+  buildFireEscapeFloorModuleSubgraph,
+  buildFireEscapeTopModuleSubgraph,
+} from './city-fire-escape.js';
+import {
   buildBlockSidewalkSubgraph,
   buildIntersectionSubgraph,
   buildStreetSegmentLongSubgraph,
@@ -340,6 +346,17 @@ export function createCityDemo(): {
   // Wall AC units stuck on the ±Z side walls of every parametric
   // office.
   const wallAc = buildWallAcUnitSubgraph();
+  // Fire escape on the +Z side wall of (most) buildings — composed
+  // from four module subgraphs the Houdini way:
+  //   • fire-escape-floor   — one repeating floor (parametric)
+  //   • fire-escape-bottom  — ground-level drop ladder + landing
+  //   • fire-escape-top     — roof landing + roof-access ladder
+  //   • fire-escape-assembled — composes the above into a complete
+  //     fire escape sized for num_floors × floor_height
+  const fireFloorMod = buildFireEscapeFloorModuleSubgraph();
+  const fireBottomMod = buildFireEscapeBottomModuleSubgraph();
+  const fireTopMod = buildFireEscapeTopModuleSubgraph();
+  const fireEscape = buildFireEscapeAssembledSubgraph();
   const lampPost = buildLampPostSubgraph();
   const trafficSignal = buildTrafficSignalSubgraph();
   const fireHydrant = buildFireHydrantSubgraph();
@@ -635,6 +652,7 @@ export function createCityDemo(): {
       sidewalk, longStreet, shortStreet, intersection,
       tower, office, apartment, shop, parametricOffice,
       hvacUnit, waterTank, awning, wallAc,
+      fireFloorMod, fireBottomMod, fireTopMod, fireEscape,
       lampPost, trafficSignal, fireHydrant, car,
       // For-each-polygon's bridge → its body (= blockBody) →
       // for-each-point's bridge (lotBridgeSubgraph) → its body
