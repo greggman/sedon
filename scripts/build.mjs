@@ -153,14 +153,53 @@ async function buildDemos() {
   const probeSource = `
     import { BUILD_TIME_DEMOS } from './src/editor/demos/_build-time.js';
     import { serializeSaveFile, SAVE_FORMAT_VERSION } from './src/editor/save-load.js';
+    import { layoutGraph } from './src/editor/auto-layout.js';
+    import { buildRegistry } from './src/editor/registry.js';
+
+    // Run the same auto-layout pass the editor's Cleanup command uses
+    // so the .sedon bundles ship with nodes already laid out. Without
+    // this, hand-authored demo builders place nodes at heuristic
+    // positions (some COL/ROW grid) that drift further from "tidy"
+    // every time a node is added — opening a demo in the editor used
+    // to show overlapping nodes and crossed wires.
+    //
+    // layoutGraph wants per-node measurements; at build time we don't
+    // have a React Flow instance to ask, so pass an empty map and the
+    // routine falls back to its DEFAULT_W / DEFAULT_H constants (240
+    // × 140) for every node. That matches the "neutral" sizing the
+    // runtime uses BEFORE the first measure pass — close enough that
+    // opening a built demo in the editor produces a clean layout
+    // without any visible jump on first measure.
+    function relayout(graph, registry) {
+      const empty = new Map();
+      const positions = layoutGraph(graph, empty, registry);
+      return {
+        ...graph,
+        nodes: graph.nodes.map((n) => {
+          const p = positions.get(n.id);
+          return p ? { ...n, position: { x: p.x, y: p.y } } : n;
+        }),
+      };
+    }
+
     export const out = BUILD_TIME_DEMOS.map((d) => {
       const built = d.build();
+      const subgraphs = built.subgraphs ?? [];
+      // Build the registry from the (pre-layout) subgraphs so the
+      // crossing-minimisation phase can read socket order for the
+      // main graph's subgraph-wrapper nodes too.
+      const registry = buildRegistry(subgraphs);
+      const laidOutMain = relayout(built.graph, registry);
+      const laidOutSubs = subgraphs.map((sg) => ({
+        ...sg,
+        graph: relayout(sg.graph, registry),
+      }));
       const file = {
         formatVersion: SAVE_FORMAT_VERSION,
         project: {
-          graph: built.graph,
+          graph: laidOutMain,
           rootNodeId: built.rootNodeId,
-          subgraphs: built.subgraphs ?? [],
+          subgraphs: laidOutSubs,
           ...(built.cameras ? { cameras: built.cameras } : {}),
         },
       };
