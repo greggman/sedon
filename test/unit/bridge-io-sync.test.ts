@@ -1,4 +1,4 @@
-// Editing a `core/for-each-point`'s private bridge subgraph
+// Editing a `iter/for-each-point`'s private bridge subgraph
 // (adding / removing / renaming sockets on its `subgraph-input` or
 // `iteration-output` boundaries) must reach back through the store
 // to refresh the owning for-each-point's outer `extraInputs` /
@@ -21,7 +21,7 @@ function seedWithForEachAndBridge(): { feNodeId: string; bridgeId: string } {
   const feNodeId = 'fep';
   const bridgeId = 'bridge-fep';
   const main = createGraph();
-  addNode(main, 'core/for-each-point', {
+  addNode(main, 'iter/for-each-point', {
     id: feNodeId,
     inputValues: { __bridgeId: bridgeId },
     extraInputs: [],
@@ -41,7 +41,7 @@ function seedWithForEachAndBridge(): { feNodeId: string; bridgeId: string } {
     inputNodeId: inputBoundary.id,
     outputNodeId: iterOutputBoundary.id,
     owner: { kind: 'iteration-bridge', nodeId: feNodeId },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
   useEditorStore.setState({
     mainGraph: main,
@@ -103,7 +103,7 @@ test('removing a bridge input drops the matching extraInput AND any incoming edg
   // Wire an upstream into the newly-mirrored socket on the for-each-point.
   const state = useEditorStore.getState();
   const main = state.graph;
-  const src = addNode(main, 'core/perlin');
+  const src = addNode(main, 'tex/perlin');
   addEdge(main, { node: src.id, socket: 'texture' }, { node: feNodeId, socket: bridgeInputName });
   useEditorStore.setState({ mainGraph: main, graph: main });
   // Remove the bridge input — for-each-point's extra and the edge
@@ -118,7 +118,7 @@ test('removing a bridge input drops the matching extraInput AND any incoming edg
 test('the points socket (static, not an extra) survives bridge IO edits', () => {
   const { feNodeId, bridgeId } = seedWithForEachAndBridge();
   const main = useEditorStore.getState().graph;
-  const grid = addNode(main, 'core/grid-distribute');
+  const grid = addNode(main, 'points/grid');
   addEdge(main, { node: grid.id, socket: 'points' }, { node: feNodeId, socket: 'points' });
   useEditorStore.setState({ mainGraph: main, graph: main });
   useEditorStore.getState().addSubgraphSocket(bridgeId, 'output', { label: 'scene', type: 'Scene' });

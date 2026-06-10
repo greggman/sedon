@@ -53,7 +53,7 @@ For more than two stems, chain multiple merges (a + b + c = merge(merge(a, b), c
     sampleGraph: () => {
       const g = createGraph();
       // Two recursive trees with different seeds + offset positions
-      // (via core/transform-geometry on... wait, BranchGraph has no transform
+      // (via geom/transform on... wait, BranchGraph has no transform
       // node yet). Best demo: two trees with different `seed` values
       // merged; visually they overlap but the merge is still
       // meaningful — bump one's seed to vary the second's shape.

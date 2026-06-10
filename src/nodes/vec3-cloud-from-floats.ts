@@ -16,7 +16,7 @@ import type { FloatCloudValue, Vec3CloudValue } from '../core/resources.js';
 // accept mismatches; making this strict keeps the chain self-
 // validating.
 export const vec3CloudFromFloatsNode: NodeDef = {
-  id: 'core/vec3-cloud-from-floats',
+  id: 'cloud/vec3-from-floats',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -66,27 +66,27 @@ authored axes instead of an isotropic RGB box.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sizing = addNode(g, 'core/points-line', {
+      const sizing = addNode(g, 'points/line', {
         id: 'sizing',
         position: { x: 0, y: 0 },
         inputValues: { start: [0, 0, 0], end: [1, 0, 0], count: 8 },
       });
-      const x = addNode(g, 'core/random-float-cloud', {
+      const x = addNode(g, 'cloud/random-float', {
         id: 'x',
         position: { x: 280, y: 0 },
         inputValues: { min: 0.5, max: 1.5, seed: 0.1 },
       });
-      const y = addNode(g, 'core/random-float-cloud', {
+      const y = addNode(g, 'cloud/random-float', {
         id: 'y',
         position: { x: 280, y: 180 },
         inputValues: { min: 0.5, max: 1.5, seed: 0.2 },
       });
-      const z = addNode(g, 'core/random-float-cloud', {
+      const z = addNode(g, 'cloud/random-float', {
         id: 'z',
         position: { x: 280, y: 360 },
         inputValues: { min: 0.5, max: 1.5, seed: 0.3 },
       });
-      const zip = addNode(g, 'core/vec3-cloud-from-floats', {
+      const zip = addNode(g, 'cloud/vec3-from-floats', {
         id: 'zip',
         position: { x: 560, y: 180 },
       });
@@ -105,7 +105,7 @@ authored axes instead of an isotropic RGB box.
     const z = inputs.z as FloatCloudValue;
     if (x.count !== y.count || x.count !== z.count) {
       throw new Error(
-        `core/vec3-cloud-from-floats: x (${x.count}), y (${y.count}), z (${z.count}) `
+        `cloud/vec3-from-floats: x (${x.count}), y (${y.count}), z (${z.count}) `
         + 'must share the same count',
       );
     }

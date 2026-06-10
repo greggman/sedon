@@ -62,7 +62,7 @@ interface DocsSamplePreviewProps {
   // sample graph to function" at the call site.
   sampleGraph: { graph: import('../core/graph.js').Graph; rootNodeId: string };
   // The node id of the doc page hosting this preview, e.g.
-  // 'core/perlin'. Plumbed into CanvasPanelContext.docsLocation so
+  // 'tex/perlin'. Plumbed into CanvasPanelContext.docsLocation so
   // CustomNode's [?] icons emit URLs relative to THIS page (the page
   // hosting the preview), not the site root.
   hostNodeId: string;
@@ -137,7 +137,7 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
 
   // Source the registry from the editor store's subgraphs slice (same
   // path the in-editor canvas uses). Without this, sample graphs whose
-  // body references a subgraph wrapper kind (`core/for-each-point` is
+  // body references a subgraph wrapper kind (`iter/for-each-point` is
   // the canonical case) would fail to evaluate because the wrapper
   // kind isn't in the registry — `createCoreNodeRegistry()` only knows
   // about static core nodes.
@@ -183,7 +183,7 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
   // otherwise a sample graph with a wiring mistake (e.g. forgetting
   // to feed a material's basecolor) leaves the preview pane stuck on
   // "Evaluating…" forever with the only signal being a console warn.
-  // Re-eval when any core/image's fetch lands so the docs sample shows
+  // Re-eval when any tex/image's fetch lands so the docs sample shows
   // the loaded image instead of the placeholder. The image node's
   // dynamicFingerprintExtra is what actually invalidates the per-node
   // eval-cache entry; this hook just makes sure the effect re-fires

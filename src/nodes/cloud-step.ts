@@ -5,13 +5,13 @@ import type { FloatCloudValue } from '../core/resources.js';
 // Convert per-point analog values to a binary 0/1 mask via a threshold. With
 // `invert`, the comparison flips so you can pick either side of the threshold.
 export const cloudStepNode: NodeDef = {
-  id: 'core/cloud-step',
+  id: 'cloud/step',
   category: 'Distribution/Attributes',
   inputs: [
     {
       name: 'values',
       type: 'FloatCloud',
-      description: 'analog per-point values (from [core/cloud-altitude](../../core/cloud-altitude), [core/cloud-slope](../../core/cloud-slope), [core/random-float-cloud](../../core/random-float-cloud), etc.)',
+      description: 'analog per-point values (from [cloud/altitude](../../cloud/altitude), [cloud/slope](../../cloud/slope), [cloud/random-float](../../cloud/random-float), etc.)',
     },
     {
       name: 'threshold',
@@ -38,8 +38,8 @@ export const cloudStepNode: NodeDef = {
     description: `
 The bridge between analog cloud values (altitude in metres, slope in
 radians, random in [0, 1]) and the binary masks that
-[core/instance-scene-on-points](../../core/instance-scene-on-points)
-and [core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[scene/instance-on-points](../../scene/instance-on-points)
+and [geom/instance-on-points](../../geom/instance-on-points)
 expect on \`per_point_active\`.
 
 With \`invert: false\` (the default), the rule is
@@ -48,7 +48,7 @@ Set \`invert: true\` for the low side, useful when the source value is
 "badness" (slope = steepness) and you want "goodness" (flatness)
 through the mask.
 
-Compose with [core/cloud-multiply](../../core/cloud-multiply) to AND
+Compose with [cloud/multiply](../../cloud/multiply) to AND
 two masks together for compound conditions ("high altitude AND flat
 ground").
 `,
@@ -57,47 +57,47 @@ ground").
       // Sphere → distribute → random-float-cloud → cloud-step(0.6) →
       // per_point_active. ~40% of the sphere's surface points show
       // (where random > 0.6).
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const points = addNode(g, 'core/distribute-on-faces', {
+      const points = addNode(g, 'points/on-faces', {
         id: 'points',
         position: { x: 280, y: 0 },
         inputValues: { density: 30, seed: 0 },
       });
-      const randomFloat = addNode(g, 'core/random-float-cloud', {
+      const randomFloat = addNode(g, 'cloud/random-float', {
         id: 'randomFloat',
         position: { x: 560, y: 0 },
         inputValues: { min: 0, max: 1, seed: 0.31 },
       });
-      const step = addNode(g, 'core/cloud-step', {
+      const step = addNode(g, 'cloud/step', {
         id: 'step',
         position: { x: 840, y: 0 },
         inputValues: { threshold: 0.6, invert: false },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.45, 0.32, 0.12, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 380 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 1120, y: 100 },
         inputValues: { scale: 0.05, align: true, seed: 0 },

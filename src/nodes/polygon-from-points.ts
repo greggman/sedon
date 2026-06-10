@@ -49,7 +49,7 @@ function signedAreaXZ(packed: Float32Array): number {
 }
 
 export const polygonFromPointsNode: NodeDef = {
-  id: 'core/polygon-from-points',
+  id: 'poly/from-points',
   category: 'Polygon',
   inputs: [
     {
@@ -78,11 +78,11 @@ export const polygonFromPointsNode: NodeDef = {
   doc: {
     summary: 'Author a closed 2D polygon by drawing its outer ring.',
     description: `
-The polygon counterpart to [core/point-list](../../core/point-list):
+The polygon counterpart to [points/list](../../points/list):
 same 2D top-down editor, but the points define a closed RING (the last
 vertex implicitly connects back to the first) instead of an open path.
 
-Pair with [core/polygon-to-mesh](../../core/polygon-to-mesh) to
+Pair with [geom/from-polygon](../../geom/from-polygon) to
 visualise the shape as a flat fill, or feed downstream polygon ops
 (offset, difference, fill-with-buildings) as those nodes come online.
 
@@ -92,20 +92,20 @@ consistent orientation.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const poly = addNode(g, 'core/polygon-from-points', {
+      const poly = addNode(g, 'poly/from-points', {
         id: 'poly',
         position: { x: 0, y: 0 },
       });
-      const mesh = addNode(g, 'core/polygon-to-mesh', {
+      const mesh = addNode(g, 'geom/from-polygon', {
         id: 'mesh',
         position: { x: 280, y: 0 },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'mat',
         position: { x: 280, y: 160 },
         inputValues: { basecolor: [0.55, 0.7, 0.45, 1], roughness: 0.85, metallic: 0 },
       });
-      const ent = addNode(g, 'core/scene-entity', {
+      const ent = addNode(g, 'scene/entity', {
         id: 'ent',
         position: { x: 560, y: 80 },
       });

@@ -20,9 +20,9 @@ try {
     const { createGraph, addNode, addEdge } = window.__sedonCore__ ?? {};
     if (!createGraph) throw new Error('no __sedonCore__');
     const g = createGraph();
-    const cube = addNode(g, 'core/cube', { id: 'cube', position: { x: 0, y: 0 }, inputValues: { size: 1 } });
-    const mat = addNode(g, 'core/material', { id: 'mat', position: { x: 240, y: 240 }, inputValues: { basecolor: [0.20, 0.45, 0.85, 1], roughness: 0.4, metallic: 0 } });
-    const ent = addNode(g, 'core/scene-entity', { id: 'ent', position: { x: 480, y: 120 } });
+    const cube = addNode(g, 'geom/cube', { id: 'cube', position: { x: 0, y: 0 }, inputValues: { size: 1 } });
+    const mat = addNode(g, 'material/pbr', { id: 'mat', position: { x: 240, y: 240 }, inputValues: { basecolor: [0.20, 0.45, 0.85, 1], roughness: 0.4, metallic: 0 } });
+    const ent = addNode(g, 'scene/entity', { id: 'ent', position: { x: 480, y: 120 } });
     const out = addNode(g, 'core/output', { id: 'out', position: { x: 720, y: 120 } });
     addEdge(g, { node: cube.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
     addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });

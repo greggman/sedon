@@ -6,7 +6,7 @@ import { generateLeafMesh } from '../render/leaf-mesh.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 // 3D leaf card with curl + edge bend + tip taper. Drop-in replacement
-// for `core/plane` when you want a leaf that doesn't look like a
+// for `geom/plane` when you want a leaf that doesn't look like a
 // rectangle — pair with a leaf-skeleton-derived alpha mask material
 // and the silhouette will be the right shape; this node controls the
 // underlying 3D form so the leaf doesn't read as a flat billboard
@@ -17,7 +17,7 @@ import { uploadMeshToGpu } from '../render/mesh.js';
 // `instance-geometry-on-points` with `align: true` — the leaf's +Y
 // will align to each point's outward normal.
 export const leafMeshNode: NodeDef = {
-  id: 'core/leaf-mesh',
+  id: 'geom/leaf',
   category: 'Geometry/Primitives',
   inputs: [
     { name: 'length', type: 'Float', default: 1, description: 'leaf length base → tip' },
@@ -59,13 +59,13 @@ export const leafMeshNode: NodeDef = {
     {
       name: 'geometry',
       type: 'Geometry',
-      description: '3D leaf card mesh — base at the origin, length along +Y, width along ±X, face initially looking at +Z. Designed to drop into [core/instance-geometry-on-points](../../core/instance-geometry-on-points) with `align: true` so the leaf\'s +Y aligns to each point\'s outward normal',
+      description: '3D leaf card mesh — base at the origin, length along +Y, width along ±X, face initially looking at +Z. Designed to drop into [geom/instance-on-points](../../geom/instance-on-points) with `align: true` so the leaf\'s +Y aligns to each point\'s outward normal',
     },
   ],
   doc: {
     summary: 'A 3D leaf card with curl, edge bend, and tip taper — looks volumetric from any angle.',
     description: `
-A drop-in replacement for [core/plane](../../core/plane) when you want
+A drop-in replacement for [geom/plane](../../geom/plane) when you want
 a leaf that doesn't read as a flat rectangle from oblique angles.
 Pair with a [leaf/skeleton](../../leaf/skeleton)-derived alpha-cutoff
 material and the silhouette gets the right organic shape; this node
@@ -81,14 +81,14 @@ face initially looking at +Z. Three shaping knobs:
 - **cup** — tip taper. 0 = rectangle; 1 = pinches to zero width at
   the tip. ~0.3 = typical lanceolate.
 
-Drop into [core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+Drop into [geom/instance-on-points](../../geom/instance-on-points)
 on a [branch/sample-points](../../branch/sample-points) cloud with
 \`align: true\` and you get a tree's worth of properly-oriented
 leaves attached to the branches.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/leaf-mesh', {
+      addNode(g, 'geom/leaf', {
         id: 'leaf',
         position: { x: 0, y: 0 },
         inputValues: {

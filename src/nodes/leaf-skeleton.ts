@@ -158,9 +158,9 @@ outputs:
 
 Both outputs are clipped to the silhouette so downstream stages
 (distance-transform → ramp → colorize for albedo,
-[core/normal-from-height](../../core/normal-from-height) for surface
+[tex/normal-from-height](../../tex/normal-from-height) for surface
 detail) compose cleanly. The full chain ends in
-[core/leaf-mesh](../../core/leaf-mesh) for a billboard-ready Geometry.
+[geom/leaf](../../geom/leaf) for a billboard-ready Geometry.
 
 For sample chains see the leaf subgraphs in the editor demos —
 \`oak-leaf\`, \`generic-broadleaf\`, etc. all build on this node.

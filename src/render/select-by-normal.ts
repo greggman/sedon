@@ -5,7 +5,7 @@
 //
 // Output is keyed by triangle index (`selection.faces[f]`) — the
 // per-tri convention matches `MeshSelection.faces` in resources.ts
-// and is the input shape `core/extrude` consumes.
+// and is the input shape `geom/extrude` consumes.
 
 import type { CpuMeshRef } from '../core/resources.js';
 

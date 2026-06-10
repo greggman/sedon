@@ -8,7 +8,7 @@ import { identity } from '../render/mat4.js';
 // identity transform and identity tint. Downstream instance-scene-on-points
 // multiplies that identity by per-point transforms and tints when scattering.
 export const sceneEntityNode: NodeDef = {
-  id: 'core/scene-entity',
+  id: 'scene/entity',
   category: 'Scene',
   // Stamps subgraphPath into entity provenance — output value depends on
   // the calling context, so the cache must key on subgraphPath too.
@@ -17,19 +17,19 @@ export const sceneEntityNode: NodeDef = {
     {
       name: 'geometry',
       type: 'Geometry',
-      description: 'mesh from any geometry-producing node ([core/sphere](../../core/sphere), [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh), [core/transform-geometry](../../core/transform-geometry), …)',
+      description: 'mesh from any geometry-producing node ([geom/sphere](../../geom/sphere), [geom/heightfield-from-texture](../../geom/heightfield-from-texture), [geom/transform](../../geom/transform), …)',
     },
     {
       name: 'material',
       type: 'Material',
-      description: 'PBR / terrain / water material from [core/material](../../core/material) or one of the terrain-material nodes',
+      description: 'PBR / terrain / water material from [material/pbr](../../material/pbr) or one of the terrain-material nodes',
     },
   ],
   outputs: [
     {
       name: 'scene',
       type: 'Scene',
-      description: 'a Scene containing exactly one entity (the geometry + material pair, at identity transform with identity tint). Wire into [core/scene-merge](../../core/scene-merge) to combine with other scenes, or [core/instance-scene-on-points](../../core/instance-scene-on-points) to scatter copies',
+      description: 'a Scene containing exactly one entity (the geometry + material pair, at identity transform with identity tint). Wire into [scene/merge](../../scene/merge) to combine with other scenes, or [scene/instance-on-points](../../scene/instance-on-points) to scatter copies',
     },
   ],
   doc: {
@@ -48,32 +48,32 @@ output on the calling subgraph context — without it, a thumbnail of
 the subgraph would poison the cache for the main-scene wrapper.
 
 To combine multiple entities into one scene, use
-[core/scene-merge](../../core/scene-merge) (variadic) or
-[core/merge-scene-entities](../../core/merge-scene-entities) (two
+[scene/merge](../../scene/merge) (variadic) or
+[scene/merge-entities](../../scene/merge-entities) (two
 inputs). To place this entity at many positions, feed the output into
-[core/instance-scene-on-points](../../core/instance-scene-on-points).
+[scene/instance-on-points](../../scene/instance-on-points).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      // core/material requires a basecolor texture (not optional). Feed
-      // a flat blue via core/solid-color so the sample graph evaluates
+      // material/pbr requires a basecolor texture (not optional). Feed
+      // a flat blue via tex/solid-color so the sample graph evaluates
       // cleanly out of the box.
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 220 },
         inputValues: { color: [0.36, 0.58, 0.85, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 220 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 110 },
         inputValues: {},

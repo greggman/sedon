@@ -19,7 +19,7 @@ function readPathAsSection(path: PathValue | undefined): ExtrudeProfilePoint[] {
 }
 
 export const extrudeOnPathNode: NodeDef = {
-  id: 'core/extrude-on-path',
+  id: 'geom/extrude-on-path',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -32,7 +32,7 @@ export const extrudeOnPathNode: NodeDef = {
       name: 'section',
       type: 'Path',
       description:
-        '2D cross-section as a Path — X / Y in the plane perpendicular to the rail (Z is ignored). Wire from [core/curve-2d](../../core/curve-2d) with `closed = true` for a sealed cross-section (moulding, cable, drawer pull)',
+        '2D cross-section as a Path — X / Y in the plane perpendicular to the rail (Z is ignored). Wire from [path/curve-2d](../../path/curve-2d) with `closed = true` for a sealed cross-section (moulding, cable, drawer pull)',
     },
     {
       name: 'closed_section',
@@ -77,7 +77,7 @@ follows curves cleanly.
 Both inputs are \`Path\`-typed for compositional uniformity. The
 **rail** typically comes from [path/spline](../../path/spline) (a
 smoothed 3D curve through control points). The **cross-section**
-typically comes from [core/curve-2d](../../core/curve-2d) (a 2D
+typically comes from [path/curve-2d](../../path/curve-2d) (a 2D
 Bezier with per-point handle types) — its X / Y components are
 used; Z is ignored.
 
@@ -98,7 +98,7 @@ shapes (a "C" channel) disable caps and emit them separately.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const pts = addNode(g, 'core/point-list', {
+      const pts = addNode(g, 'points/list', {
         id: 'pts',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -122,7 +122,7 @@ shapes (a "C" channel) disable caps and emit them separately.
       // (matches the editor's "y elevation is index 1, screen-vert
       // is index 2" convention). 1 = corner so the square has hard
       // 90° edges instead of a rounded chamfer.
-      const section = addNode(g, 'core/curve-2d', {
+      const section = addNode(g, 'path/curve-2d', {
         id: 'section',
         position: { x: 0, y: 220 },
         inputValues: {
@@ -136,7 +136,7 @@ shapes (a "C" channel) disable caps and emit them separately.
           closed: true,
         },
       });
-      const ext = addNode(g, 'core/extrude-on-path', {
+      const ext = addNode(g, 'geom/extrude-on-path', {
         id: 'extrude',
         position: { x: 560, y: 0 },
         inputValues: {
@@ -145,12 +145,12 @@ shapes (a "C" channel) disable caps and emit them separately.
           cap_end: true,
         },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 440 },
         inputValues: { basecolor: [0.6, 0.45, 0.3, 1], roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 840, y: 100 },
       });

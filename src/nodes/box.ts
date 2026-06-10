@@ -5,14 +5,14 @@ import { requireDevice } from '../core/resources.js';
 import { generateBox } from '../render/cube.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
-// Independent width / height / depth box. Same topology as `core/cube`
+// Independent width / height / depth box. Same topology as `geom/cube`
 // (6 hard-edged faces, per-face normals, 24 verts) but parameterised
 // by three half-extents instead of one — saves a cube+transform.scale
 // pair in furniture / architecture graphs where almost nothing is
 // cubic. The standard tabletop, drawer body, shelf panel, sofa seat
 // all want non-uniform dimensions.
 export const boxNode: NodeDef = {
-  id: 'core/box',
+  id: 'geom/box',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -47,14 +47,14 @@ export const boxNode: NodeDef = {
   doc: {
     summary: 'Axis-aligned rectangular box with independent W/H/D (cube + scale, in one node).',
     description: `
-Same topology as [core/cube](../../core/cube) — 6 hard-edged faces,
+Same topology as [geom/cube](../../geom/cube) — 6 hard-edged faces,
 per-face normals, 24 verts — but with independent half-extents per
 axis. Centred at the origin, extending ±width/2 along X, ±height/2
 along Y, ±depth/2 along Z.
 
 For furniture / architecture graphs where almost every primitive is
 non-uniform (tabletops, drawer bodies, shelf panels, sofa seats),
-this replaces the usual cube + [core/transform-geometry](../../core/transform-geometry)
+this replaces the usual cube + [geom/transform](../../geom/transform)
 scale wiring. The cube is still the right choice when you want
 uniform scale via a downstream parameter (e.g. random-scaled crates
 in a city demo).
@@ -65,7 +65,7 @@ The base sits at \`y = -height/2\`, so a downstream
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/box', {
+      addNode(g, 'geom/box', {
         id: 'box',
         position: { x: 0, y: 0 },
         inputValues: { width: 2, height: 0.1, depth: 1.2 },

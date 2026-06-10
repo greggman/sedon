@@ -190,11 +190,11 @@ export function buildSedonTools(deps: SedonToolDeps): SedonTool[] {
   const addNode: SedonTool = {
     name: 'addNode',
     description:
-      'Add a node to the active graph. `kind` is the node id from `listNodeKinds` (e.g. "core/sphere", "subgraph/chair"). `id` is optional — when omitted a fresh uuid is generated. `position` is the canvas position in pixels (default origin). `inputValues` is an optional map of authored values keyed by input socket name; any sockets not listed inherit their NodeDef default. UNDOABLE.',
+      'Add a node to the active graph. `kind` is the node id from `listNodeKinds` (e.g. "geom/sphere", "subgraph/chair"). `id` is optional — when omitted a fresh uuid is generated. `position` is the canvas position in pixels (default origin). `inputValues` is an optional map of authored values keyed by input socket name; any sockets not listed inherit their NodeDef default. UNDOABLE.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', description: 'node kind id (e.g. "core/sphere")' },
+        kind: { type: 'string', description: 'node kind id (e.g. "geom/sphere")' },
         id: { type: 'string', description: 'optional explicit node id; uuid generated if omitted' },
         name: { type: 'string', description: 'optional cosmetic display name' },
         position: {

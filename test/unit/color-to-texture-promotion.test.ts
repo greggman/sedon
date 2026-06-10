@@ -2,7 +2,7 @@
 // from any of the three sources (a wired Color edge, an inputValue,
 // or an InputDef.default) — must be auto-promoted to a 1×1 cached
 // Texture2DValue before the node's evaluate runs. This is what lets
-// the user skip a `core/solid-color` node for the "this material
+// the user skip a `tex/solid-color` node for the "this material
 // slot is just this colour" case AND lets builtin nodes declare a
 // sensible Texture2D default that the inline color picker writes
 // through.

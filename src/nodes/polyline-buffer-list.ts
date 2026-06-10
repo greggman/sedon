@@ -2,11 +2,11 @@ import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PolygonListValue, PolygonValue } from '../core/resources.js';
 
-// Companion to `core/polygon-subdivide-by-lines`: take the same
+// Companion to `poly/subdivide-by-lines`: take the same
 // authored-as-pairs line set, clip every line to the input polygon,
 // and emit one rectangular road-shaped polygon per line as a
 // PolygonList. Wire the output through
-// `core/polygon-list-to-mesh` + a material to render the road
+// `geom/from-polygon-list` + a material to render the road
 // network as asphalt.
 //
 // Algorithm: for each line through P1, P2:
@@ -115,7 +115,7 @@ function clipAndBuffer(
 }
 
 export const polylineBufferListNode: NodeDef = {
-  id: 'core/polyline-buffer-list',
+  id: 'poly/polyline-buffer',
   category: 'Polygon',
   inputs: [
     {
@@ -129,7 +129,7 @@ export const polylineBufferListNode: NodeDef = {
       widget: 'point-list',
       hideSocket: true,
       default: [] as Point[],
-      description: 'authored road centerlines, same convention as `core/polygon-subdivide-by-lines`: every two consecutive points (0+1, 2+3, …) define one INFINITE line. Each line is clipped to `clip` and buffered to `width`',
+      description: 'authored road centerlines, same convention as `poly/subdivide-by-lines`: every two consecutive points (0+1, 2+3, …) define one INFINITE line. Each line is clipped to `clip` and buffered to `width`',
     },
     {
       name: 'width',
@@ -150,12 +150,12 @@ export const polylineBufferListNode: NodeDef = {
     summary: 'Clip authored lines to a polygon and buffer them into rectangular road polygons.',
     description: `
 The road-rendering counterpart to
-[core/polygon-subdivide-by-lines](../../core/polygon-subdivide-by-lines).
+[poly/subdivide-by-lines](../../poly/subdivide-by-lines).
 Same \`lines\` input convention (pairs of points → one infinite
 line each); each line is clipped to the \`clip\` polygon and turned
 into a 4-vertex rectangle straddling the line at \`width\` metres
 wide. The resulting PolygonList feeds straight into
-[core/polygon-list-to-mesh](../../core/polygon-list-to-mesh) for
+[geom/from-polygon-list](../../geom/from-polygon-list) for
 asphalt rendering.
 
 Wire the same \`lines\` value into both this node and
@@ -164,12 +164,12 @@ block subdivision in sync.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 40] },
       });
-      const lines = addNode(g, 'core/polyline-buffer-list', {
+      const lines = addNode(g, 'poly/polyline-buffer', {
         id: 'lines',
         position: { x: 280, y: 0 },
         inputValues: {

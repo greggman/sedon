@@ -16,7 +16,7 @@ export interface Texture2DValue {
    * a handle to a producer node — even when the underlying
    * GPUTexture identity is preserved across re-evaluations.
    *
-   * Why this exists: nodes like `core/solid-color` reuse the same
+   * Why this exists: nodes like `tex/solid-color` reuse the same
    * GPUTexture and just overwrite its pixels. Downstream consumers
    * that BAKE the source content into derived GPU state (e.g.
    * `terrain-multi-layer-kind` blits each layer's albedo into a
@@ -72,7 +72,7 @@ export interface CpuMeshRef {
   indices: Uint32Array;
   /**
    * Transient per-element selection masks. Populated by selection
-   * producer nodes (`core/select-by-angle`, …) and consumed by
+   * producer nodes (`geom/select-by-angle`, …) and consumed by
    * topology operators (bevel, chamfer, extrude faces). Each slot is
    * an optional Uint8Array — 0 = unselected, 1 = selected. Slots are
    * INDEPENDENT: a mesh can carry an edge selection AND a vertex
@@ -571,7 +571,7 @@ export interface SceneValue {
    * Highest world-Y of any water plane in the scene. Used by the
    * renderer to detect when the camera dips below water and apply
    * the underwater post-process tint. With multiple water planes,
-   * `water/plane` and `core/scene-merge` keep this as the max so
+   * `water/plane` and `scene/merge` keep this as the max so
    * the camera "submerges" the moment it falls below the tallest
    * water surface (typically the only one).
    */
@@ -601,7 +601,7 @@ export interface PolygonValue {
 
 // Ordered list of Polygons. The natural output of subdivision ops
 // (e.g. polygon-subdivide-grid produces 1 input city polygon → N
-// block polygons) and the input to `core/for-each-polygon`. We wrap
+// block polygons) and the input to `iter/for-each-polygon`. We wrap
 // the array so `PolygonList` is its own SocketType (distinct from
 // `Polygon` and from a bare Polygon[]) and the type system can tell
 // "one block" from "all blocks" at the wire level.

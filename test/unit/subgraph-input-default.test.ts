@@ -41,7 +41,7 @@ test('addSubgraphSocketWithEdge with capturedDefault stamps it onto the new Inpu
   const sg = createEmptySubgraph('cap-sg', 'cap sg');
   // grid.fg has a node-def default of [0,0,0,1] (black), but
   // suppose the inner instance has been overridden to dark green:
-  const grid = addNode(sg.graph, 'core/grid', {
+  const grid = addNode(sg.graph, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: { fg: [0.18, 0.36, 0.16, 1] },
   });
@@ -72,7 +72,7 @@ test('addSubgraphSocketWithEdge with capturedDefault stamps it onto the new Inpu
 test('addSubgraphSocketWithEdge WITHOUT capturedDefault leaves the InputDef.default undefined (current default-less behavior)', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('cap-sg-2', 'cap sg 2');
-  const colorize = addNode(sg.graph, 'core/colorize', { position: { x: 0, y: 0 } });
+  const colorize = addNode(sg.graph, 'tex/colorize', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -98,7 +98,7 @@ test('addSubgraphSocketWithEdge WITHOUT capturedDefault leaves the InputDef.defa
 test('addSubgraphSocketWithEdge labels the new socket after the source/target handle by default', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('label-sg', 'label sg');
-  const grid = addNode(sg.graph, 'core/grid', { position: { x: 0, y: 0 } });
+  const grid = addNode(sg.graph, 'tex/grid', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -142,7 +142,7 @@ test('addSubgraphSocketWithEdge labels the new socket after the source/target ha
 test('addSubgraphSocketWithEdge with no preferredLabel falls back to "untitled" (old behavior preserved)', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('label-sg-old', 'label sg old');
-  const colorize = addNode(sg.graph, 'core/colorize', { position: { x: 0, y: 0 } });
+  const colorize = addNode(sg.graph, 'tex/colorize', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -160,7 +160,7 @@ test('addSubgraphSocketWithEdge with no preferredLabel falls back to "untitled" 
 test('addSubgraphSocketWithEdge on the OUTPUT side ignores capturedDefault (output sockets have no default)', () => {
   const store = useEditorStore.getState();
   const sg = createEmptySubgraph('cap-sg-3', 'cap sg 3');
-  const worley = addNode(sg.graph, 'core/worley', { position: { x: 0, y: 0 } });
+  const worley = addNode(sg.graph, 'tex/worley', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,

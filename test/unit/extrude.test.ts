@@ -1,4 +1,4 @@
-// core/extrude tests on hand-verifiable fixtures.
+// geom/extrude tests on hand-verifiable fixtures.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -5,10 +5,10 @@ import { requireDevice, reusableTexture } from '../core/resources.js';
 
 // "Colors → ramp" helper. Builds an Nx1 RGBA texture from N Color
 // inputs (positions evenly spaced) suitable for feeding into a
-// `core/colorize` `ramp` input or anywhere else a 1D palette is
+// `tex/colorize` `ramp` input or anywhere else a 1D palette is
 // needed.
 //
-// The use case `core/ramp` doesn't cover: PARAMETRIC colours. Ramp's
+// The use case `tex/ramp` doesn't cover: PARAMETRIC colours. Ramp's
 // gradient editor authors stop colours locally on the node — fine
 // when authoring, useless inside a subgraph that wants its colours
 // supplied by boundary inputs. Palette closes that gap: it just
@@ -25,7 +25,7 @@ function toByte(c: number): number {
 }
 
 export const paletteNode: NodeDef = {
-  id: 'core/palette',
+  id: 'tex/palette',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -49,23 +49,23 @@ export const paletteNode: NodeDef = {
     },
   ],
   doc: {
-    summary: 'Two Color inputs → a 2-pixel ramp texture (parametric counterpart to core/ramp).',
+    summary: 'Two Color inputs → a 2-pixel ramp texture (parametric counterpart to tex/ramp).',
     description: `
 Builds a tiny Nx1 RGBA texture from two Color inputs — \`color_a\` maps to
 the left end, \`color_b\` to the right. Plug the result into any node that
-takes a \`ramp\` input ([core/colorize](../../core/colorize) and friends)
-just like you would with a [core/ramp](../../core/ramp) output.
+takes a \`ramp\` input ([tex/colorize](../../tex/colorize) and friends)
+just like you would with a [tex/ramp](../../tex/ramp) output.
 
-Why this exists alongside [core/ramp](../../core/ramp): a ramp node carries
+Why this exists alongside [tex/ramp](../../tex/ramp): a ramp node carries
 its gradient stops on the node itself, authored locally. That's great when
 authoring but useless inside a subgraph that wants its colours supplied by
 boundary inputs. Palette closes that gap by taking Color sockets instead —
 wire the subgraph's \`colour_low\` / \`colour_high\` inputs straight into a
-palette and feed its output to a [core/colorize](../../core/colorize).
+palette and feed its output to a [tex/colorize](../../tex/colorize).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/palette', {
+      addNode(g, 'tex/palette', {
         id: 'palette',
         position: { x: 0, y: 0 },
         inputValues: { color_a: [0.12, 0.18, 0.40, 1], color_b: [0.95, 0.86, 0.34, 1] },

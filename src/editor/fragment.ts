@@ -468,7 +468,7 @@ export function importFragment(
     // whose id we just renamed to `bridge-<newNodeId>` above. Patch
     // the inputValue to match — otherwise the imported for-each
     // would point at the OLD bridge id and fail to look up its body.
-    if (out.kind === 'core/for-each-point' && out.inputValues?.__bridgeId !== undefined) {
+    if (out.kind === 'iter/for-each-point' && out.inputValues?.__bridgeId !== undefined) {
       const newBridgeId = `bridge-${out.id}`;
       out.inputValues = { ...out.inputValues, __bridgeId: newBridgeId };
     }
@@ -591,7 +591,7 @@ function computeBbox(nodes: GraphNode[]): Fragment['bbox'] {
 //   • Wrapper-instance kinds (`subgraph/<id>`) — standard subgraph
 //     references via a node's `kind`.
 //   • For-each-point bridges — referenced by `__bridgeId` on a
-//     `core/for-each-point` node's inputValues. Bridges are private
+//     `iter/for-each-point` node's inputValues. Bridges are private
 //     to their owning node so they must travel with it; without
 //     this, copy-pasting a for-each-point would lose its iteration
 //     wiring on the import side.
@@ -611,7 +611,7 @@ function collectSubgraphClosure(
         queue.push(id);
       }
     }
-    if (n.kind === 'core/for-each-point') {
+    if (n.kind === 'iter/for-each-point') {
       const bridgeId = n.inputValues?.__bridgeId;
       if (typeof bridgeId === 'string' && bridgeId !== '' && !visited.has(bridgeId)) {
         visited.add(bridgeId);

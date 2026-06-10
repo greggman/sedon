@@ -21,7 +21,7 @@ const DEFAULT_POINTS: [number, number, number][] = [
 ];
 
 export const curve2dNode: NodeDef = {
-  id: 'core/curve-2d',
+  id: 'path/curve-2d',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -74,7 +74,7 @@ export const curve2dNode: NodeDef = {
       name: 'path',
       type: 'Path',
       description:
-        'sampled polyline in the XY plane (Z = 0 on every sample). Feed into [core/lathe](../../core/lathe), [core/extrude-on-path](../../core/extrude-on-path), or any other Path consumer',
+        'sampled polyline in the XY plane (Z = 0 on every sample). Feed into [geom/lathe](../../geom/lathe), [geom/extrude-on-path](../../geom/extrude-on-path), or any other Path consumer',
     },
   ],
   doc: {
@@ -83,9 +83,9 @@ export const curve2dNode: NodeDef = {
     description: `
 Authors a 2D curve in the XY plane with per-point handle types
 (\`smooth\` vs \`corner\`) and samples it into a polyline. The output
-is a \`Path\` consumable by [core/lathe](../../core/lathe) for surfaces
+is a \`Path\` consumable by [geom/lathe](../../geom/lathe) for surfaces
 of revolution (turned legs, candlesticks, vases), by
-[core/extrude-on-path](../../core/extrude-on-path) for sweep
+[geom/extrude-on-path](../../geom/extrude-on-path) for sweep
 cross-sections (mouldings, cables), and by anything else that takes
 the \`Path\` type.
 
@@ -106,22 +106,22 @@ silhouette.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const curve = addNode(g, 'core/curve-2d', {
+      const curve = addNode(g, 'path/curve-2d', {
         id: 'curve',
         position: { x: 0, y: 0 },
         inputValues: { points: DEFAULT_POINTS, samples_per_segment: 16 },
       });
-      const lathe = addNode(g, 'core/lathe', {
+      const lathe = addNode(g, 'geom/lathe', {
         id: 'lathe',
         position: { x: 280, y: 0 },
         inputValues: { segments: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 240 },
         inputValues: { basecolor: [0.55, 0.36, 0.20, 1], roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 120 },
       });

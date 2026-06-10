@@ -2,10 +2,10 @@ import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
 
-// Diagnostic scene for `core/bevel` — wraps the docs-sample
+// Diagnostic scene for `geom/bevel` — wraps the docs-sample
 // cube → select-by-angle → bevel pipeline in a reusable subgraph,
 // then renders it through a blue PBR material so the rounded
-// bevel's shading is unambiguous. No `core/compute-normals`
+// bevel's shading is unambiguous. No `geom/compute-normals`
 // downstream: the bevel emits real per-face normals (cube face on
 // the face polygons, 45° / slerped on the chamfer strips,
 // body-diagonal / barycentric-slerped on the corner caps), so the
@@ -26,7 +26,7 @@ export function createBevelTestDemo(): {
     position: { x: 0, y: 0 },
   });
 
-  const material = addNode(g, 'core/material', {
+  const material = addNode(g, 'material/pbr', {
     id: 'material',
     position: { x: COL, y: ROW * 2 },
     inputValues: {
@@ -36,7 +36,7 @@ export function createBevelTestDemo(): {
     },
   });
 
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     id: 'entity',
     position: { x: COL * 2, y: ROW },
   });
@@ -75,15 +75,15 @@ function buildBeveledCubeSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW },
   });
 
-  const cube = addNode(g, 'core/cube', {
+  const cube = addNode(g, 'geom/cube', {
     position: { x: COL, y: 0 },
     inputValues: { size: 1 },
   });
-  const select = addNode(g, 'core/select-by-angle', {
+  const select = addNode(g, 'geom/select-by-angle', {
     position: { x: COL * 2, y: 0 },
     inputValues: { threshold: 30 },
   });
-  const bevel = addNode(g, 'core/bevel', {
+  const bevel = addNode(g, 'geom/bevel', {
     position: { x: COL * 3, y: 0 },
     inputValues: { width: 0.12, segments: 4 },
   });

@@ -9,7 +9,7 @@ interface StringInputProps {
 // Inline text input. Mirrors NumberInput's "edit locally, commit on
 // blur / Enter / Escape-to-cancel" pattern so a half-typed string never
 // triggers a graph-mutation (and a downstream re-eval) on every
-// keystroke. Common case: typing/pasting a URL into core/image, where
+// keystroke. Common case: typing/pasting a URL into tex/image, where
 // each keystroke would otherwise trigger a fetch.
 export function StringInput({ value, onChange, placeholder }: StringInputProps) {
   const [text, setText] = useState(value);

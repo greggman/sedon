@@ -23,7 +23,7 @@ function elementTypeFromCode(code: number): ElementType {
 }
 
 export const selectInvertNode: NodeDef = {
-  id: 'core/select-invert',
+  id: 'geom/select-invert',
   category: 'Geometry/Selection',
   inputs: [
     {
@@ -63,7 +63,7 @@ export const selectInvertNode: NodeDef = {
     summary:
       'Flip a selection mask: previously-selected elements become unselected and vice versa.',
     description: `
-Pairs with \`core/select-by-angle\` and \`core/select-combine\` as the
+Pairs with \`geom/select-by-angle\` and \`geom/select-combine\` as the
 primitive set for building compositional selections. Common pattern:
 "select the SHARP edges" → invert → "select the SMOOTH edges" so a
 downstream op (smoothing, UV unwrap by patch) sees the complement.
@@ -73,28 +73,28 @@ without a separate node. Just wire a geometry that has no selection,
 pick the element type, and invert.
 `,
     sampleGraph: () => {
-      // Same squashed-sphere setup as core/select-by-angle's sample so
+      // Same squashed-sphere setup as geom/select-by-angle's sample so
       // the user can see the SAME polar bands flip — before invert,
       // the polar rings are highlighted; after invert, the equatorial
       // belt is. Side-by-side comparison in the docs sells the
       // operation.
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const squash = addNode(g, 'core/transform-geometry', {
+      const squash = addNode(g, 'geom/transform', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 0.5, 1] },
       });
-      const sel = addNode(g, 'core/select-by-angle', {
+      const sel = addNode(g, 'geom/select-by-angle', {
         id: 'select',
         position: { x: 560, y: 0 },
         inputValues: { threshold: 18 },
       });
-      const inv = addNode(g, 'core/select-invert', {
+      const inv = addNode(g, 'geom/select-invert', {
         id: 'invert',
         position: { x: 840, y: 0 },
         inputValues: { element_type: ELEMENT_EDGES },
@@ -109,7 +109,7 @@ pick the element type, and invert.
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/select-invert requires a CPU-side mesh on the input geometry; '
+        'geom/select-invert requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

@@ -10,14 +10,14 @@ import { createCoreNodeRegistry } from '../../src/nodes/index.js';
 import type { PointCloudValue, PolygonValue } from '../../src/core/resources.js';
 
 const reg = createCoreNodeRegistry();
-const polyFromPoints = reg.get('core/polygon-from-points')!;
-const polyAabb = reg.get('core/polygon-aabb')!;
-const polyOffset = reg.get('core/polygon-offset')!;
-const polyPerim = reg.get('core/polygon-perimeter-points')!;
-const polyGridSubdivide = reg.get('core/polygon-grid-subdivide')!;
-const polyListOffset = reg.get('core/polygon-list-offset')!;
-const polySplitLines = reg.get('core/polygon-subdivide-by-lines')!;
-const polylineBufferList = reg.get('core/polyline-buffer-list')!;
+const polyFromPoints = reg.get('poly/from-points')!;
+const polyAabb = reg.get('poly/aabb')!;
+const polyOffset = reg.get('poly/offset')!;
+const polyPerim = reg.get('points/polygon-perimeter')!;
+const polyGridSubdivide = reg.get('poly/grid-subdivide')!;
+const polyListOffset = reg.get('poly/list-offset')!;
+const polySplitLines = reg.get('poly/subdivide-by-lines')!;
+const polylineBufferList = reg.get('poly/polyline-buffer')!;
 
 // Shoelace 2×area. Positive ⇔ counter-clockwise winding in our XZ
 // frame, exactly what polygon-from-points normalises to and what

@@ -37,7 +37,7 @@ const stats = await page.evaluate(async () => {
   if (!panelId) return { error: 'no panel with outputs' };
 
   const erosionNode = graph.nodes.find((n) => n.kind === 'terrain/hydraulic-erosion');
-  const mapRangeNode = graph.nodes.find((n) => n.kind === 'core/texture-map-range');
+  const mapRangeNode = graph.nodes.find((n) => n.kind === 'tex/map-range');
 
   async function readbackR(tex) {
     const w = tex.width, h = tex.height;

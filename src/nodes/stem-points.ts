@@ -23,11 +23,11 @@ import type { PointCloudValue } from '../core/resources.js';
 // straight out; 60-ish gives the natural "leaves slope upward" look.
 //
 // Produces a PointCloud whose normals are the leaf attachment
-// directions. Pair with `core/instance-geometry-on-points` +
+// directions. Pair with `geom/instance-on-points` +
 // `align: true` to actually place leaves; the leaf mesh's local +Y
 // will align to each normal.
 export const stemPointsNode: NodeDef = {
-  id: 'core/stem-points',
+  id: 'points/stem',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -130,14 +130,14 @@ The three textbook leaf-arrangement patterns, parameterised:
 straight out — 0 = leaves stick out perpendicular, 60° gives the
 natural "leaves slope upward" look.
 
-Pair with [core/instance-geometry-on-points](../../core/instance-geometry-on-points)
-+ \`align: true\` (or [core/leaf-mesh](../../core/leaf-mesh) instances on
+Pair with [geom/instance-on-points](../../geom/instance-on-points)
++ \`align: true\` (or [geom/leaf](../../geom/leaf) instances on
 the points) to actually place leaves. Each leaf's local +Y aligns to
 its point's normal.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const points = addNode(g, 'core/stem-points', {
+      const points = addNode(g, 'points/stem', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -147,12 +147,12 @@ its point's normal.
           tilt: 60, startOffset: 0.1, seed: 0.5,
         },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.15, align: true },

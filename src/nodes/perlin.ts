@@ -20,7 +20,7 @@ import shader from './perlin.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const perlinNode: NodeDef = {
-  id: 'core/perlin',
+  id: 'tex/perlin',
   category: 'Texture/Noise',
   inputs: [
     {
@@ -82,7 +82,7 @@ visible grid.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/perlin', {
+      addNode(g, 'tex/perlin', {
         id: 'perlin',
         position: { x: 0, y: 0 },
         inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },

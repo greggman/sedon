@@ -24,14 +24,14 @@ const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
   ],
 };
 
-// Two-tone checkerboard. Same GPU plumbing as core/grid (full-
+// Two-tone checkerboard. Same GPU plumbing as tex/grid (full-
 // screen triangle + one tiny uniform buffer); the fragment shader
 // just toggles between the two colours based on cell parity instead
 // of drawing line strokes. Useful for crosswalk stripes, tiled
 // floors, and any "alternating two-colour" cell pattern that a
-// `core/grid` with line_width=0.5 would approximate but not nail.
+// `tex/grid` with line_width=0.5 would approximate but not nail.
 export const checkerNode: NodeDef = {
-  id: 'core/checker',
+  id: 'tex/checker',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -75,12 +75,12 @@ alternate per cell; \`divisions\` picks how many cells span the texture.
 
 The natural fit for crosswalk stripes (set \`divisions: [8, 1]\` with
 white-on-asphalt), tile floors, and any other two-tone alternating
-pattern. For grid LINES (rather than alternating cells), use \`core/grid\`
+pattern. For grid LINES (rather than alternating cells), use \`tex/grid\`
 instead — it draws strokes between cells.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/checker', {
+      addNode(g, 'tex/checker', {
         id: 'checker',
         position: { x: 0, y: 0 },
         inputValues: {

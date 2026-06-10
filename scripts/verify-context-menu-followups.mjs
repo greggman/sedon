@@ -94,7 +94,7 @@ try {
   });
   const sphereIdBefore = await page.evaluate(() => {
     const s = window.__sedonStore__.getState();
-    return s.mainGraph.nodes.find((n) => n.kind === 'core/sphere')?.id ?? null;
+    return s.mainGraph.nodes.find((n) => n.kind === 'geom/sphere')?.id ?? null;
   });
   const sphereRect = await page.evaluate(() => {
     const target = [...document.querySelectorAll('.sedon-node')]
@@ -173,7 +173,7 @@ try {
   // header). The sphere's flow position lives in the store too.
   const spherePos = await page.evaluate(() => {
     const s = window.__sedonStore__.getState();
-    const sphere = s.mainGraph.nodes.find((n) => n.kind === 'core/sphere');
+    const sphere = s.mainGraph.nodes.find((n) => n.kind === 'geom/sphere');
     return sphere?.position ?? null;
   });
   console.log('Sphere position:', JSON.stringify(spherePos));

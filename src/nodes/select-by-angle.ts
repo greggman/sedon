@@ -4,14 +4,14 @@ import type { GeometryValue, MeshSelection } from '../core/resources.js';
 import { countSelectedEdges, selectEdgesByAngle } from '../render/select-by-angle.js';
 
 export const selectByAngleNode: NodeDef = {
-  id: 'core/select-by-angle',
+  id: 'geom/select-by-angle',
   category: 'Geometry/Selection',
   inputs: [
     {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'mesh to select edges on. Must carry a CPU-side mesh (most procedural primitives in sedon do — GPU-compute-generated terrain meshes currently don\'t). Any existing selection is REPLACED in the output; combine with `core/select-combine` if you want to merge selections.',
+        'mesh to select edges on. Must carry a CPU-side mesh (most procedural primitives in sedon do — GPU-compute-generated terrain meshes currently don\'t). Any existing selection is REPLACED in the output; combine with `geom/select-combine` if you want to merge selections.',
     },
     {
       name: 'threshold',
@@ -27,7 +27,7 @@ export const selectByAngleNode: NodeDef = {
       type: 'Bool',
       default: true,
       description:
-        'when ON (default), coincident-position vertices weld for the topology pass — required for Sedon\'s split-vertex primitives (cube, sphere, cylinder, lathe) so face-to-face edges actually register as shared. Match this to the same flag on `core/compute-normals`. Turn OFF only when you intentionally authored split vertices as hard edges and want them treated as boundaries.',
+        'when ON (default), coincident-position vertices weld for the topology pass — required for Sedon\'s split-vertex primitives (cube, sphere, cylinder, lathe) so face-to-face edges actually register as shared. Match this to the same flag on `geom/compute-normals`. Turn OFF only when you intentionally authored split vertices as hard edges and want them treated as boundaries.',
     },
     {
       name: 'select_below',
@@ -42,7 +42,7 @@ export const selectByAngleNode: NodeDef = {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'the input geometry with its edge selection mask set. Positions / indices / UVs are passed through unchanged — only the `selection.edges` slot is populated. Downstream selection ops (`core/select-invert`, `core/select-combine`) and topology ops (future `core/bevel`, `core/chamfer`) read this mask.',
+        'the input geometry with its edge selection mask set. Positions / indices / UVs are passed through unchanged — only the `selection.edges` slot is populated. Downstream selection ops (`geom/select-invert`, `geom/select-combine`) and topology ops (future `geom/bevel`, `core/chamfer`) read this mask.',
     },
     {
       name: 'selected_count',
@@ -62,14 +62,14 @@ populated; downstream consumers (bevel, chamfer, future selection
 combinators) read it.
 
 Match \`weld_by_position\` to whatever value you used on
-\`core/compute-normals\` upstream so the topology layer sees the same
+\`geom/compute-normals\` upstream so the topology layer sees the same
 shared edges.
 
 Common usage:
 - Wire after a cube / cylinder / lathe / extrude to pick the natural
   bevel-candidate edges. Threshold 30° is conservative — most furniture
   shapes need it down at 10°-20° if you want to bevel softer joins.
-- Wire into \`core/select-combine\` with another selection to layer
+- Wire into \`geom/select-combine\` with another selection to layer
   rules ("sharp edges that are also on the top half").
 `,
     sampleGraph: () => {
@@ -82,17 +82,17 @@ Common usage:
       // threshold catches the polar bands and leaves the equator
       // un-selected — visible as orange/red rings in the wireframe.
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const squash = addNode(g, 'core/transform-geometry', {
+      const squash = addNode(g, 'geom/transform', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 0.5, 1] },
       });
-      const sel = addNode(g, 'core/select-by-angle', {
+      const sel = addNode(g, 'geom/select-by-angle', {
         id: 'select',
         position: { x: 560, y: 0 },
         inputValues: { threshold: 18 },
@@ -106,7 +106,7 @@ Common usage:
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/select-by-angle requires a CPU-side mesh on the input geometry; '
+        'geom/select-by-angle requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

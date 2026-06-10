@@ -15,7 +15,7 @@ page.on('console', (msg) => { if (msg.type() === 'error') console.log('  [consol
 page.on('pageerror', (e) => console.log('  [pageerror]:', e.message));
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/lathe/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/geom/lathe/?debug=1`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 2500));
 
@@ -58,7 +58,7 @@ try {
   // Inspect the tuple — it should be 7 numbers, type=2 (FREE).
   const pointBefore = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return n?.inputValues?.points?.[3];
   });
   console.log('point 3 after T:', JSON.stringify(pointBefore));
@@ -82,7 +82,7 @@ try {
   // Inspect tuple again — the rDx (index 5) should have changed.
   const pointAfter = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return n?.inputValues?.points?.[3];
   });
   console.log('point 3 after drag:', JSON.stringify(pointAfter));
@@ -100,7 +100,7 @@ try {
 
   const pointAfterUndo = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return n?.inputValues?.points?.[3];
   });
   console.log('point 3 after Cmd+Z:', JSON.stringify(pointAfterUndo));

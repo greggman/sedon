@@ -72,7 +72,7 @@ export function generateLathe(
   // Cumulative arc length along the profile, normalised → UV.v.
   // Stretches non-uniform — same as Houdini's `lathe` default. Users
   // who care about per-segment UV pacing can post-process with
-  // core/uv-transform later.
+  // geom/uv-transform later.
   const cumLen = [0];
   for (let i = 1; i < rings; i++) {
     const dx = profile[i]!.x - profile[i - 1]!.x;

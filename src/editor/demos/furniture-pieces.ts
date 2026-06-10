@@ -15,7 +15,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 // Texture references: every piece instantiates whichever texture
 // subgraph it needs (wood-texture / fabric-texture / metal-texture)
 // once at the boundary of its build, threads basecolor + normal into
-// a `core/material`, and reuses that material across all its
+// a `material/pbr`, and reuses that material across all its
 // components. So changing the wood palette inside `wood-texture`
 // re-tints every wood surface in the room with no rewiring.
 
@@ -44,7 +44,7 @@ export function buildChairSubgraph(): SubgraphDef {
   const wood = addNode(g, 'subgraph/wood-texture', {
     position: { x: COL, y: 0 },
   });
-  const woodMat = addNode(g, 'core/material', {
+  const woodMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.55, metallic: 0 },
   });
@@ -54,13 +54,13 @@ export function buildChairSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW },
     inputValues: { bottom_w: 0.04, height: 0.45, taper: 0.7 },
   });
-  const corners = addNode(g, 'core/corner-points', {
+  const corners = addNode(g, 'points/corners', {
     position: { x: COL * 3, y: ROW * 2 },
     // 0.40 spacing between leg centres on a 0.45m-wide seat — gives
     // ~2.5cm of overhang on each side.
     inputValues: { width: 0.40, depth: 0.40, inset: 0 },
   });
-  const legs = addNode(g, 'core/instance-scene-on-points', {
+  const legs = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 4, y: ROW * 1.5 },
     inputValues: { scale: 1, align: true },
   });
@@ -72,7 +72,7 @@ export function buildChairSubgraph(): SubgraphDef {
   });
   // Legs end at y=0.45; seat is 0.04 thick, so its CENTRE sits at
   // y = 0.45 + 0.02 = 0.47.
-  const seatLift = addNode(g, 'core/transform-scene', {
+  const seatLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { translate: [0, 0.47, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -88,13 +88,13 @@ export function buildChairSubgraph(): SubgraphDef {
   // -0.215, so the panel's front face flushes with the back of the
   // seat) and centred vertically over the seat top:
   // y = 0.49 (seat top) + 0.25 (half panel height) = 0.74.
-  const backLift = addNode(g, 'core/transform-scene', {
+  const backLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 5 },
     inputValues: { translate: [0, 0.74, -0.215], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
 
   // Merge legs + seat + back.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -156,7 +156,7 @@ export function buildTableSubgraph(): SubgraphDef {
   const wood = addNode(g, 'subgraph/wood-texture', {
     position: { x: COL, y: 0 },
   });
-  const woodMat = addNode(g, 'core/material', {
+  const woodMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.55, metallic: 0 },
   });
@@ -167,11 +167,11 @@ export function buildTableSubgraph(): SubgraphDef {
   });
   // Coffee-table footprint is 1.20 × 0.60; inset legs by 8 cm so
   // they don't sit at the very edge.
-  const corners = addNode(g, 'core/corner-points', {
+  const corners = addNode(g, 'points/corners', {
     position: { x: COL * 3, y: ROW * 2 },
     inputValues: { width: 1.20, depth: 0.60, inset: 0.08 },
   });
-  const legs = addNode(g, 'core/instance-scene-on-points', {
+  const legs = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 4, y: ROW * 1.5 },
     inputValues: { scale: 1, align: true },
   });
@@ -181,12 +181,12 @@ export function buildTableSubgraph(): SubgraphDef {
     inputValues: { width: 1.20, depth: 0.60, thickness: 0.04 },
   });
   // Legs end at y=0.40; top is 0.04 thick → centre at y=0.42.
-  const topLift = addNode(g, 'core/transform-scene', {
+  const topLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { translate: [0, 0.42, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -226,7 +226,7 @@ export function buildTableSubgraph(): SubgraphDef {
 // is 3 fabric cushions, with 3 back cushions behind them at h=0.6m.
 //
 // Lots of components — this is the longest hero piece. Each
-// translates to its own position with `core/transform-geometry`; we don't
+// translates to its own position with `geom/transform`; we don't
 // try to instance the cushions on a points-line because seat and
 // back cushions differ in size.
 export function buildSofaSubgraph(): SubgraphDef {
@@ -250,14 +250,14 @@ export function buildSofaSubgraph(): SubgraphDef {
       color_light: [0.32, 0.20, 0.12, 1],
     },
   });
-  const woodMat = addNode(g, 'core/material', {
+  const woodMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.5, metallic: 0 },
   });
   const fabric = addNode(g, 'subgraph/fabric-texture', {
     position: { x: COL, y: ROW * 6 },
   });
-  const fabricMat = addNode(g, 'core/material', {
+  const fabricMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 6 },
     inputValues: { roughness: 0.95, metallic: 0 },
   });
@@ -268,7 +268,7 @@ export function buildSofaSubgraph(): SubgraphDef {
     inputValues: { width: 1.92, depth: 0.85, thickness: 0.10 },
   });
   // Base centre at y = 0.20 + 0.05 = 0.25 (legs are 0.20 high).
-  const baseLift = addNode(g, 'core/transform-scene', {
+  const baseLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 0.5 },
     inputValues: { translate: [0, 0.25, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -278,11 +278,11 @@ export function buildSofaSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: { bottom_w: 0.05, height: 0.20, taper: 0.75 },
   });
-  const legCorners = addNode(g, 'core/corner-points', {
+  const legCorners = addNode(g, 'points/corners', {
     position: { x: COL * 3, y: ROW * 2.5 },
     inputValues: { width: 1.92, depth: 0.85, inset: 0.10 },
   });
-  const legs = addNode(g, 'core/instance-scene-on-points', {
+  const legs = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 4, y: ROW * 2 },
     inputValues: { scale: 1, align: true },
   });
@@ -292,13 +292,13 @@ export function buildSofaSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 3.5 },
     inputValues: { width: 0.10, depth: 0.85, thickness: 0.55 },
   });
-  const armLeft = addNode(g, 'core/transform-scene', {
+  const armLeft = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3.3 },
     // x = -(base/2 + arm_w/2) = -(0.96 + 0.05) = -1.01; centre at
     // y = 0.20 + 0.275 = 0.575 (rests on the floor, top at 0.85m).
     inputValues: { translate: [-1.01, 0.575, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const armRight = addNode(g, 'core/transform-scene', {
+  const armRight = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3.7 },
     inputValues: { translate: [1.01, 0.575, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -317,7 +317,7 @@ export function buildSofaSubgraph(): SubgraphDef {
     [0.63, 0.375, 0],
   ];
   const seatTransforms = seatPositions.map((pos, i) =>
-    addNode(g, 'core/transform-scene', {
+    addNode(g, 'scene/transform', {
       position: { x: COL * 4, y: ROW * (4.6 + i * 0.5) },
       inputValues: { translate: pos, rotate: [0, 0, 0], scale: [1, 1, 1] },
     }),
@@ -336,14 +336,14 @@ export function buildSofaSubgraph(): SubgraphDef {
     [0.63, 0.65, -0.30],
   ];
   const backTransforms = backPositions.map((pos, i) =>
-    addNode(g, 'core/transform-scene', {
+    addNode(g, 'scene/transform', {
       position: { x: COL * 4, y: ROW * (6.6 + i * 0.5) },
       inputValues: { translate: pos, rotate: [0, 0, 0], scale: [1, 1, 1] },
     }),
   );
 
   // 8-input merge: legs, base, armL, armR, 3 seat cushions, 3 back cushions.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
     extraInputs: Array.from({ length: 10 }, (_, i) => ({
       name: `scene_${i}`,
@@ -405,8 +405,8 @@ export function buildSofaSubgraph(): SubgraphDef {
 //
 // 0.90 × 1.80 × 0.30 bookshelf — back panel + 2 sides + top + bottom
 // + N shelves + books scattered across the shelves. The shelves are
-// distributed via `core/points-line` + `instance-scene-on-points`;
-// the books use a `core/grid-distribute` plus per-book color
+// distributed via `points/line` + `instance-scene-on-points`;
+// the books use a `points/grid` plus per-book color
 // randomisation so each book in the row reads differently.
 export function buildBookshelfSubgraph(): SubgraphDef {
   const id = 'bookshelf';
@@ -437,7 +437,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
       color_light: [0.60, 0.42, 0.26, 1],
     },
   });
-  const woodMat = addNode(g, 'core/material', {
+  const woodMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.55, metallic: 0 },
   });
@@ -447,7 +447,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 1 },
     inputValues: { width: W, depth: T, thickness: H },
   });
-  const backLift = addNode(g, 'core/transform-scene', {
+  const backLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 1 },
     inputValues: { translate: [0, H / 2, -D / 2 + T / 2], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -457,11 +457,11 @@ export function buildBookshelfSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 2 },
     inputValues: { width: T, depth: D, thickness: H },
   });
-  const sideLeft = addNode(g, 'core/transform-scene', {
+  const sideLeft = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 2 },
     inputValues: { translate: [-W / 2 + T / 2, H / 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const sideRight = addNode(g, 'core/transform-scene', {
+  const sideRight = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 2.5 },
     inputValues: { translate: [W / 2 - T / 2, H / 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -471,11 +471,11 @@ export function buildBookshelfSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 3 },
     inputValues: { width: W, depth: D, thickness: T },
   });
-  const topLift = addNode(g, 'core/transform-scene', {
+  const topLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3 },
     inputValues: { translate: [0, H - T / 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const bottomLift = addNode(g, 'core/transform-scene', {
+  const bottomLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { translate: [0, T / 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -486,7 +486,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 4 },
     inputValues: { width: innerW, depth: D - 0.01, thickness: T },
   });
-  const shelfLine = addNode(g, 'core/points-line', {
+  const shelfLine = addNode(g, 'points/line', {
     position: { x: COL * 3, y: ROW * 5 },
     inputValues: {
       start: [0, T + shelfTopGap, 0],
@@ -494,7 +494,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
       count: SHELVES,
     },
   });
-  const shelves = addNode(g, 'core/instance-scene-on-points', {
+  const shelves = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 4, y: ROW * 4.5 },
     // align=false: shelf panels are already Y-up (width along X, depth
     // along Z); with align=true on a Y-up point cloud, the basis
@@ -537,31 +537,31 @@ export function buildBookshelfSubgraph(): SubgraphDef {
   // random-float-cloud / random-vec3-cloud both derive their count
   // from a PointCloud, so this is the one upstream chicken-and-egg
   // node. Positions don't matter.
-  const bookSizing = addNode(g, 'core/points-line', {
+  const bookSizing = addNode(g, 'points/line', {
     position: { x: COL, y: ROW * 6.6 },
     inputValues: { start: [0, 0, 0], end: [1, 0, 0], count: BOOKS },
   });
-  const bookWidths = addNode(g, 'core/random-float-cloud', {
+  const bookWidths = addNode(g, 'cloud/random-float', {
     position: { x: COL * 2, y: ROW * 5.6 },
     inputValues: { min: 0.025, max: 0.055, seed: 0.31 },
   });
-  const bookHeights = addNode(g, 'core/random-float-cloud', {
+  const bookHeights = addNode(g, 'cloud/random-float', {
     position: { x: COL * 2, y: ROW * 6.4 },
     inputValues: { min: 0.17, max: 0.24, seed: 0.52 },
   });
-  const bookDepths = addNode(g, 'core/random-float-cloud', {
+  const bookDepths = addNode(g, 'cloud/random-float', {
     position: { x: COL * 2, y: ROW * 7.2 },
     inputValues: { min: 0.13, max: 0.18, seed: 0.71 },
   });
   // exclusive scan: out[i] = sum(widths[0..i-1]) — exactly the
   // left-edge X coordinate of book i when packed tip-to-tail.
-  const bookLeftEdges = addNode(g, 'core/accumulate-float-cloud', {
+  const bookLeftEdges = addNode(g, 'cloud/accumulate', {
     position: { x: COL * 3, y: ROW * 6 },
     inputValues: { mode: 1 }, // 1 = exclusive (left edges)
   });
   // shelf-top Y for the SECOND-FROM-TOP cubby — books sit there.
   const topShelfY = H - T - shelfTopGap + T / 2;
-  const bookLine = addNode(g, 'core/points-along-axis', {
+  const bookLine = addNode(g, 'points/along-axis', {
     position: { x: COL * 4, y: ROW * 6 },
     inputValues: {
       // Origin = bottom-back-left of the leftmost book.
@@ -574,10 +574,10 @@ export function buildBookshelfSubgraph(): SubgraphDef {
   });
   // Zip widths/heights/depths into a Vec3Cloud — drives the per-book
   // (X, Y, Z) scale, which is what makes each book a different size.
-  const bookScales = addNode(g, 'core/vec3-cloud-from-floats', {
+  const bookScales = addNode(g, 'cloud/vec3-from-floats', {
     position: { x: COL * 3, y: ROW * 7.8 },
   });
-  const bookColors = addNode(g, 'core/random-vec3-cloud', {
+  const bookColors = addNode(g, 'cloud/random-vec3', {
     position: { x: COL * 2, y: ROW * 8 },
     inputValues: {
       // Muted book-spine palette — leans toward reds / ochres /
@@ -587,7 +587,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
       seed: 0.77,
     },
   });
-  const books = addNode(g, 'core/instance-scene-on-points', {
+  const books = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 5, y: ROW * 6.5 },
     // align=false: books are already oriented (spine along +X,
     // height along +Y, depth along +Z). The Y-up normals on the
@@ -595,7 +595,7 @@ export function buildBookshelfSubgraph(): SubgraphDef {
     inputValues: { scale: 1, align: false },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
     extraInputs: Array.from({ length: 8 }, (_, i) => ({
       name: `scene_${i}`,
@@ -684,7 +684,7 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
   const metal = addNode(g, 'subgraph/metal-texture', {
     position: { x: COL, y: 0 },
   });
-  const metalMat = addNode(g, 'core/material', {
+  const metalMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.3, metallic: 0.85 },
   });
@@ -695,7 +695,7 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: ROW * 1 },
     inputValues: { width: W - 0.04, depth: D - 0.02, thickness: H - 0.01 },
   });
-  const bodyLift = addNode(g, 'core/transform-scene', {
+  const bodyLift = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: ROW * 1 },
     inputValues: { translate: [0, H / 2, -0.01], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -708,7 +708,7 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
   });
   // Distribute drawer copies along Y. First drawer's centre at
   // drawerH/2; last drawer's centre at H - drawerH/2.
-  const drawerLine = addNode(g, 'core/points-line', {
+  const drawerLine = addNode(g, 'points/line', {
     position: { x: COL * 3, y: ROW * 4 },
     inputValues: {
       start: [0, drawerH / 2, 0],
@@ -716,12 +716,12 @@ export function buildFilingCabinetSubgraph(): SubgraphDef {
       count: DRAWERS,
     },
   });
-  const drawers = addNode(g, 'core/instance-scene-on-points', {
+  const drawers = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { scale: 1, align: true },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

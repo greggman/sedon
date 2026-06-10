@@ -28,7 +28,7 @@ function seedWithEmptySubgraph(): { sgId: string; consumerNodeId: string } {
   const innerGraph = createGraph();
   const inputBoundary = addNode(innerGraph, `subgraph-input/${sgId}`);
   const outputBoundary = addNode(innerGraph, `subgraph-output/${sgId}`);
-  const consumer = addNode(innerGraph, 'core/scene-entity', { id: consumerNodeId });
+  const consumer = addNode(innerGraph, 'scene/entity', { id: consumerNodeId });
   const sg: SubgraphDef = {
     id: sgId,
     label: 'guard',

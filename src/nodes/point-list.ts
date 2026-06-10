@@ -2,7 +2,7 @@ import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
-// core/point-list — user-authored point list edited in a 2D top-down
+// points/list — user-authored point list edited in a 2D top-down
 // canvas (XZ plane). The canvas takes an optional Texture2D backdrop
 // (heightfield, slope mask, satellite-photo, …) and a world_size
 // calibration; the user lays out points on top, the node emits them
@@ -21,7 +21,7 @@ import type { PointCloudValue } from '../core/resources.js';
 // terrain-path use case), but the format is open-ended so other
 // widgets that share the point-list editor can park extra
 // per-anchor data in the trailing slots. The 2D Bezier curve
-// (`core/curve-2d`) uses indices 3..6 for left/right tangent-handle
+// (`path/curve-2d`) uses indices 3..6 for left/right tangent-handle
 // deltas — the editor preserves those slots verbatim on drags,
 // pastes, and selection moves; `normalisePoints` below still
 // projects back to a flat `[x, y, z]` for terrain-path consumers
@@ -47,7 +47,7 @@ export function normalisePoints(raw: unknown): Point[] {
 }
 
 export const pointListNode: NodeDef = {
-  id: 'core/point-list',
+  id: 'points/list',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -90,8 +90,8 @@ export const pointListNode: NodeDef = {
     summary: 'User-authored point list edited in a 2D top-down canvas with an optional reference-texture backdrop.',
     description: `
 The author-side counterpart to procedural point generators
-([core/grid-distribute](../../core/grid-distribute),
-[core/phyllotaxis-points](../../core/phyllotaxis-points), …). Where
+([points/grid](../../points/grid),
+[points/phyllotaxis](../../points/phyllotaxis), …). Where
 those nodes \`generate\` points from rules, this one stores points
 the user drew with the mouse and emits them as a \`PointCloud\` in
 draw order.
@@ -111,7 +111,7 @@ heightfield revision.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/point-list', {
+      addNode(g, 'points/list', {
         id: 'pts',
         position: { x: 0, y: 0 },
       });

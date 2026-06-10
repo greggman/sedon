@@ -15,7 +15,7 @@ const AXIS_ENUM = [
 ];
 
 export const mirrorNode: NodeDef = {
-  id: 'core/mirror',
+  id: 'geom/mirror',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -79,17 +79,17 @@ mirrored surface.
       const g = createGraph();
       // A cube offset along +X so the mirror across the YZ plane
       // produces a visibly-separated pair, not a coincident shape.
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const offset = addNode(g, 'core/transform-geometry', {
+      const offset = addNode(g, 'geom/transform', {
         id: 'offset',
         position: { x: 280, y: 0 },
         inputValues: { translate: [1.5, 0, 0] },
       });
-      const mirror = addNode(g, 'core/mirror', {
+      const mirror = addNode(g, 'geom/mirror', {
         id: 'mirror',
         position: { x: 560, y: 0 },
         inputValues: { axis: 0, offset: 0, weld: true },
@@ -104,7 +104,7 @@ mirrored surface.
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/mirror requires a CPU-side mesh on the input geometry; ' +
+        'geom/mirror requires a CPU-side mesh on the input geometry; ' +
           'this source produced GPU-only data.',
       );
     }

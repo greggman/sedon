@@ -45,13 +45,13 @@ const rect = await page.evaluate(() => {
 });
 
 // Find the 4 albedo solid-color nodes. They're the first 4 nodes of
-// kind 'core/solid-color' in the graph (positions y=ROW*1.5..4.5 vs
+// kind 'tex/solid-color' in the graph (positions y=ROW*1.5..4.5 vs
 // the 5th splat node at y=ROW*5.5 — but we'll find by index since
 // position is a UI hint that the eval doesn't see).
 const probeBefore = await page.evaluate(() => {
   const st = window.__sedonStore__.getState();
   const cache = st.evalCache;
-  const solids = st.graph.nodes.filter((n) => n.kind === 'core/solid-color');
+  const solids = st.graph.nodes.filter((n) => n.kind === 'tex/solid-color');
   return {
     count: solids.length,
     nodes: solids.map((n) => ({
@@ -78,7 +78,7 @@ const mutateResult = await page.evaluate(() => {
     hits: st.evalCache?.stats?.cacheHits ?? 0,
     pending: st.evalCache?.stats?.pendingHits ?? 0,
   };
-  const solids = st.graph.nodes.filter((n) => n.kind === 'core/solid-color').slice(0, 4);
+  const solids = st.graph.nodes.filter((n) => n.kind === 'tex/solid-color').slice(0, 4);
   for (const n of solids) {
     st.setInputValue(n.id, 'color', [0, 0, 0, 1]);
   }
@@ -110,7 +110,7 @@ const afterShot = await page.screenshot({
 const fpProbe = await page.evaluate(() => {
   const st = window.__sedonStore__.getState();
   const cache = st.evalCache;
-  const solids = st.graph.nodes.filter((n) => n.kind === 'core/solid-color').slice(0, 4);
+  const solids = st.graph.nodes.filter((n) => n.kind === 'tex/solid-color').slice(0, 4);
   const layers = st.graph.nodes.filter((n) => n.kind === 'terrain/layer');
   const material = st.graph.nodes.find((n) => n.kind === 'terrain/material');
   return {
@@ -174,7 +174,7 @@ console.log(`expect: significant shift AND avg luma to drop (black albedos → d
 // Reset state: pump all 4 back to white so we have a clean baseline.
 await page.evaluate(() => {
   const st = window.__sedonStore__.getState();
-  const solids = st.graph.nodes.filter((n) => n.kind === 'core/solid-color').slice(0, 4);
+  const solids = st.graph.nodes.filter((n) => n.kind === 'tex/solid-color').slice(0, 4);
   for (const n of solids) st.setInputValue(n.id, 'color', [1, 1, 1, 1]);
 });
 await new Promise((r) => setTimeout(r, 1500));
@@ -216,7 +216,7 @@ if (colorInputCount > 0) {
   const uiStoreCheck = await page.evaluate(() => {
     const st = window.__sedonStore__.getState();
     return st.graph.nodes
-      .filter((n) => n.kind === 'core/solid-color')
+      .filter((n) => n.kind === 'tex/solid-color')
       .slice(0, 4)
       .map((n) => ({ id: n.id, color: n.inputValues?.color }));
   });

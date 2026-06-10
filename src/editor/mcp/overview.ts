@@ -16,8 +16,8 @@ Operators) and Blender's Geometry Nodes, but it targets REAL-TIME
 3D rather than offline rendering.
 
 The visual model is a graph of nodes wired socket-to-socket. Each
-node has a kind id (e.g. "core/sphere", "core/transform-geometry",
-"core/scene-entity"), a list of input sockets, and a list of output
+node has a kind id (e.g. "geom/sphere", "geom/transform",
+"scene/entity"), a list of input sockets, and a list of output
 sockets. Edges connect one node's output socket to another node's
 input socket. Evaluation pulls from the root output and walks
 backwards through the graph, lazily evaluating each node only as
@@ -31,9 +31,9 @@ KEY DIFFERENCES from Houdini SOPs and Blender Geometry Nodes:
    - Scene: a list of entities, each carrying { geometry, material,
      transform, tint }, plus optional terrain / grass / water side
      bands.
-   Scenes are what get rendered. \`core/scene-entity\` wraps a
-   Geometry+Material into a one-entity Scene; \`core/scene-merge\`
-   composes multiple Scenes; \`core/transform-scene\` left-multiplies
+   Scenes are what get rendered. \`scene/entity\` wraps a
+   Geometry+Material into a one-entity Scene; \`scene/merge\`
+   composes multiple Scenes; \`scene/transform\` left-multiplies
    every entity's world transform. Most modifiers (transform-
    geometry, bevel, extrude, inset, mirror) operate on Geometry;
    placement and composition happen at the Scene layer.

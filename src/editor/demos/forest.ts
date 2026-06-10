@@ -14,7 +14,7 @@ import { buildOakSubgraph, buildPineSubgraph } from './tree-subgraphs.js';
 //
 // Tree / rock subgraphs each define a SINGLE instance at origin (drill in
 // via the graph switcher to inspect). The main graph composes them with
-// `core/instance-scene-on-points` to scatter each species across the
+// `scene/instance-on-points` to scatter each species across the
 // terrain's distribute point cloud, using masks to control where each
 // kind lands. This separates "what is a tree" from "where do trees go"
 // — same pattern as Houdini Copy-to-Points or Blender Geometry Nodes'
@@ -43,61 +43,61 @@ export function createForestDemo(): {
   // World units are meters. 100x100m terrain with up to 25m relief — a
   // small hilly area. Perlin scale ~3 gives a handful of distinct peaks
   // and valleys across that span.
-  const perlin = addNode(g, 'core/perlin', {
+  const perlin = addNode(g, 'tex/perlin', {
     position: { x: 0, y: 0 },
     inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0.3, resolution: 512 },
   });
-  const heightFloat = addNode(g, 'core/texture-convert', {
+  const heightFloat = addNode(g, 'tex/convert', {
     position: { x: COL, y: 0 },
     inputValues: { format: 1 },
   });
-  const heightScale = addNode(g, 'core/texture-map-range', {
+  const heightScale = addNode(g, 'tex/map-range', {
     position: { x: COL * 1.6, y: 0 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 25, clamp: false },
   });
-  const terrainMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+  const terrainMesh = addNode(g, 'geom/heightfield-from-texture', {
     position: { x: COL * 2.2, y: 0 },
-    // cpu_access: the terrain mesh feeds core/distribute-on-faces below,
+    // cpu_access: the terrain mesh feeds points/on-faces below,
     // which needs CPU-side mesh data to scatter trees and rocks. Without
     // it the GPU-only mesh would be unreadable to that node.
     inputValues: { worldSize: [100, 100], divisions: [128, 128], cpu_access: true },
   });
   // Density 0.06 per m² over 10000 m² ≈ 600 candidate points. Slope and
   // altitude masks downstream cut this to a few hundred real placements.
-  const distribute = addNode(g, 'core/distribute-on-faces', {
+  const distribute = addNode(g, 'points/on-faces', {
     position: { x: COL * 3, y: 0 },
     inputValues: { density: 0.01, seed: 0.5 },
   });
 
   // === Masks =============================================================
-  const slope = addNode(g, 'core/cloud-slope', { position: { x: COL * 4, y: 0 } });
-  const slopeMask = addNode(g, 'core/cloud-step', {
+  const slope = addNode(g, 'cloud/slope', { position: { x: COL * 4, y: 0 } });
+  const slopeMask = addNode(g, 'cloud/step', {
     position: { x: COL * 5, y: 0 },
     inputValues: { threshold: 0.5, invert: true },
   });
 
-  const altitude = addNode(g, 'core/cloud-altitude', {
+  const altitude = addNode(g, 'cloud/altitude', {
     position: { x: COL * 4, y: ROW },
   });
   // Split oak (low) vs pine (high) at ~12m above sea level — roughly the
   // halfway mark of the 25m heightRange.
-  const highMask = addNode(g, 'core/cloud-step', {
+  const highMask = addNode(g, 'cloud/step', {
     position: { x: COL * 5, y: ROW },
     inputValues: { threshold: 12, invert: false },
   });
-  const lowMask = addNode(g, 'core/cloud-step', {
+  const lowMask = addNode(g, 'cloud/step', {
     position: { x: COL * 5, y: ROW * 1.6 },
     inputValues: { threshold: 12, invert: true },
   });
-  const oakMask = addNode(g, 'core/cloud-multiply', {
+  const oakMask = addNode(g, 'cloud/multiply', {
     position: { x: COL * 6, y: ROW * 0.4 },
   });
-  const pineMask = addNode(g, 'core/cloud-multiply', {
+  const pineMask = addNode(g, 'cloud/multiply', {
     position: { x: COL * 6, y: ROW * 1.4 },
   });
 
   // Per-tree brightness variation, shared across both species.
-  const tintCloud = addNode(g, 'core/random-vec3-cloud', {
+  const tintCloud = addNode(g, 'cloud/random-vec3', {
     position: { x: COL * 5, y: ROW * 2.2 },
     inputValues: { min: [0.65, 0.65, 0.65], max: [1.1, 1.1, 1.1], seed: 0.7 },
   });
@@ -114,18 +114,18 @@ export function createForestDemo(): {
   const rockTex = addNode(g, 'subgraph/rock-texture', {
     position: { x: COL, y: ROW * 2.2 },
   });
-  const slopeMap = addNode(g, 'core/slope-from-height', {
+  const slopeMap = addNode(g, 'tex/slope-from-height', {
     position: { x: COL * 2, y: ROW * 1.8 },
     inputValues: { strength: 6, resolution: 256 },
   });
   // tile_scale: 100m terrain × tile_scale 40 → each grass/rock tile spans
   // 2.5m of world. Fine enough to read as ground detail at typical
   // viewing distances, coarse enough not to be a noisy hash.
-  const groundMat = addNode(g, 'core/terrain-material', {
+  const groundMat = addNode(g, 'material/terrain', {
     position: { x: COL * 3, y: ROW * 1.8 },
     inputValues: { roughness_a: 0.95, roughness_b: 0.7, tile_scale: [40, 40] },
   });
-  const terrainEntity = addNode(g, 'core/scene-entity', {
+  const terrainEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: ROW * 1.8 },
   });
 
@@ -143,14 +143,14 @@ export function createForestDemo(): {
   });
   // Steep mask: slope >= threshold. Same slope cloud as above, opposite
   // invert from slopeMask so it activates exactly where trees do not.
-  const steepMask = addNode(g, 'core/cloud-step', {
+  const steepMask = addNode(g, 'cloud/step', {
     position: { x: COL * 5, y: ROW * 3.6 },
     inputValues: { threshold: 0.5, invert: false },
   });
   // Rocks range from 0.8m (small loose stones) to 2.5m (proper boulders),
   // wider than tall — the squashed Y axis gives them a sat-down look
   // rather than perfect spheres.
-  const rockScale = addNode(g, 'core/random-vec3-cloud', {
+  const rockScale = addNode(g, 'cloud/random-vec3', {
     position: { x: COL * 5, y: ROW * 4.2 },
     inputValues: { min: [0.8, 0.6, 0.8], max: [2.5, 1.5, 2.5], seed: 0.4 },
   });
@@ -158,24 +158,24 @@ export function createForestDemo(): {
   // === Scatter nodes =====================================================
   // One scatter per species. Each takes (points, instance, masks/clouds)
   // and produces a Scene of N transformed copies of `instance`.
-  const oakScatter = addNode(g, 'core/instance-scene-on-points', {
+  const oakScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 8, y: ROW * 0.4 },
     inputValues: { scale: 1, align: false, seed: 1 },
   });
-  const pineScatter = addNode(g, 'core/instance-scene-on-points', {
+  const pineScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 8, y: ROW * 2 },
     inputValues: { scale: 1, align: false, seed: 2 },
   });
-  const rockScatter = addNode(g, 'core/instance-scene-on-points', {
+  const rockScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 8, y: ROW * 3.6 },
     inputValues: { scale: 1, align: false, seed: 7 },
   });
 
   // === Final =============================================================
-  // `core/scene-merge` is variadic — pre-declare five Scene sockets so
+  // `scene/merge` is variadic — pre-declare five Scene sockets so
   // every scene producer wires straight into one merge without runtime
   // "+ Add scene" clicks. Terrain + oak + pine + rock + grass.
-  const mergeAll = addNode(g, 'core/scene-merge', {
+  const mergeAll = addNode(g, 'scene/merge', {
     position: { x: COL * 11, y: ROW * 1.8 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -192,27 +192,27 @@ export function createForestDemo(): {
   // carved bare. The grass node's maxSlope adds a hard cutoff on top.
   // Type is altitude-correlated (perlin R → lush green low, dry golden
   // high), echoing the oak/pine altitude banding.
-  const grassFlatness = addNode(g, 'core/slope-from-height', {
+  const grassFlatness = addNode(g, 'tex/slope-from-height', {
     position: { x: COL * 2, y: ROW * 5.2 },
     inputValues: { strength: 6, invert: true, resolution: 256 },
   });
-  const trail = addNode(g, 'core/path-mask', {
+  const trail = addNode(g, 'tex/path-mask', {
     position: { x: COL * 2, y: ROW * 6 },
     inputValues: { angle: 35, offset: 0.45, width: 0.05, waviness: 0.14, waveScale: 1.5, resolution: 256 },
   });
-  const grassDensity = addNode(g, 'core/blend', {
+  const grassDensity = addNode(g, 'tex/blend', {
     position: { x: COL * 3, y: ROW * 5.6 },
     inputValues: { mode: 2, factor: 1, resolution: 256 },
   });
-  const grassCardLush = addNode(g, 'core/grass-blades', {
+  const grassCardLush = addNode(g, 'geom/grass-blades', {
     position: { x: COL * 2, y: ROW * 6.8 },
     inputValues: { bladeCount: 5, baseColor: [0.1, 0.28, 0.06, 1], tipColor: [0.5, 0.74, 0.28, 1], width: 1, lean: 0.2, seed: 4, resolution: 256 },
   });
-  const grassCardDry = addNode(g, 'core/grass-blades', {
+  const grassCardDry = addNode(g, 'geom/grass-blades', {
     position: { x: COL * 2, y: ROW * 7.6 },
     inputValues: { bladeCount: 4, baseColor: [0.34, 0.28, 0.08, 1], tipColor: [0.74, 0.62, 0.24, 1], width: 1.1, lean: 0.3, seed: 11, resolution: 256 },
   });
-  const forestGrass = addNode(g, 'core/grass', {
+  const forestGrass = addNode(g, 'geom/grass', {
     position: { x: COL * 4, y: ROW * 6 },
     extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {

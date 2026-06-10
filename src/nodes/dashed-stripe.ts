@@ -26,9 +26,9 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // cell reads as classic broken-line lane divider; 1 dash at 100%
 // gives a single solid stripe, useful as a road-edge marker.
 //
-// Same GPU plumbing as core/grid / core/checker.
+// Same GPU plumbing as tex/grid / tex/checker.
 export const dashedStripeNode: NodeDef = {
-  id: 'core/dashed-stripe',
+  id: 'tex/dashed-stripe',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -113,7 +113,7 @@ you get road surface + lane marking in one sample.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/dashed-stripe', {
+      addNode(g, 'tex/dashed-stripe', {
         id: 'dash',
         position: { x: 0, y: 0 },
         inputValues: {

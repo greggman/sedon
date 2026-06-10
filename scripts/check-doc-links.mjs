@@ -30,7 +30,7 @@ async function inspect(url, label) {
 }
 
 await inspect(`${server.url}docs/`, 'TOC');
-await inspect(`${server.url}docs/nodes/core/perlin/`, 'core/perlin');
+await inspect(`${server.url}docs/nodes/tex/perlin/`, 'tex/perlin');
 await inspect(`${server.url}docs/nodes/terrain/hydraulic-erosion/`, 'terrain/hydraulic-erosion');
 
 await browser.close();

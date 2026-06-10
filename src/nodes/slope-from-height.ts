@@ -27,7 +27,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // on steeps), or into cloud-step → cloud-multiply for per-point distribution
 // gating that mirrors what cloud-slope does for point clouds.
 export const slopeFromHeightNode: NodeDef = {
-  id: 'core/slope-from-height',
+  id: 'tex/slope-from-height',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -70,7 +70,7 @@ that reads "how fast does the height change here?" — and writes it directly
 as a greyscale mask. Flat areas → black; steep areas → white.
 
 The killer use is splat-painting terrain. Wire a heightfield in, get a
-slope mask out, drop it into a [core/blend-mask](../../core/blend-mask) as
+slope mask out, drop it into a [tex/blend-mask](../../tex/blend-mask) as
 the \`mask\` input with grass for \`a\` and rock for \`b\`, and you get
 grass on the flats and rock on the steeps with a smooth gradient in
 between. With invert=true you get the opposite — useful as a "grow grass
@@ -78,12 +78,12 @@ here" or "spawn foam here" mask.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/ridged-noise', {
+      const src = addNode(g, 'tex/ridged-noise', {
         id: 'height',
         position: { x: 0, y: 0 },
         inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: -0.5, seed: 0, resolution: 512 },
       });
-      const sfh = addNode(g, 'core/slope-from-height', {
+      const sfh = addNode(g, 'tex/slope-from-height', {
         id: 'slope',
         position: { x: 280, y: 0 },
         inputValues: { strength: 4, invert: false, resolution: 512 },

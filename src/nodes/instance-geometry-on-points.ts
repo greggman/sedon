@@ -13,10 +13,10 @@ import { instanceOnPoints, uploadMeshToGpu } from '../render/mesh.js';
 // big merged Geometry. Use this when you need a single mesh downstream — for
 // mesh modifiers (bend, smooth, boolean), or when "the result is logically
 // one continuous thing" (a track of ties along a spline). For independent
-// scattered objects (forests, debris) use core/instance-scene-on-points
+// scattered objects (forests, debris) use scene/instance-on-points
 // instead — it preserves entity boundaries for instanced rendering.
 export const instanceGeometryOnPointsNode: NodeDef = {
-  id: 'core/instance-geometry-on-points',
+  id: 'geom/instance-on-points',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -79,36 +79,36 @@ Use this when you need a single mesh downstream — for mesh modifiers
 continuous thing" (a track of ties along a spline, ridges marching up
 a hill). For independent scattered OBJECTS that should retain entity
 boundaries (forests, debris, rocks), use
-[core/instance-scene-on-points](../../core/instance-scene-on-points)
+[scene/instance-on-points](../../scene/instance-on-points)
 instead — it preserves per-entity identity for instanced rendering and
 GPU picking.
 
 Per-point variation comes through the three optional cloud inputs:
 - \`per_point_scale\`: Vec3 cloud, multiplies base scale per-axis per
-  point. Combine with [core/random-vec3-cloud](../../core/random-vec3-cloud)
+  point. Combine with [cloud/random-vec3](../../cloud/random-vec3)
   for natural size variation.
 - \`per_point_yaw\`: Float cloud, rotation around local +Y per point.
-  Pair with [core/random-float-cloud](../../core/random-float-cloud)
+  Pair with [cloud/random-float](../../cloud/random-float)
   in [0, 2π] for random orientation.
 - \`per_point_active\`: Float cloud, mask. Values ≥ 0.5 are realised;
-  below are skipped. Pair with [core/cloud-step](../../core/cloud-step)
+  below are skipped. Pair with [cloud/step](../../cloud/step)
   on a slope/altitude derived cloud for "scatter only where condition X".
 `,
     sampleGraph: () => {
       const g = createGraph();
       // Grid of 64 points → 64 cubes via the instancer. Wireframe
       // preview shows the resulting merged mesh.
-      const points = addNode(g, 'core/grid-distribute', {
+      const points = addNode(g, 'points/grid', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { cols: 8, rows: 8, spacing: 0.6, jitter: 0, seed: 0 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.18, align: true },
@@ -124,7 +124,7 @@ Per-point variation comes through the three optional cloud inputs:
     const instanceGeom = inputs.instance as GeometryValue;
     if (!instanceGeom.mesh) {
       throw new Error(
-        'core/instance-geometry-on-points requires a CPU-side mesh on the ' +
+        'geom/instance-on-points requires a CPU-side mesh on the ' +
           'instance geometry; the upstream node produced GPU-only data.',
       );
     }

@@ -22,7 +22,7 @@ export const outputNode: NodeDef = {
     {
       name: 'scene',
       type: 'Scene',
-      description: 'the renderable scene — entities + optional grass / terrain / waterLevel sidecars. Usually the output of [core/scene-merge](../../core/scene-merge), [water/plane](../../water/plane), or any single Scene-emitting node',
+      description: 'the renderable scene — entities + optional grass / terrain / waterLevel sidecars. Usually the output of [scene/merge](../../scene/merge), [water/plane](../../water/plane), or any single Scene-emitting node',
     },
     {
       name: 'light_direction',
@@ -137,22 +137,22 @@ sky + ground bounce.
       // → output. The output's lighting derivation should produce a
       // shaded sphere with sky + ground colours visible in the
       // material.
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 200 },
         inputValues: { color: [0.55, 0.5, 0.45, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 200 },
         inputValues: { roughness: 0.5, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 100 },
         inputValues: {},

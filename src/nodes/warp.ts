@@ -23,7 +23,7 @@ import shader from './warp.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const warpNode: NodeDef = {
-  id: 'core/warp',
+  id: 'tex/warp',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -66,14 +66,14 @@ current UV, converts them to a signed offset (value − 0.5), scales by
 the input "pushed around" by the warp.
 
 Use to break the regularity of procedural noise
-([core/perlin](../../core/perlin) warped by another perlin gives that
+([tex/perlin](../../tex/perlin) warped by another perlin gives that
 classic flame/marble look), to add wind motion to a static texture by
 modulating intensity over time, or to roughen the edges of a hand-built
-[core/grid](../../core/grid) / mask so it doesn't read so mechanical.
+[tex/grid](../../tex/grid) / mask so it doesn't read so mechanical.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/grid', {
+      const src = addNode(g, 'tex/grid', {
         id: 'src',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -84,12 +84,12 @@ modulating intensity over time, or to roughen the edges of a hand-built
           resolution: 512,
         },
       });
-      const warpTex = addNode(g, 'core/perlin', {
+      const warpTex = addNode(g, 'tex/perlin', {
         id: 'warpTex',
         position: { x: 0, y: 220 },
         inputValues: { scale: [3, 3], octaves: 3, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
       });
-      const warp = addNode(g, 'core/warp', {
+      const warp = addNode(g, 'tex/warp', {
         id: 'warp',
         position: { x: 280, y: 110 },
         inputValues: { intensity: 0.12, resolution: 512 },

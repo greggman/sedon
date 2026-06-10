@@ -33,7 +33,7 @@ function seedBridgeAsActiveGraph(): {
   // The for-each-point owner lives on `main` (out of view here);
   // tests focus on what happens when the user is editing the bridge
   // graph itself.
-  addNode(main, 'core/for-each-point', {
+  addNode(main, 'iter/for-each-point', {
     id: 'fep',
     inputValues: { __bridgeId: bridgeId },
   });
@@ -41,8 +41,8 @@ function seedBridgeAsActiveGraph(): {
   const inputBoundary = addNode(bridgeGraph, `subgraph-input/${bridgeId}`);
   const iterInputBoundary = addNode(bridgeGraph, `iteration-input/${bridgeId}`);
   const iterOutputBoundary = addNode(bridgeGraph, `iteration-output/${bridgeId}`);
-  const filler1 = addNode(bridgeGraph, 'core/perlin');
-  const filler2 = addNode(bridgeGraph, 'core/perlin');
+  const filler1 = addNode(bridgeGraph, 'tex/perlin');
+  const filler2 = addNode(bridgeGraph, 'tex/perlin');
   const bridge: SubgraphDef = {
     id: bridgeId,
     label: 'test bridge',
@@ -53,7 +53,7 @@ function seedBridgeAsActiveGraph(): {
     inputNodeId: inputBoundary.id,
     outputNodeId: iterOutputBoundary.id,
     owner: { kind: 'iteration-bridge', nodeId: 'fep' },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
   useEditorStore.setState({
     mainGraph: main,

@@ -65,11 +65,11 @@ function addFloorBox(
   },
 ): ReturnType<typeof addNode> {
   const { width, depth, height, baseY, materialInputs, textureNode, emissiveTextureNode, yOffset } = opts;
-  const geo = addNode(g, 'core/box', {
+  const geo = addNode(g, 'geom/box', {
     position: { x: COL, y: yOffset },
     inputValues: { width, height, depth },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOffset },
     inputValues: {
       translate: [0, baseY + height / 2, 0],
@@ -77,11 +77,11 @@ function addFloorBox(
       scale: [1, 1, 1],
     },
   });
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOffset + ROW * 0.5 },
     inputValues: materialInputs,
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOffset },
   });
   addEdge(g, { node: geo.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
@@ -110,7 +110,7 @@ function addParametricFloorBox(
     depthSrc:  { node: string; socket: string };
     heightSrc: { node: string; socket: string };
     // Vec3 source for the lift's translate. Caller composes a
-    // `core/vec3-from-floats` of (0, baseY + height/2, 0).
+    // `math/vec3-from-floats` of (0, baseY + height/2, 0).
     translateSrc: { node: string; socket: string };
     materialInputs: Record<string, unknown>;
     textureNode?: ReturnType<typeof addNode>;
@@ -119,13 +119,13 @@ function addParametricFloorBox(
   },
 ): ReturnType<typeof addNode> {
   const { widthSrc, depthSrc, heightSrc, translateSrc, materialInputs, textureNode, emissiveTextureNode, yOffset } = opts;
-  const geo = addNode(g, 'core/box', {
+  const geo = addNode(g, 'geom/box', {
     position: { x: COL, y: yOffset },
     // Defaults present so the standalone preview has a sane shape
     // before edges resolve.
     inputValues: { width: 10, height: 5, depth: 10 },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOffset },
     inputValues: {
       translate: [0, 2.5, 0],
@@ -133,11 +133,11 @@ function addParametricFloorBox(
       scale: [1, 1, 1],
     },
   });
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOffset + ROW * 0.5 },
     inputValues: materialInputs,
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOffset },
   });
   addEdge(g, widthSrc,  { node: geo.id, socket: 'width' });
@@ -176,7 +176,7 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
   // Window-grid texture: dark glass bg + light concrete mullions.
   // 7 cols × 7 rows reads as ~7 horizontal storeys on the upper-floor
   // box's vertical extent (24.5m / 7 ≈ 3.5m per floor).
-  const windowTex = addNode(g, 'core/grid', {
+  const windowTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: [0.78, 0.78, 0.80, 1],  // concrete mullions
@@ -193,7 +193,7 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
   // `emissive_intensity` value below this pushes lit-window pixels
   // into HDR so the bloom pass picks them up — the city skyline
   // reads as having warm office lights at dusk.
-  const officeLightTex = addNode(g, 'core/grid', {
+  const officeLightTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW },
     inputValues: {
       fg: [0, 0, 0, 1],          // mullions stay dark
@@ -206,7 +206,7 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
 
   // Ground floor: 5m tall, slightly wider than the upper floors so
   // the upper body reads as a setback. Vertical-mullion glass.
-  const groundTex = addNode(g, 'core/grid', {
+  const groundTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: [0.78, 0.78, 0.80, 1],
@@ -243,7 +243,7 @@ export function buildOfficeBuildingSubgraph(): SubgraphDef {
     yOffset: ROW * 5,
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -299,7 +299,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   });
 
   // --- Window grid textures (same as the static office) ---
-  const windowTex = addNode(g, 'core/grid', {
+  const windowTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: [0.78, 0.78, 0.80, 1],
@@ -309,7 +309,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const officeLightTex = addNode(g, 'core/grid', {
+  const officeLightTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW },
     inputValues: {
       fg: [0, 0, 0, 1],
@@ -319,7 +319,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const groundTex = addNode(g, 'core/grid', {
+  const groundTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: [0.78, 0.78, 0.80, 1],
@@ -342,43 +342,43 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // roof_centre_y     = num_floors * 3.5 + 5.3        (roof_top + 0.3)
   // body_width_minus1 = width * 1 - 1                 (slight setback)
   // body_depth_minus1 = depth * 1 - 1
-  const bodyHeight = addNode(g, 'core/map-range', {
+  const bodyHeight = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 3.5 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: bodyHeight.id, socket: 'value' });
-  const bodyCentreY = addNode(g, 'core/map-range', {
+  const bodyCentreY = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 3.5 },
     inputValues: { in_min: 0, in_max: 1, out_min: 5, out_max: 6.75 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: bodyCentreY.id, socket: 'value' });
-  const roofCentreY = addNode(g, 'core/map-range', {
+  const roofCentreY = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 4 },
     inputValues: { in_min: 0, in_max: 1, out_min: 5.3, out_max: 8.8 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: roofCentreY.id, socket: 'value' });
-  const bodyWidth = addNode(g, 'core/map-range', {
+  const bodyWidth = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 4.5 },
     inputValues: { in_min: 0, in_max: 1, out_min: -1, out_max: 0 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: bodyWidth.id, socket: 'value' });
-  const bodyDepth = addNode(g, 'core/map-range', {
+  const bodyDepth = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 5 },
     inputValues: { in_min: 0, in_max: 1, out_min: -1, out_max: 0 },
   });
   addEdge(g, { node: inputNode.id, socket: 'depth' }, { node: bodyDepth.id, socket: 'value' });
 
   // --- Per-floor translate Vec3s — each is (0, centreY, 0).
-  const groundTranslate = addNode(g, 'core/vec3-from-floats', {
+  const groundTranslate = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { x: 0, y: 2.5, z: 0 },
   });
-  const bodyTranslate = addNode(g, 'core/vec3-from-floats', {
+  const bodyTranslate = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { x: 0, y: 0, z: 0 },
   });
   addEdge(g, { node: bodyCentreY.id, socket: 'result' }, { node: bodyTranslate.id, socket: 'y' });
-  const roofTranslate = addNode(g, 'core/vec3-from-floats', {
+  const roofTranslate = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 2, y: ROW * 4 },
     inputValues: { x: 0, y: 0, z: 0 },
   });
@@ -391,12 +391,12 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // but addParametricFloorBox requires a heightSrc, so we plumb a
   // dedicated constant via a map-range. Same trick for ground/roof
   // widths (= width input directly, no setback).
-  const groundHeight = addNode(g, 'core/map-range', {
+  const groundHeight = addNode(g, 'math/map-range', {
     position: { x: COL * 2, y: ROW * 4.5 },
     inputValues: { in_min: 0, in_max: 1, out_min: 5, out_max: 5 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: groundHeight.id, socket: 'value' });
-  const roofHeight = addNode(g, 'core/map-range', {
+  const roofHeight = addNode(g, 'math/map-range', {
     position: { x: COL * 2, y: ROW * 5 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0.6, out_max: 0.6 },
   });
@@ -448,7 +448,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // a chained map-range for the face-centre Y; tossing the same
   // arithmetic onto `offset` (which adds directly to point Y) lets
   // one map-range supply the whole lift. Cleaner.
-  const totalLift = addNode(g, 'core/map-range', {
+  const totalLift = addNode(g, 'math/map-range', {
     position: { x: COL * 2, y: ROW * 5.5 },
     // offset = (5.6 + num_floors*3.5) - 0.5 = 5.1 + num_floors*3.5
     inputValues: { in_min: 0, in_max: 1, out_min: 5.1, out_max: 8.6 },
@@ -467,7 +467,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // node's "if inset eats the face, fall back to single point"
   // rule. 4×3 gives an irregular non-symmetric grid that reads as
   // unplanned (vs the centro-symmetric 2×2 or 3×3).
-  const roofPts = addNode(g, 'core/box-face-points', {
+  const roofPts = addNode(g, 'points/box-face', {
     position: { x: COL * 2, y: ROW * 6 },
     inputValues: { axis: [0, 1, 0], height: 1, cols: 4, rows: 3, inset: 3 },
   });
@@ -478,7 +478,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // random-float-cloud over the 12 slots, seeded by the building's
   // WIDTH. Same width → same pattern (cache-friendly); different
   // widths produce different per-slot random values.
-  const hvacRand = addNode(g, 'core/random-float-cloud', {
+  const hvacRand = addNode(g, 'cloud/random-float', {
     position: { x: COL * 3, y: ROW * 6 },
     inputValues: { min: 0, max: 1, seed: 0 },
   });
@@ -487,7 +487,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
 
   // cloud-step at 0.55 keeps the upper ~45% of slots — 5-6 HVACs
   // per roof on average.
-  const hvacMask = addNode(g, 'core/cloud-step', {
+  const hvacMask = addNode(g, 'cloud/step', {
     position: { x: COL * 4, y: ROW * 6 },
     inputValues: { threshold: 0.55, invert: false },
   });
@@ -499,7 +499,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   const hvacWrap = addNode(g, 'subgraph/city-roof-hvac', {
     position: { x: COL * 2, y: ROW * 6.5 },
   });
-  const hvacScatter = addNode(g, 'core/instance-scene-on-points', {
+  const hvacScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 5, y: ROW * 6 },
     // Scatter seed = building width (wired below) so per-point yaw
     // jitter varies BETWEEN buildings of different widths, not just
@@ -518,7 +518,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // 0.5, the per-roof mask gives 0-2 tanks (mostly 1-2) of varying
   // positions. Some buildings have NO tank at all (when all four
   // randoms fall below threshold), which is the realistic case.
-  const tankPts = addNode(g, 'core/box-face-points', {
+  const tankPts = addNode(g, 'points/box-face', {
     position: { x: COL * 2, y: ROW * 7 },
     inputValues: { axis: [0, 1, 0], height: 1, cols: 2, rows: 2, inset: 4 },
   });
@@ -528,12 +528,12 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // Different random seed offset (add 100 via map-range so the mask
   // differs from HVAC's pattern — without this, tank slots would
   // get the same activations as the HVAC slots in identical pos).
-  const tankRandSeed = addNode(g, 'core/map-range', {
+  const tankRandSeed = addNode(g, 'math/map-range', {
     position: { x: COL * 3, y: ROW * 6.7 },
     inputValues: { in_min: 0, in_max: 1, out_min: 100, out_max: 101 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: tankRandSeed.id, socket: 'value' });
-  const tankRand = addNode(g, 'core/random-float-cloud', {
+  const tankRand = addNode(g, 'cloud/random-float', {
     position: { x: COL * 3, y: ROW * 7 },
     inputValues: { min: 0, max: 1, seed: 0 },
   });
@@ -541,7 +541,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   addEdge(g, { node: tankRandSeed.id, socket: 'result' }, { node: tankRand.id, socket: 'seed' });
   // Higher threshold so tanks are RARER than HVAC — most roofs have
   // 0-1 tanks, occasional double tank.
-  const tankMask = addNode(g, 'core/cloud-step', {
+  const tankMask = addNode(g, 'cloud/step', {
     position: { x: COL * 4, y: ROW * 7 },
     inputValues: { threshold: 0.6, invert: false },
   });
@@ -550,7 +550,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   const tankWrap = addNode(g, 'subgraph/city-roof-water-tank', {
     position: { x: COL * 2, y: ROW * 7.5 },
   });
-  const tankScatter = addNode(g, 'core/instance-scene-on-points', {
+  const tankScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 5, y: ROW * 7 },
     inputValues: { scale: 1, align: true, seed: 0 },
   });
@@ -574,7 +574,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // wall-side face of each awning lands at ground-floor mid-height.
   // (The awning subgraph's own +Z lift then raises it to storefront-
   // top height ≈ 4 m.)
-  const awningPts = addNode(g, 'core/box-face-points', {
+  const awningPts = addNode(g, 'points/box-face', {
     position: { x: COL * 2, y: ROW * 8 },
     inputValues: { axis: [-1, 0, 0], height: 5, cols: 4, rows: 1, inset: 1.5, offset: 0.05 },
   });
@@ -585,18 +585,18 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // varies across buildings while staying cache-friendly (same
   // width → same pattern). Different seed offset (+200) from the
   // HVAC / tank pools so no accidental correlation.
-  const awningRandSeed = addNode(g, 'core/map-range', {
+  const awningRandSeed = addNode(g, 'math/map-range', {
     position: { x: COL * 3, y: ROW * 7.7 },
     inputValues: { in_min: 0, in_max: 1, out_min: 200, out_max: 201 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: awningRandSeed.id, socket: 'value' });
-  const awningRand = addNode(g, 'core/random-float-cloud', {
+  const awningRand = addNode(g, 'cloud/random-float', {
     position: { x: COL * 3, y: ROW * 8 },
     inputValues: { min: 0, max: 1, seed: 0 },
   });
   addEdge(g, { node: awningPts.id, socket: 'points' }, { node: awningRand.id, socket: 'points' });
   addEdge(g, { node: awningRandSeed.id, socket: 'result' }, { node: awningRand.id, socket: 'seed' });
-  const awningMask = addNode(g, 'core/cloud-step', {
+  const awningMask = addNode(g, 'cloud/step', {
     position: { x: COL * 4, y: ROW * 8 },
     inputValues: { threshold: 0.4, invert: false },
   });
@@ -605,7 +605,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // Per-awning colour: random Vec3 in [0.4, 1.0] for saturated
   // bright colours that pop against the muted city. Same width-seed
   // so the colour set is stable per building width.
-  const awningTint = addNode(g, 'core/random-vec3-cloud', {
+  const awningTint = addNode(g, 'cloud/random-vec3', {
     position: { x: COL * 3, y: ROW * 8.3 },
     inputValues: { min: [0.4, 0.4, 0.4], max: [1, 1, 1], seed: 0 },
   });
@@ -615,7 +615,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   const awningWrap = addNode(g, 'subgraph/city-storefront-awning', {
     position: { x: COL * 2, y: ROW * 8.7 },
   });
-  const awningScatter = addNode(g, 'core/instance-scene-on-points', {
+  const awningScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 5, y: ROW * 8 },
     inputValues: { scale: 1, align: true, seed: 0 },
   });
@@ -629,7 +629,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // (y=2.5). Equivalent to translating the IMPLICIT box's centre
   // up by 2.5 — but transform-scene on the final scene is simpler
   // than chaining math into the face-points node's offset.
-  const awningLift = addNode(g, 'core/transform-scene', {
+  const awningLift = addNode(g, 'scene/transform', {
     position: { x: COL * 6, y: ROW * 8 },
     inputValues: { translate: [0, 2.5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -655,7 +655,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
     seedOffsetMin: number,
     yOff: number,
   ): ReturnType<typeof addNode> {
-    const pts = addNode(g, 'core/box-face-points', {
+    const pts = addNode(g, 'points/box-face', {
       position: { x: COL * 2, y: yOff },
       inputValues: { axis, height: 1, cols: 2, rows: 5, inset: 1, offset: 0.05 },
     });
@@ -663,18 +663,18 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
     addEdge(g, { node: inputNode.id, socket: 'depth' },  { node: pts.id, socket: 'depth' });
     addEdge(g, { node: bodyHeight.id, socket: 'result' }, { node: pts.id, socket: 'height' });
 
-    const randSeed = addNode(g, 'core/map-range', {
+    const randSeed = addNode(g, 'math/map-range', {
       position: { x: COL * 3, y: yOff - ROW * 0.3 },
       inputValues: { in_min: 0, in_max: 1, out_min: seedOffsetMin, out_max: seedOffsetMin + 1 },
     });
     addEdge(g, { node: inputNode.id, socket: 'width' }, { node: randSeed.id, socket: 'value' });
-    const rand = addNode(g, 'core/random-float-cloud', {
+    const rand = addNode(g, 'cloud/random-float', {
       position: { x: COL * 3, y: yOff },
       inputValues: { min: 0, max: 1, seed: 0 },
     });
     addEdge(g, { node: pts.id, socket: 'points' }, { node: rand.id, socket: 'points' });
     addEdge(g, { node: randSeed.id, socket: 'result' }, { node: rand.id, socket: 'seed' });
-    const mask = addNode(g, 'core/cloud-step', {
+    const mask = addNode(g, 'cloud/step', {
       position: { x: COL * 4, y: yOff },
       // Threshold 0.5 → ~50% activation. Real NYC walls have AC on
       // many upper-floor windows in summer; sparser would read as
@@ -686,7 +686,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
     const wrap = addNode(g, 'subgraph/city-wall-ac', {
       position: { x: COL * 2, y: yOff + ROW * 0.5 },
     });
-    const scatter = addNode(g, 'core/instance-scene-on-points', {
+    const scatter = addNode(g, 'scene/instance-on-points', {
       position: { x: COL * 5, y: yOff },
       inputValues: { scale: 1, align: true, seed: 0 },
     });
@@ -696,12 +696,12 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
 
     // Lift scatter up by bodyCentreY so the box-face-points grid
     // (centred at y=0) lands on the building body's vertical centre.
-    const liftVec = addNode(g, 'core/vec3-from-floats', {
+    const liftVec = addNode(g, 'math/vec3-from-floats', {
       position: { x: COL * 5, y: yOff + ROW * 0.3 },
       inputValues: { x: 0, y: 0, z: 0 },
     });
     addEdge(g, { node: bodyCentreY.id, socket: 'result' }, { node: liftVec.id, socket: 'y' });
-    const lift = addNode(g, 'core/transform-scene', {
+    const lift = addNode(g, 'scene/transform', {
       position: { x: COL * 6, y: yOff },
       inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
     });
@@ -723,19 +723,19 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // it'll look wrong if num_floors becomes variable. That's the
   // next chunk's problem (parametric fire-escape height); for now,
   // num_floors is constant in city.ts so the static one fits.
-  const firePts = addNode(g, 'core/box-face-points', {
+  const firePts = addNode(g, 'points/box-face', {
     position: { x: COL * 2, y: ROW * 11 },
     inputValues: { axis: [0, 0, 1], height: 1, cols: 1, rows: 1, inset: 0, offset: 0.05 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: firePts.id, socket: 'width' });
   addEdge(g, { node: inputNode.id, socket: 'depth' }, { node: firePts.id, socket: 'depth' });
 
-  const fireRandSeed = addNode(g, 'core/map-range', {
+  const fireRandSeed = addNode(g, 'math/map-range', {
     position: { x: COL * 3, y: ROW * 10.7 },
     inputValues: { in_min: 0, in_max: 1, out_min: 500, out_max: 501 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: fireRandSeed.id, socket: 'value' });
-  const fireRand = addNode(g, 'core/random-float-cloud', {
+  const fireRand = addNode(g, 'cloud/random-float', {
     position: { x: COL * 3, y: ROW * 11 },
     inputValues: { min: 0, max: 1, seed: 0 },
   });
@@ -745,7 +745,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // (e.g. the single-building demo) can force every building to
   // render a fire escape by passing threshold=-1, while the city
   // demo's default 0.4 gives ~60% activation.
-  const fireMask = addNode(g, 'core/cloud-step', {
+  const fireMask = addNode(g, 'cloud/step', {
     position: { x: COL * 4, y: ROW * 11 },
     inputValues: { threshold: 0.4, invert: false },
   });
@@ -761,7 +761,7 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
     inputValues: { floor_height: 3.5, bottom_height: 2, top_height: 2 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: fireWrap.id, socket: 'num_floors' });
-  const fireScatter = addNode(g, 'core/instance-scene-on-points', {
+  const fireScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 5, y: ROW * 11 },
     inputValues: { scale: 1, align: true, seed: 0 },
   });
@@ -775,13 +775,13 @@ export function buildParametricOfficeBuildingSubgraph(): SubgraphDef {
   // modules stacked upward from there, so the lift only needs to put
   // that local Z=0 at office-local Y=5 (not bodyCentreY, which would
   // raise the entire stack half a body-height into the roof zone).
-  const fireLift = addNode(g, 'core/transform-scene', {
+  const fireLift = addNode(g, 'scene/transform', {
     position: { x: COL * 6, y: ROW * 11 },
     inputValues: { translate: [0, 5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   addEdge(g, { node: fireScatter.id, socket: 'scene' }, { node: fireLift.id, socket: 'scene' });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 7, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -845,7 +845,7 @@ export function buildApartmentBuildingSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 5 },
   });
 
-  const windowTex = addNode(g, 'core/grid', {
+  const windowTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: [0.86, 0.78, 0.66, 1],  // beige concrete frames
@@ -855,7 +855,7 @@ export function buildApartmentBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const groundTex = addNode(g, 'core/grid', {
+  const groundTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: [0.86, 0.78, 0.66, 1],
@@ -888,7 +888,7 @@ export function buildApartmentBuildingSubgraph(): SubgraphDef {
     yOffset: ROW * 5,
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -930,7 +930,7 @@ export function buildShopBuildingSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 5 },
   });
 
-  const storefrontTex = addNode(g, 'core/grid', {
+  const storefrontTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: [0.85, 0.83, 0.78, 1],  // bright concrete frame
@@ -940,7 +940,7 @@ export function buildShopBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const upperTex = addNode(g, 'core/grid', {
+  const upperTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: [0.85, 0.83, 0.78, 1],
@@ -974,7 +974,7 @@ export function buildShopBuildingSubgraph(): SubgraphDef {
     yOffset: ROW * 5,
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -1019,7 +1019,7 @@ export function buildTowerBuildingSubgraph(): SubgraphDef {
   // Curtain-wall glass: many narrow vertical columns + horizontal
   // floor bands. Reads as continuous glass at distance with subtle
   // grid structure on closer approach.
-  const curtainTex = addNode(g, 'core/grid', {
+  const curtainTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: [0.55, 0.60, 0.65, 1],  // light metal mullions
@@ -1029,7 +1029,7 @@ export function buildTowerBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const setbackTex = addNode(g, 'core/grid', {
+  const setbackTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW },
     inputValues: {
       fg: [0.55, 0.60, 0.65, 1],
@@ -1039,7 +1039,7 @@ export function buildTowerBuildingSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const lobbyTex = addNode(g, 'core/grid', {
+  const lobbyTex = addNode(g, 'tex/grid', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: [0.55, 0.60, 0.65, 1],
@@ -1079,7 +1079,7 @@ export function buildTowerBuildingSubgraph(): SubgraphDef {
     yOffset: ROW * 5,
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

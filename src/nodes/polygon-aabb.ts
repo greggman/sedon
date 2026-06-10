@@ -12,11 +12,11 @@ import type { PolygonValue } from '../core/resources.js';
 // around vs. resizing it are independent knobs.
 //
 // Output winding is counter-clockwise, matching the convention of
-// `core/polygon-from-points` so the two sources are interchangeable
+// `poly/from-points` so the two sources are interchangeable
 // downstream.
 
 export const polygonAabbNode: NodeDef = {
-  id: 'core/polygon-aabb',
+  id: 'poly/aabb',
   category: 'Polygon',
   inputs: [
     {
@@ -45,28 +45,28 @@ export const polygonAabbNode: NodeDef = {
 A 4-vertex rectangular polygon on the world XZ plane. Cheapest
 "polygon source" — useful as the input to a polygon-subdivision step,
 as a city / district footprint, or just to render a coloured patch on
-the ground via [core/polygon-to-mesh](../../core/polygon-to-mesh).
+the ground via [geom/from-polygon](../../geom/from-polygon).
 
 For irregular footprints use
-[core/polygon-from-points](../../core/polygon-from-points) instead.
+[poly/from-points](../../poly/from-points) instead.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 60] },
       });
-      const mesh = addNode(g, 'core/polygon-to-mesh', {
+      const mesh = addNode(g, 'geom/from-polygon', {
         id: 'mesh',
         position: { x: 280, y: 0 },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'mat',
         position: { x: 280, y: 160 },
         inputValues: { basecolor: [0.55, 0.7, 0.45, 1], roughness: 0.85, metallic: 0 },
       });
-      const ent = addNode(g, 'core/scene-entity', {
+      const ent = addNode(g, 'scene/entity', {
         id: 'ent',
         position: { x: 560, y: 80 },
       });

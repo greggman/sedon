@@ -300,7 +300,7 @@ export interface EditorState {
   renameNode: (nodeId: string, name: string) => void;
 
   /**
-   * Attach a body subgraph to a `core/for-each-point` instance.
+   * Attach a body subgraph to a `iter/for-each-point` instance.
    * Atomically:
    *   • Builds (or rebuilds) the node's private bridge SubgraphDef,
    *     placing the body wrapper inside between the bridge's
@@ -730,7 +730,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       let nodesChanged = false;
       const nextNodes = graph.nodes.map((n) => {
         const u = updates.get(n.id);
-        if (!u || n.kind !== 'core/for-each-point') return n;
+        if (!u || n.kind !== 'iter/for-each-point') return n;
         if (sameList(n.extraInputs ?? [], u.extraInputs)
           && sameList(n.extraOutputs ?? [], u.extraOutputs)) return n;
         nodesChanged = true;
@@ -2056,7 +2056,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const state = get();
       const node = state.graph.nodes.find((n) => n.id === nodeId);
       if (!node) return;
-      if (node.kind !== 'core/for-each-point') return;
+      if (node.kind !== 'iter/for-each-point') return;
       if (!bodyKind.startsWith('subgraph/')) return;
       const bodySubgraphId = bodyKind.slice('subgraph/'.length);
       const bodySg = state.subgraphs.find((s) => s.id === bodySubgraphId);
@@ -2065,7 +2065,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // Resolve iteration context names this kind provides (for the
       // bridge's iteration-input boundary's outputs + the auto-wire
       // step below).
-      const ITERATION_KIND = 'core/for-each-point';
+      const ITERATION_KIND = 'iter/for-each-point';
       const providedContext = [
         { name: 'position', type: 'Vec3' },
         { name: 'index', type: 'Int' },

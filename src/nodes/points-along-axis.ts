@@ -7,7 +7,7 @@ import type { FloatCloudValue, PointCloudValue } from '../core/resources.js';
 // widths, accumulated sums, sampled values) and the instance-on-
 // points pipeline.
 //
-// Why this exists vs. `core/points-line`: points-line is N evenly-
+// Why this exists vs. `points/line`: points-line is N evenly-
 // spaced points along start→end. points-along-axis is N points
 // spaced by EXPLICIT per-point offsets. The two cover the
 // "evenly spaced" and "variably spaced" cases without one of them
@@ -18,7 +18,7 @@ import type { FloatCloudValue, PointCloudValue } from '../core/resources.js';
 // instance Y-axis pinned to world-up — same convention as points-
 // line.)
 export const pointsAlongAxisNode: NodeDef = {
-  id: 'core/points-along-axis',
+  id: 'points/along-axis',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -36,7 +36,7 @@ export const pointsAlongAxisNode: NodeDef = {
     {
       name: 'offsets',
       type: 'FloatCloud',
-      description: 'per-point scalar offsets along `axis`. Typically the output of [core/accumulate-float-cloud](../../core/accumulate-float-cloud)',
+      description: 'per-point scalar offsets along `axis`. Typically the output of [cloud/accumulate](../../cloud/accumulate)',
     },
   ],
   outputs: [
@@ -51,11 +51,11 @@ export const pointsAlongAxisNode: NodeDef = {
     description: `
 Generate a PointCloud whose Nth point sits at
 \`origin + axis * offsets[N]\`. The general "variable-spacing"
-distributor — the complement of [core/points-line](../../core/points-line)
+distributor — the complement of [points/line](../../points/line)
 (which is evenly-spaced).
 
 Most common use: cumulative packing. Pair with
-[core/accumulate-float-cloud](../../core/accumulate-float-cloud) in
+[cloud/accumulate](../../cloud/accumulate) in
 \`centres\` mode and a random-width source:
 
 \`\`\`
@@ -70,17 +70,17 @@ positions, conversion of a sorted scan to per-point world positions.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const r = addNode(g, 'core/random-float-cloud', {
+      const r = addNode(g, 'cloud/random-float', {
         id: 'r',
         position: { x: 0, y: 0 },
         inputValues: { count: 10, min: 0.05, max: 0.15, seed: 0.4 },
       });
-      const a = addNode(g, 'core/accumulate-float-cloud', {
+      const a = addNode(g, 'cloud/accumulate', {
         id: 'a',
         position: { x: 280, y: 0 },
         inputValues: { mode: 2 },
       });
-      const p = addNode(g, 'core/points-along-axis', {
+      const p = addNode(g, 'points/along-axis', {
         id: 'p',
         position: { x: 560, y: 0 },
         inputValues: { origin: [0, 0, 0], axis: [1, 0, 0] },

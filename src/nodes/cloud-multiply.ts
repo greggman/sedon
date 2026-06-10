@@ -7,7 +7,7 @@ import type { FloatCloudValue } from '../core/resources.js';
 // only where slope is gentle AND altitude is below 1.0" stacks two cloud-step
 // outputs through a cloud-multiply.
 export const cloudMultiplyNode: NodeDef = {
-  id: 'core/cloud-multiply',
+  id: 'cloud/multiply',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -33,7 +33,7 @@ export const cloudMultiplyNode: NodeDef = {
     description: `
 The composition node for per-point filters. With analog values this
 is plain multiplication; with binary 0/1 masks (from
-[core/cloud-step](../../core/cloud-step)) it's a logical AND — a
+[cloud/step](../../cloud/step)) it's a logical AND — a
 point is active in the output only if it's active in BOTH inputs.
 
 The canonical use is compound terrain conditions:
@@ -55,62 +55,62 @@ guard against accidentally crossing two different point sets.
       // Sphere → distribute → (slope→step invert, altitude→step) →
       // multiply → per_point_active. Result: cubes only on the top
       // cap where the surface is ALSO flat enough.
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const points = addNode(g, 'core/distribute-on-faces', {
+      const points = addNode(g, 'points/on-faces', {
         id: 'points',
         position: { x: 280, y: 0 },
         inputValues: { density: 40, seed: 0 },
       });
-      const slope = addNode(g, 'core/cloud-slope', {
+      const slope = addNode(g, 'cloud/slope', {
         id: 'slope',
         position: { x: 560, y: 0 },
         inputValues: {},
       });
-      const flatMask = addNode(g, 'core/cloud-step', {
+      const flatMask = addNode(g, 'cloud/step', {
         id: 'flatMask',
         position: { x: 840, y: 0 },
         inputValues: { threshold: 1.0, invert: true },
       });
-      const altitude = addNode(g, 'core/cloud-altitude', {
+      const altitude = addNode(g, 'cloud/altitude', {
         id: 'altitude',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const highMask = addNode(g, 'core/cloud-step', {
+      const highMask = addNode(g, 'cloud/step', {
         id: 'highMask',
         position: { x: 840, y: 200 },
         inputValues: { threshold: 0.0, invert: false },
       });
-      const combined = addNode(g, 'core/cloud-multiply', {
+      const combined = addNode(g, 'cloud/multiply', {
         id: 'combined',
         position: { x: 1120, y: 100 },
         inputValues: {},
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 400 },
         inputValues: { color: [0.15, 0.15, 0.5, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 400 },
         inputValues: { roughness: 0.5, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 400 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 1400, y: 200 },
         inputValues: { scale: 0.05, align: true, seed: 0 },
@@ -136,7 +136,7 @@ guard against accidentally crossing two different point sets.
     const b = inputs.b as FloatCloudValue;
     if (a.count !== b.count) {
       throw new Error(
-        `core/cloud-multiply count mismatch: a=${a.count}, b=${b.count}`,
+        `cloud/multiply count mismatch: a=${a.count}, b=${b.count}`,
       );
     }
     const count = a.count;

@@ -1,4 +1,4 @@
-// Pin the core/transform-scene composition rules: identity is a
+// Pin the scene/transform composition rules: identity is a
 // no-op, translation moves entity transforms in world space, scale +
 // rotate compose in the documented order, and side-band scene
 // fields (terrain / grass / water level) pass through unchanged.

@@ -14,7 +14,7 @@ import { useEditorStore } from '../../src/editor/store.js';
 
 function seedWithNode(): string {
   const g = createGraph();
-  const n = addNode(g, 'core/perlin');
+  const n = addNode(g, 'tex/perlin');
   useEditorStore.setState({ mainGraph: g, graph: g, currentEditingId: 'main', subgraphs: [] });
   return n.id;
 }

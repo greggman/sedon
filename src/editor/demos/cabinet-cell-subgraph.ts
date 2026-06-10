@@ -17,7 +17,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 //              base stays at y=0 in pre-translate space, lands at
 //              __position.y in world space.
 //
-// Used by the `cabinet` demo to test core/for-each-point end-to-end.
+// Used by the `cabinet` demo to test iter/for-each-point end-to-end.
 export function buildCabinetCellSubgraph(): SubgraphDef {
   const id = 'cabinet-cell';
   const g = createGraph();
@@ -32,7 +32,7 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
   });
 
   // Unit cube — gets scaled to the per-cell size in the second transform.
-  const cube = addNode(g, 'core/cube', {
+  const cube = addNode(g, 'geom/cube', {
     position: { x: COL, y: 0 },
     inputValues: { size: 1 },
   });
@@ -41,17 +41,17 @@ export function buildCabinetCellSubgraph(): SubgraphDef {
   // origin). This bakes the "cabinets sit on the ground" assumption into
   // the body and means the for-each-point's `__position` can stay flat
   // on the XZ plane without per-cell Y math.
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: { translate: [0, 0.5, 0] },
   });
   // Scale to per-cell size, then translate to __position. transform's
   // scale-then-translate order is what we want: the lifted base stays
   // at y=0 in pre-translate space, then translates to __position.y.
-  const place = addNode(g, 'core/transform-geometry', {
+  const place = addNode(g, 'geom/transform', {
     position: { x: COL * 3, y: 0 },
   });
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: 0 },
   });
 

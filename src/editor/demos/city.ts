@@ -37,7 +37,7 @@ import {
   buildStreetSegmentShortSubgraph,
 } from './city-streets.js';
 
-// 5×5 city demo. Built around `core/instance-scene-on-points` so each
+// 5×5 city demo. Built around `scene/instance-on-points` so each
 // repeated element ships as one instanced draw rather than N hand-
 // placed entities. All randomisation runs against a fixed seed so
 // the build is deterministic and the asset bundle is reproducible.
@@ -118,21 +118,21 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
 
   // halfWidth = width * 0.5 — used for the inner shift that puts the
   // building's outer face on the polygon edge after rotation.
-  const halfWidth = addNode(g, 'core/map-range', {
+  const halfWidth = addNode(g, 'math/map-range', {
     position: { x: COL, y: ROW * 1.5 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 0.5 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: halfWidth.id, socket: 'value' });
 
   // [halfWidth, 0, 0] for the inner shift.
-  const shiftVec = addNode(g, 'core/vec3-from-floats', {
+  const shiftVec = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 2, y: ROW * 1.5 },
     inputValues: { x: 0, y: 0, z: 0 },
   });
   addEdge(g, { node: halfWidth.id, socket: 'result' }, { node: shiftVec.id, socket: 'x' });
 
   // [0, yaw, 0] for the rotation around Y.
-  const rotateVec = addNode(g, 'core/vec3-from-floats', {
+  const rotateVec = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { x: 0, y: 0, z: 0 },
   });
@@ -141,7 +141,7 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
   // Step 2: inner shift. Translates the office along its OWN +X so
   // its outer face (originally at local x = -halfInward = -width/2)
   // ends up at local x = 0, ready for the rotate+place pass.
-  const innerShift = addNode(g, 'core/transform-scene', {
+  const innerShift = addNode(g, 'scene/transform', {
     position: { x: COL * 3, y: 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -153,7 +153,7 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
   // scene (= the building's outer face), then translates to the
   // lot's position. Net effect: outer face lands ON the lot centre,
   // building extends inward.
-  const place = addNode(g, 'core/transform-scene', {
+  const place = addNode(g, 'scene/transform', {
     position: { x: COL * 4, y: 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -216,7 +216,7 @@ function buildLotBridgeSubgraph(forEachId: string, lotBody: SubgraphDef): Subgra
     inputNodeId: inputNode.id,
     outputNodeId: iterOutputNode.id,
     owner: { kind: 'iteration-bridge', nodeId: forEachId },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
 }
 
@@ -234,7 +234,7 @@ function buildBlockBodySubgraph(
   const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
   const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 5, y: ROW } });
 
-  const lots = addNode(g, 'core/polygon-edge-lots', {
+  const lots = addNode(g, 'poly/edge-lots', {
     position: { x: COL, y: ROW },
     inputValues: {
       min_width: opts.minWidth,
@@ -251,7 +251,7 @@ function buildBlockBodySubgraph(
   // from the lots node's FloatClouds (widths, yaws). num_floors is a
   // constant for now — a future chunk can drive it from a random
   // per-lot cloud for height variety.
-  const foreach = addNode(g, 'core/for-each-point', {
+  const foreach = addNode(g, 'iter/for-each-point', {
     position: { x: COL * 3, y: ROW },
     inputValues: {
       __bridgeId: lotBridge.id,
@@ -309,7 +309,7 @@ function buildBuildingPerimeterBridgeSubgraph(
     inputNodeId: inputNode.id,
     outputNodeId: iterOutputNode.id,
     owner: { kind: 'iteration-bridge', nodeId: forEachId },
-    iterationKind: 'core/for-each-polygon',
+    iterationKind: 'iter/for-each-polygon',
   };
 }
 
@@ -380,19 +380,19 @@ export function createCityDemo(): {
   // at y=0 (no z-fighting).
   {
     const y = nextLane() * ROW_Y;
-    const aabb = addNode(g, 'core/polygon-aabb', {
+    const aabb = addNode(g, 'poly/aabb', {
       position: { x: 0, y },
       inputValues: { center: [0, 0], size: [1200, 1800] },
     });
-    const mesh = addNode(g, 'core/polygon-to-mesh', {
+    const mesh = addNode(g, 'geom/from-polygon', {
       position: { x: COL_X, y },
       inputValues: { y: -0.1 },
     });
-    const mat = addNode(g, 'core/material', {
+    const mat = addNode(g, 'material/pbr', {
       position: { x: COL_X, y: y + 60 },
       inputValues: { basecolor: [0.30, 0.36, 0.26, 1], roughness: 0.95, metallic: 0 },
     });
-    const ent = addNode(g, 'core/scene-entity', { position: { x: COL_X * 2, y } });
+    const ent = addNode(g, 'scene/entity', { position: { x: COL_X * 2, y } });
     addEdge(g, { node: aabb.id, socket: 'polygon' }, { node: mesh.id, socket: 'polygon' });
     addEdge(g, { node: mesh.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
     addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
@@ -442,15 +442,15 @@ export function createCityDemo(): {
   const buildingsLane = nextLane() * ROW_Y;
   const cityW = COLS * X_SPACING - STREET_WIDTH;
   const cityD = ROWS * Z_SPACING - STREET_WIDTH;
-  const cityFootprint = addNode(g, 'core/polygon-aabb', {
+  const cityFootprint = addNode(g, 'poly/aabb', {
     position: { x: 0, y: buildingsLane },
     inputValues: { center: [0, 0], size: [cityW, cityD] },
   });
-  const blockSplit = addNode(g, 'core/polygon-subdivide-by-lines', {
+  const blockSplit = addNode(g, 'poly/subdivide-by-lines', {
     position: { x: COL_X, y: buildingsLane },
     inputValues: { lines: linesFlat },
   });
-  const blockInset = addNode(g, 'core/polygon-list-offset', {
+  const blockInset = addNode(g, 'poly/list-offset', {
     position: { x: COL_X * 2, y: buildingsLane },
     inputValues: { offset: -BLOCK_INSET, miter_limit: 4 },
   });
@@ -484,7 +484,7 @@ export function createCityDemo(): {
     numFloors: NUM_FLOORS,
   });
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, blockBody);
-  const blocksForEach = addNode(g, 'core/for-each-polygon', {
+  const blocksForEach = addNode(g, 'iter/for-each-polygon', {
     id: forEachId,
     position: { x: COL_X * 3, y: buildingsLane },
     inputValues: { __bridgeId: bridgeSubgraph.id },
@@ -503,22 +503,22 @@ export function createCityDemo(): {
   // road on one side and with the building polygon edge on the other.
   {
     const sidewalkLane = nextLane() * ROW_Y;
-    const sidewalkBuffer = addNode(g, 'core/polyline-buffer-list', {
+    const sidewalkBuffer = addNode(g, 'poly/polyline-buffer', {
       position: { x: 0, y: sidewalkLane },
       inputValues: { lines: linesFlat, width: ROAD_WIDTH + 2 * SIDEWALK },
     });
-    const sidewalkMesh = addNode(g, 'core/polygon-list-to-mesh', {
+    const sidewalkMesh = addNode(g, 'geom/from-polygon-list', {
       position: { x: COL_X, y: sidewalkLane },
       // Just above the grass ground so asphalt-vs-sidewalk z-fight
       // resolves predictably (sidewalk < asphalt < grass+0.1m).
       inputValues: { y: 0.005 },
     });
-    const sidewalkMat = addNode(g, 'core/material', {
+    const sidewalkMat = addNode(g, 'material/pbr', {
       position: { x: COL_X, y: sidewalkLane + 60 },
       // Pale concrete grey, low metallic, high roughness.
       inputValues: { basecolor: [0.78, 0.77, 0.74, 1], roughness: 0.9, metallic: 0 },
     });
-    const sidewalkEnt = addNode(g, 'core/scene-entity', {
+    const sidewalkEnt = addNode(g, 'scene/entity', {
       position: { x: COL_X * 2, y: sidewalkLane },
     });
     addEdge(g, { node: cityFootprint.id, socket: 'polygon' }, { node: sidewalkBuffer.id, socket: 'clip' });
@@ -529,19 +529,19 @@ export function createCityDemo(): {
   }
   {
     const roadsLane = nextLane() * ROW_Y;
-    const roadBuffer = addNode(g, 'core/polyline-buffer-list', {
+    const roadBuffer = addNode(g, 'poly/polyline-buffer', {
       position: { x: 0, y: roadsLane },
       inputValues: { lines: linesFlat, width: ROAD_WIDTH },
     });
-    const roadMesh = addNode(g, 'core/polygon-list-to-mesh', {
+    const roadMesh = addNode(g, 'geom/from-polygon-list', {
       position: { x: COL_X, y: roadsLane },
       inputValues: { y: 0.01 },
     });
-    const roadMat = addNode(g, 'core/material', {
+    const roadMat = addNode(g, 'material/pbr', {
       position: { x: COL_X, y: roadsLane + 60 },
       inputValues: { basecolor: [0.18, 0.18, 0.19, 1], roughness: 0.95, metallic: 0 },
     });
-    const roadEnt = addNode(g, 'core/scene-entity', {
+    const roadEnt = addNode(g, 'scene/entity', {
       position: { x: COL_X * 2, y: roadsLane },
     });
     addEdge(g, { node: cityFootprint.id, socket: 'polygon' }, { node: roadBuffer.id, socket: 'clip' });
@@ -574,7 +574,7 @@ export function createCityDemo(): {
     const lampSubgraph = `subgraph/${lampPost.id}`;
     const lampWrapL = addNode(g, lampSubgraph, { position: { x: 0, y: lampsLane } });
     const lampWrapR = addNode(g, lampSubgraph, { position: { x: 0, y: lampsLane + ROW_Y * 0.4 } });
-    const ptsLeft = addNode(g, 'core/polyline-points', {
+    const ptsLeft = addNode(g, 'points/from-polyline', {
       position: { x: COL_X, y: lampsLane },
       inputValues: {
         lines: linesFlat,
@@ -585,7 +585,7 @@ export function createCityDemo(): {
         y: 0,
       },
     });
-    const ptsRight = addNode(g, 'core/polyline-points', {
+    const ptsRight = addNode(g, 'points/from-polyline', {
       position: { x: COL_X, y: lampsLane + ROW_Y * 0.4 },
       inputValues: {
         lines: linesFlat,
@@ -596,11 +596,11 @@ export function createCityDemo(): {
         y: 0,
       },
     });
-    const scatL = addNode(g, 'core/instance-scene-on-points', {
+    const scatL = addNode(g, 'scene/instance-on-points', {
       position: { x: COL_X * 2, y: lampsLane },
       inputValues: { scale: 1, align: true },
     });
-    const scatR = addNode(g, 'core/instance-scene-on-points', {
+    const scatR = addNode(g, 'scene/instance-on-points', {
       position: { x: COL_X * 2, y: lampsLane + ROW_Y * 0.4 },
       inputValues: { scale: 1, align: true },
     });
@@ -626,7 +626,7 @@ export function createCityDemo(): {
     optional: true,
   }));
   const mergeY = nextLane() * ROW_Y;
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL_X * 5, y: mergeY },
     extraInputs,
   });

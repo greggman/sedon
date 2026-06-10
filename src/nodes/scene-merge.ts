@@ -12,7 +12,7 @@ import type { GrassFieldValue, SceneValue, TerrainFieldValue } from '../core/res
 // `extraInputs` are stored on the GraphNode and persisted with the
 // graph, so each merge node carries its own socket count.
 export const sceneMergeNode: NodeDef = {
-  id: 'core/scene-merge',
+  id: 'scene/merge',
   category: 'Scene',
   inputs: [],
   outputs: [
@@ -41,7 +41,7 @@ wiring during authoring doesn't break the merge.
 
 Also carries through the render-time sidecars that some scenes need —
 \`grass\`, \`terrain\`, \`waterLevel\`. Without this propagation, wrapping
-a [core/grass](../../core/grass) or
+a [geom/grass](../../geom/grass) or
 [terrain/renderer](../../terrain/renderer) scene through a merge would
 silently drop the field and the renderer would only see the (often
 empty) \`entities\` list. \`waterLevel\` takes the MAX across inputs so
@@ -49,53 +49,53 @@ the camera "submerges" the moment it falls below the tallest water
 surface in the scene.
 
 For exactly two scenes,
-[core/merge-scene-entities](../../core/merge-scene-entities) is a
+[scene/merge-entities](../../scene/merge-entities) is a
 slightly simpler two-socket alternative. For "I want this entity
 positioned at N points", use
-[core/instance-scene-on-points](../../core/instance-scene-on-points)
+[scene/instance-on-points](../../scene/instance-on-points)
 instead — that scatters one scene; this combines many.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.5, segments: 24, rings: 12 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 180 },
         inputValues: { size: 0.8 },
       });
       // Two flat colours feed two distinct materials so the merged
       // scene reads as "two coloured objects" rather than one washed-out
-      // blob. core/material requires a basecolor texture (not optional).
-      const colA = addNode(g, 'core/solid-color', {
+      // blob. material/pbr requires a basecolor texture (not optional).
+      const colA = addNode(g, 'tex/solid-color', {
         id: 'colA',
         position: { x: 0, y: 360 },
         inputValues: { color: [0.85, 0.36, 0.32, 1], resolution: 32 },
       });
-      const colB = addNode(g, 'core/solid-color', {
+      const colB = addNode(g, 'tex/solid-color', {
         id: 'colB',
         position: { x: 0, y: 540 },
         inputValues: { color: [0.32, 0.62, 0.85, 1], resolution: 32 },
       });
-      const matA = addNode(g, 'core/material', {
+      const matA = addNode(g, 'material/pbr', {
         id: 'matA',
         position: { x: 280, y: 360 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const matB = addNode(g, 'core/material', {
+      const matB = addNode(g, 'material/pbr', {
         id: 'matB',
         position: { x: 280, y: 540 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entA = addNode(g, 'core/scene-entity', {
+      const entA = addNode(g, 'scene/entity', {
         id: 'entA',
         position: { x: 560, y: 90 },
         inputValues: {},
       });
-      const entB = addNode(g, 'core/scene-entity', {
+      const entB = addNode(g, 'scene/entity', {
         id: 'entB',
         position: { x: 560, y: 360 },
         inputValues: {},
@@ -104,7 +104,7 @@ instead — that scatters one scene; this combines many.
         { name: 'scene_0', type: 'Scene' },
         { name: 'scene_1', type: 'Scene' },
       ];
-      const merge = addNode(g, 'core/scene-merge', {
+      const merge = addNode(g, 'scene/merge', {
         id: 'merge',
         position: { x: 840, y: 220 },
         extraInputs: extras,

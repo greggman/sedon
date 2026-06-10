@@ -72,7 +72,7 @@ export function buildOakLeafSubgraph(): SubgraphDef {
 
   // Distance-transform on the veins, INVERTED so vein cores read as
   // bright (1) and cell interiors fall off to dark (0).
-  const dt = addNode(g, 'core/distance-transform', {
+  const dt = addNode(g, 'tex/distance-transform', {
     position: { x: COL * 1.2, y: ROW * 7.5 },
     inputValues: { threshold: 0.4, maxDistance: 0.06, invert: true, resolution: 512 },
   });
@@ -80,7 +80,7 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   // Levels: tone-adjust the DT result. Slightly lift brightness and
   // crush gamma so the vein highlights pop and the cell interiors get
   // pushed darker.
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 2.4, y: ROW * 7.5 },
     inputValues: {
       brightness: 0.015177596282958977,
@@ -93,7 +93,7 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   // mix(levels, raw veins) — fold the sharp veins back over the
   // smoothed gradient so the vein cores stay crisp. Default factor
   // of 0.5 = 50/50.
-  const mixWithVeins = addNode(g, 'core/blend', {
+  const mixWithVeins = addNode(g, 'tex/blend', {
     position: { x: COL * 3.6, y: ROW * 8.5 },
     inputValues: { mode: 0, factor: 0.5, resolution: 512 },
   });
@@ -101,14 +101,14 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   // multiply(levels, mixWithVeins) — bring overall intensity down so
   // the gradient feeds both the normal-map height and the colorize
   // factor at a sensible range.
-  const tonedDown = addNode(g, 'core/blend', {
+  const tonedDown = addNode(g, 'tex/blend', {
     position: { x: COL * 4.5, y: ROW * 10 },
     inputValues: { mode: 2, factor: 1, resolution: 512 },
   });
 
   // Surface normals derived from the toned-down vein field. Negative
   // strength = veins read as valleys carved into the leaf surface.
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 5.6, y: ROW * 11.3 },
     inputValues: { strength: -1.5, resolution: 512 },
   });
@@ -118,7 +118,7 @@ export function buildOakLeafSubgraph(): SubgraphDef {
   // the body green at t=0. Midpoint pinched high (0.88) so most of
   // the leaf body reads as the body green and only the thin
   // neighbourhoods near veins get the highlight.
-  const ramp = addNode(g, 'core/ramp', {
+  const ramp = addNode(g, 'tex/ramp', {
     position: { x: COL * 4.6, y: ROW * 13.3 },
     inputValues: {
       gradient: [
@@ -128,18 +128,18 @@ export function buildOakLeafSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 5.3, y: ROW * 13.3 },
     inputValues: { resolution: 512 },
   });
 
   // Mask both final outputs by the shape so the cell colors and
   // vein normals don't bleed beyond the leaf silhouette.
-  const albedoMask = addNode(g, 'core/blend', {
+  const albedoMask = addNode(g, 'tex/blend', {
     position: { x: COL * 6.6, y: ROW * 12.4 },
     inputValues: { mode: 2, factor: 1, resolution: 512 },
   });
-  const normalMask = addNode(g, 'core/blend', {
+  const normalMask = addNode(g, 'tex/blend', {
     position: { x: COL * 6.6, y: ROW * 14.6 },
     inputValues: { mode: 2, factor: 1, resolution: 512 },
   });

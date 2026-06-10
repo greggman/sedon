@@ -11,7 +11,7 @@ import type {
 } from '../core/resources.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 
-// core/for-each-point — invoke a private BRIDGE subgraph once per
+// iter/for-each-point — invoke a private BRIDGE subgraph once per
 // point in a PointCloud, then merge the bridge's per-iteration
 // outputs.
 //
@@ -144,7 +144,7 @@ function pickForIteration(value: unknown, i: number, count: number): unknown {
 }
 
 export const forEachPointNode: NodeDef = {
-  id: 'core/for-each-point',
+  id: 'iter/for-each-point',
   category: 'Iteration',
   providedIterationContext: PROVIDED_CONTEXT,
   inputs: [
@@ -409,17 +409,17 @@ function buildForEachPointSampleBody(): SubgraphDef {
   const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW } });
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW } });
 
-  const cube = addNode(g, 'core/cube', { position: { x: COL, y: 0 }, inputValues: { size: 0.3 } });
-  const place = addNode(g, 'core/transform-geometry', { position: { x: COL * 2, y: 0 } });
-  const colour = addNode(g, 'core/solid-color', {
+  const cube = addNode(g, 'geom/cube', { position: { x: COL, y: 0 }, inputValues: { size: 0.3 } });
+  const place = addNode(g, 'geom/transform', { position: { x: COL * 2, y: 0 } });
+  const colour = addNode(g, 'tex/solid-color', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { color: [0.85, 0.32, 0.22, 1], resolution: 16 },
   });
-  const material = addNode(g, 'core/material', {
+  const material = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { roughness: 0.7, metallic: 0 },
   });
-  const entity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW } });
+  const entity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW } });
 
   addEdge(g, { node: cube.id, socket: 'geometry' }, { node: place.id, socket: 'geometry' });
   addEdge(g, { node: inputNode.id, socket: 'position' }, { node: place.id, socket: 'translate' });
@@ -470,7 +470,7 @@ function buildForEachPointSampleBridge(forEachId: string): SubgraphDef {
     inputNodeId: inputNode.id,
     outputNodeId: iterOutputNode.id,
     owner: { kind: 'iteration-bridge', nodeId: forEachId },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
 }
 
@@ -482,13 +482,13 @@ function buildForEachPointSample(): {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
-  const grid = addNode(g, 'core/grid-distribute', {
+  const grid = addNode(g, 'points/grid', {
     id: 'grid',
     position: { x: 0, y: ROW },
     inputValues: { cols: 3, rows: 3, spacing: 0.6 },
   });
   const fepId = 'fep';
-  const fep = addNode(g, 'core/for-each-point', {
+  const fep = addNode(g, 'iter/for-each-point', {
     id: fepId,
     position: { x: COL, y: ROW },
     inputValues: { __bridgeId: `bridge-${fepId}` },

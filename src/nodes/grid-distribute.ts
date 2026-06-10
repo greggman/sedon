@@ -20,7 +20,7 @@ function mulberry32(seed: number): () => number {
 // Normals are world-up (so downstream "align to normal" places instances
 // upright). For city-scale demos: cols=20, rows=20, spacing=2.
 export const gridDistributeNode: NodeDef = {
-  id: 'core/grid-distribute',
+  id: 'points/grid',
   category: 'Geometry/Distribution',
   inputs: [
     { name: 'cols', type: 'Int', default: 10, min: 1, description: 'columns along X' },
@@ -57,28 +57,28 @@ origin and lying flat on Y = 0.
 grid perfectly regular (city blocks), 1 gives a full per-cell random
 offset (looks like Poisson sampling for free). Normals are world-up so
 downstream
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 with \`align: true\` places instances upright.
 
 To project the grid onto a heightfield (so points sit ON terrain
 instead of floating at Y = 0), feed the points through a future
 \`snap-to-heightfield\` node or use
-[core/distribute-on-faces](../../core/distribute-on-faces) directly on
+[points/on-faces](../../points/on-faces) directly on
 the terrain mesh.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const points = addNode(g, 'core/grid-distribute', {
+      const points = addNode(g, 'points/grid', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { cols: 8, rows: 8, spacing: 0.6, jitter: 0.3, seed: 0 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.18, align: true },

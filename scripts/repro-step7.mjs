@@ -94,7 +94,7 @@ const result = await page.evaluate(() => {
   // user's repro changes octaves on the FIRST one (fibers), which
   // matches scale [2,14]. Find it explicitly.
   const fibers = bark.graph.nodes.find(
-    (n) => n.kind === 'core/perlin' && Array.isArray(n.inputValues?.scale) && n.inputValues.scale[1] === 14,
+    (n) => n.kind === 'tex/perlin' && Array.isArray(n.inputValues?.scale) && n.inputValues.scale[1] === 14,
   );
   if (!fibers) throw new Error('fibers perlin not found in bark-texture');
   console.log('=== about to setInputValue octaves=3 on', fibers.id, '===');
@@ -119,7 +119,7 @@ await page.evaluate(() => {
   console.log('=== SECOND octave change (octaves=4) ===');
   window.__sedonStore__.getState().setInputValue(
     window.__sedonStore__.getState().graph.nodes.find((n) =>
-      n.kind === 'core/perlin' && Array.isArray(n.inputValues?.scale) && n.inputValues.scale[1] === 14
+      n.kind === 'tex/perlin' && Array.isArray(n.inputValues?.scale) && n.inputValues.scale[1] === 14
     ).id,
     'octaves',
     4,

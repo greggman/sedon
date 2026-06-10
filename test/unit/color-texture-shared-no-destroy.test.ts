@@ -3,7 +3,7 @@
 // ONE GPUTexture handle (this is the renderer-batching invariant).
 // The eval cache's sweep walks each evicted entry's GPU resources
 // and destroys them — perfect for producer-owned textures
-// (`core/solid-color`, `core/image`, …), CATASTROPHIC for these
+// (`tex/solid-color`, `tex/image`, …), CATASTROPHIC for these
 // shared ones.
 //
 // Bug seen by the user: dragging a color picker fires one

@@ -1,4 +1,4 @@
-// Render the core/bevel docs preview to verify the chamfered cube
+// Render the geom/bevel docs preview to verify the chamfered cube
 // looks reasonable end-to-end (node registered, GPU mesh round-trips
 // through the preview, geometry matches the unit-test counts).
 import puppeteer from 'puppeteer';
@@ -11,7 +11,7 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 page.on('console', (msg) => { if (msg.type() === 'error') console.log('[console error]', msg.text()); });
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/bevel/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/geom/bevel/?debug=1`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 3000));
 

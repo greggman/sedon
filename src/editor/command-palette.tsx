@@ -25,7 +25,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   // Tokenized substring match: split the query on whitespace and
   // require every token to appear somewhere in the label, in any
-  // order. So "add sphere" matches "Add: core/sphere" (both tokens
+  // order. So "add sphere" matches "Add: geom/sphere" (both tokens
   // present), the way a VSCode-ish palette does it. A plain substring
   // search would force the user to know our exact label format
   // ("Add:" vs "Add").

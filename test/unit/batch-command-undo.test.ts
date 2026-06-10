@@ -17,9 +17,9 @@ import { useEditorStore } from '../../src/editor/store.js';
 
 function seedTwoConnectedNodes(): { nodeAId: string; nodeBId: string; edgeId: string } {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/perlin');
-  // Use a stable, real-looking output socket id from core/perlin so
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/perlin');
+  // Use a stable, real-looking output socket id from tex/perlin so
   // the connect doesn't have to invent anything implausible. The edge
   // identity is what these tests care about — sockets are just labels.
   const e = addEdge(g, { node: a.id, socket: 'value' }, { node: b.id, socket: 'evaluator' });
@@ -38,8 +38,8 @@ function seedTwoConnectedNodes(): { nodeAId: string; nodeBId: string; edgeId: st
 
 test('applyForward(batch) threads state through sub-commands in declaration order', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/perlin');
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/perlin');
   const e = addEdge(g, { node: a.id, socket: 'value' }, { node: b.id, socket: 'evaluator' });
   const before: GraphState = { graph: g, rootNodeId: 'x' };
   const batch: Command = {
@@ -57,8 +57,8 @@ test('applyForward(batch) threads state through sub-commands in declaration orde
 
 test('applyBackward(batch) restores everything as a single step', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/perlin');
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/perlin');
   const e = addEdge(g, { node: a.id, socket: 'value' }, { node: b.id, socket: 'evaluator' });
   const before: GraphState = { graph: g, rootNodeId: 'x' };
   const batch: Command = {
@@ -78,9 +78,9 @@ test('applyBackward(batch) restores everything as a single step', () => {
 
 test('batches nest: an inner batch can sit inside an outer batch and undo cleanly', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/perlin');
-  const c = addNode(g, 'core/perlin');
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/perlin');
+  const c = addNode(g, 'tex/perlin');
   const e1 = addEdge(g, { node: a.id, socket: 'value' }, { node: b.id, socket: 'evaluator' });
   const e2 = addEdge(g, { node: b.id, socket: 'value' }, { node: c.id, socket: 'evaluator' });
   const before: GraphState = { graph: g, rootNodeId: 'x' };

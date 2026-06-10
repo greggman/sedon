@@ -67,7 +67,7 @@ export function frameScene(
   // camera, so framing to the underlying heightfield's full extent
   // would put the camera too far away — outside the visible grass
   // disc — and no blades would render at all (which is what showed up
-  // when [core/grass] was framed against the full 40-unit heightfield).
+  // when [geom/grass] was framed against the full 40-unit heightfield).
   //
   // For grass-only scenes, contribute a much smaller XZ extent so the
   // autofit places the camera INSIDE the visible-grass region. The

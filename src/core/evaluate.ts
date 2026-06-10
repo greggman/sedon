@@ -199,7 +199,7 @@ export async function evaluateGraph(
     //
     // The effective input list is the static def.inputs PLUS any
     // per-instance extras stored on the graph node (variadic nodes like
-    // core/scene-merge use this).
+    // scene/merge use this).
     const effectiveInputs = node.extraInputs
       ? [...def.inputs, ...node.extraInputs]
       : def.inputs;
@@ -310,7 +310,7 @@ export async function evaluateGraph(
     // inner node on any inner edit — drag-a-colour-picker == 5fps).
     if (def.fingerprintExtra !== undefined) extraParts.push(def.fingerprintExtra);
     // Per-instance dynamic extra — see NodeDef.dynamicFingerprintExtra.
-    // Used by `core/image` to mix in a per-URL "loaded version" so the
+    // Used by `tex/image` to mix in a per-URL "loaded version" so the
     // cache misses on the eval that follows an async fetch landing.
     if (def.dynamicFingerprintExtra) extraParts.push(def.dynamicFingerprintExtra(inputs, sharedCtx));
     // Provenance-stamping nodes (scene-entity et al.) write the calling

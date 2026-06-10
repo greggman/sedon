@@ -5,7 +5,7 @@ import { requireDevice } from '../core/resources.js';
 import type { CpuMesh } from '../render/mesh.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
-// List-mode of `core/polygon-to-mesh`: triangulate every polygon in
+// List-mode of `geom/from-polygon`: triangulate every polygon in
 // the input list and concatenate the results into ONE Geometry. Same
 // fan-triangulation-from-centroid as the single-polygon node, just
 // repeated per polygon with vertex / index offsets accumulated.
@@ -18,7 +18,7 @@ import { uploadMeshToGpu } from '../render/mesh.js';
 // scene-entity per polygon.
 //
 // UV mapping: U / V span [0, 1] across each polygon's local bounding
-// rect (same as `core/polygon-to-mesh`). Each polygon gets its own
+// rect (same as `geom/from-polygon`). Each polygon gets its own
 // independent UV range; if you want per-polygon tinting use
 // per_point_tint on an instance-on-points scatter instead.
 
@@ -101,7 +101,7 @@ function buildFanMesh(polygons: { outer: Float32Array }[], y: number): CpuMesh |
 }
 
 export const polygonListToMeshNode: NodeDef = {
-  id: 'core/polygon-list-to-mesh',
+  id: 'geom/from-polygon-list',
   category: 'Polygon',
   inputs: [
     {
@@ -127,8 +127,8 @@ export const polygonListToMeshNode: NodeDef = {
     summary: 'Triangulate every polygon in a PolygonList and merge into one Geometry.',
     description: `
 Single-batch counterpart to running
-[core/polygon-to-mesh](../../core/polygon-to-mesh) inside a
-[core/for-each-polygon](../../core/for-each-polygon) body. Useful
+[geom/from-polygon](../../geom/from-polygon) inside a
+[iter/for-each-polygon](../../iter/for-each-polygon) body. Useful
 when every polygon in the list shares the same material (road
 network, district fills, building footprints).
 
@@ -138,17 +138,17 @@ points scatter route is the right primitive instead.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 40] },
       });
-      const grid = addNode(g, 'core/polygon-grid-subdivide', {
+      const grid = addNode(g, 'poly/grid-subdivide', {
         id: 'grid',
         position: { x: 280, y: 0 },
         inputValues: { cols: 4, rows: 4 },
       });
-      const mesh = addNode(g, 'core/polygon-list-to-mesh', {
+      const mesh = addNode(g, 'geom/from-polygon-list', {
         id: 'mesh',
         position: { x: 560, y: 0 },
       });

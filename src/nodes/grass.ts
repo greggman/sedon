@@ -6,19 +6,19 @@ import type {
   Texture2DValue,
 } from '../core/resources.js';
 
-// core/grass — produces a camera-relative grass FIELD (not baked
+// geom/grass — produces a camera-relative grass FIELD (not baked
 // entities). The graph supplies the maps + tuning; the renderer's
 // grass subsystem generates blades around the camera each frame via a
 // compute cull/populate pass + drawIndexedIndirect (see
 // src/render/grass.ts). Output is a Scene carrying one GrassFieldValue
-// so it merges with the terrain scene through core/scene-merge.
+// so it merges with the terrain scene through scene/merge.
 //
 // Cards are variadic (one per grass TYPE): the first card is `card_0`;
 // "+ Add card" appends `card_1`, `card_2`, … All cards must share the
 // same resolution + format — the renderer packs them into one
 // texture-2d-array and `typeMap` (R → type index) selects per blade.
 export const grassNode: NodeDef = {
-  id: 'core/grass',
+  id: 'geom/grass',
   category: 'Scene',
   inputs: [
     {
@@ -35,7 +35,7 @@ export const grassNode: NodeDef = {
     {
       name: 'density',
       type: 'Texture2D',
-      description: 'R channel 0..1 — grass probability per area. 0 = bare (roads, water); use [core/path-mask](../../core/path-mask) or [core/slope-from-height](../../core/slope-from-height) inverted as the source',
+      description: 'R channel 0..1 — grass probability per area. 0 = bare (roads, water); use [tex/path-mask](../../tex/path-mask) or [tex/slope-from-height](../../tex/slope-from-height) inverted as the source',
     },
     {
       name: 'typeMap',
@@ -46,7 +46,7 @@ export const grassNode: NodeDef = {
     {
       name: 'card_0',
       type: 'Texture2D',
-      description: 'Blade card art (RGB colour, A silhouette). Use [core/grass-blades](../../core/grass-blades) or any RGBA texture you author externally',
+      description: 'Blade card art (RGB colour, A silhouette). Use [geom/grass-blades](../../geom/grass-blades) or any RGBA texture you author externally',
     },
     {
       name: 'maxDistance',
@@ -125,7 +125,7 @@ export const grassNode: NodeDef = {
     {
       name: 'scene',
       type: 'Scene',
-      description: 'a Scene carrying the grass field as a render-time recipe (empty entities; the renderer picks up the grass sidecar). Compose with terrain via [core/scene-merge](../../core/scene-merge) and [core/output](../../core/output)',
+      description: 'a Scene carrying the grass field as a render-time recipe (empty entities; the renderer picks up the grass sidecar). Compose with terrain via [scene/merge](../../scene/merge) and [core/output](../../core/output)',
     },
   ],
   extraInputsSpec: {
@@ -156,9 +156,9 @@ clover near paths, tall meadow grass on flats, dry straw on slopes.
 
 The output Scene has empty entities; the grass field lives in the
 Scene's \`grass\` sidecar, which composes through
-[core/scene-merge](../../core/scene-merge) the same way terrain does.
+[scene/merge](../../scene/merge) the same way terrain does.
 
-For card art, [core/grass-blades](../../core/grass-blades) procedurally
+For card art, [geom/grass-blades](../../geom/grass-blades) procedurally
 generates a usable tapered-blade silhouette. Density usually comes
 from inverting a slope-from-height + multiplying by a path-mask so
 grass stays on the flats and off the roads.
@@ -166,27 +166,27 @@ grass stays on the flats and off the roads.
     sampleGraph: () => {
       const g = createGraph();
       // Heightfield + density mask (perlin) + a grass-blades card.
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const heightTex = addNode(g, 'core/texture-map-range', {
+      const heightTex = addNode(g, 'tex/map-range', {
         id: 'heightTex',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },
       });
-      const density = addNode(g, 'core/perlin', {
+      const density = addNode(g, 'tex/perlin', {
         id: 'density',
         position: { x: 0, y: 200 },
         inputValues: { scale: [4, 4], octaves: 3, lacunarity: 2, gain: 0.5, seed: 1, resolution: 256 },
       });
-      const card = addNode(g, 'core/grass-blades', {
+      const card = addNode(g, 'geom/grass-blades', {
         id: 'card',
         position: { x: 0, y: 400 },
         inputValues: {
@@ -199,7 +199,7 @@ grass stays on the flats and off the roads.
           resolution: 256,
         },
       });
-      const grass = addNode(g, 'core/grass', {
+      const grass = addNode(g, 'geom/grass', {
         id: 'grass',
         position: { x: 840, y: 100 },
         inputValues: {

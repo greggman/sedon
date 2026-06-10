@@ -114,7 +114,7 @@ try {
     [
       'basic scene kinds present',
       JSON.stringify(after.mainKinds) ===
-        JSON.stringify(['core/grid', 'core/material', 'core/output', 'core/scene-entity', 'core/sphere']),
+        JSON.stringify(['tex/grid', 'material/pbr', 'core/output', 'scene/entity', 'geom/sphere']),
     ],
   ];
   let allPass = true;

@@ -16,7 +16,7 @@ test('addSubgraphSocketWithEdge generates a stable UUID name and an "untitled" l
   const store = useEditorStore.getState();
 
   const sg = createEmptySubgraph('add-sg', 'add sg');
-  const worley = addNode(sg.graph, 'core/worley', { position: { x: 0, y: 0 } });
+  const worley = addNode(sg.graph, 'tex/worley', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -61,7 +61,7 @@ test('rename updates the label but leaves the stable name (and thus every edge) 
   // Reproduces the user-reported flow: new subgraph → worley → drag
   // output to "+ Add output" → rename "untitled" to "foo".
   const sg = createEmptySubgraph('flow-sg', 'flow sg');
-  const worley = addNode(sg.graph, 'core/worley', { position: { x: 0, y: 0 } });
+  const worley = addNode(sg.graph, 'tex/worley', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,
@@ -96,7 +96,7 @@ test('rename refuses to collide labels on the same side', () => {
   const store = useEditorStore.getState();
 
   const sg = createEmptySubgraph('collide-sg', 'collide sg');
-  const worley = addNode(sg.graph, 'core/worley', { position: { x: 0, y: 0 } });
+  const worley = addNode(sg.graph, 'tex/worley', { position: { x: 0, y: 0 } });
   useEditorStore.setState({
     subgraphs: [sg],
     currentEditingId: sg.id,

@@ -60,19 +60,19 @@ function addPanel(
   },
 ): ReturnType<typeof addNode> {
   const { width, depth, y, materialInputs, textureNode, yOffset } = opts;
-  const plane = addNode(g, 'core/plane', {
+  const plane = addNode(g, 'geom/plane', {
     position: { x: COL, y: yOffset },
     inputValues: { size: [width, depth], divisions: [1, 1] },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOffset },
     inputValues: { translate: [0, y, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOffset + ROW * 0.5 },
     inputValues: materialInputs,
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOffset },
   });
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
@@ -99,19 +99,19 @@ function addOffsetPanel(
   },
 ): ReturnType<typeof addNode> {
   const { width, depth, translate, materialInputs, textureNode, yOffset } = opts;
-  const plane = addNode(g, 'core/plane', {
+  const plane = addNode(g, 'geom/plane', {
     position: { x: COL, y: yOffset },
     inputValues: { size: [width, depth], divisions: [1, 1] },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOffset },
     inputValues: { translate, rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOffset + ROW * 0.5 },
     inputValues: materialInputs,
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOffset },
   });
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
@@ -136,7 +136,7 @@ function addMergeAndOutput(
   for (let i = 0; i < count; i++) {
     extraInputs.push({ name: `scene_${i}`, type: 'Scene', optional: true });
   }
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: yOffset },
     extraInputs,
   });
@@ -171,7 +171,7 @@ function buildStreetSegmentImpl(
   // plane). stripe_width=0.9 keeps the dashes near the centre of
   // the thin centerline plane, with a bit of asphalt-coloured bg
   // gap on either side.
-  const centerTex = addNode(g, 'core/dashed-stripe', {
+  const centerTex = addNode(g, 'tex/dashed-stripe', {
     position: { x: 0, y: 0 },
     inputValues: {
       fg: STRIPE_YELLOW,
@@ -280,7 +280,7 @@ export function buildStreetSegmentShortSubgraph(): SubgraphDef {
 // === Intersection =================================================
 //
 // 18×18 asphalt square + four crosswalk panels, one on each cardinal
-// edge of the intersection. Each crosswalk uses the `core/checker`
+// edge of the intersection. Each crosswalk uses the `tex/checker`
 // texture to produce zebra stripes.
 //
 // Crosswalk orientation:
@@ -315,7 +315,7 @@ export function buildIntersectionSubgraph(): SubgraphDef {
 
   // ── Crosswalk textures: one with stripes along U, one along V.
   // 8 stripes is the classic zebra count.
-  const xwalkTexU = addNode(g, 'core/checker', {
+  const xwalkTexU = addNode(g, 'tex/checker', {
     position: { x: 0, y: ROW * 2 },
     inputValues: {
       fg: STRIPE_WHITE,
@@ -324,7 +324,7 @@ export function buildIntersectionSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const xwalkTexV = addNode(g, 'core/checker', {
+  const xwalkTexV = addNode(g, 'tex/checker', {
     position: { x: 0, y: ROW * 3 },
     inputValues: {
       fg: STRIPE_WHITE,

@@ -17,7 +17,7 @@ import { uploadMeshToGpu, type CpuMesh } from '../render/mesh.js';
 // Repetition is handled by the sampler's `repeat` address mode (already on
 // in createSharedSampler), so non-integer scales work fine.
 export const uvTransformNode: NodeDef = {
-  id: 'core/uv-transform',
+  id: 'geom/uv-transform',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -46,7 +46,7 @@ Scales the UV coordinates of every vertex by \`scale.x\` and \`scale.y\`.
 Texture sampling already uses repeat addressing, so non-integer scales
 work fine — \`scale = [2.5, 2.5]\` tiles a texture 2.5× across the mesh.
 
-The motivating use: a [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+The motivating use: a [geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 emits UVs in [0, 1] across the whole terrain. A single grass texture
 stretched across a 200m terrain reads as blurry mud at ground level. Pass
 the mesh through uv-transform with \`scale = [16, 16]\` and the same
@@ -58,12 +58,12 @@ authored too tight.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const plane = addNode(g, 'core/plane', {
+      const plane = addNode(g, 'geom/plane', {
         id: 'plane',
         position: { x: 0, y: 0 },
         inputValues: { size: [4, 4], divisions: [1, 1] },
       });
-      const uvtx = addNode(g, 'core/uv-transform', {
+      const uvtx = addNode(g, 'geom/uv-transform', {
         id: 'uv',
         position: { x: 280, y: 0 },
         inputValues: { scale: [4, 4] },
@@ -77,7 +77,7 @@ authored too tight.
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/uv-transform requires a CPU-side mesh on the input geometry; ' +
+        'geom/uv-transform requires a CPU-side mesh on the input geometry; ' +
           'this source produced GPU-only data.',
       );
     }

@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 
 // Compose a Vec3 from three independent Float inputs. The point of
 // this node is to let parametric subgraphs MIX a scalar (from
-// `core/multiply`, `core/map-range`, an iteration broadcast, etc.)
+// `math/multiply`, `math/map-range`, an iteration broadcast, etc.)
 // with constants on the other axes — e.g. translate.y = `2 +
 // body_height/2` while leaving translate.x = translate.z = 0. Without
 // this, the only way to feed a parametric Y was to broadcast the
@@ -13,7 +13,7 @@ import type { NodeDef } from '../core/node-def.js';
 // Pairs with the broader axis-builder set: `core/vec3-cloud-from-
 // floats` for the per-point equivalent.
 export const vec3FromFloatsNode: NodeDef = {
-  id: 'core/vec3-from-floats',
+  id: 'math/vec3-from-floats',
   category: 'Math',
   inputs: [
     { name: 'x', type: 'Float', default: 0, description: 'X component' },
@@ -33,22 +33,22 @@ plain Float→Vec3 conversion broadcasts the same value to all three
 components, which is rarely what you want.
 
 Typical use: \`translate = (0, base_y + height/2, 0)\` where
-\`base_y + height/2\` comes from a \`core/map-range\` and the other
+\`base_y + height/2\` comes from a \`math/map-range\` and the other
 two components stay zero.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const v = addNode(g, 'core/vec3-from-floats', {
+      const v = addNode(g, 'math/vec3-from-floats', {
         id: 'v',
         position: { x: 0, y: 0 },
         inputValues: { x: 0, y: 2.5, z: 0 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 180 },
         inputValues: { size: 1 },
       });
-      const xform = addNode(g, 'core/transform-geometry', {
+      const xform = addNode(g, 'geom/transform', {
         id: 'xform',
         position: { x: 280, y: 90 },
       });

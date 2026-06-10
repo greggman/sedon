@@ -1,5 +1,5 @@
 // path/spline consumes a PointCloud of control points (typically
-// authored in core/point-list) and emits a resampled Catmull-Rom
+// authored in points/list) and emits a resampled Catmull-Rom
 // polyline as a Path. The interface pins:
 //   • count = (n - 1) * samples_per_segment + 1 for n ≥ 2 controls
 //   • count = 0 for fewer than 2 controls (downstream consumers

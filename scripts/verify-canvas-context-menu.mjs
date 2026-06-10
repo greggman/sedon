@@ -116,9 +116,9 @@ try {
   // The new node should have been added near the click position.
   const added = await page.evaluate((flowClickX, flowClickY) => {
     const s = window.__sedonStore__.getState();
-    // Find any new core/sphere on main (basic scene already has one,
+    // Find any new geom/sphere on main (basic scene already has one,
     // so check for two).
-    const spheres = s.mainGraph.nodes.filter((n) => n.kind === 'core/sphere');
+    const spheres = s.mainGraph.nodes.filter((n) => n.kind === 'geom/sphere');
     const newest = spheres[spheres.length - 1];
     return {
       sphereCount: spheres.length,

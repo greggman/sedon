@@ -5,7 +5,7 @@
 // `inset → extrude` (recess the inset region, or raise it).
 //
 // The boundary walk + per-corner inset formula are the same as
-// `core/bevel`'s 2-cut corner handling — at a corner V with
+// `geom/bevel`'s 2-cut corner handling — at a corner V with
 // boundary neighbours P (prev) and N (next), the inset position
 // is `V + width · (unit(V→P) + unit(V→N))`. For a 90° corner this
 // places the inset at PERPENDICULAR distance `width` from each

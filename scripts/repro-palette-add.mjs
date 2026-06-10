@@ -1,6 +1,6 @@
 // "Add: X" entries in the Cmd-Shift-P palette. Verifies:
 //   1. After loading a graph, the palette contains one entry per
-//      registered library NodeDef (e.g. "Add: core/sphere",
+//      registered library NodeDef (e.g. "Add: geom/sphere",
 //      "Add: leaf/skeleton") plus the existing static commands.
 //   2. Subgraph-internal kinds (subgraph-input/*, subgraph-output/*) do
 //      NOT appear — they only make sense INSIDE a subgraph.
@@ -69,16 +69,16 @@ const addLabels = allLabels.filter((l) => l.startsWith('Add: '));
 console.log(`add-node labels: ${addLabels.length}`);
 console.log('sample add labels:', addLabels.slice(0, 8));
 
-const hasSphere = addLabels.includes('Add: core/sphere');
+const hasSphere = addLabels.includes('Add: geom/sphere');
 const noWrappers = !addLabels.some((l) => l.startsWith('Add: subgraph/'));
 const noInternals = !addLabels.some((l) =>
   l.startsWith('Add: subgraph-input/') || l.startsWith('Add: subgraph-output/'),
 );
 
-// Filter to "add core/sphere" and Enter.
+// Filter to "add geom/sphere" and Enter.
 const beforeNodeCount = await page.evaluate(() => window.__sedonStore__.getState().graph.nodes.length);
 const beforeSphereCount = await page.evaluate(() =>
-  window.__sedonStore__.getState().graph.nodes.filter((n) => n.kind === 'core/sphere').length,
+  window.__sedonStore__.getState().graph.nodes.filter((n) => n.kind === 'geom/sphere').length,
 );
 
 // Use the "add sphere" form (with space, no colon) — this is the
@@ -91,14 +91,14 @@ const filteredLabels = await page.evaluate(() => {
 });
 console.log('filtered to:', filteredLabels);
 const tokenizedFiltersToSphere = filteredLabels.length === 1
-  && filteredLabels[0] === 'Add: core/sphere';
+  && filteredLabels[0] === 'Add: geom/sphere';
 
 await page.keyboard.press('Enter');
 await new Promise((r) => setTimeout(r, 400));
 
 const afterNodeCount = await page.evaluate(() => window.__sedonStore__.getState().graph.nodes.length);
 const afterSphereCount = await page.evaluate(() =>
-  window.__sedonStore__.getState().graph.nodes.filter((n) => n.kind === 'core/sphere').length,
+  window.__sedonStore__.getState().graph.nodes.filter((n) => n.kind === 'geom/sphere').length,
 );
 const paletteClosed = await page.evaluate(() => document.querySelector('.sedon-palette') === null);
 
@@ -111,10 +111,10 @@ const sphereInserted = afterSphereCount === beforeSphereCount + 1
   && afterNodeCount === beforeNodeCount + 1;
 
 console.log(`palette has many Add: entries:           ${hasSomeAdds ? 'PASS ✓' : 'FAIL ✗'} (${addLabels.length})`);
-console.log(`Add: core/sphere is present:             ${hasSphere ? 'PASS ✓' : 'FAIL ✗'}`);
+console.log(`Add: geom/sphere is present:             ${hasSphere ? 'PASS ✓' : 'FAIL ✗'}`);
 console.log(`Add: subgraph/<id> wrappers excluded:    ${noWrappers ? 'PASS ✓' : 'FAIL ✗'}`);
 console.log(`subgraph-input/output kinds excluded:    ${noInternals ? 'PASS ✓' : 'FAIL ✗'}`);
-console.log(`tokenized "add sphere" → core/sphere:    ${tokenizedFiltersToSphere ? 'PASS ✓' : 'FAIL ✗'} (got ${filteredLabels.length} matches)`);
+console.log(`tokenized "add sphere" → geom/sphere:    ${tokenizedFiltersToSphere ? 'PASS ✓' : 'FAIL ✗'} (got ${filteredLabels.length} matches)`);
 console.log(`Enter on filtered match inserts sphere:  ${sphereInserted ? 'PASS ✓' : 'FAIL ✗'} (before=${beforeSphereCount}, after=${afterSphereCount})`);
 console.log(`palette closes after Enter:              ${paletteClosed ? 'PASS ✓' : 'FAIL ✗'}`);
 

@@ -3,7 +3,7 @@ import type { InputDef, NodeDef } from '../core/node-def.js';
 import type { SceneValue } from '../core/resources.js';
 
 // Pick ONE of N scenes by integer index. Pairs naturally with
-// `core/for-each-polygon`'s iteration `index`: a body subgraph that
+// `iter/for-each-polygon`'s iteration `index`: a body subgraph that
 // wires the iteration index into this node's `index` input gets a
 // different scene per polygon, cycling through the connected
 // scene_0…scene_N as `index % connectedCount`.
@@ -15,10 +15,10 @@ import type { SceneValue } from '../core/resources.js';
 // list [scene_0, scene_2, scene_3].
 //
 // Sidecar fields (grass/terrain/waterLevel) on the selected scene
-// pass through unchanged — same shape as `core/scene-merge` for the
+// pass through unchanged — same shape as `scene/merge` for the
 // single picked input.
 export const sceneSwitchNode: NodeDef = {
-  id: 'core/scene-switch',
+  id: 'scene/switch',
   category: 'Scene',
   inputs: [
     {
@@ -49,7 +49,7 @@ export const sceneSwitchNode: NodeDef = {
     summary: 'Pick one of N scenes by integer index (wraps modulo connected count).',
     description: `
 Starts with NO scene sockets — click "+ Add scene" to add more.
-Inside a [core/for-each-polygon](../../core/for-each-polygon) body
+Inside a [iter/for-each-polygon](../../iter/for-each-polygon) body
 this is the simplest way to give each iteration a different visual:
 wire iteration \`index\` into \`index\` and a different building /
 prop subgraph into each \`scene_*\`.
@@ -60,19 +60,19 @@ without bounds checks.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', { id: 'sphere', position: { x: 0, y: 0 }, inputValues: { radius: 0.5 } });
-      const cube = addNode(g, 'core/cube', { id: 'cube', position: { x: 0, y: 180 }, inputValues: { size: 0.8 } });
-      const colA = addNode(g, 'core/solid-color', { id: 'colA', position: { x: 0, y: 360 }, inputValues: { color: [0.85, 0.36, 0.32, 1], resolution: 32 } });
-      const colB = addNode(g, 'core/solid-color', { id: 'colB', position: { x: 0, y: 540 }, inputValues: { color: [0.32, 0.62, 0.85, 1], resolution: 32 } });
-      const matA = addNode(g, 'core/material', { id: 'matA', position: { x: 280, y: 360 }, inputValues: { roughness: 0.6, metallic: 0 } });
-      const matB = addNode(g, 'core/material', { id: 'matB', position: { x: 280, y: 540 }, inputValues: { roughness: 0.6, metallic: 0 } });
-      const entA = addNode(g, 'core/scene-entity', { id: 'entA', position: { x: 560, y: 90 } });
-      const entB = addNode(g, 'core/scene-entity', { id: 'entB', position: { x: 560, y: 360 } });
+      const sphere = addNode(g, 'geom/sphere', { id: 'sphere', position: { x: 0, y: 0 }, inputValues: { radius: 0.5 } });
+      const cube = addNode(g, 'geom/cube', { id: 'cube', position: { x: 0, y: 180 }, inputValues: { size: 0.8 } });
+      const colA = addNode(g, 'tex/solid-color', { id: 'colA', position: { x: 0, y: 360 }, inputValues: { color: [0.85, 0.36, 0.32, 1], resolution: 32 } });
+      const colB = addNode(g, 'tex/solid-color', { id: 'colB', position: { x: 0, y: 540 }, inputValues: { color: [0.32, 0.62, 0.85, 1], resolution: 32 } });
+      const matA = addNode(g, 'material/pbr', { id: 'matA', position: { x: 280, y: 360 }, inputValues: { roughness: 0.6, metallic: 0 } });
+      const matB = addNode(g, 'material/pbr', { id: 'matB', position: { x: 280, y: 540 }, inputValues: { roughness: 0.6, metallic: 0 } });
+      const entA = addNode(g, 'scene/entity', { id: 'entA', position: { x: 560, y: 90 } });
+      const entB = addNode(g, 'scene/entity', { id: 'entB', position: { x: 560, y: 360 } });
       const extras: InputDef[] = [
         { name: 'scene_0', type: 'Scene' },
         { name: 'scene_1', type: 'Scene' },
       ];
-      const swt = addNode(g, 'core/scene-switch', {
+      const swt = addNode(g, 'scene/switch', {
         id: 'swt',
         position: { x: 840, y: 220 },
         inputValues: { index: 1 },

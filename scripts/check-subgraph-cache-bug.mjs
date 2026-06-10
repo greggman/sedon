@@ -65,7 +65,7 @@ try {
     const state = window.__sedonStore__.getState();
     // Find a compute-normals input value.
     const sg = state.subgraphs.find((s) => s.id === 'cabinet-cell');
-    const cn = sg?.graph.nodes.find((n) => n.kind === 'core/compute-normals');
+    const cn = sg?.graph.nodes.find((n) => n.kind === 'geom/compute-normals');
     return {
       cuspAngle: cn?.inputValues?.cusp_angle,
       cabinetCellVersion: sg?.version ?? 0,

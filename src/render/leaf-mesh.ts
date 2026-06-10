@@ -3,7 +3,7 @@ import type { CpuMesh } from './mesh.js';
 // Generate a curved 3D leaf card. The base sits at the origin; the tip
 // rises along +Y to `length`; width spans `±width/2` along X; the leaf
 // face initially looks at +Z (the +Y axis is the petiole-to-tip
-// direction). Pair with `core/instance-geometry-on-points` (`align:
+// direction). Pair with `geom/instance-on-points` (`align:
 // true`) so the leaf's +Y aligns to each point's outward normal.
 //
 // Shape deformation (added to a flat rectangle):

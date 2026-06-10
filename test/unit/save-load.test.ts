@@ -32,10 +32,10 @@ test('save → load round-trips an empty project', () => {
 
 test('save → load preserves a graph with inputValues and edges', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', {
+  const a = addNode(g, 'tex/perlin', {
     inputValues: { scale: [4, 4], octaves: 3, seed: 0.7 },
   });
-  const b = addNode(g, 'core/material', {
+  const b = addNode(g, 'material/pbr', {
     inputValues: { roughness: 0.85, metallic: 0, detail_scale: 6, detail_strength: 0.55 },
   });
   addEdge(g, { node: a.id, socket: 'texture' }, { node: b.id, socket: 'basecolor' });

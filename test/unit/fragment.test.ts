@@ -13,7 +13,7 @@ import {
 
 test('buildFragment returns undefined for empty selection', () => {
   const g = createGraph();
-  addNode(g, 'core/perlin');
+  addNode(g, 'tex/perlin');
   const frag = buildFragment(g, new Set(), []);
   assert.equal(frag, undefined);
 });
@@ -22,10 +22,10 @@ test('buildFragment carries selected nodes and inner edges only', () => {
   // a -> b -> c with `b` also wired to an unselected `d`. Selecting
   // {a, b, c} should keep a→b and b→c, drop b→d.
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', { inputValues: { scale: [3, 3] } });
-  const b = addNode(g, 'core/blur');
-  const c = addNode(g, 'core/levels');
-  const d = addNode(g, 'core/colorize');
+  const a = addNode(g, 'tex/perlin', { inputValues: { scale: [3, 3] } });
+  const b = addNode(g, 'tex/blur');
+  const c = addNode(g, 'tex/levels');
+  const d = addNode(g, 'tex/colorize');
   addEdge(g, { node: a.id, socket: 'texture' }, { node: b.id, socket: 'texture' });
   addEdge(g, { node: b.id, socket: 'texture' }, { node: c.id, socket: 'texture' });
   addEdge(g, { node: b.id, socket: 'texture' }, { node: d.id, socket: 'factor' });
@@ -65,8 +65,8 @@ test('buildFragment pulls in transitively referenced subgraph defs', () => {
 
 test('buildFragment computes bbox from selected nodes\' positions', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', { position: { x: 10, y: 20 } });
-  const b = addNode(g, 'core/blur', { position: { x: 100, y: 200 } });
+  const a = addNode(g, 'tex/perlin', { position: { x: 10, y: 20 } });
+  const b = addNode(g, 'tex/blur', { position: { x: 100, y: 200 } });
   const frag = buildFragment(g, new Set([a.id, b.id]), [])!;
   assert.deepEqual(frag.bbox, { x: 10, y: 20, w: 90, h: 180 });
 });
@@ -119,8 +119,8 @@ test('buildAssetInstancesFragment returns undefined when all ids unknown', () =>
 
 test('serialize → parse round-trips a fragment by value', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', { position: { x: 1, y: 2 }, inputValues: { scale: [4, 4] } });
-  const b = addNode(g, 'core/blur', { position: { x: 50, y: 60 } });
+  const a = addNode(g, 'tex/perlin', { position: { x: 1, y: 2 }, inputValues: { scale: [4, 4] } });
+  const b = addNode(g, 'tex/blur', { position: { x: 50, y: 60 } });
   addEdge(g, { node: a.id, socket: 'texture' }, { node: b.id, socket: 'texture' });
   const frag = buildFragment(g, new Set([a.id, b.id]), [])!;
   const restored = parseFragment(serializeFragment(frag));
@@ -130,8 +130,8 @@ test('serialize → parse round-trips a fragment by value', () => {
 test('importFragment regenerates node ids — paste-twice produces independent copies', async () => {
   const { importFragment } = await import('../../src/editor/fragment.js');
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/blur');
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/blur');
   addEdge(g, { node: a.id, socket: 'texture' }, { node: b.id, socket: 'texture' });
   const frag = buildFragment(g, new Set([a.id, b.id]), [])!;
 
@@ -205,8 +205,8 @@ test('importFragment rewires nested wrapper kinds inside renamed defs', async ()
 test('importFragment with pasteAt centres the bbox at the cursor', async () => {
   const { importFragment } = await import('../../src/editor/fragment.js');
   const g = createGraph();
-  addNode(g, 'core/perlin', { position: { x: 100, y: 100 } });
-  addNode(g, 'core/blur', { position: { x: 300, y: 300 } });
+  addNode(g, 'tex/perlin', { position: { x: 100, y: 100 } });
+  addNode(g, 'tex/blur', { position: { x: 300, y: 300 } });
   const ids = new Set(g.nodes.map((n) => n.id));
   const frag = buildFragment(g, ids, [])!;
 
@@ -327,9 +327,9 @@ test('buildFragment carries incoming half-cut edges but not outgoing', () => {
   // fragment to carry upstream→mid (incoming half-cut) but NOT
   // mid→downstream (outgoing half-cut).
   const g = createGraph();
-  const upstream = addNode(g, 'core/perlin');
-  const mid = addNode(g, 'core/blur');
-  const downstream = addNode(g, 'core/levels');
+  const upstream = addNode(g, 'tex/perlin');
+  const mid = addNode(g, 'tex/blur');
+  const downstream = addNode(g, 'tex/levels');
   addEdge(g, { node: upstream.id, socket: 'texture' }, { node: mid.id, socket: 'texture' });
   addEdge(g, { node: mid.id, socket: 'texture' }, { node: downstream.id, socket: 'texture' });
 
@@ -345,8 +345,8 @@ test('importFragment wires incoming half-cut edges to destination\'s existing up
   // `upstream` (existing in the destination).
   const { importFragment } = await import('../../src/editor/fragment.js');
   const g = createGraph();
-  const upstream = addNode(g, 'core/perlin');
-  const mid = addNode(g, 'core/blur');
+  const upstream = addNode(g, 'tex/perlin');
+  const mid = addNode(g, 'tex/blur');
   addEdge(g, { node: upstream.id, socket: 'texture' }, { node: mid.id, socket: 'texture' });
   const frag = buildFragment(g, new Set([mid.id]), [])!;
 
@@ -365,8 +365,8 @@ test('importFragment drops incoming half-cut edges when upstream is missing in d
   // node with the upstream's id. The edge should drop cleanly.
   const { importFragment } = await import('../../src/editor/fragment.js');
   const g = createGraph();
-  const upstream = addNode(g, 'core/perlin');
-  const mid = addNode(g, 'core/blur');
+  const upstream = addNode(g, 'tex/perlin');
+  const mid = addNode(g, 'tex/blur');
   addEdge(g, { node: upstream.id, socket: 'texture' }, { node: mid.id, socket: 'texture' });
   const frag = buildFragment(g, new Set([mid.id]), [])!;
 

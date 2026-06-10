@@ -58,7 +58,7 @@ function buildEchoBridge(bridgeId: string): SubgraphDef {
     inputNodeId: inputBoundary.id,
     outputNodeId: iterOutputBoundary.id,
     owner: { kind: 'iteration-bridge', nodeId: 'fep' },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
 }
 
@@ -92,7 +92,7 @@ test('Vec3Cloud broadcast varies inside the bridge per iteration (real bridge, n
   };
 
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     id: 'fep',
     extraInputs: [{ name: 'size', type: 'Vec3Cloud', optional: true }],
     extraOutputs: [{ name: 'scaleVec3', type: 'Vec3Cloud' }],

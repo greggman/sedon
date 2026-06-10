@@ -12,11 +12,11 @@ import type {
 } from '../core/resources.js';
 import type { SubgraphDef } from '../core/subgraph.js';
 
-// core/for-each-polygon — invoke a private bridge subgraph once per
+// iter/for-each-polygon — invoke a private bridge subgraph once per
 // polygon in a PolygonList, then merge the bridge's per-iteration
 // outputs.
 //
-// Structurally identical to `core/for-each-point` (same bridge-graph
+// Structurally identical to `iter/for-each-point` (same bridge-graph
 // machinery, same accumulator types, same eval loop) — only the
 // iteration kind differs:
 //   • Iteration source: `polygons: PolygonList` instead of `points: PointCloud`.
@@ -112,7 +112,7 @@ function pickForIteration(value: unknown, i: number, count: number): unknown {
 }
 
 export const forEachPolygonNode: NodeDef = {
-  id: 'core/for-each-polygon',
+  id: 'iter/for-each-polygon',
   category: 'Iteration',
   providedIterationContext: PROVIDED_CONTEXT,
   inputs: [
@@ -145,7 +145,7 @@ export const forEachPolygonNode: NodeDef = {
     sampleGraph: buildForEachPolygonSample,
     description: `
 The polygon counterpart to
-[core/for-each-point](../../core/for-each-point). Drop a subgraph onto
+[iter/for-each-point](../../iter/for-each-point). Drop a subgraph onto
 this node: it becomes the body, invoked once per polygon in the wired
 \`polygons\` list, with iteration context (\`polygon\`, \`index\`)
 flowing through a private "bridge" graph the node owns.
@@ -312,16 +312,16 @@ function buildForEachPolygonSampleBody(): SubgraphDef {
 
   const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW } });
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 4, y: ROW } });
-  const toMesh = addNode(g, 'core/polygon-to-mesh', { position: { x: COL, y: 0 } });
-  const colour = addNode(g, 'core/solid-color', {
+  const toMesh = addNode(g, 'geom/from-polygon', { position: { x: COL, y: 0 } });
+  const colour = addNode(g, 'tex/solid-color', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { color: [0.55, 0.7, 0.45, 1], resolution: 16 },
   });
-  const material = addNode(g, 'core/material', {
+  const material = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { roughness: 0.8, metallic: 0 },
   });
-  const entity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW } });
+  const entity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW } });
 
   addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: toMesh.id, socket: 'polygon' });
   addEdge(g, { node: toMesh.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
@@ -365,7 +365,7 @@ function buildForEachPolygonSampleBridge(forEachId: string): SubgraphDef {
     inputNodeId: inputNode.id,
     outputNodeId: iterOutputNode.id,
     owner: { kind: 'iteration-bridge', nodeId: forEachId },
-    iterationKind: 'core/for-each-polygon',
+    iterationKind: 'iter/for-each-polygon',
   };
 }
 
@@ -377,15 +377,15 @@ function buildForEachPolygonSample(): {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
-  const a = addNode(g, 'core/polygon-aabb', {
+  const a = addNode(g, 'poly/aabb', {
     position: { x: 0, y: 0 },
     inputValues: { center: [-10, 0], size: [6, 6] },
   });
-  const b = addNode(g, 'core/polygon-aabb', {
+  const b = addNode(g, 'poly/aabb', {
     position: { x: 0, y: ROW },
     inputValues: { center: [10, 0], size: [6, 6] },
   });
-  const list = addNode(g, 'core/polygon-list', {
+  const list = addNode(g, 'poly/list', {
     position: { x: COL, y: ROW * 0.5 },
     extraInputs: [
       { name: 'polygon_0', type: 'Polygon', optional: true },
@@ -395,7 +395,7 @@ function buildForEachPolygonSample(): {
   addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
   addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
   const fepId = 'fepoly';
-  const fep = addNode(g, 'core/for-each-polygon', {
+  const fep = addNode(g, 'iter/for-each-polygon', {
     id: fepId,
     position: { x: COL * 2, y: ROW * 0.5 },
     inputValues: { __bridgeId: `bridge-${fepId}` },

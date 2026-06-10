@@ -28,11 +28,11 @@ function addRoofBox(
   },
 ): ReturnType<typeof addNode> {
   const { width, depth, height, baseY, materialInputs, yOffset, textureNode } = opts;
-  const geo = addNode(g, 'core/box', {
+  const geo = addNode(g, 'geom/box', {
     position: { x: COL, y: yOffset },
     inputValues: { width, height, depth },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOffset },
     inputValues: {
       translate: [0, baseY + height / 2, 0],
@@ -40,11 +40,11 @@ function addRoofBox(
       scale: [1, 1, 1],
     },
   });
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOffset + ROW * 0.5 },
     inputValues: materialInputs,
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOffset },
   });
   addEdge(g, { node: geo.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
@@ -83,7 +83,7 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
     yOffset: ROW * 2,
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -112,7 +112,7 @@ export function buildHvacUnitSubgraph(): SubgraphDef {
 // sedon-2026-06-10-04-10-31.sedon. Key economies vs the original:
 //
 //   1. ONE leg box geometry shared across all 4 legs via
-//      `core/grid-distribute` + `core/instance-geometry-on-points`.
+//      `points/grid` + `geom/instance-on-points`.
 //      Originally we declared 4 separate boxes — same shape, four
 //      times the graph work and four times the GPU geometry.
 //   2. ONE steel material shared by the leg group (was 4 identical
@@ -134,7 +134,7 @@ export function buildWaterTankSubgraph(): SubgraphDef {
 
   // ─── Shared materials ────────────────────────────────────────────
   // Wood — used by BOTH body and cap.
-  const woodMat = addNode(g, 'core/material', {
+  const woodMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: {
       basecolor: [0.42, 0.27, 0.18, 1],
@@ -143,7 +143,7 @@ export function buildWaterTankSubgraph(): SubgraphDef {
     },
   });
   // Steel — used by the (single) leg-cluster entity.
-  const steelMat = addNode(g, 'core/material', {
+  const steelMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 0.5 },
     inputValues: {
       basecolor: [0.25, 0.27, 0.30, 1],
@@ -157,19 +157,19 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   // instance-on-points stamps the box at each. The combined geometry
   // gets translated up by 1 so the leg base sits at Y=0 (legs span
   // Y=0..2 since each box is height=2 centred at origin).
-  const legBox = addNode(g, 'core/box', {
+  const legBox = addNode(g, 'geom/box', {
     position: { x: COL, y: 0 },
     inputValues: { width: 0.18, height: 2, depth: 0.18 },
   });
-  const legGrid = addNode(g, 'core/grid-distribute', {
+  const legGrid = addNode(g, 'points/grid', {
     position: { x: COL, y: ROW * 0.6 },
     inputValues: { cols: 2, rows: 2, spacing: 2 },
   });
-  const legInst = addNode(g, 'core/instance-geometry-on-points', {
+  const legInst = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 2, y: 0 },
     inputValues: { scale: 1 },
   });
-  const legLift = addNode(g, 'core/transform-geometry', {
+  const legLift = addNode(g, 'geom/transform', {
     position: { x: COL * 3, y: 0 },
     inputValues: {
       translate: [0, 1, 0],
@@ -177,7 +177,7 @@ export function buildWaterTankSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const legEnt = addNode(g, 'core/scene-entity', {
+  const legEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: 0 },
   });
   addEdge(g, { node: legBox.id, socket: 'geometry' }, { node: legInst.id, socket: 'instance' });
@@ -189,15 +189,15 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   // ─── Body: wood cylinder, single +Y=2 lift so its centre sits at
   // Y=2 (the top of the legs). The .sedon fix had two chained
   // transforms (+4 then −2) — collapsed here to one.
-  const bodyCyl = addNode(g, 'core/cylinder', {
+  const bodyCyl = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { radius: 1.5, height: 4, segments: 16 },
   });
-  const bodyLift = addNode(g, 'core/transform-geometry', {
+  const bodyLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { translate: [0, 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const bodyEnt = addNode(g, 'core/scene-entity', {
+  const bodyEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 2 },
   });
   addEdge(g, { node: bodyCyl.id, socket: 'geometry' }, { node: bodyLift.id, socket: 'geometry' });
@@ -205,15 +205,15 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   addEdge(g, { node: woodMat.id, socket: 'material' }, { node: bodyEnt.id, socket: 'material' });
 
   // ─── Cap: shorter wider cylinder sharing the wood material.
-  const capCyl = addNode(g, 'core/cylinder', {
+  const capCyl = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 3.5 },
     inputValues: { radius: 1.6, height: 0.4, segments: 16 },
   });
-  const capLift = addNode(g, 'core/transform-geometry', {
+  const capLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { translate: [0, 6, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const capEnt = addNode(g, 'core/scene-entity', {
+  const capEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: ROW * 3.5 },
   });
   addEdge(g, { node: capCyl.id, socket: 'geometry' }, { node: capLift.id, socket: 'geometry' });
@@ -221,7 +221,7 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   addEdge(g, { node: woodMat.id, socket: 'material' }, { node: capEnt.id, socket: 'material' });
 
   // ─── Merge legs + body + cap.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4.5, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

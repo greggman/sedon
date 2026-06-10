@@ -13,7 +13,7 @@ import type { PointCloudValue } from '../core/resources.js';
 // Normals are world-up so downstream `align: true` keeps legs
 // upright.
 export const cornerPointsNode: NodeDef = {
-  id: 'core/corner-points',
+  id: 'points/corners',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -58,27 +58,27 @@ if you ever want to fan a per-corner attribute (different colour per
 leg for debug, varying heights), the index order is the natural one
 to reason about.
 
-Pair with [core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+Pair with [geom/instance-on-points](../../geom/instance-on-points)
 feeding a leg geometry. Normals are world-up so \`align: true\` keeps
 the legs vertical — apply a downstream rotation if you want them
 canted outward (the "tapered toward the body" look).
 
-Equivalent to \`core/points-line\` × 2 + merge, or 4 hand-wired
-\`core/transform-geometry\` nodes — but one node instead of 5+.
+Equivalent to \`points/line\` × 2 + merge, or 4 hand-wired
+\`geom/transform\` nodes — but one node instead of 5+.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const corners = addNode(g, 'core/corner-points', {
+      const corners = addNode(g, 'points/corners', {
         id: 'corners',
         position: { x: 0, y: 0 },
         inputValues: { width: 1.6, depth: 1, inset: 0.1 },
       });
-      const leg = addNode(g, 'core/cylinder', {
+      const leg = addNode(g, 'geom/cylinder', {
         id: 'leg',
         position: { x: 0, y: 200 },
         inputValues: { radius: 0.05, height: 0.7, segments: 16 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 1, align: true },

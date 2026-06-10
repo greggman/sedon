@@ -11,7 +11,7 @@ import type { CameraState } from '../store.js';
 //   • maxSlope → grass thins on the steeper hillsides
 // Blades are placed every frame by the renderer's compute pass around
 // the camera (src/render/grass.ts); this graph only produces the maps
-// + tuning. Blade art comes from core/grass-blades (alpha silhouette).
+// + tuning. Blade art comes from geom/grass-blades (alpha silhouette).
 export function createGrassTestDemo(): {
   graph: Graph;
   rootNodeId: string;
@@ -22,25 +22,25 @@ export function createGrassTestDemo(): {
   const ROW = 180;
 
   // Terrain: 60×60m, gentle relief.
-  const perlin = addNode(g, 'core/perlin', {
+  const perlin = addNode(g, 'tex/perlin', {
     position: { x: 0, y: 0 },
     inputValues: { scale: [2, 2], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0.7, resolution: 512 },
   });
-  const heightFloat = addNode(g, 'core/texture-convert', {
+  const heightFloat = addNode(g, 'tex/convert', {
     position: { x: COL, y: 0 },
     inputValues: { format: 1 },
   });
-  const heightScale = addNode(g, 'core/texture-map-range', {
+  const heightScale = addNode(g, 'tex/map-range', {
     position: { x: COL * 1.6, y: 0 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 6, clamp: false },
   });
-  const terrainMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+  const terrainMesh = addNode(g, 'geom/heightfield-from-texture', {
     position: { x: COL * 2.2, y: 0 },
     inputValues: { worldSize: [60, 60], divisions: [128, 128] },
   });
 
   // Flat terrain material (muted soil so the grass reads against it).
-  const terrainMat = addNode(g, 'core/material', {
+  const terrainMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW },
     inputValues: {
       basecolor: [0.22, 0.18, 0.12, 1],
@@ -48,24 +48,24 @@ export function createGrassTestDemo(): {
       metallic: 0,
     },
   });
-  const terrainEntity = addNode(g, 'core/scene-entity', {
+  const terrainEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW },
   });
 
   // Density: a perlin field so grass grows in patches rather than a
   // uniform lawn (R channel 0..1 drives the keep probability)…
-  const densityNoise = addNode(g, 'core/perlin', {
+  const densityNoise = addNode(g, 'tex/perlin', {
     position: { x: 0, y: ROW * 2 },
     inputValues: { scale: [4, 4], octaves: 3, lacunarity: 2, gain: 0.6, seed: 0.2, resolution: 256 },
   });
   // …with a meandering path carved bare. path-mask defaults to white
   // OFF the path, so multiplying it into the density zeroes coverage on
   // the road. (multiply = blend mode 2, factor 1.)
-  const path = addNode(g, 'core/path-mask', {
+  const path = addNode(g, 'tex/path-mask', {
     position: { x: 0, y: ROW * 2.8 },
     inputValues: { angle: 18, offset: 0.5, width: 0.06, waviness: 0.12, waveScale: 1.5, resolution: 256 },
   });
-  const density = addNode(g, 'core/blend', {
+  const density = addNode(g, 'tex/blend', {
     position: { x: COL, y: ROW * 2.4 },
     inputValues: { mode: 2, factor: 1, resolution: 256 },
   });
@@ -73,14 +73,14 @@ export function createGrassTestDemo(): {
   // Type map: a LOW-frequency perlin so each type covers broad patches.
   // R channel → floor(r * numTypes) picks the card. With 2 cards: r<0.5
   // → green (type 0), r≥0.5 → golden (type 1).
-  const typeNoise = addNode(g, 'core/perlin', {
+  const typeNoise = addNode(g, 'tex/perlin', {
     position: { x: 0, y: ROW * 4 },
     inputValues: { scale: [1.5, 1.5], octaves: 2, lacunarity: 2, gain: 0.5, seed: 0.9, resolution: 256 },
   });
 
   // Two blade cards (alpha silhouette). Colour lives in the card; the
   // grass node's tint stays near-white so it doesn't double-tint.
-  const cardGreen = addNode(g, 'core/grass-blades', {
+  const cardGreen = addNode(g, 'geom/grass-blades', {
     position: { x: COL, y: ROW * 3 },
     inputValues: {
       bladeCount: 5,
@@ -89,7 +89,7 @@ export function createGrassTestDemo(): {
       width: 1, lean: 0.18, seed: 3, resolution: 256,
     },
   });
-  const cardGold = addNode(g, 'core/grass-blades', {
+  const cardGold = addNode(g, 'geom/grass-blades', {
     position: { x: COL, y: ROW * 5 },
     inputValues: {
       bladeCount: 4,
@@ -99,7 +99,7 @@ export function createGrassTestDemo(): {
     },
   });
 
-  const grass = addNode(g, 'core/grass', {
+  const grass = addNode(g, 'geom/grass', {
     position: { x: COL * 3, y: ROW * 2 },
     // card_1 is a per-instance extra socket (matches the node's
     // extraInputsSpec namePrefix 'card'); card_0 is the static input.
@@ -127,7 +127,7 @@ export function createGrassTestDemo(): {
     { name: 'scene_0', type: 'Scene', optional: true },
     { name: 'scene_1', type: 'Scene', optional: true },
   ];
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW },
     extraInputs: SM2,
   });

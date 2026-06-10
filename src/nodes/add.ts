@@ -5,9 +5,9 @@ import type { NodeDef } from '../core/node-def.js';
 // without it, composition subgraphs (e.g. a parametric building's
 // "roof Y = ground_height + body_height" arithmetic) have to resort
 // to map-range tricks to do basic addition. Same input/output shape
-// as `core/multiply` for consistency.
+// as `math/multiply` for consistency.
 export const scalarAddNode: NodeDef = {
-  id: 'core/add',
+  id: 'math/add',
   category: 'Math',
   inputs: [
     {
@@ -33,7 +33,7 @@ export const scalarAddNode: NodeDef = {
   doc: {
     summary: 'Scalar sum a + b.',
     description: `
-The complement to [core/multiply](../../core/multiply). Use it
+The complement to [math/multiply](../../math/multiply). Use it
 anywhere a parametric subgraph needs to combine two scalar inputs
 additively — most commonly inside composition graphs that compute
 \`y_top = y_base + body_height\` or \`lift = bottom_offset + span\`.
@@ -42,7 +42,7 @@ For three or more terms, chain: \`add(add(a, b), c)\`.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/add', {
+      addNode(g, 'math/add', {
         id: 'add',
         position: { x: 0, y: 0 },
         inputValues: { a: 2, b: 3 },

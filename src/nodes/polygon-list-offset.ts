@@ -3,18 +3,18 @@ import type { NodeDef } from '../core/node-def.js';
 import type { PolygonListValue, PolygonValue } from '../core/resources.js';
 import { offsetRing } from './polygon-offset.js';
 
-// List-mode of `core/polygon-offset`: apply the same Minkowski offset
+// List-mode of `poly/offset`: apply the same Minkowski offset
 // to every polygon in a PolygonList and emit a PolygonList of the
 // same length. Polygons that collapse under the offset are passed
 // through as empty polygons (outer.length = 0) — downstream consumers
 // can skip them by checking that length.
 //
 // Use case: "inset every block by 3 m for the sidewalk" — pair with
-// `core/polygon-grid-subdivide` upstream and `core/for-each-polygon`
+// `poly/grid-subdivide` upstream and `iter/for-each-polygon`
 // downstream and you have a one-line block-to-buildable-area pipeline.
 
 export const polygonListOffsetNode: NodeDef = {
-  id: 'core/polygon-list-offset',
+  id: 'poly/list-offset',
   category: 'Polygon',
   inputs: [
     {
@@ -47,7 +47,7 @@ export const polygonListOffsetNode: NodeDef = {
     summary: 'Apply a signed Minkowski offset to every polygon in a PolygonList.',
     description: `
 A list-mode wrapper around
-[core/polygon-offset](../../core/polygon-offset). For every polygon in
+[poly/offset](../../poly/offset). For every polygon in
 \`polygons\`, computes the inset (negative \`offset\`) or dilate
 (positive \`offset\`) and emits a list of the same length. Collapsed
 polygons pass through as empty polygons so downstream indexing stays
@@ -55,17 +55,17 @@ aligned with the input.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 40] },
       });
-      const grid = addNode(g, 'core/polygon-grid-subdivide', {
+      const grid = addNode(g, 'poly/grid-subdivide', {
         id: 'grid',
         position: { x: 280, y: 0 },
         inputValues: { cols: 4, rows: 4 },
       });
-      const inset = addNode(g, 'core/polygon-list-offset', {
+      const inset = addNode(g, 'poly/list-offset', {
         id: 'inset',
         position: { x: 560, y: 0 },
         inputValues: { offset: -1 },

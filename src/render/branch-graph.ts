@@ -414,7 +414,7 @@ function computePolylineFrames(positions: Float32Array, vs: number, vc: number):
 
   // Seed frame at vertex 0. n2 = cross(n1, t0) (NOT cross(t0, n1)): walking θ
   // from 0 to 2π in the (n1, n2) plane must go CCW *viewed from the tangent
-  // tip*, so the ring strip winds the same way as core/cylinder. The opposite
+  // tip*, so the ring strip winds the same way as geom/cylinder. The opposite
   // order produces a left-handed basis and the tube renders inside-out.
   const t0 = tangents[0]!;
   let n1: [number, number, number] = pickPerpendicular(t0);

@@ -3,7 +3,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
 import { buildCabinetCellSubgraph } from './cabinet-cell-subgraph.js';
 
-// `core/for-each-point` test scene. A 4×4 grid of cabinet boxes, each
+// `iter/for-each-point` test scene. A 4×4 grid of cabinet boxes, each
 // placed by a private BRIDGE subgraph that maps per-iteration context
 // (position, index) and per-cell broadcast values (size, material)
 // onto the `cabinet-cell` body subgraph's regular inputs.
@@ -46,7 +46,7 @@ export function createForEachPointDemo(): {
   // Per-cell positions: 4×4 grid on the XZ plane, 0.55m apart so the
   // default 0.4×0.6×0.3 cells leave a small gap. Spacing × cols-1
   // ≈ 1.65m total extent — comfortably inside the ground plane.
-  const grid = addNode(g, 'core/grid-distribute', {
+  const grid = addNode(g, 'points/grid', {
     position: { x: 0, y: ROW },
     inputValues: { cols: 4, rows: 4, spacing: 0.55, jitter: 0, seed: 0 },
   });
@@ -54,14 +54,14 @@ export function createForEachPointDemo(): {
   // Per-cell size: each cabinet gets a slightly different aspect
   // ratio so the grid reads as a row of differently-proportioned
   // units rather than a clone field.
-  const sizes = addNode(g, 'core/random-vec3-cloud', {
+  const sizes = addNode(g, 'cloud/random-vec3', {
     position: { x: COL, y: ROW * 1.5 },
     inputValues: { min: [0.3, 0.4, 0.2], max: [0.5, 0.8, 0.4], seed: 5 },
   });
 
   // Wood material — broadcast to every cabinet. Flat basecolor →
   // inline colour default, no solid-color node needed.
-  const woodMaterial = addNode(g, 'core/material', {
+  const woodMaterial = addNode(g, 'material/pbr', {
     position: { x: COL, y: 0 },
     inputValues: {
       basecolor: [0.55, 0.36, 0.20, 1.0],
@@ -76,7 +76,7 @@ export function createForEachPointDemo(): {
   // through the editor's drag-drop attach action.
   const forEachId = 'fep-cabinets';
   const bridgeId = `bridge-${forEachId}`;
-  const forEach = addNode(g, 'core/for-each-point', {
+  const forEach = addNode(g, 'iter/for-each-point', {
     id: forEachId,
     position: { x: COL * 2, y: ROW },
     inputValues: { __bridgeId: bridgeId },
@@ -89,11 +89,11 @@ export function createForEachPointDemo(): {
 
   // Ground plane: a flat 4×4m board tinted grey-green so the cabinets
   // have something to stand on.
-  const ground = addNode(g, 'core/plane', {
+  const ground = addNode(g, 'geom/plane', {
     position: { x: 0, y: ROW * 2.5 },
     inputValues: { size: [4, 4], divisions: [1, 1] },
   });
-  const groundMaterial = addNode(g, 'core/material', {
+  const groundMaterial = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 3 },
     inputValues: {
       basecolor: [0.32, 0.38, 0.30, 1.0],
@@ -101,11 +101,11 @@ export function createForEachPointDemo(): {
       metallic: 0,
     },
   });
-  const groundEntity = addNode(g, 'core/scene-entity', {
+  const groundEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: ROW * 2.7 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1.7 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -181,6 +181,6 @@ function buildCabinetBridgeSubgraph(forEachId: string): SubgraphDef {
     inputNodeId: inputBoundary.id,
     outputNodeId: iterOutputBoundary.id,
     owner: { kind: 'iteration-bridge', nodeId: forEachId },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
 }

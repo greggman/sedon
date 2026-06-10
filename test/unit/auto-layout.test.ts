@@ -8,10 +8,10 @@ import { createCoreNodeRegistry } from '../../src/nodes/index.js';
 // scene-entity → output. Sphere → scene-entity is a long edge (rank 0 → 2).
 function basicGraph() {
   const g = createGraph();
-  const grid = addNode(g, 'core/grid', { id: 'grid' });
-  const sphere = addNode(g, 'core/sphere', { id: 'sphere' });
-  const material = addNode(g, 'core/material', { id: 'material' });
-  const sceneEntity = addNode(g, 'core/scene-entity', { id: 'scene-entity' });
+  const grid = addNode(g, 'tex/grid', { id: 'grid' });
+  const sphere = addNode(g, 'geom/sphere', { id: 'sphere' });
+  const material = addNode(g, 'material/pbr', { id: 'material' });
+  const sceneEntity = addNode(g, 'scene/entity', { id: 'scene-entity' });
   const output = addNode(g, 'core/output', { id: 'output' });
   addEdge(g, { node: grid.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
   addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: sceneEntity.id, socket: 'geometry' });
@@ -83,10 +83,10 @@ test('rank assignment: short-chain sources sit close to their consumer, long-cha
 // crossing min, they reorder to [M2, M1], eliminating the crossings.
 function reverseMappedGraph() {
   const g = createGraph();
-  const s1 = addNode(g, 'core/sphere', { id: 's1' });
-  const s2 = addNode(g, 'core/sphere', { id: 's2' });
-  const m1 = addNode(g, 'core/transform-geometry', { id: 'm1' });
-  const m2 = addNode(g, 'core/transform-geometry', { id: 'm2' });
+  const s1 = addNode(g, 'geom/sphere', { id: 's1' });
+  const s2 = addNode(g, 'geom/sphere', { id: 's2' });
+  const m1 = addNode(g, 'geom/transform', { id: 'm1' });
+  const m2 = addNode(g, 'geom/transform', { id: 'm2' });
   const t = addNode(g, 'core/output', { id: 't' });
   // Reverse mapping
   addEdge(g, { node: s1.id, socket: 'out' }, { node: m2.id, socket: 'in' });
@@ -158,9 +158,9 @@ test('socket-aware ordering: source feeding target.a sorts above source feeding 
   // aaa is added first (so without socket awareness it ends up on
   // top), but aaa connects to blend.b (the LOWER socket) so the
   // correct layout puts bbb on top.
-  const aaa = addNode(g, 'core/solid-color', { id: 'aaa' });
-  const bbb = addNode(g, 'core/solid-color', { id: 'bbb' });
-  const blend = addNode(g, 'core/blend', { id: 'blend' });
+  const aaa = addNode(g, 'tex/solid-color', { id: 'aaa' });
+  const bbb = addNode(g, 'tex/solid-color', { id: 'bbb' });
+  const blend = addNode(g, 'tex/blend', { id: 'blend' });
   addEdge(g, { node: aaa.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
   addEdge(g, { node: bbb.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
 
@@ -400,9 +400,9 @@ test('column gap is wide enough that adjacent columns don\'t crowd', () => {
 // callers that don't have one (older tests, etc.).
 test('no-registry call still produces a layout for the same graph', () => {
   const g = createGraph();
-  const aaa = addNode(g, 'core/solid-color', { id: 'aaa' });
-  const bbb = addNode(g, 'core/solid-color', { id: 'bbb' });
-  const blend = addNode(g, 'core/blend', { id: 'blend' });
+  const aaa = addNode(g, 'tex/solid-color', { id: 'aaa' });
+  const bbb = addNode(g, 'tex/solid-color', { id: 'bbb' });
+  const blend = addNode(g, 'tex/blend', { id: 'blend' });
   addEdge(g, { node: aaa.id, socket: 'texture' }, { node: blend.id, socket: 'b' });
   addEdge(g, { node: bbb.id, socket: 'texture' }, { node: blend.id, socket: 'a' });
   const measured = new Map<string, NodeMeasurement | undefined>();

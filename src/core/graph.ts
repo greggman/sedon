@@ -18,8 +18,8 @@ export interface GraphNode {
   /**
    * Per-instance dynamic inputs appended to whatever the NodeDef
    * declares. Only meaningful for node kinds whose def has an
-   * `extraInputsSpec` (variadic nodes like `core/scene-merge`) or
-   * whose extras are populated programmatically (`core/for-each-point`
+   * `extraInputsSpec` (variadic nodes like `scene/merge`) or
+   * whose extras are populated programmatically (`iter/for-each-point`
    * mirrors the body subgraph's inputs here). The evaluator and
    * validator gather inputs from
    * `def.inputs.concat(node.extraInputs ?? [])`.
@@ -32,7 +32,7 @@ export interface GraphNode {
   /**
    * Per-instance dynamic outputs that REPLACE whatever the NodeDef
    * declares when non-empty. Currently used only by
-   * `core/for-each-point` to mirror (and lift) the body subgraph's
+   * `iter/for-each-point` to mirror (and lift) the body subgraph's
    * outputs — a body `Float` becomes a for-each `FloatCloud`, a body
    * `Vec3` becomes `Vec3Cloud`, a body `Scene` stays `Scene` (merged
    * across iterations). When `extraOutputs` is undefined or empty,
@@ -78,7 +78,7 @@ export interface AddNodeOptions {
   /**
    * Pre-populate per-instance dynamic inputs at construction time.
    * Useful for code-built demos that wire to variadic nodes (e.g.
-   * `core/scene-merge`) — the demo can declare the sockets explicitly
+   * `scene/merge`) — the demo can declare the sockets explicitly
    * up front instead of clicking the "+ Add" button at runtime.
    */
   extraInputs?: InputDef[];

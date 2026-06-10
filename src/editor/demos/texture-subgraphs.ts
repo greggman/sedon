@@ -30,7 +30,7 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 1 },
   });
 
-  const fibers = addNode(g, 'core/perlin', {
+  const fibers = addNode(g, 'tex/perlin', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: [2, 14],
@@ -40,15 +40,15 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 2, y: 0 },
     inputValues: { brightness: 0, contrast: 1.6, gamma: 1.0, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 3, y: 0 },
     inputValues: { resolution: 256 },
   });
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: { strength: 3, resolution: 256 },
   });
@@ -60,7 +60,7 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
   // (not wired from the input seed) so the detail pattern is "generic
   // bark crackle" rather than species-correlated — species variation
   // already comes from the base fibers' seed input.
-  const detailNoise = addNode(g, 'core/perlin', {
+  const detailNoise = addNode(g, 'tex/perlin', {
     position: { x: COL, y: ROW * 3 },
     inputValues: {
       scale: [8, 8],
@@ -71,17 +71,17 @@ export function buildBarkTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const detailNormal = addNode(g, 'core/normal-from-height', {
+  const detailNormal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { strength: 20, resolution: 256 },
   });
 
   // Wire: boundary inputs → perlin seed + colorize colors.
-  // `core/palette` bridges the boundary's two Color inputs into a
+  // `tex/palette` bridges the boundary's two Color inputs into a
   // 2-pixel ramp texture that colorize then samples. Lives between
   // the colour boundary and colorize because colorize's `ramp` is a
   // texture input (no more separate `low`/`high` scalars).
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 2.5, y: ROW * 0.6 },
   });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: fibers.id, socket: 'seed' });
@@ -142,7 +142,7 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
 
   // Broad clumping (low frequency) plus a finer detail layer (higher
   // frequency) blended together.
-  const broad = addNode(g, 'core/perlin', {
+  const broad = addNode(g, 'tex/perlin', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: [4, 4],
@@ -152,7 +152,7 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const detail = addNode(g, 'core/perlin', {
+  const detail = addNode(g, 'tex/perlin', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: {
       scale: [18, 18],
@@ -162,28 +162,28 @@ export function buildGrassTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const blend = addNode(g, 'core/blend', {
+  const blend = addNode(g, 'tex/blend', {
     position: { x: COL * 2, y: ROW * 0.6 },
     inputValues: { factor: 0.35, resolution: 256 },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 3, y: ROW * 0.6 },
     inputValues: { brightness: 0, contrast: 1.25, gamma: 1.0, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 4, y: ROW * 0.6 },
     inputValues: { resolution: 256 },
   });
   // Strength is high here because grass-noise is smooth — small per-pixel
   // gradients become barely-visible normal tilts unless we amplify them.
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 4, y: ROW * 2 },
     inputValues: { strength: 12, resolution: 256 },
   });
 
   // Boundary colours → 2-pixel ramp → colorize.ramp. Same pattern
   // as the bark subgraph; see the comment there.
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 3.5, y: ROW * 0.6 },
   });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: broad.id, socket: 'seed' });
@@ -234,7 +234,7 @@ export function buildRockTextureSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW * 1 },
   });
 
-  const cells = addNode(g, 'core/worley', {
+  const cells = addNode(g, 'tex/worley', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: 8,
@@ -244,7 +244,7 @@ export function buildRockTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const grain = addNode(g, 'core/perlin', {
+  const grain = addNode(g, 'tex/perlin', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: {
       scale: [16, 16],
@@ -254,21 +254,21 @@ export function buildRockTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const blend = addNode(g, 'core/blend', {
+  const blend = addNode(g, 'tex/blend', {
     position: { x: COL * 2, y: ROW * 0.6 },
     inputValues: { factor: 0.45, resolution: 256 },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 3, y: ROW * 0.6 },
     inputValues: { brightness: 0, contrast: 1.3, gamma: 0.9, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 4, y: ROW * 0.6 },
     inputValues: { resolution: 256 },
   });
   // Worley cells already produce sharp gradients, so strength here is
   // lower than grass — but still bumped enough to read at distance.
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 4, y: ROW * 2 },
     inputValues: { strength: 8, resolution: 256 },
   });
@@ -276,7 +276,7 @@ export function buildRockTextureSubgraph(): SubgraphDef {
   // Detail layer: high-freq isotropic perlin for surface grit at close
   // range. Same rationale as the bark subgraph's detail — fixed seed so
   // every rock instance shares the same micro-detail "grit" character.
-  const detailNoise = addNode(g, 'core/perlin', {
+  const detailNoise = addNode(g, 'tex/perlin', {
     position: { x: COL, y: ROW * 3 },
     inputValues: {
       scale: [10, 10],
@@ -287,13 +287,13 @@ export function buildRockTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const detailNormal = addNode(g, 'core/normal-from-height', {
+  const detailNormal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { strength: 18, resolution: 256 },
   });
 
   // Boundary colours → 2-pixel ramp → colorize.ramp.
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 3.5, y: ROW * 0.6 },
   });
   addEdge(g, { node: inputNode.id, socket: 'seed' }, { node: cells.id, socket: 'seed' });

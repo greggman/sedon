@@ -6,7 +6,7 @@ import type { PathValue, PointCloudValue } from '../core/resources.js';
 // control points carried by a PointCloud input. The canonical
 // authoring path:
 //
-//   core/point-list (drawn in the 2D editor)
+//   points/list (drawn in the 2D editor)
 //     → path/spline (this node, smooth the polyline)
 //     → path/carve-heightfield (cut into terrain)
 //
@@ -32,7 +32,7 @@ export const pathSplineNode: NodeDef = {
       name: 'points',
       type: 'PointCloud',
       description:
-        'control points for the spline, in the order they should be visited. Typically wired from [core/point-list](../../core/point-list) (drawn in its 2D editor) but any PointCloud-producing node works',
+        'control points for the spline, in the order they should be visited. Typically wired from [points/list](../../points/list) (drawn in its 2D editor) but any PointCloud-producing node works',
     },
     {
       name: 'width',
@@ -58,7 +58,7 @@ export const pathSplineNode: NodeDef = {
   doc: {
     summary: 'Smooth a PointCloud of control points into a resampled Catmull-Rom spline.',
     description: `
-Takes a PointCloud (typically authored in [core/point-list](../../core/point-list)\'s
+Takes a PointCloud (typically authored in [points/list](../../points/list)\'s
 2D editor) and tessellates a uniform Catmull-Rom curve through every
 point, resampled at \`samples_per_segment\` per segment.
 
@@ -80,7 +80,7 @@ sacrificial dummy points outside the desired route.
     sampleGraph: () => {
       const g = createGraph();
       // Sample: a point-list with a small S-curve feeding the spline.
-      const pts = addNode(g, 'core/point-list', {
+      const pts = addNode(g, 'points/list', {
         id: 'pts',
         position: { x: 0, y: 0 },
         inputValues: {

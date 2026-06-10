@@ -17,8 +17,8 @@ import {
 } from './tree-bush-subgraphs.js';
 
 // Demo for the BranchGraph pipeline. Five plant-family subgraphs lined up
-// in world X, each placed via `core/single-point` →
-// `core/instance-scene-on-points`. Drill into any of the five via the
+// in world X, each placed via `points/single` →
+// `scene/instance-on-points`. Drill into any of the five via the
 // graph switcher to tune parameters.
 //
 //   • Branch Tree    — `branch/recursive`           (oak-style deciduous, with flowers)
@@ -45,9 +45,9 @@ export function createTreeBushDemo(): {
   const canopy = buildBranchCanopyTreeSubgraph();
   // Three new small-plant examples — each is the smallest interesting
   // demo of one of the new point-distribution nodes:
-  //   • Flower         — core/radial-points (petal fan)
-  //   • Fern           — core/stem-points   (alternate/opposite/whorled)
-  //   • Sunflower disc — core/phyllotaxis-points (golden-angle spiral)
+  //   • Flower         — points/radial (petal fan)
+  //   • Fern           — points/stem   (alternate/opposite/whorled)
+  //   • Sunflower disc — points/phyllotaxis (golden-angle spiral)
   // Authored in `flower-fern-subgraphs.ts`.
   const flower = buildFlowerSubgraph();
   const fern = buildFernSubgraph();
@@ -80,14 +80,14 @@ export function createTreeBushDemo(): {
   const speciesOutputs: { id: string; socket: string }[] = [];
 
   for (const s of species) {
-    const point = addNode(g, 'core/single-point', {
+    const point = addNode(g, 'points/single', {
       position: { x: 0, y: s.rowIdx * ROW },
       inputValues: { position: [s.x, 0, 0], normal: [0, 1, 0] },
     });
     const subInst = addNode(g, `subgraph/${s.id}`, {
       position: { x: COL, y: s.rowIdx * ROW },
     });
-    const scatter = addNode(g, 'core/instance-scene-on-points', {
+    const scatter = addNode(g, 'scene/instance-on-points', {
       position: { x: COL * 2, y: s.rowIdx * ROW },
       inputValues: { scale: 1, align: false, seed: 0 },
     });
@@ -100,7 +100,7 @@ export function createTreeBushDemo(): {
   // Pre-populate one extra socket per species so the wiring is in place
   // before the user touches anything; clicking "+ Add scene" on the node
   // adds more.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1.5 },
     extraInputs: speciesOutputs.map((_, i) => ({
       name: `scene_${i}`,

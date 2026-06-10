@@ -5,7 +5,7 @@ import { requireDevice } from '../core/resources.js';
 import { mergeMeshes, uploadMeshToGpu } from '../render/mesh.js';
 
 export const mergeGeometryNode: NodeDef = {
-  id: 'core/merge-geometry',
+  id: 'geom/merge',
   category: 'Geometry/Composition',
   inputs: [
     {
@@ -36,27 +36,27 @@ keeps its own per-vertex data — no re-tessellation, no overlap
 resolution, just "draw both at once".
 
 Use when you want a single Geometry output that contains multiple
-primitives — e.g. a tree-trunk [core/cylinder](../../core/cylinder) merged
-with a leaf-canopy [core/cone](../../core/cone) before scattering copies
+primitives — e.g. a tree-trunk [geom/cylinder](../../geom/cylinder) merged
+with a leaf-canopy [geom/cone](../../geom/cone) before scattering copies
 via
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points).
+[geom/instance-on-points](../../geom/instance-on-points).
 The merged mesh draws in one call instead of two, and the instancer only
 needs to track one source. For more than two meshes, chain multiple
 merges together.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.4, segments: 24, rings: 12 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 220 },
         inputValues: { size: 0.6 },
       });
-      const merge = addNode(g, 'core/merge-geometry', {
+      const merge = addNode(g, 'geom/merge', {
         id: 'merge',
         position: { x: 280, y: 110 },
         inputValues: {},
@@ -72,7 +72,7 @@ merges together.
     const b = inputs.b as GeometryValue;
     if (!a.mesh || !b.mesh) {
       throw new Error(
-        'core/merge-geometry requires CPU-side meshes on both inputs; one of ' +
+        'geom/merge requires CPU-side meshes on both inputs; one of ' +
           'the upstream nodes produced GPU-only data.',
       );
     }

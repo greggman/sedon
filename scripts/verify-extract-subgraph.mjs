@@ -65,8 +65,8 @@ try {
   // inputs (geometry from sphere, material from material) and an output
   // (scene to output). Together they form a closed "material + entity"
   // chunk with internal edge material→scene-entity.
-  const matId = before.mainNodes.find((n) => n.kind === 'core/material').id;
-  const entityId = before.mainNodes.find((n) => n.kind === 'core/scene-entity').id;
+  const matId = before.mainNodes.find((n) => n.kind === 'material/pbr').id;
+  const entityId = before.mainNodes.find((n) => n.kind === 'scene/entity').id;
 
   // Mark them selected in RF (the action reads the RF instance's
   // per-node selected flag through getActiveCanvasRf()).
@@ -173,7 +173,7 @@ try {
     ['Subgraph has at least one input', newSg && newSg.inputs.length >= 1],
     ['Subgraph has at least one output', newSg && newSg.outputs.length >= 1],
     ['Subgraph contains both extracted node kinds',
-      newSg && newSg.innerKinds.includes('core/material') && newSg.innerKinds.includes('core/scene-entity')],
+      newSg && newSg.innerKinds.includes('material/pbr') && newSg.innerKinds.includes('scene/entity')],
     ['Subgraph contains boundary input + output nodes',
       newSg && newSg.innerKinds.some((k) => k.startsWith('subgraph-input/')) &&
       newSg.innerKinds.some((k) => k.startsWith('subgraph-output/'))],

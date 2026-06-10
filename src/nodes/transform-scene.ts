@@ -4,7 +4,7 @@ import type { SceneEntity, SceneValue } from '../core/resources.js';
 import { multiply, rotationX, rotationY, rotationZ, translation, type Mat4 } from '../render/mat4.js';
 
 // Compose a column-major mat4 from (scale, rotate, translate). Matches
-// `core/transform-geometry`'s convention: scale first, then rotate X / Y / Z,
+// `geom/transform`'s convention: scale first, then rotate X / Y / Z,
 // then translate. Returned matrix M transforms a point p as
 // p' = T·Rx·Ry·Rz·S · p. There's no `scaling()` helper in mat4.ts so
 // we build S inline (diagonal, column-major).
@@ -26,7 +26,7 @@ function composeTransform(
 }
 
 export const transformSceneNode: NodeDef = {
-  id: 'core/transform-scene',
+  id: 'scene/transform',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -63,19 +63,19 @@ export const transformSceneNode: NodeDef = {
   doc: {
     summary: 'Translate / rotate / scale an entire Scene as one block.',
     description: `
-The Scene counterpart of [core/transform-geometry](../../core/transform-geometry). Takes
+The Scene counterpart of [geom/transform](../../geom/transform). Takes
 a Scene (a list of {geometry, material, transform, tint} entities) and
 left-multiplies every entity's existing world transform by a new
 (scale → rotate → translate) matrix, so the whole scene moves /
 rotates / scales as one rigid block. Rotation order is X then Y then
-Z (radians), same as core/transform-geometry.
+Z (radians), same as geom/transform.
 
 Use to position a hero subgraph in a parent scene: a chair subgraph
 emits a Scene with the chair centred at the origin, then
-core/transform-scene with \`translate = [2, 0, 0]\` places that whole
+scene/transform with \`translate = [2, 0, 0]\` places that whole
 chair at \`(2, 0, 0)\` in the showroom — no per-entity wiring, no
 per-mesh vertex churn. This is FAR cheaper than chaining a per-vertex
-[core/transform-geometry](../../core/transform-geometry) before the scene-entity step:
+[geom/transform](../../geom/transform) before the scene-entity step:
 this composes matrices (O(entities)) instead of moving vertices
 (O(triangles)).
 
@@ -92,7 +92,7 @@ ONLY touches entity world matrices.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
@@ -103,21 +103,21 @@ ONLY touches entity world matrices.
       // would visually lie about what transform-scene does. Solid
       // tan reads as plain wood and renders crisply at the docs
       // preview's framing.
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 200 },
         inputValues: { color: [0.65, 0.5, 0.35, 1], resolution: 4 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 200 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 280, y: 0 },
       });
-      const tx = addNode(g, 'core/transform-scene', {
+      const tx = addNode(g, 'scene/transform', {
         id: 'transform-scene',
         position: { x: 560, y: 0 },
         inputValues: { translate: [0, 0, 0], rotate: [-0.5, 0.5, 0.7], scale: [1, 1.2, 1.5] },

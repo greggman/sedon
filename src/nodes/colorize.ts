@@ -19,20 +19,20 @@ const TWO_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
 import shader from './colorize.wgsl';
 
 // Remap a single-channel input through a 1D RAMP TEXTURE. Pairs with
-// `core/ramp` for authored gradients, but any Nx1 RGBA texture works
+// `tex/ramp` for authored gradients, but any Nx1 RGBA texture works
 // as the palette source — e.g. a sampled brand-colour strip, a heat
 // map LUT, etc.
 //
 // The shader does the half-texel sample-uv correction so a 2-pixel
 // ramp behaves like a clean 0→1 lerp, not a "stuck at endpoint until
-// 0.25" step — see colorize.wgsl. Authors using `core/ramp` get the
+// 0.25" step — see colorize.wgsl. Authors using `tex/ramp` get the
 // expected linear behaviour by default; authors using an arbitrary
 // LUT texture get the same correction for free.
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const colorizeNode: NodeDef = {
-  id: 'core/colorize',
+  id: 'tex/colorize',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -43,7 +43,7 @@ export const colorizeNode: NodeDef = {
     {
       name: 'ramp',
       type: 'Texture2D',
-      description: 'Nx1 colour palette texture (typically from `core/ramp`). Sampled by the per-pixel factor value to produce the output colour. Any Texture2D works — but ramps are 1-row wide because only the U axis matters',
+      description: 'Nx1 colour palette texture (typically from `tex/ramp`). Sampled by the per-pixel factor value to produce the output colour. Any Texture2D works — but ramps are 1-row wide because only the U axis matters',
     },
     {
       name: 'resolution',
@@ -69,24 +69,24 @@ just passes its red value through), use that as t ∈ [0, 1], and sample
 \`ramp\` at uv = (t, 0.5) for the output colour.
 
 The classic procedural-texture pattern: noise → colorize. A
-[core/perlin](../../core/perlin) noise on its own is just greyscale wash.
-Pipe it through colorize with a hand-tuned [core/ramp](../../core/ramp) (or
-one built from a [core/palette](../../core/palette) node taking
+[tex/perlin](../../tex/perlin) noise on its own is just greyscale wash.
+Pipe it through colorize with a hand-tuned [tex/ramp](../../tex/ramp) (or
+one built from a [tex/palette](../../tex/palette) node taking
 subgraph-input colours) and you get a tinted, gradient-mapped result with
 all the structure of the noise but the colour of the ramp. Works just as
-well on [core/worley](../../core/worley),
-[core/ridged-noise](../../core/ridged-noise),
-[core/distance-transform](../../core/distance-transform) — anything that
+well on [tex/worley](../../tex/worley),
+[tex/ridged-noise](../../tex/ridged-noise),
+[tex/distance-transform](../../tex/distance-transform) — anything that
 ends up in the [0, 1] range.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
       });
-      const ramp = addNode(g, 'core/ramp', {
+      const ramp = addNode(g, 'tex/ramp', {
         id: 'ramp',
         position: { x: 0, y: 220 },
         inputValues: {
@@ -99,7 +99,7 @@ ends up in the [0, 1] range.
           resolution: 256,
         },
       });
-      const colorize = addNode(g, 'core/colorize', {
+      const colorize = addNode(g, 'tex/colorize', {
         id: 'colorize',
         position: { x: 280, y: 110 },
         inputValues: { resolution: 512 },

@@ -144,7 +144,7 @@ export function offsetRing(outer: Float32Array, offset: number, miterLimit = 4):
 }
 
 export const polygonOffsetNode: NodeDef = {
-  id: 'core/polygon-offset',
+  id: 'poly/offset',
   category: 'Polygon',
   inputs: [
     {
@@ -191,17 +191,17 @@ should treat that as "no polygon".
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 60] },
       });
-      const inset = addNode(g, 'core/polygon-offset', {
+      const inset = addNode(g, 'poly/offset', {
         id: 'inset',
         position: { x: 280, y: 0 },
         inputValues: { offset: -5 },
       });
-      const mesh = addNode(g, 'core/polygon-to-mesh', {
+      const mesh = addNode(g, 'geom/from-polygon', {
         id: 'mesh',
         position: { x: 560, y: 0 },
       });

@@ -20,7 +20,7 @@ const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
 };
 
 export const solidColorNode: NodeDef = {
-  id: 'core/solid-color',
+  id: 'tex/solid-color',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -48,15 +48,15 @@ export const solidColorNode: NodeDef = {
     summary: 'A flat colour as a Texture2D.',
     description: `
 Renders one solid colour into every pixel of an N×N texture. Useful as the
-\`a\` or \`b\` input to a [core/blend](../../core/blend) /
-[core/blend-mask](../../core/blend-mask) when you want to test "what does
+\`a\` or \`b\` input to a [tex/blend](../../tex/blend) /
+[tex/blend-mask](../../tex/blend-mask) when you want to test "what does
 this look like tinted purple", as a stand-in albedo while you build out the
 rest of a material, or anywhere a downstream consumer wants a texture but
 you only want to feed it a colour.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/solid-color', {
+      addNode(g, 'tex/solid-color', {
         id: 'solid',
         position: { x: 0, y: 0 },
         inputValues: { color: [0.36, 0.58, 0.85, 1], resolution: 256 },

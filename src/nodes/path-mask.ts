@@ -24,7 +24,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // the path bare — e.g. grass density × path-mask = no grass on the road.
 // Set invert=false to get the road surface itself (white on path).
 export const pathMaskNode: NodeDef = {
-  id: 'core/path-mask',
+  id: 'tex/path-mask',
   category: 'Texture/Generators',
   inputs: [
     { name: 'angle', type: 'Float', default: 20, description: 'Path direction, degrees.' },
@@ -77,7 +77,7 @@ side, then export a mask separately.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/path-mask', {
+      addNode(g, 'tex/path-mask', {
         id: 'mask',
         position: { x: 0, y: 0 },
         inputValues: {

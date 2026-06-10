@@ -5,7 +5,7 @@
 // target handle id". Caught by replaying a real bug-repro recording
 // against the editor with this sequence in it.
 //
-// Repro (user-provided .sedon-rec): drop a second core/for-each-point
+// Repro (user-provided .sedon-rec): drop a second iter/for-each-point
 // onto the for-each-point demo, wire grid + materials, then click +
 // drag-onto the scene-merge node's "+ Add Input" handle to make a
 // new `scene_N` socket and wire fep.scene → that new socket in one
@@ -33,8 +33,8 @@ import { useEditorStore } from '../../src/editor/store.js';
 
 test('addNodeExtraInputWithEdge produces a new extraInput AND a matching incoming edge in one atomic update', () => {
   const main = createGraph();
-  const source = addNode(main, 'core/cube', { id: 'src' });
-  const merge = addNode(main, 'core/scene-merge', {
+  const source = addNode(main, 'geom/cube', { id: 'src' });
+  const merge = addNode(main, 'scene/merge', {
     id: 'merge',
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

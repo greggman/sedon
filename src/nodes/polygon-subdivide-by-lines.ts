@@ -111,7 +111,7 @@ function splitConvexByLine(
 }
 
 export const polygonSubdivideByLinesNode: NodeDef = {
-  id: 'core/polygon-subdivide-by-lines',
+  id: 'poly/subdivide-by-lines',
   category: 'Polygon',
   inputs: [
     {
@@ -143,7 +143,7 @@ points in the 2D editor; every pair defines one INFINITE straight line
 through those points. The node clips the input polygon by each line
 in sequence using Sutherland-Hodgman, emitting the resulting block
 polygons as a PolygonList ready for
-[core/for-each-polygon](../../core/for-each-polygon).
+[iter/for-each-polygon](../../iter/for-each-polygon).
 
 Lines are infinite for now, which matches the semantics of major
 arteries that cross the whole city. Dead-end / partial-extent roads
@@ -151,17 +151,17 @@ need a more elaborate planar-arrangement algorithm and come as a
 follow-up.
 
 Input polygon must be CONVEX (the algorithm assumes it). Rectangular
-footprints from [core/polygon-aabb](../../core/polygon-aabb) are
+footprints from [poly/aabb](../../poly/aabb) are
 fine; arbitrary hand-drawn outlines may produce wrong output.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 40] },
       });
-      const split = addNode(g, 'core/polygon-subdivide-by-lines', {
+      const split = addNode(g, 'poly/subdivide-by-lines', {
         id: 'split',
         position: { x: 280, y: 0 },
         inputValues: {

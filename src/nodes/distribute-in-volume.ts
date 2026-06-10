@@ -4,7 +4,7 @@ import type { GeometryValue, PointCloudValue } from '../core/resources.js';
 import { distributeInVolume } from '../render/mesh.js';
 
 export const distributeInVolumeNode: NodeDef = {
-  id: 'core/distribute-in-volume',
+  id: 'points/in-volume',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -36,7 +36,7 @@ export const distributeInVolumeNode: NodeDef = {
     summary: 'Scatter points uniformly through the INTERIOR of a closed mesh.',
     description: `
 Volume-filling counterpart to
-[core/distribute-on-faces](../../core/distribute-on-faces). Generates
+[points/on-faces](../../points/on-faces). Generates
 candidate points uniformly inside the mesh's axis-aligned bounding box,
 then keeps only the ones that test as inside via a ray-cast parity
 check. Expected output count ≈ \`density × interior_volume\`.
@@ -44,7 +44,7 @@ check. Expected output count ≈ \`density × interior_volume\`.
 **Use case**: the right shape of attractor cloud for
 [branch/space-colonization](../../branch/space-colonization). A
 surface-only attractor cloud (from
-[core/distribute-on-faces](../../core/distribute-on-faces) on a sphere)
+[points/on-faces](../../points/on-faces) on a sphere)
 makes branches grow toward the shell and stop, so the resulting tree is
 a hollow rind. A volume-filling cloud (this node) gives the algorithm
 attractors to chase INTO the canopy, producing the irregular forking
@@ -56,9 +56,9 @@ hedgerow.
 **Requirements on the input mesh**: closed (watertight), manifold,
 consistently wound. Open meshes or inverted faces produce false
 positives/negatives in the inside test. Primitive
-[core/sphere](../../core/sphere), [core/cube](../../core/cube),
-[core/cylinder](../../core/cylinder), and
-[core/cone](../../core/cone) all qualify.
+[geom/sphere](../../geom/sphere), [geom/cube](../../geom/cube),
+[geom/cylinder](../../geom/cylinder), and
+[geom/cone](../../geom/cone) all qualify.
 
 **Cost** is O(candidates × triangles). Density 10 on a sphere with 16
 segments × 12 rings (~140 triangles) costs ~3 ms; bump density up for
@@ -69,22 +69,22 @@ hero shots and accept that cost at edit time.
       // Sphere → distribute-in-volume → instance-cube-on-points so we
       // can see the cubes filling the sphere's interior, not just its
       // shell. align stays off because interior points have no normals.
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 16, rings: 12 },
       });
-      const points = addNode(g, 'core/distribute-in-volume', {
+      const points = addNode(g, 'points/in-volume', {
         id: 'points',
         position: { x: 280, y: 0 },
         inputValues: { density: 30, seed: 0 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 560, y: 100 },
         inputValues: { scale: 0.05, align: false },
@@ -99,7 +99,7 @@ hero shots and accept that cost at edit time.
     const geom = inputs.geometry as GeometryValue;
     if (!geom.mesh) {
       throw new Error(
-        'core/distribute-in-volume requires a CPU-side mesh on the input ' +
+        'points/in-volume requires a CPU-side mesh on the input ' +
           'geometry; the upstream node produced GPU-only data.',
       );
     }

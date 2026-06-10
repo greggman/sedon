@@ -20,7 +20,7 @@ import type { PointCloudValue } from '../core/resources.js';
 //   • radiusGrowth = 0: tapers to a point. Pinecone or grass-tip cluster.
 //   • radiusGrowth > 1: opens up. Sunflower head, fern unfurling.
 export const phyllotaxisPointsNode: NodeDef = {
-  id: 'core/phyllotaxis-points',
+  id: 'points/phyllotaxis',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -111,7 +111,7 @@ cruciate (cabbage), 144 = 5-fold whorls.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const points = addNode(g, 'core/phyllotaxis-points', {
+      const points = addNode(g, 'points/phyllotaxis', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -120,12 +120,12 @@ cruciate (cabbage), 144 = 5-fold whorls.
           seed: 0.5,
         },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.06, align: true },
@@ -155,7 +155,7 @@ cruciate (cabbage), 144 = 5-fold whorls.
     }
     ax /= aLen; ay /= aLen; az /= aLen;
 
-    // Perpendicular-plane basis. Same construction as core/radial-points.
+    // Perpendicular-plane basis. Same construction as points/radial.
     const refX = Math.abs(ax) < 0.9 ? 1 : 0;
     const refY = Math.abs(ax) < 0.9 ? 0 : 1;
     const refDotAxis = refX * ax + refY * ay;

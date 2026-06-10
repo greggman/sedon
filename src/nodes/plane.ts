@@ -6,7 +6,7 @@ import { uploadMeshToGpu } from '../render/mesh.js';
 import { generatePlane } from '../render/plane.js';
 
 export const planeNode: NodeDef = {
-  id: 'core/plane',
+  id: 'geom/plane',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -39,12 +39,12 @@ vertex noise, an attached heightfield) crank up the divisions so there's
 geometry to push around.
 
 Use as a ground plane, as a billboard for textured masks, or as the
-target of a [core/distribute-on-faces](../../core/distribute-on-faces)
+target of a [points/on-faces](../../points/on-faces)
 that needs a regular sampling surface.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/plane', {
+      addNode(g, 'geom/plane', {
         id: 'plane',
         position: { x: 0, y: 0 },
         inputValues: { size: [4, 4], divisions: [4, 4] },

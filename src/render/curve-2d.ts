@@ -1,7 +1,7 @@
 // 2D curve sampler. Authors a polyline through control points with
 // per-point handle types (AUTO / CORNER / FREE / ALIGNED) and emits a
 // sampled polyline in the XY plane (z = 0 for every output sample).
-// Consumers like `core/lathe` and `core/extrude-on-path` take the
+// Consumers like `geom/lathe` and `geom/extrude-on-path` take the
 // polyline as their profile / cross-section input.
 //
 // Why a separate node from `path/spline`:
@@ -15,7 +15,7 @@
 //     tangents (a kink); FREE / ALIGNED points use explicit user-
 //     authored tangent handles like Blender / Houdini / Illustrator.
 //   • Output is the existing `Path` type with z = 0, so the same
-//     downstream consumers (`core/lathe`, `core/extrude-on-path`)
+//     downstream consumers (`geom/lathe`, `geom/extrude-on-path`)
 //     accept it natively.
 //
 // Data shape: each control point is a numeric tuple

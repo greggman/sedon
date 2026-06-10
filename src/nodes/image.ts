@@ -4,7 +4,7 @@ import type { NodeDef } from '../core/node-def.js';
 import type { Texture2DValue } from '../core/resources.js';
 import { requireDevice, reusableTexture } from '../core/resources.js';
 
-// core/image — reference an external PNG / JPG / WEBP by URL, decode
+// tex/image — reference an external PNG / JPG / WEBP by URL, decode
 // it via fetch + createImageBitmap, upload to a GPU texture. Output
 // is a Texture2D consumable anywhere a generated texture would be.
 //
@@ -150,7 +150,7 @@ function stampPlaceholder(device: GPUDevice, texture: GPUTexture, width: number,
 }
 
 export const imageNode: NodeDef = {
-  id: 'core/image',
+  id: 'tex/image',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -205,11 +205,11 @@ CORS headers and will fail to load — failed loads stamp the magenta
 placeholder.
 `,
     sampleGraph: () => {
-      // The docs page for this node lives at `docs/nodes/core/image/`,
+      // The docs page for this node lives at `docs/nodes/tex/image/`,
       // so four `../` reaches the site root where `images/` sits
       // (alongside `dist/`, `docs/`). Same-origin so no CORS dance.
       const g = createGraph();
-      addNode(g, 'core/image', {
+      addNode(g, 'tex/image', {
         id: 'image',
         position: { x: 0, y: 0 },
         inputValues: {

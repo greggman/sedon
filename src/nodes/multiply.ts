@@ -2,7 +2,7 @@ import { addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 
 export const multiplyNode: NodeDef = {
-  id: 'core/multiply',
+  id: 'math/multiply',
   category: 'Math',
   inputs: [
     {
@@ -35,7 +35,7 @@ without touching the upstream graph.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/multiply', {
+      addNode(g, 'math/multiply', {
         id: 'mul',
         position: { x: 0, y: 0 },
         inputValues: { a: 2, b: 3 },

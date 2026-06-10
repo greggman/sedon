@@ -72,17 +72,17 @@ specular response in the same terrain without separate scene entities.
       // terrain/material preview pipeline gives docs visitors something
       // visual. Here a flat green albedo + perlin normal map shows the
       // shading variation a single layer would contribute.
-      const albedo = addNode(g, 'core/solid-color', {
+      const albedo = addNode(g, 'tex/solid-color', {
         id: 'albedo',
         position: { x: 0, y: 0 },
         inputValues: { color: [0.28, 0.46, 0.18, 1], resolution: 32 },
       });
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 200 },
         inputValues: { scale: [8, 8], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const normalMap = addNode(g, 'core/normal-from-height', {
+      const normalMap = addNode(g, 'tex/normal-from-height', {
         id: 'normal',
         position: { x: 280, y: 200 },
         inputValues: { strength: 3, resolution: 256 },

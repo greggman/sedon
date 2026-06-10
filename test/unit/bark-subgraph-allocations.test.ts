@@ -81,7 +81,7 @@ async function simulateUserFlow(opts: {
   // Find fibers perlin so we can mutate octaves.
   const fibers = bark.graph.nodes.find(
     (n) =>
-      n.kind === 'core/perlin' &&
+      n.kind === 'tex/perlin' &&
       Array.isArray(n.inputValues?.scale) &&
       (n.inputValues!.scale as number[])[1] === 14,
   );
@@ -175,7 +175,7 @@ test('bark subgraph: editing perlin.octaves allocates zero buffers + zero bind g
   // Find the fibers perlin (the one with anisotropic scale [2,14]).
   const fibers = bark.graph.nodes.find(
     (n) =>
-      n.kind === 'core/perlin' &&
+      n.kind === 'tex/perlin' &&
       Array.isArray(n.inputValues?.scale) &&
       (n.inputValues!.scale as number[])[1] === 14,
   );

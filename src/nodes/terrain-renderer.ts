@@ -18,7 +18,7 @@ import type {
 // Outputs a Scene rather than an Entity because terrain fields are a
 // render-time recipe, not a (geometry, material) batch the standard
 // renderer can draw. The Scene's `entities` array is left empty so
-// `core/scene-merge` and `core/output` compose with it the same way
+// `scene/merge` and `core/output` compose with it the same way
 // they compose grass fields.
 export const terrainRendererNode: NodeDef = {
   id: 'terrain/renderer',
@@ -27,7 +27,7 @@ export const terrainRendererNode: NodeDef = {
     {
       name: 'heightTexture',
       type: 'Texture2D',
-      description: 'heightfield texture; R channel = world Y in metres. Typically a [core/perlin](../../core/perlin) or eroded noise piped through [core/texture-convert](../../core/texture-convert) + [core/texture-map-range](../../core/texture-map-range), or the output of [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)',
+      description: 'heightfield texture; R channel = world Y in metres. Typically a [tex/perlin](../../tex/perlin) or eroded noise piped through [tex/convert](../../tex/convert) + [tex/map-range](../../tex/map-range), or the output of [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)',
     },
     {
       name: 'worldSize',
@@ -71,7 +71,7 @@ export const terrainRendererNode: NodeDef = {
     {
       name: 'scene',
       type: 'Scene',
-      description: 'a Scene carrying the terrain field as a render-time recipe (empty entities list; the terrain renderer picks up the field sidecar). Wire into [core/scene-merge](../../core/scene-merge) or [core/output](../../core/output)',
+      description: 'a Scene carrying the terrain field as a render-time recipe (empty entities list; the terrain renderer picks up the field sidecar). Wire into [scene/merge](../../scene/merge) or [core/output](../../core/output)',
     },
   ],
   doc: {
@@ -90,7 +90,7 @@ what makes large terrains tractable — close chunks render at
 
 The output Scene's \`entities\` array is empty on purpose; the terrain
 field lives in the Scene's \`terrain\` sidecar. That lets it compose
-with [core/scene-merge](../../core/scene-merge) (which carries the
+with [scene/merge](../../scene/merge) (which carries the
 sidecar through) so you can build a scene that has terrain AND
 entities AND grass AND water side by side, all rendered correctly.
 
@@ -106,28 +106,28 @@ Tuning notes:
     sampleGraph: () => {
       const g = createGraph();
       // Heightfield from a perlin/erosion chain.
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const heightTex = addNode(g, 'core/texture-map-range', {
+      const heightTex = addNode(g, 'tex/map-range', {
         id: 'heightTex',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 6, clamp: false },
       });
       // Two-layer material (grass + rock) splat by a separate perlin.
-      const grassCol = addNode(g, 'core/solid-color', {
+      const grassCol = addNode(g, 'tex/solid-color', {
         id: 'grassCol',
         position: { x: 0, y: 200 },
         inputValues: { color: [0.28, 0.46, 0.18, 1], resolution: 32 },
       });
-      const rockCol = addNode(g, 'core/solid-color', {
+      const rockCol = addNode(g, 'tex/solid-color', {
         id: 'rockCol',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.55, 0.5, 0.45, 1], resolution: 32 },
@@ -142,7 +142,7 @@ Tuning notes:
         position: { x: 280, y: 380 },
         inputValues: {},
       });
-      const splat = addNode(g, 'core/perlin', {
+      const splat = addNode(g, 'tex/perlin', {
         id: 'splat',
         position: { x: 0, y: 560 },
         inputValues: { scale: [3, 3], octaves: 4, lacunarity: 2, gain: 0.5, seed: 1, resolution: 256 },

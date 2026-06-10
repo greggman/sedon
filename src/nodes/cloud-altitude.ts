@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import type { FloatCloudValue, PointCloudValue } from '../core/resources.js';
 
 export const cloudAltitudeNode: NodeDef = {
-  id: 'core/cloud-altitude',
+  id: 'cloud/altitude',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -16,7 +16,7 @@ export const cloudAltitudeNode: NodeDef = {
     {
       name: 'values',
       type: 'FloatCloud',
-      description: 'one Float per point: the raw world-space Y coordinate (NOT normalised). Combine with [core/cloud-step](../../core/cloud-step) to threshold, or feed directly into `per_point_active` if your point set has Y values straddling 0.5',
+      description: 'one Float per point: the raw world-space Y coordinate (NOT normalised). Combine with [cloud/step](../../cloud/step) to threshold, or feed directly into `per_point_active` if your point set has Y values straddling 0.5',
     },
   ],
   doc: {
@@ -28,12 +28,12 @@ normalised). On a sphere centred at origin radius 1 the range is
 texture itself — the per-vertex Y the mesher baked in.
 
 The typical use is altitude-banded scattering: pipe through
-[core/cloud-step](../../core/cloud-step) with a threshold to get a
+[cloud/step](../../cloud/step) with a threshold to get a
 binary "above the snow line" or "below sea level" mask, then feed
 into the \`per_point_active\` input of an instancer.
 
-Pair with [core/cloud-slope](../../core/cloud-slope) +
-[core/cloud-multiply](../../core/cloud-multiply) for compound
+Pair with [cloud/slope](../../cloud/slope) +
+[cloud/multiply](../../cloud/multiply) for compound
 conditions ("high altitude AND flat" for snowfields,
 "low altitude AND steep" for cliff bases).
 `,
@@ -41,42 +41,42 @@ conditions ("high altitude AND flat" for snowfields,
       const g = createGraph();
       // Sphere → distribute → altitude → per_point_active.
       // Sphere centred at origin radius 1; altitude > 0.5 = top cap shows.
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const points = addNode(g, 'core/distribute-on-faces', {
+      const points = addNode(g, 'points/on-faces', {
         id: 'points',
         position: { x: 280, y: 0 },
         inputValues: { density: 30, seed: 0 },
       });
-      const altitude = addNode(g, 'core/cloud-altitude', {
+      const altitude = addNode(g, 'cloud/altitude', {
         id: 'altitude',
         position: { x: 560, y: 0 },
         inputValues: {},
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.65, 0.0, 0.0, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 380 },
         inputValues: { roughness: 0.5, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 840, y: 100 },
         inputValues: { scale: 0.05, align: true, seed: 0 },

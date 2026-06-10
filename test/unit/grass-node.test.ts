@@ -1,4 +1,4 @@
-// core/grass produces a render-time grass FIELD (not baked entities),
+// geom/grass produces a render-time grass FIELD (not baked entities),
 // and that field must survive the two transforms a scene undergoes
 // before it reaches the renderer: scene-merge concatenation and the
 // eval cache's resource walk. These are CPU-only checks (no GPU); the
@@ -39,7 +39,7 @@ const baseInputs = (): { inputs: Record<string, unknown>; handles: Record<string
 
 const texId = (t: unknown): string => (t as { id: string }).id;
 
-test('core/grass emits a Scene with one grass field and no baked entities', () => {
+test('geom/grass emits a Scene with one grass field and no baked entities', () => {
   const { inputs } = baseInputs();
   const out = grassNode.evaluate({}, inputs) as { scene: SceneValue };
   assert.deepEqual(out.scene.entities, [], 'grass is a recipe, not baked entities');
@@ -51,7 +51,7 @@ test('core/grass emits a Scene with one grass field and no baked entities', () =
   assert.deepEqual(f.baseColor, [0.1, 0.3, 0.1], 'Color input → rgb only (alpha dropped)');
 });
 
-test('core/grass gathers card_0, card_1, … in numeric order for multi-type', () => {
+test('geom/grass gathers card_0, card_1, … in numeric order for multi-type', () => {
   const { inputs } = baseInputs();
   inputs.card_1 = fakeTex('card1').value;
   inputs.card_2 = fakeTex('card2').value;
@@ -63,7 +63,7 @@ test('core/grass gathers card_0, card_1, … in numeric order for multi-type', (
   assert.equal(texId(f.cards[2]!.texture), 'card2');
 });
 
-test('core/grass with missing essential inputs emits an empty scene (partial-wiring safe)', () => {
+test('geom/grass with missing essential inputs emits an empty scene (partial-wiring safe)', () => {
   for (const drop of ['heightTexture', 'density', 'card_0']) {
     const { inputs } = baseInputs();
     delete inputs[drop];

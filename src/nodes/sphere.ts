@@ -6,7 +6,7 @@ import { uploadMeshToGpu } from '../render/mesh.js';
 import { generateSphere } from '../render/sphere.js';
 
 export const sphereNode: NodeDef = {
-  id: 'core/sphere',
+  id: 'geom/sphere',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -34,7 +34,7 @@ export const sphereNode: NodeDef = {
     {
       name: 'geometry',
       type: 'Geometry',
-      description: 'a UV sphere mesh centred at the origin, ready to wire into [core/scene-entity](../../core/scene-entity) or [core/instance-geometry-on-points](../../core/instance-geometry-on-points)',
+      description: 'a UV sphere mesh centred at the origin, ready to wire into [scene/entity](../../scene/entity) or [geom/instance-on-points](../../geom/instance-on-points)',
     },
   ],
   doc: {
@@ -46,16 +46,16 @@ Pinches at the poles like every UV sphere does — for cases where that
 matters (close-up shading, even tessellation), an icosphere generator
 would be a better choice; this one trades that for predictable UV layout.
 
-Wire the output into a [core/scene-entity](../../core/scene-entity) to give
+Wire the output into a [scene/entity](../../scene/entity) to give
 it a material and place it in a scene, into
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 to scatter copies across a point cloud, or into
-[core/merge-geometry](../../core/merge-geometry) to combine with other
+[geom/merge](../../geom/merge) to combine with other
 meshes before instancing.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/sphere', {
+      addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },

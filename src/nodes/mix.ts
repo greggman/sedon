@@ -16,7 +16,7 @@ function asFloat(v: unknown): number {
 }
 
 export const mixNode: NodeDef = {
-  id: 'core/mix',
+  id: 'math/mix',
   category: 'Math',
   inputs: [
     {
@@ -49,17 +49,17 @@ export const mixNode: NodeDef = {
     summary: 'Linearly interpolate two Colors by a Float factor.',
     description: `
 Per-channel \`a + (b − a) · factor\`. Operates on Color RGBA values — for
-texture-based blending, reach for [core/blend](../../core/blend) (mix mode)
-or [core/blend-mask](../../core/blend-mask) instead.
+texture-based blending, reach for [tex/blend](../../tex/blend) (mix mode)
+or [tex/blend-mask](../../tex/blend-mask) instead.
 
 Use anywhere you have two colours and want to dial smoothly between them:
 subgraph boundary defaults that the parent should be able to override,
-hand-tuned gradient endpoints fed into a [core/palette](../../core/palette),
+hand-tuned gradient endpoints fed into a [tex/palette](../../tex/palette),
 or one half of an A/B authoring comparison.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/mix', {
+      addNode(g, 'math/mix', {
         id: 'mix',
         position: { x: 0, y: 0 },
         inputValues: {

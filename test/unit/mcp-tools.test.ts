@@ -69,9 +69,9 @@ test('listNodeKinds returns every registered kind with input/output shapes', () 
   };
   // Sanity: should include known core nodes.
   const ids = new Set(result.kinds.map((k) => k.id));
-  assert.ok(ids.has('core/sphere'), 'expected core/sphere among kinds');
-  assert.ok(ids.has('core/transform-geometry'), 'expected core/transform-geometry');
-  assert.ok(ids.has('core/scene-merge'), 'expected core/scene-merge');
+  assert.ok(ids.has('geom/sphere'), 'expected geom/sphere among kinds');
+  assert.ok(ids.has('geom/transform'), 'expected geom/transform');
+  assert.ok(ids.has('scene/merge'), 'expected scene/merge');
   // Each kind has socket arrays.
   for (const k of result.kinds) {
     assert.ok(Array.isArray(k.inputs), `${k.id}.inputs is array`);
@@ -87,7 +87,7 @@ test('addNode adds a node to the active graph; listGraphNodes sees it', () => {
   const add = tool(tools, 'addNode');
   const list = tool(tools, 'listGraphNodes');
   const { id } = add.handler({
-    kind: 'core/sphere',
+    kind: 'geom/sphere',
     position: { x: 100, y: 100 },
     inputValues: { radius: 2 },
   }) as { id: string };
@@ -97,7 +97,7 @@ test('addNode adds a node to the active graph; listGraphNodes sees it', () => {
   };
   assert.equal(nodes.length, 1);
   assert.equal(nodes[0]!.id, id);
-  assert.equal(nodes[0]!.kind, 'core/sphere');
+  assert.equal(nodes[0]!.kind, 'geom/sphere');
   assert.equal(nodes[0]!.inputValues.radius, 2);
 });
 
@@ -106,7 +106,7 @@ test('addNode uses provided explicit id when given', () => {
   const tools = makeTools();
   const { id } = tool(tools, 'addNode').handler({
     id: 'my-sphere',
-    kind: 'core/sphere',
+    kind: 'geom/sphere',
   }) as { id: string };
   assert.equal(id, 'my-sphere');
 });
@@ -117,8 +117,8 @@ test('connect adds an edge and listGraphEdges reports it', () => {
   resetStore();
   const tools = makeTools();
   const add = tool(tools, 'addNode');
-  const sphereId = (add.handler({ kind: 'core/sphere' }) as { id: string }).id;
-  const entityId = (add.handler({ kind: 'core/scene-entity' }) as { id: string }).id;
+  const sphereId = (add.handler({ kind: 'geom/sphere' }) as { id: string }).id;
+  const entityId = (add.handler({ kind: 'scene/entity' }) as { id: string }).id;
   const { id: edgeId } = tool(tools, 'connect').handler({
     from: { node: sphereId, socket: 'geometry' },
     to: { node: entityId, socket: 'geometry' },
@@ -144,7 +144,7 @@ test('connect rejects malformed socket refs', () => {
 test('setInputValue authors a value; getNodeInputValue reads it back', () => {
   resetStore();
   const tools = makeTools();
-  const { id } = tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string };
+  const { id } = tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string };
   tool(tools, 'setInputValue').handler({ nodeId: id, name: 'radius', value: 5 });
   const { value } = tool(tools, 'getNodeInputValue').handler({
     nodeId: id,
@@ -156,7 +156,7 @@ test('setInputValue authors a value; getNodeInputValue reads it back', () => {
 test('getNodeInputValue returns null for an unauthored socket', () => {
   resetStore();
   const tools = makeTools();
-  const { id } = tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string };
+  const { id } = tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string };
   const { value } = tool(tools, 'getNodeInputValue').handler({
     nodeId: id,
     name: 'radius',
@@ -178,7 +178,7 @@ test('getNodeInputValue throws for unknown node id', () => {
 test('removeNodes drops the nodes from the graph', () => {
   resetStore();
   const tools = makeTools();
-  const { id } = tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string };
+  const { id } = tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string };
   const { removed } = tool(tools, 'removeNodes').handler({ ids: [id] }) as { removed: number };
   assert.equal(removed, 1);
   const { nodes } = tool(tools, 'listGraphNodes').handler({}) as { nodes: unknown[] };
@@ -188,8 +188,8 @@ test('removeNodes drops the nodes from the graph', () => {
 test('removeEdges drops a connected edge but leaves nodes alone', () => {
   resetStore();
   const tools = makeTools();
-  const sphereId = (tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string }).id;
-  const entityId = (tool(tools, 'addNode').handler({ kind: 'core/scene-entity' }) as {
+  const sphereId = (tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string }).id;
+  const entityId = (tool(tools, 'addNode').handler({ kind: 'scene/entity' }) as {
     id: string;
   }).id;
   const { id: edgeId } = tool(tools, 'connect').handler({
@@ -208,7 +208,7 @@ test('removeEdges drops a connected edge but leaves nodes alone', () => {
 test('renameNode sets the cosmetic name', () => {
   resetStore();
   const tools = makeTools();
-  const { id } = tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string };
+  const { id } = tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string };
   tool(tools, 'renameNode').handler({ nodeId: id, name: 'big sphere' });
   const { nodes } = tool(tools, 'listGraphNodes').handler({}) as {
     nodes: Array<{ name: string | null }>;
@@ -226,7 +226,7 @@ test('createSubgraph + setActiveEditing land subsequent addNode inside the subgr
   const { id: editing } = tool(tools, 'getActiveEditing').handler({}) as { id: string };
   assert.equal(editing, 'leg');
   // Now any addNode goes into the leg subgraph.
-  const { id: nodeId } = tool(tools, 'addNode').handler({ kind: 'core/cylinder' }) as {
+  const { id: nodeId } = tool(tools, 'addNode').handler({ kind: 'geom/cylinder' }) as {
     id: string;
   };
   const subgraph = useEditorStore.getState().subgraphs.find((s) => s.id === 'leg');
@@ -283,8 +283,8 @@ test('addNode + connect + setInputValue together produce 3 undo entries', () => 
   resetStore();
   const tools = makeTools();
   const before = useEditorStore.getState().undoStack.length;
-  const sphereId = (tool(tools, 'addNode').handler({ kind: 'core/sphere' }) as { id: string }).id;
-  const entityId = (tool(tools, 'addNode').handler({ kind: 'core/scene-entity' }) as {
+  const sphereId = (tool(tools, 'addNode').handler({ kind: 'geom/sphere' }) as { id: string }).id;
+  const entityId = (tool(tools, 'addNode').handler({ kind: 'scene/entity' }) as {
     id: string;
   }).id;
   tool(tools, 'connect').handler({
@@ -333,7 +333,7 @@ test('listActions: enabled flag reflects live state', () => {
   assert.equal(undoBefore?.enabled, false, 'edit.undo should be disabled with empty undo stack');
 
   // Push something onto the undo stack — one addNode is enough.
-  tool(tools, 'addNode').handler({ kind: 'core/sphere' });
+  tool(tools, 'addNode').handler({ kind: 'geom/sphere' });
   const after = (tool(tools, 'listActions').handler({}) as {
     actions: { id: string; enabled: boolean }[];
   }).actions;
@@ -345,7 +345,7 @@ test('runAction: fires a real action through the command pipeline', async () => 
   resetStore();
   const tools = makeTools();
   // addNode then runAction("edit.undo") should pop it off.
-  tool(tools, 'addNode').handler({ kind: 'core/sphere' });
+  tool(tools, 'addNode').handler({ kind: 'geom/sphere' });
   const nodesBefore = useEditorStore.getState().graph.nodes.length;
   assert.equal(nodesBefore, 1);
   const result = await tool(tools, 'runAction').handler({ id: 'edit.undo' });

@@ -4,16 +4,16 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 // Three smaller plants whose only job in the demo is to showcase the
 // new point-distribution + leaf-mesh nodes:
 //
-//   • Flower   — core/radial-points fans petals around a center.
+//   • Flower   — points/radial fans petals around a center.
 //                Stem (cylinder) + petal ring (leaf-mesh) + receptacle
 //                (sphere). Demonstrates "the palm-frond fan, but as a
 //                standalone source you can drop anywhere."
 //
-//   • Fern     — core/stem-points (alternate mode) places opposite-
+//   • Fern     — points/stem (alternate mode) places opposite-
 //                pairs of leaves up a stem. Demonstrates the
 //                botanically-flavoured stem placement.
 //
-//   • Sunflower disc — core/phyllotaxis-points spirals seed-meshes
+//   • Sunflower disc — points/phyllotaxis spirals seed-meshes
 //                across a flat receptacle. Demonstrates the golden-
 //                angle spiral.
 //
@@ -32,17 +32,17 @@ export function buildFlowerSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 7, y: ROW * 2 } });
 
   // ----- Stem ---------------------------------------------------------
-  const stemGeo = addNode(g, 'core/cylinder', {
+  const stemGeo = addNode(g, 'geom/cylinder', {
     position: { x: 0, y: 0 },
     inputValues: { radius: 0.02, height: 0.8, segments: 8 },
   });
   // Cylinder is centered on origin; translate so its base sits on the
   // ground and the top sits at y=0.8.
-  const stemXform = addNode(g, 'core/transform-geometry', {
+  const stemXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.4, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stemMat = addNode(g, 'core/material', {
+  const stemMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: {
       basecolor: [0.22, 0.45, 0.18, 1],
@@ -50,12 +50,12 @@ export function buildFlowerSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const stemEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
+  const stemEntity = addNode(g, 'scene/entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
   // ----- Petals -------------------------------------------------------
   // 8 petals fanned around the top of the stem. tilt=20° gives a
   // gently-opened flower (90 would be closed, 0 fully flat).
-  const petalPoints = addNode(g, 'core/radial-points', {
+  const petalPoints = addNode(g, 'points/radial', {
     position: { x: 0, y: ROW * 3 },
     inputValues: {
       center: [0, 0.85, 0],
@@ -70,7 +70,7 @@ export function buildFlowerSubgraph(): SubgraphDef {
   });
   // Use a small leaf-mesh as the petal. Heavy cup so it tapers to a
   // point; modest curl so the petal lifts at the tip.
-  const petalGeo = addNode(g, 'core/leaf-mesh', {
+  const petalGeo = addNode(g, 'geom/leaf', {
     position: { x: 0, y: ROW * 4.3 },
     inputValues: {
       length: 0.32,
@@ -82,11 +82,11 @@ export function buildFlowerSubgraph(): SubgraphDef {
       widthDivisions: 3,
     },
   });
-  const petalScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const petalScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { scale: 1, align: true },
   });
-  const petalMat = addNode(g, 'core/material', {
+  const petalMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 5.5 },
     inputValues: {
       basecolor: [0.92, 0.32, 0.4, 1],
@@ -95,18 +95,18 @@ export function buildFlowerSubgraph(): SubgraphDef {
       alpha_cutoff: 0,
     },
   });
-  const petalEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 4 } });
+  const petalEntity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW * 4 } });
 
   // ----- Receptacle (yellow center) -----------------------------------
-  const centerGeo = addNode(g, 'core/sphere', {
+  const centerGeo = addNode(g, 'geom/sphere', {
     position: { x: 0, y: ROW * 6.6 },
     inputValues: { radius: 0.06, segments: 12, rings: 8 },
   });
-  const centerXform = addNode(g, 'core/transform-geometry', {
+  const centerXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: ROW * 6.6 },
     inputValues: { translate: [0, 0.85, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const centerMat = addNode(g, 'core/material', {
+  const centerMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 7.6 },
     inputValues: {
       basecolor: [0.95, 0.78, 0.18, 1],
@@ -114,9 +114,9 @@ export function buildFlowerSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const centerEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 7 } });
+  const centerEntity = addNode(g, 'scene/entity', { position: { x: COL * 2, y: ROW * 7 } });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -164,15 +164,15 @@ export function buildFernSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 7, y: ROW * 2 } });
 
   // ----- Stalk --------------------------------------------------------
-  const stalkGeo = addNode(g, 'core/cylinder', {
+  const stalkGeo = addNode(g, 'geom/cylinder', {
     position: { x: 0, y: 0 },
     inputValues: { radius: 0.025, height: 1.6, segments: 8 },
   });
-  const stalkXform = addNode(g, 'core/transform-geometry', {
+  const stalkXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 0.8, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stalkMat = addNode(g, 'core/material', {
+  const stalkMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: {
       basecolor: [0.28, 0.38, 0.18, 1],
@@ -180,12 +180,12 @@ export function buildFernSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const stalkEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
+  const stalkEntity = addNode(g, 'scene/entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
   // ----- Leaves -------------------------------------------------------
   // Opposite-decussate arrangement: 2 leaves per node, 90° rotated
   // between successive nodes. Looks fern-like enough at distance.
-  const leafPoints = addNode(g, 'core/stem-points', {
+  const leafPoints = addNode(g, 'points/stem', {
     position: { x: 0, y: ROW * 3 },
     inputValues: {
       start: [0, 0, 0],
@@ -202,7 +202,7 @@ export function buildFernSubgraph(): SubgraphDef {
     },
   });
   // Long thin lanceolate leaves with strong curl so they droop.
-  const leafGeo = addNode(g, 'core/leaf-mesh', {
+  const leafGeo = addNode(g, 'geom/leaf', {
     position: { x: 0, y: ROW * 4.3 },
     inputValues: {
       length: 0.7,
@@ -214,11 +214,11 @@ export function buildFernSubgraph(): SubgraphDef {
       widthDivisions: 3,
     },
   });
-  const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const leafScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 2, y: ROW * 3.5 },
     inputValues: { scale: 1, align: true },
   });
-  const leafMat = addNode(g, 'core/material', {
+  const leafMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 5.5 },
     inputValues: {
       basecolor: [0.18, 0.42, 0.14, 1],
@@ -226,9 +226,9 @@ export function buildFernSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const leafEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 4 } });
+  const leafEntity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW * 4 } });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 2.3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -269,15 +269,15 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 7, y: ROW * 2 } });
 
   // ----- Disc receptacle (just a thin cylinder lying on its side) -----
-  const discGeo = addNode(g, 'core/cylinder', {
+  const discGeo = addNode(g, 'geom/cylinder', {
     position: { x: 0, y: 0 },
     inputValues: { radius: 0.7, height: 0.08, segments: 24 },
   });
-  const discXform = addNode(g, 'core/transform-geometry', {
+  const discXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 1.2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const discMat = addNode(g, 'core/material', {
+  const discMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: {
       basecolor: [0.34, 0.18, 0.08, 1],
@@ -285,18 +285,18 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const discEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 0.6 } });
+  const discEntity = addNode(g, 'scene/entity', { position: { x: COL * 2, y: ROW * 0.6 } });
 
   // ----- Stem (so it doesn't float) -----------------------------------
-  const stalkGeo = addNode(g, 'core/cylinder', {
+  const stalkGeo = addNode(g, 'geom/cylinder', {
     position: { x: 0, y: ROW * 2.2 },
     inputValues: { radius: 0.04, height: 1.2, segments: 8 },
   });
-  const stalkXform = addNode(g, 'core/transform-geometry', {
+  const stalkXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: ROW * 2.2 },
     inputValues: { translate: [0, 0.6, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const stalkMat = addNode(g, 'core/material', {
+  const stalkMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 3.2 },
     inputValues: {
       basecolor: [0.22, 0.42, 0.16, 1],
@@ -304,13 +304,13 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const stalkEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 2, y: ROW * 2.8 } });
+  const stalkEntity = addNode(g, 'scene/entity', { position: { x: COL * 2, y: ROW * 2.8 } });
 
   // ----- Seed spiral --------------------------------------------------
   // 120 seeds across the disc face, packed by the golden angle.
   // length=0 keeps them on the disc plane; radius+radiusGrowth fills
   // out from a tight center to the disc rim.
-  const seedPoints = addNode(g, 'core/phyllotaxis-points', {
+  const seedPoints = addNode(g, 'points/phyllotaxis', {
     position: { x: 0, y: ROW * 4.4 },
     inputValues: {
       center: [0, 1.245, 0],
@@ -323,15 +323,15 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       seed: 0.2,
     },
   });
-  const seedGeo = addNode(g, 'core/cone', {
+  const seedGeo = addNode(g, 'geom/cone', {
     position: { x: 0, y: ROW * 5.4 },
     inputValues: { radius: 0.025, height: 0.07, segments: 5 },
   });
-  const seedScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const seedScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 2, y: ROW * 4.8 },
     inputValues: { scale: 1, align: true },
   });
-  const seedMat = addNode(g, 'core/material', {
+  const seedMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 6.6 },
     inputValues: {
       basecolor: [0.18, 0.11, 0.06, 1],
@@ -339,10 +339,10 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const seedEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 5.3 } });
+  const seedEntity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW * 5.3 } });
 
   // ----- Outer ring of yellow petals via radial-points ---------------
-  const petalPoints = addNode(g, 'core/radial-points', {
+  const petalPoints = addNode(g, 'points/radial', {
     position: { x: 0, y: ROW * 7.8 },
     inputValues: {
       center: [0, 1.245, 0],
@@ -355,7 +355,7 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       seed: 0.74,
     },
   });
-  const petalGeo = addNode(g, 'core/leaf-mesh', {
+  const petalGeo = addNode(g, 'geom/leaf', {
     position: { x: 0, y: ROW * 8.8 },
     inputValues: {
       length: 0.55,
@@ -367,11 +367,11 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       widthDivisions: 3,
     },
   });
-  const petalScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const petalScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 2, y: ROW * 8.2 },
     inputValues: { scale: 1, align: true },
   });
-  const petalMat = addNode(g, 'core/material', {
+  const petalMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 10 },
     inputValues: {
       basecolor: [0.96, 0.78, 0.14, 1],
@@ -379,9 +379,9 @@ export function buildSunflowerDiscSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const petalEntity = addNode(g, 'core/scene-entity', { position: { x: COL * 3, y: ROW * 8.7 } });
+  const petalEntity = addNode(g, 'scene/entity', { position: { x: COL * 3, y: ROW * 8.7 } });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 4 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

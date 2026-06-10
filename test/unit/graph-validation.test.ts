@@ -36,7 +36,7 @@ import { createCoreTypeRegistry } from '../../src/core/types.js';
 
 test('assertNodeExists throws node_not_found for an unknown id', () => {
   const g = createGraph();
-  addNode(g, 'core/perlin', { id: 'real' });
+  addNode(g, 'tex/perlin', { id: 'real' });
   assert.throws(() => assertNodeExists(g, 'missing'), (e) => {
     return e instanceof GraphValidationError
       && e.code === 'node_not_found'
@@ -46,7 +46,7 @@ test('assertNodeExists throws node_not_found for an unknown id', () => {
 
 test('assertNotDuplicateNodeId throws duplicate_node_id when id is taken', () => {
   const g = createGraph();
-  addNode(g, 'core/perlin', { id: 'a' });
+  addNode(g, 'tex/perlin', { id: 'a' });
   assert.throws(() => assertNotDuplicateNodeId(g, 'a'), (e) =>
     e instanceof GraphValidationError && e.code === 'duplicate_node_id',
   );
@@ -54,8 +54,8 @@ test('assertNotDuplicateNodeId throws duplicate_node_id when id is taken', () =>
 
 test('assertNotDuplicateEdgeId throws on a taken edge id', () => {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin');
-  const b = addNode(g, 'core/perlin');
+  const a = addNode(g, 'tex/perlin');
+  const b = addNode(g, 'tex/perlin');
   const edge = addEdge(g, { node: a.id, socket: 'texture' }, { node: b.id, socket: 'gain' });
   assert.throws(() => assertNotDuplicateEdgeId(g, edge.id), (e) =>
     e instanceof GraphValidationError && e.code === 'duplicate_edge_id',
@@ -71,9 +71,9 @@ test('assertKnownKind throws unknown_kind on a bogus kind id', () => {
 
 test('assertInputSocketExists throws socket_not_found for a missing input', () => {
   const g = createGraph();
-  const node = addNode(g, 'core/perlin');
+  const node = addNode(g, 'tex/perlin');
   const registry = buildRegistry([]);
-  const def = registry.get('core/perlin')!;
+  const def = registry.get('tex/perlin')!;
   assert.throws(() => assertInputSocketExists(node, def, 'nope'), (e) => {
     return e instanceof GraphValidationError
       && e.code === 'socket_not_found'
@@ -83,9 +83,9 @@ test('assertInputSocketExists throws socket_not_found for a missing input', () =
 
 test('assertOutputSocketExists throws socket_not_found for a missing output', () => {
   const g = createGraph();
-  const node = addNode(g, 'core/perlin');
+  const node = addNode(g, 'tex/perlin');
   const registry = buildRegistry([]);
-  const def = registry.get('core/perlin')!;
+  const def = registry.get('tex/perlin')!;
   assert.throws(() => assertOutputSocketExists(node, def, 'nope'), (e) => {
     return e instanceof GraphValidationError
       && e.code === 'socket_not_found'
@@ -107,7 +107,7 @@ test('assertTypeCompatible PASSES on a registered conversion (Int → Float)', (
 
 test('assertConnectIsValid rejects self-loop', () => {
   const g = createGraph();
-  const n = addNode(g, 'core/perlin');
+  const n = addNode(g, 'tex/perlin');
   const registry = buildRegistry([]);
   const types = createCoreTypeRegistry();
   assert.throws(
@@ -141,8 +141,8 @@ test('assertValueShapeForType: undefined ("clear override") is allowed for any t
 
 function seedGraph(): { aId: string; bId: string } {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', { id: 'A' });
-  const b = addNode(g, 'core/perlin', { id: 'B' });
+  const a = addNode(g, 'tex/perlin', { id: 'A' });
+  const b = addNode(g, 'tex/perlin', { id: 'B' });
   useEditorStore.setState({
     mainGraph: g,
     graph: g,
@@ -160,7 +160,7 @@ function seedGraph(): { aId: string; bId: string } {
 test('store.addNode throws on duplicate id', () => {
   seedGraph();
   assert.throws(
-    () => useEditorStore.getState().addNode({ id: 'A', kind: 'core/perlin' }),
+    () => useEditorStore.getState().addNode({ id: 'A', kind: 'tex/perlin' }),
     (e) => e instanceof GraphValidationError && e.code === 'duplicate_node_id',
   );
 });
@@ -251,7 +251,7 @@ function tool(name: string): SedonTool {
 
 test('MCP addNode: duplicate id returns { ok: false, error.code: "duplicate_node_id" }', () => {
   seedGraph();
-  const res = tool('addNode').handler({ kind: 'core/perlin', id: 'A' }) as { ok?: false; error?: { code: string } };
+  const res = tool('addNode').handler({ kind: 'tex/perlin', id: 'A' }) as { ok?: false; error?: { code: string } };
   assert.equal(res.ok, false);
   assert.equal(res.error?.code, 'duplicate_node_id');
 });

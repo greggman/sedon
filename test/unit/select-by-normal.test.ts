@@ -1,4 +1,4 @@
-// core/select-by-normal — face selection by normal direction.
+// geom/select-by-normal — face selection by normal direction.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

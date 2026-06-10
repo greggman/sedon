@@ -18,7 +18,7 @@ import type { FloatCloudValue } from '../core/resources.js';
 //                 packing convenience that the other two modes would
 //                 need a follow-up arithmetic node to compute.
 export const accumulateFloatCloudNode: NodeDef = {
-  id: 'core/accumulate-float-cloud',
+  id: 'cloud/accumulate',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -43,7 +43,7 @@ export const accumulateFloatCloudNode: NodeDef = {
     {
       name: 'values',
       type: 'FloatCloud',
-      description: 'running-sum cloud the same length as the input. Pair with [core/points-along-axis](../../core/points-along-axis) to turn the sums into PointCloud positions for instancing',
+      description: 'running-sum cloud the same length as the input. Pair with [points/along-axis](../../points/along-axis) to turn the sums into PointCloud positions for instancing',
     },
   ],
   doc: {
@@ -75,12 +75,12 @@ Houdini's \`accumulate()\` VEX inside a Point Wrangle.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const r = addNode(g, 'core/random-float-cloud', {
+      const r = addNode(g, 'cloud/random-float', {
         id: 'r',
         position: { x: 0, y: 0 },
         inputValues: { count: 8, min: 0.05, max: 0.15, seed: 0.4 },
       });
-      const a = addNode(g, 'core/accumulate-float-cloud', {
+      const a = addNode(g, 'cloud/accumulate', {
         id: 'a',
         position: { x: 280, y: 0 },
         inputValues: { mode: 2 },

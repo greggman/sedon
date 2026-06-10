@@ -4,7 +4,7 @@ import type { FloatCloudValue, PointCloudValue, PolygonValue } from '../core/res
 
 // Subdivide each polygon edge into LOTS of randomised width — one
 // building footprint per lot. Each lot emits position + inward yaw +
-// width on parallel clouds so a downstream `core/for-each-point` can
+// width on parallel clouds so a downstream `iter/for-each-point` can
 // instantiate a parametric building sized to fit.
 //
 // Outputs (all index-aligned):
@@ -13,7 +13,7 @@ import type { FloatCloudValue, PointCloudValue, PolygonValue } from '../core/res
 //   • widths  — FloatCloud (per-lot edge-axis extent in metres)
 //   • yaws    — FloatCloud (Y-rotation in radians that aligns local
 //               +X with the lot's inward direction; feed into a
-//               `core/transform-scene.rotate.y` so a building authored
+//               `scene/transform.rotate.y` so a building authored
 //               with "facade along local +Z" faces outward)
 //
 // Width randomisation: each lot picks a value uniform in
@@ -40,7 +40,7 @@ function hashedRand(seed: number, counter: number): number {
 }
 
 export const polygonEdgeLotsNode: NodeDef = {
-  id: 'core/polygon-edge-lots',
+  id: 'poly/edge-lots',
   category: 'Polygon',
   inputs: [
     {
@@ -99,12 +99,12 @@ export const polygonEdgeLotsNode: NodeDef = {
     {
       name: 'widths',
       type: 'FloatCloud',
-      description: 'per-lot edge-axis extent in metres (same index as `points`). Wire into a `core/for-each-point` broadcast input so the body sizes its building to the lot',
+      description: 'per-lot edge-axis extent in metres (same index as `points`). Wire into a `iter/for-each-point` broadcast input so the body sizes its building to the lot',
     },
     {
       name: 'yaws',
       type: 'FloatCloud',
-      description: 'per-lot Y-rotation in radians (same index as `points`). After this yaw a building authored with local +X = "edge direction" and local +Z = "outward" faces correctly. Wire into a `core/vec3-from-floats.y` to feed `core/transform-scene.rotate` inside the per-lot body',
+      description: 'per-lot Y-rotation in radians (same index as `points`). After this yaw a building authored with local +X = "edge direction" and local +Z = "outward" faces correctly. Wire into a `math/vec3-from-floats.y` to feed `scene/transform.rotate` inside the per-lot body',
     },
   ],
   doc: {
@@ -118,7 +118,7 @@ remaining space won't fit \`min_width\`. Each lot gets a position
 assigned, and the yaw rotation that aligns a downstream parametric
 building's local axes with the lot's edge.
 
-Pair with [core/for-each-point](../../core/for-each-point) for the
+Pair with [iter/for-each-point](../../iter/for-each-point) for the
 canonical "different building per lot" composition: each lot drives
 a separate body invocation, and the parametric building scales to
 the lot's reserved width. Quantisation via \`width_step\` keeps the
@@ -126,12 +126,12 @@ eval cache effective so identical-width lots share geometry.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [120, 120] },
       });
-      const lots = addNode(g, 'core/polygon-edge-lots', {
+      const lots = addNode(g, 'poly/edge-lots', {
         id: 'lots',
         position: { x: 280, y: 0 },
         inputValues: { min_width: 12, max_width: 26, width_step: 1, corner_clearance: 12, gap: 1, seed: 7 },

@@ -58,7 +58,7 @@ await new Promise((r) => setTimeout(r, 1500));
 const colorizeId = await page.evaluate(() => {
   const sg = window.__sedonStore__.getState().subgraphs.find((s) => s.id === 'oak-leaf');
   if (!sg) throw new Error('oak-leaf subgraph not found');
-  const c = sg.graph.nodes.find((n) => n.kind === 'core/colorize');
+  const c = sg.graph.nodes.find((n) => n.kind === 'tex/colorize');
   if (!c) throw new Error('colorize not found in oak-leaf');
   return c.id;
 });

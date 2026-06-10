@@ -108,7 +108,7 @@ function pointBasis(
 // draw. Per-point scale/yaw/active clouds modulate transforms; entities that
 // share (geometry, material) refs across points get drawn together.
 export const instanceSceneOnPointsNode: NodeDef = {
-  id: 'core/instance-scene-on-points',
+  id: 'scene/instance-on-points',
   category: 'Geometry/Distribution',
   // Stamps placement provenance referencing this distribute's nodeId
   // and ctx.subgraphPath — output is context-dependent.
@@ -122,7 +122,7 @@ export const instanceSceneOnPointsNode: NodeDef = {
     {
       name: 'instance',
       type: 'Scene',
-      description: 'source scene from [core/scene-entity](../../core/scene-entity) (or any other Scene). Every entity in the source is scattered to every point — entities that share refs across points batch into one instanced draw',
+      description: 'source scene from [scene/entity](../../scene/entity) (or any other Scene). Every entity in the source is scattered to every point — entities that share refs across points batch into one instanced draw',
     },
     {
       name: 'scale',
@@ -196,7 +196,7 @@ own entity, so:
 
 For a single MERGED MESH instead (track of railroad ties, ridge of
 spires that should bend as one), reach for
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 — that one CPU-merges into one Geometry.
 
 Per-point variation comes from optional Cloud inputs:
@@ -205,10 +205,10 @@ Per-point variation comes from optional Cloud inputs:
   unwired, the node generates its own deterministic yaw jitter from \`seed\`
   so a forest doesn't look like every tree faces the same direction.
 - \`per_point_active\`: Float, mask. Values ≥ 0.5 are realised.
-  Pair with [core/cloud-step](../../core/cloud-step) to mask scatter by
+  Pair with [cloud/step](../../cloud/step) to mask scatter by
   altitude/slope/density.
 - \`per_point_tint\`: Vec3, RGB tint multiplied into the entity's tint.
-  Pair with [core/random-vec3-cloud](../../core/random-vec3-cloud) for
+  Pair with [cloud/random-vec3](../../cloud/random-vec3) for
   natural species colour variation.
 `,
     sampleGraph: () => {
@@ -216,32 +216,32 @@ Per-point variation comes from optional Cloud inputs:
       // Grid of 64 points → 64 scenes (each a coloured cube
       // scene-entity) via the instancer. Live scene preview shows the
       // resulting batched draws.
-      const points = addNode(g, 'core/grid-distribute', {
+      const points = addNode(g, 'points/grid', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { cols: 6, rows: 6, spacing: 0.8, jitter: 0.4, seed: 0 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.55, 0.62, 0.42, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 380 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 840, y: 100 },
         inputValues: { scale: 0.18, align: true, seed: 0 },

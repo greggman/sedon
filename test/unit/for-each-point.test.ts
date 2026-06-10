@@ -1,4 +1,4 @@
-// core/for-each-point evaluates a bridge subgraph once per point in
+// iter/for-each-point evaluates a bridge subgraph once per point in
 // the wired PointCloud, threading per-iteration context through
 // `ctx.iterationContext` and merging / lifting per-iteration outputs.
 //
@@ -77,7 +77,7 @@ test('for-each-point: empty points → empty scene, bridge never called', async 
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     inputValues: { points: makePointCloud([]), __bridgeId: 'b' },
   });
   const result = await evaluateGraph(g, reg, { rootNodeId: pts.id });
@@ -95,7 +95,7 @@ test('for-each-point: missing __bridgeId → empty scene', async () => {
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     inputValues: { points: makePointCloud([[0, 0, 0]]), __bridgeId: '' },
   });
   const result = await evaluateGraph(g, reg, { rootNodeId: pts.id });
@@ -112,7 +112,7 @@ test('for-each-point: unknown bridge id → empty scene (no throw)', async () =>
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     inputValues: { points: makePointCloud([[0, 0, 0]]), __bridgeId: 'does-not-exist' },
   });
   const result = await evaluateGraph(g, reg, { rootNodeId: pts.id });
@@ -130,7 +130,7 @@ test('for-each-point: invokes bridge once per point with position + index in ite
   const reg = makeRegistry(bridge);
   const g = createGraph();
   const points = makePointCloud([[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     inputValues: { points, __bridgeId: 'b' },
   });
   const result = await evaluateGraph(g, reg, { rootNodeId: pts.id });
@@ -155,7 +155,7 @@ test('for-each-point: Float broadcast — same value every iteration', async () 
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraInputs: [{ name: 'size', type: 'FloatCloud', optional: true }],
     inputValues: {
       points: makePointCloud([[0, 0, 0], [1, 0, 0]]),
@@ -180,7 +180,7 @@ test('for-each-point: FloatCloud derefs per iteration', async () => {
   const reg = makeRegistry(bridge);
   const g = createGraph();
   const sizes = { count: 3, values: new Float32Array([10, 20, 30]) };
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraInputs: [{ name: 'size', type: 'FloatCloud', optional: true }],
     inputValues: {
       points: makePointCloud([[0, 0, 0], [1, 0, 0], [2, 0, 0]]),
@@ -206,7 +206,7 @@ test('for-each-point: Vec3Cloud derefs per iteration', async () => {
   const reg = makeRegistry(bridge);
   const g = createGraph();
   const colours = { count: 2, values: new Float32Array([1, 0, 0, 0, 1, 0]) };
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraInputs: [{ name: 'colour', type: 'Vec3Cloud', optional: true }],
     inputValues: {
       points: makePointCloud([[0, 0, 0], [1, 0, 0]]),
@@ -230,7 +230,7 @@ test('for-each-point: unwired broadcast input falls back to bridge\'s declared d
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     inputValues: { points: makePointCloud([[0, 0, 0]]), __bridgeId: 'b' },
   });
   await evaluateGraph(g, reg, { rootNodeId: pts.id });
@@ -251,7 +251,7 @@ test('for-each-point: lifts Float output into FloatCloud', async () => {
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraOutputs: [{ name: 'area', type: 'FloatCloud' }],
     inputValues: { points: makePointCloud([[0, 0, 0], [1, 0, 0], [2, 0, 0]]), __bridgeId: 'b' },
   });
@@ -274,7 +274,7 @@ test('for-each-point: lifts Vec3 output into Vec3Cloud', async () => {
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraOutputs: [{ name: 'colour', type: 'Vec3Cloud' }],
     inputValues: { points: makePointCloud([[0, 0, 0], [1, 0, 0]]), __bridgeId: 'b' },
   });
@@ -303,7 +303,7 @@ test('for-each-point: multiple bridge outputs lift independently', async () => {
   });
   const reg = makeRegistry(bridge);
   const g = createGraph();
-  const pts = addNode(g, 'core/for-each-point', {
+  const pts = addNode(g, 'iter/for-each-point', {
     extraOutputs: [
       { name: 'scene', type: 'Scene' },
       { name: 'area', type: 'FloatCloud' },

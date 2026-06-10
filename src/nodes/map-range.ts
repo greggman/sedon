@@ -5,7 +5,7 @@ import type { NodeDef } from '../core/node-def.js';
 // `clamp` true, the output is bounded to the output range; without, values
 // outside the input range extrapolate.
 export const mapRangeNode: NodeDef = {
-  id: 'core/map-range',
+  id: 'math/map-range',
   category: 'Math',
   inputs: [
     {
@@ -70,7 +70,7 @@ channel that'll get clipped at the GPU).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/map-range', {
+      addNode(g, 'math/map-range', {
         id: 'remap',
         position: { x: 0, y: 0 },
         inputValues: { value: 0.5, in_min: 0, in_max: 1, out_min: -10, out_max: 10, clamp: false },

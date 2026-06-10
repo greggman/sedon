@@ -26,7 +26,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // values to tighten dynamic range, push mid-tones, etc. Useful for taming
 // flat-looking procedural noise before piping it into colorize.
 export const levelsNode: NodeDef = {
-  id: 'core/levels',
+  id: 'tex/levels',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -76,19 +76,19 @@ midtones with a power curve. Defaults are a no-op so dropping the node in
 unconfigured passes the input through unchanged.
 
 The most common reason to reach for levels: procedural noise often comes out
-flat (no extreme darks or lights), and a [core/colorize](../../core/colorize)
+flat (no extreme darks or lights), and a [tex/colorize](../../tex/colorize)
 downstream will read muddy because the gradient only ever gets sampled near
 t=0.5. Bump contrast above 1 and the noise starts using more of the gradient.
 Crush gamma below 1 and the bright bits pop while the dark bits stay dark.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/perlin', {
+      const src = addNode(g, 'tex/perlin', {
         id: 'src',
         position: { x: 0, y: 0 },
         inputValues: { scale: [6, 6], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
       });
-      const lev = addNode(g, 'core/levels', {
+      const lev = addNode(g, 'tex/levels', {
         id: 'levels',
         position: { x: 280, y: 0 },
         inputValues: { brightness: 0, contrast: 3.5, gamma: 0.7, resolution: 512 },

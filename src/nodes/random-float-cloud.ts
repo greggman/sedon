@@ -8,7 +8,7 @@ function hash1(i: number, seed: number): number {
 }
 
 export const randomFloatCloudNode: NodeDef = {
-  id: 'core/random-float-cloud',
+  id: 'cloud/random-float',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -39,7 +39,7 @@ export const randomFloatCloudNode: NodeDef = {
     {
       name: 'values',
       type: 'FloatCloud',
-      description: 'one random Float per source point. Feed into `per_point_yaw` (radians) or `per_point_active` (mask, ≥0.5 active) on an instancer, or through [core/cloud-step](../../core/cloud-step) to threshold first',
+      description: 'one random Float per source point. Feed into `per_point_yaw` (radians) or `per_point_active` (mask, ≥0.5 active) on an instancer, or through [cloud/step](../../cloud/step) to threshold first',
     },
   ],
   doc: {
@@ -55,49 +55,49 @@ Common uses:
   uniform-grid look on scattered forests / debris fields.
 - \`per_point_active\` (mask, ≥ 0.5 = realised) — set range [0, 1]
   and ~half the points show. Combine with
-  [core/cloud-step](../../core/cloud-step) for an explicit threshold,
-  or [core/cloud-multiply](../../core/cloud-multiply) to AND with
+  [cloud/step](../../cloud/step) for an explicit threshold,
+  or [cloud/multiply](../../cloud/multiply) to AND with
   another mask.
 - A bias seed for a downstream consumer that wants per-point
   randomness derived elsewhere.
 
 For per-axis variation (xy scale, RGB tint) use
-[core/random-vec3-cloud](../../core/random-vec3-cloud) instead.
+[cloud/random-vec3](../../cloud/random-vec3) instead.
 `,
     sampleGraph: () => {
       const g = createGraph();
       // 6×6 grid → ~half show via per_point_active mask (random ≥ 0.5).
-      const points = addNode(g, 'core/grid-distribute', {
+      const points = addNode(g, 'points/grid', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { cols: 6, rows: 6, spacing: 0.8, jitter: 0, seed: 0 },
       });
-      const mask = addNode(g, 'core/random-float-cloud', {
+      const mask = addNode(g, 'cloud/random-float', {
         id: 'mask',
         position: { x: 280, y: 0 },
         inputValues: { min: 0, max: 1, seed: 0.31 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.25, 0.32, 0.42, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 380 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 840, y: 100 },
         inputValues: { scale: 0.2, align: true, seed: 0 },

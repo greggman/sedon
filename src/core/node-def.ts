@@ -63,7 +63,7 @@ export interface InputDef {
    * label, no editor, no socket. The value still lives in
    * `inputValues` and flows through evaluate/serialize/copy-paste like
    * any other input. Used for internal state the node author maintains
-   * programmatically (e.g. cached image dimensions on `core/image`)
+   * programmatically (e.g. cached image dimensions on `tex/image`)
    * that needs to persist with the graph but isn't user-facing.
    */
   hidden?: boolean;
@@ -92,7 +92,7 @@ export interface InputDef {
   flipY?: boolean;
   /**
    * For `widget: 'point-list'` inputs: opt the editor into the
-   * Bezier-handle UI used by `core/curve-2d`. Each tuple's slots
+   * Bezier-handle UI used by `path/curve-2d`. Each tuple's slots
    * 1..6 are interpreted as `[type, leftDx, leftDy, rightDx,
    * rightDy]` (slot 0 / 2 remain X / Y as elsewhere); the editor
    * renders draggable tangent handles for selected anchors and
@@ -106,8 +106,8 @@ export interface InputDef {
    * path). The editor draws the wraparound segment from the last
    * vertex back to the first so the user sees the polygon they're
    * authoring. Off (default) is the original polyline behavior.
-   * Independent of `bezierHandles` — both `core/curve-2d` and
-   * `core/polygon-from-points` set this when they want closed
+   * Independent of `bezierHandles` — both `path/curve-2d` and
+   * `poly/from-points` set this when they want closed
    * authoring.
    */
   closed?: boolean;
@@ -127,7 +127,7 @@ export interface NodeContext {
   /**
    * The node registry the evaluator is dispatching against. Threaded
    * into the context so nodes whose evaluate() needs to look up other
-   * node-kinds at runtime — `core/for-each-point` invokes a body
+   * node-kinds at runtime — `iter/for-each-point` invokes a body
    * subgraph wrapper N times — can do so without each NodeDef having
    * to capture the registry in closure. Subgraph wrappers still capture
    * their own registry reference in closure (predates this field);
@@ -142,7 +142,7 @@ export interface NodeContext {
    */
   subgraphInputs?: NodeInputs;
   /**
-   * Per-iteration context values, set by `core/for-each-point` (and
+   * Per-iteration context values, set by `iter/for-each-point` (and
    * future for-each-* nodes) when invoking their bridge subgraph N
    * times. Keyed by the names declared in the iteration kind's
    * `providedIterationContext` (e.g. `position`, `index` for
@@ -266,7 +266,7 @@ export interface NodeDoc {
     /**
      * Optional subgraph defs the sample graph references. Required for
      * nodes whose sample meaningfully uses subgraph wrapper kinds —
-     * `core/for-each-point` is the canonical case: the iteration body
+     * `iter/for-each-point` is the canonical case: the iteration body
      * IS a subgraph, so the sample has to author one and register it
      * alongside the main graph. Threaded through the docs page entry
      * (src/docs/main.tsx) into the store's `subgraphs` slice before
@@ -293,7 +293,7 @@ export interface NodeDef {
    * When set, instances of this node may carry per-instance
    * `extraInputs` appended after `inputs`. The UI shows a "+ Add"
    * affordance on this node; clicking creates a new InputDef with
-   * `namePrefix_${nextIdx}` and the given type. Used by `core/scene-merge`
+   * `namePrefix_${nextIdx}` and the given type. Used by `scene/merge`
    * (variadic merge) — most nodes leave this undefined and keep their
    * static input list.
    */
@@ -337,7 +337,7 @@ export interface NodeDef {
    * into the cache key alongside the declared inputs.
    *
    * Use for nodes whose output depends on STATE OUTSIDE the input
-   * graph that can change between evals — e.g. `core/image` reads an
+   * graph that can change between evals — e.g. `tex/image` reads an
    * external URL into a module-level bitmap cache; the URL alone
    * fingerprints the input, but a per-URL "loaded version" counter
    * forces the cache to miss on the eval that follows the fetch
@@ -369,7 +369,7 @@ export interface NodeDef {
    */
   provenanceDependent?: boolean;
   /**
-   * For iteration nodes (`core/for-each-point` and future for-each-*
+   * For iteration nodes (`iter/for-each-point` and future for-each-*
    * kinds): the per-iteration context values this kind PROVIDES to
    * its bridge subgraph. Drives:
    *   • The output sockets of the `iteration-input/<id>` boundary

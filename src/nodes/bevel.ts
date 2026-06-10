@@ -6,14 +6,14 @@ import { bevelMesh } from '../render/bevel.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const bevelNode: NodeDef = {
-  id: 'core/bevel',
+  id: 'geom/bevel',
   category: 'Geometry/Modifiers',
   inputs: [
     {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'mesh to bevel. Must carry a CPU-side mesh AND an edge selection mask (typically produced by `core/select-by-angle` upstream). If `selection.edges` is missing or all-zero, the geometry passes through unchanged.',
+        'mesh to bevel. Must carry a CPU-side mesh AND an edge selection mask (typically produced by `geom/select-by-angle` upstream). If `selection.edges` is missing or all-zero, the geometry passes through unchanged.',
     },
     {
       name: 'width',
@@ -37,7 +37,7 @@ export const bevelNode: NodeDef = {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'beveled mesh. Vertices have been split along selected edges and new strip / corner-fill faces inserted. The edge-selection mask is DROPPED — the new topology no longer matches the input indexing. Pipe through `core/compute-normals` afterwards to get clean shading on the new strips.',
+        'beveled mesh. Vertices have been split along selected edges and new strip / corner-fill faces inserted. The edge-selection mask is DROPPED — the new topology no longer matches the input indexing. Pipe through `geom/compute-normals` afterwards to get clean shading on the new strips.',
     },
   ],
   doc: {
@@ -45,7 +45,7 @@ export const bevelNode: NodeDef = {
       'Replace selected edges with chamfered (or rounded, segments ≥ 2) strips — the canonical "soften the sharp corners" furniture op.',
     description: `
 Takes a Geometry carrying an edge-selection mask (e.g. from
-\`core/select-by-angle\`) and replaces every selected edge with a
+\`geom/select-by-angle\`) and replaces every selected edge with a
 strip of new faces. Each affected vertex is split into one inset
 copy per smoothing sector (separated by selected edges), and a
 small corner-cap fills the gap where multiple selected edges meet.
@@ -72,17 +72,17 @@ might add if anyone needs it (Blender exposes both).
       // a chamfered cube where every former 90° corner becomes a
       // tiny triangle and every former edge a thin diagonal strip.
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const sel = addNode(g, 'core/select-by-angle', {
+      const sel = addNode(g, 'geom/select-by-angle', {
         id: 'select',
         position: { x: 280, y: 0 },
         inputValues: { threshold: 30 },
       });
-      const bev = addNode(g, 'core/bevel', {
+      const bev = addNode(g, 'geom/bevel', {
         id: 'bevel',
         position: { x: 560, y: 0 },
         inputValues: { width: 0.12, segments: 4 },
@@ -97,7 +97,7 @@ might add if anyone needs it (Blender exposes both).
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/bevel requires a CPU-side mesh on the input geometry; '
+        'geom/bevel requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

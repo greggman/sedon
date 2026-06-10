@@ -14,7 +14,7 @@ import './docs.css';
 // block as `<script id="sedon-doc-config" type="application/json">…</script>`
 // telling us which mode to render:
 //
-//   { "kind": "node", "nodeId": "core/perlin" }   → DocsPage
+//   { "kind": "node", "nodeId": "tex/perlin" }   → DocsPage
 //   { "kind": "index" }                            → DocsIndex
 //
 // The same bundle serves both — the per-node and TOC pages all link to
@@ -114,7 +114,7 @@ if (config.kind === 'node' && config.nodeId) {
         mainGraph: sample.graph,
         mainRootNodeId: sample.rootNodeId,
         // Samples that reference subgraph wrapper kinds (e.g.
-        // core/for-each-point's body) provide them here; the editor
+        // iter/for-each-point's body) provide them here; the editor
         // store's `subgraphs` slice feeds the registry build, so the
         // wrapper kind is in the registry by the time the sample
         // evaluates.

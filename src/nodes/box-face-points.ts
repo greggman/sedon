@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
 // Grid of points across ONE face of an axis-aligned box, with
-// orientation data so a downstream `core/instance-scene-on-points`
+// orientation data so a downstream `scene/instance-on-points`
 // places facade modules (windows, AC units, signs, fire-escape
 // brackets, etc.) flush with the wall and facing outward.
 //
@@ -14,8 +14,8 @@ import type { PointCloudValue } from '../core/resources.js';
 // roof billboards, sidewalk-level signs on the -Y face, etc.)
 // compose from the same building block.
 //
-// Orientation convention (matches `core/polygon-perimeter-points`
-// and `core/polyline-points` so downstream `instance-scene-on-points`
+// Orientation convention (matches `points/polygon-perimeter`
+// and `points/from-polyline` so downstream `instance-scene-on-points`
 // with `align: true` Just Works):
 //
 //   • position — grid cell centre in WORLD space, optionally pushed
@@ -89,7 +89,7 @@ function resolveFace(axis: [number, number, number], width: number, height: numb
 }
 
 export const boxFacePointsNode: NodeDef = {
-  id: 'core/box-face-points',
+  id: 'points/box-face',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -97,7 +97,7 @@ export const boxFacePointsNode: NodeDef = {
       type: 'Float',
       default: 1,
       min: 0,
-      description: 'X-extent of the implicit box (the box itself isn\'t produced — this node just lays out points as if it existed). Centred on the origin like `core/box`',
+      description: 'X-extent of the implicit box (the box itself isn\'t produced — this node just lays out points as if it existed). Centred on the origin like `geom/box`',
     },
     {
       name: 'height',
@@ -160,9 +160,9 @@ export const boxFacePointsNode: NodeDef = {
 The atom for facade composition. Compose a building's wall details
 (windows, AC units, signs, fire-escape brackets) by:
   1. Decide the building's bulk dimensions (width × height × depth).
-  2. Per wall (±X, ±Z), call \`core/box-face-points\` with that wall's
+  2. Per wall (±X, ±Z), call \`points/box-face\` with that wall's
      \`axis\` and a (cols, rows) grid sized to your facade language.
-  3. Scatter a window / AC / sign module with \`core/instance-scene-on-points\`,
+  3. Scatter a window / AC / sign module with \`scene/instance-on-points\`,
      using \`align: true\` so each instance faces outward and stays upright.
 
 **Picking cols/rows for a face**
@@ -182,9 +182,9 @@ face (±X or ±Z) with cols = horizontal count, rows = floor count.
 For "a vertical stack of N points inside a composition graph" use
 the +Y face and rows = N (the bitangent there is world Z = up).
 
-The implicit box matches \`core/box\`'s ±half-extent convention so the
+The implicit box matches \`geom/box\`'s ±half-extent convention so the
 same width/height/depth values that build the wall geometry build
-the points for its facade. Combine with \`core/polygon-edge-lots\`
+the points for its facade. Combine with \`poly/edge-lots\`
 (picks per-block building footprints) for a lot → building →
 facade composition path.
 `,
@@ -192,7 +192,7 @@ facade composition path.
       const g = createGraph();
       // A 4 m wide × 3 m tall × 1 m deep wall, with windows in a 4 × 2
       // grid on its +Z face.
-      const pts = addNode(g, 'core/box-face-points', {
+      const pts = addNode(g, 'points/box-face', {
         id: 'pts',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -203,21 +203,21 @@ facade composition path.
           offset: 0.02,
         },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 180 },
         inputValues: { size: 0.4 },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'mat',
         position: { x: 0, y: 360 },
         inputValues: { basecolor: [0.45, 0.65, 0.85, 1], roughness: 0.4, metallic: 0 },
       });
-      const ent = addNode(g, 'core/scene-entity', {
+      const ent = addNode(g, 'scene/entity', {
         id: 'ent',
         position: { x: 280, y: 180 },
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 560, y: 0 },
         inputValues: { scale: 1, align: true },

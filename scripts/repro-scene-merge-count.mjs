@@ -31,7 +31,7 @@ const countMergesInDemo = async (demoId) => {
   await new Promise((r) => setTimeout(r, 1500));
   return page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const count = (graph) => graph.nodes.filter((n) => n.kind === 'core/scene-merge').length;
+    const count = (graph) => graph.nodes.filter((n) => n.kind === 'scene/merge').length;
     const subs = {};
     for (const s of state.subgraphs) subs[s.id] = count(s.graph);
     return { main: count(state.mainGraph), subgraphs: subs };

@@ -1,5 +1,5 @@
 // Geometry invariants for the three new "point source" nodes —
-// core/radial-points, core/phyllotaxis-points, core/stem-points. All
+// points/radial, points/phyllotaxis, points/stem. All
 // three are pure CPU nodes (no device needed) producing PointCloud
 // outputs, so we can drive them directly without the eval pipeline.
 
@@ -22,7 +22,7 @@ function near(a: number, b: number, eps = 1e-5): boolean {
   return Math.abs(a - b) < eps;
 }
 
-// ===== core/radial-points ===========================================
+// ===== points/radial ===========================================
 
 test('radial-points: count=5 around +Y axis with radiusOffset=2 places points on a circle of radius 2 in XZ plane', () => {
   const { points } = radialPointsNode.evaluate({}, {
@@ -97,7 +97,7 @@ test('radial-points: center offset translates every point by the same amount', (
   }
 });
 
-// ===== core/phyllotaxis-points ======================================
+// ===== points/phyllotaxis ======================================
 
 test('phyllotaxis-points: count=N along axis with length=L places i along axis at i/(N-1) * L', () => {
   const { points } = phyllotaxisPointsNode.evaluate({}, {
@@ -145,7 +145,7 @@ test('phyllotaxis-points: radiusGrowth=0 collapses last point to the axis', () =
   assert.ok(near(last[2], 0, 1e-6), `last point z=${last[2]} should collapse to axis`);
 });
 
-// ===== core/stem-points =============================================
+// ===== points/stem =============================================
 
 test('stem-points: mode=alternate emits 1 point per node', () => {
   const { points } = stemPointsNode.evaluate({}, {
@@ -209,7 +209,7 @@ test('stem-points: tilt=90 with axis +Y produces +Y-aligned normals', () => {
   }
 });
 
-// ===== core/points-line =============================================
+// ===== points/line =============================================
 
 test('points-line: count=5 from start to end places first at start, last at end, evenly spaced', () => {
   const { points } = pointsLineNode.evaluate({}, {
@@ -277,7 +277,7 @@ test('points-line: count=2 places one point at start and one at end', () => {
   assert.ok(near(x1, 7) && near(y1, 5) && near(z1, -1));
 });
 
-// ===== core/corner-points ===========================================
+// ===== points/corners ===========================================
 
 test('corner-points: 4 points at the corners of width×depth rectangle, y=0, CCW from back-left', () => {
   const { points } = cornerPointsNode.evaluate({}, {

@@ -28,7 +28,7 @@ const ROW = 160;
 // Slim vertical pole + small box housing at the top + a sphere for the
 // bulb. The bulb sits inside the housing box, with most of the sphere
 // hidden — what shows below the housing reads as "warm glow under the
-// shade." Until emissive lands on core/material the bulb is just a
+// shade." Until emissive lands on material/pbr the bulb is just a
 // bright basecolor (high value + low metallic) so it pops against the
 // asphalt at city-overview distance.
 //
@@ -46,36 +46,36 @@ export function buildLampPostSubgraph(): SubgraphDef {
   });
 
   // ── Pole: a 5m cylinder lifted so its base sits at y=0.
-  const poleGeo = addNode(g, 'core/cylinder', {
+  const poleGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: 0 },
     inputValues: { radius: 0.08, height: 5, segments: 16 },
   });
-  const poleLift = addNode(g, 'core/transform-geometry', {
+  const poleLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const poleMat = addNode(g, 'core/material', {
+  const poleMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW },
     inputValues: { basecolor: [0.18, 0.18, 0.2, 1], roughness: 0.55, metallic: 0.6 },
   });
-  const poleEnt = addNode(g, 'core/scene-entity', {
+  const poleEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 0.5 },
   });
 
   // ── Housing: a small box hanging off the top of the pole.
-  const housingGeo = addNode(g, 'core/box', {
+  const housingGeo = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { width: 0.35, height: 0.25, depth: 0.35 },
   });
-  const housingLift = addNode(g, 'core/transform-geometry', {
+  const housingLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { translate: [0, 4.82, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const housingMat = addNode(g, 'core/material', {
+  const housingMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { basecolor: [0.12, 0.12, 0.13, 1], roughness: 0.4, metallic: 0.7 },
   });
-  const housingEnt = addNode(g, 'core/scene-entity', {
+  const housingEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 2.5 },
   });
 
@@ -83,24 +83,24 @@ export function buildLampPostSubgraph(): SubgraphDef {
   // basecolor so the lamp reads as lit. Real emissive lands in a
   // later chunk; until then this is the best we can do without
   // changing the lighting model.
-  const bulbGeo = addNode(g, 'core/sphere', {
+  const bulbGeo = addNode(g, 'geom/sphere', {
     position: { x: COL, y: ROW * 5 },
     inputValues: { radius: 0.18, segments: 16, rings: 12 },
   });
-  const bulbLift = addNode(g, 'core/transform-geometry', {
+  const bulbLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 5 },
     inputValues: { translate: [0, 4.62, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const bulbMat = addNode(g, 'core/material', {
+  const bulbMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 6 },
     inputValues: { basecolor: [1.0, 0.92, 0.7, 1], roughness: 0.3, metallic: 0 },
   });
-  const bulbEnt = addNode(g, 'core/scene-entity', {
+  const bulbEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 5.5 },
   });
 
   // ── Merge all three sub-scenes into one Scene the wrapper exports.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -158,48 +158,48 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
   });
 
   // ── Pole: 6m vertical cylinder, base at y=0.
-  const poleGeo = addNode(g, 'core/cylinder', {
+  const poleGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: 0 },
     inputValues: { radius: 0.1, height: 6, segments: 16 },
   });
-  const poleLift = addNode(g, 'core/transform-geometry', {
+  const poleLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const darkMat = addNode(g, 'core/material', {
+  const darkMat = addNode(g, 'material/pbr', {
     position: { x: 0, y: ROW * 2 },
     inputValues: { basecolor: [0.1, 0.1, 0.1, 1], roughness: 0.5, metallic: 0.5 },
   });
-  const poleEnt = addNode(g, 'core/scene-entity', {
+  const poleEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: 0 },
   });
 
   // ── Arm: 4m horizontal cylinder, axis along X. Default cylinders
   // are Y-up, so rotate Z by 90° to swing the axis horizontal.
-  const armGeo = addNode(g, 'core/cylinder', {
+  const armGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { radius: 0.06, height: 4, segments: 12 },
   });
-  const armLift = addNode(g, 'core/transform-geometry', {
+  const armLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { translate: [4, 5.7, 0], rotate: [0, 0, Math.PI / 2], scale: [1, 1, 1] },
   });
-  const armEnt = addNode(g, 'core/scene-entity', {
+  const armEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 2 },
   });
 
   // ── Head: the rectangular housing the lights hang in. Width is
   // along Y to stack the lights vertically; the box's deep face
   // pokes forward (positive Z) so the lights face traffic.
-  const headGeo = addNode(g, 'core/box', {
+  const headGeo = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { width: 0.45, height: 1.3, depth: 0.35 },
   });
-  const headLift = addNode(g, 'core/transform-geometry', {
+  const headLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { translate: [3.8, 5, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const headEnt = addNode(g, 'core/scene-entity', {
+  const headEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 3 },
   });
 
@@ -211,7 +211,7 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
     { color: [1.0, 0.85, 0.2,  1], y: 5.0, row: 5 },
     { color: [0.2, 0.95, 0.35, 1], y: 4.5, row: 6 },
   ];
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -243,19 +243,19 @@ export function buildTrafficSignalSubgraph(): SubgraphDef {
   // Lights — each is geometry + material + entity, all going into
   // the merge under their respective scene_3..5 slot.
   lights.forEach((light, i) => {
-    const lGeo = addNode(g, 'core/sphere', {
+    const lGeo = addNode(g, 'geom/sphere', {
       position: { x: COL, y: ROW * light.row },
       inputValues: { radius: 0.14, segments: 16, rings: 12 },
     });
-    const lLift = addNode(g, 'core/transform-geometry', {
+    const lLift = addNode(g, 'geom/transform', {
       position: { x: COL * 2, y: ROW * light.row },
       inputValues: { translate: [3.8, light.y, 0.2], rotate: [0, 0, 0], scale: [1, 1, 1] },
     });
-    const lMat = addNode(g, 'core/material', {
+    const lMat = addNode(g, 'material/pbr', {
       position: { x: COL * 3, y: ROW * light.row },
       inputValues: { basecolor: light.color, roughness: 0.4, metallic: 0 },
     });
-    const lEnt = addNode(g, 'core/scene-entity', {
+    const lEnt = addNode(g, 'scene/entity', {
       position: { x: COL * 4, y: ROW * light.row },
     });
     addEdge(g, { node: lGeo.id, socket: 'geometry' }, { node: lLift.id, socket: 'geometry' });
@@ -295,66 +295,66 @@ export function buildFireHydrantSubgraph(): SubgraphDef {
   });
 
   // Shared red material — most of the hydrant.
-  const redMat = addNode(g, 'core/material', {
+  const redMat = addNode(g, 'material/pbr', {
     position: { x: 0, y: ROW * 2 },
     inputValues: { basecolor: [0.82, 0.12, 0.1, 1], roughness: 0.5, metallic: 0.1 },
   });
 
   // ── Body: squat cylinder, 0.7m tall, 0.2m radius.
-  const bodyGeo = addNode(g, 'core/cylinder', {
+  const bodyGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: 0 },
     inputValues: { radius: 0.2, height: 0.7, segments: 16 },
   });
-  const bodyLift = addNode(g, 'core/transform-geometry', {
+  const bodyLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const bodyEnt = addNode(g, 'core/scene-entity', {
+  const bodyEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: 0 },
   });
 
   // ── Dome: sphere on top — most of it sits ABOVE the body but a
   // small fraction overlaps for a flush join.
-  const domeGeo = addNode(g, 'core/sphere', {
+  const domeGeo = addNode(g, 'geom/sphere', {
     position: { x: COL, y: ROW },
     inputValues: { radius: 0.22, segments: 16, rings: 12 },
   });
-  const domeLift = addNode(g, 'core/transform-geometry', {
+  const domeLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW },
     inputValues: { translate: [0, 0.75, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const domeEnt = addNode(g, 'core/scene-entity', {
+  const domeEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW },
   });
 
   // ── Side bolt caps: two short cylinders sticking out left/right.
   // Cylinder axis is Y-up by default → rotate Z by 90° so the axis
   // is along X.
-  const leftCapGeo = addNode(g, 'core/cylinder', {
+  const leftCapGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { radius: 0.08, height: 0.18, segments: 12 },
   });
-  const leftCapLift = addNode(g, 'core/transform-geometry', {
+  const leftCapLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { translate: [-0.19, 0.5, 0], rotate: [0, 0, Math.PI / 2], scale: [1, 1, 1] },
   });
-  const leftCapEnt = addNode(g, 'core/scene-entity', {
+  const leftCapEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 2 },
   });
 
-  const rightCapGeo = addNode(g, 'core/cylinder', {
+  const rightCapGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { radius: 0.08, height: 0.18, segments: 12 },
   });
-  const rightCapLift = addNode(g, 'core/transform-geometry', {
+  const rightCapLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: { translate: [0.37, 0.5, 0], rotate: [0, 0, Math.PI / 2], scale: [1, 1, 1] },
   });
-  const rightCapEnt = addNode(g, 'core/scene-entity', {
+  const rightCapEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 3 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW * 1.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -423,41 +423,41 @@ export function buildCarSubgraph(): SubgraphDef {
 
   // Body color comes from the wrapper input so a city scatter can
   // randomise per-instance car colors.
-  const bodyMat = addNode(g, 'core/material', {
+  const bodyMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 4 },
     inputValues: { roughness: 0.35, metallic: 0.5 },
   });
   // Glass / cabin color — slight tint, glossy-ish.
-  const glassMat = addNode(g, 'core/material', {
+  const glassMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 5 },
     inputValues: { basecolor: [0.12, 0.16, 0.2, 1], roughness: 0.25, metallic: 0 },
   });
   // Wheels — flat dark.
-  const wheelMat = addNode(g, 'core/material', {
+  const wheelMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: ROW * 6 },
     inputValues: { basecolor: [0.05, 0.05, 0.06, 1], roughness: 0.7, metallic: 0 },
   });
 
   // ── Body box, lifted so its bottom is just above wheel hubs.
-  const bodyGeo = addNode(g, 'core/box', {
+  const bodyGeo = addNode(g, 'geom/box', {
     position: { x: COL * 2, y: 0 },
     inputValues: { width: carWidth, height: bodyHeight, depth: carLength },
   });
-  const bodyLift = addNode(g, 'core/transform-geometry', {
+  const bodyLift = addNode(g, 'geom/transform', {
     position: { x: COL * 3, y: 0 },
     inputValues: { translate: [0, 0.3 + bodyHeight / 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const bodyEnt = addNode(g, 'core/scene-entity', {
+  const bodyEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: 0 },
   });
 
   // ── Cabin (greenhouse) — shorter in length than the body, slightly
   // narrower, sitting on top. Reads as the roof at overview distance.
-  const cabinGeo = addNode(g, 'core/box', {
+  const cabinGeo = addNode(g, 'geom/box', {
     position: { x: COL * 2, y: ROW },
     inputValues: { width: carWidth - 0.1, height: cabinHeight, depth: carLength - 1.8 },
   });
-  const cabinLift = addNode(g, 'core/transform-geometry', {
+  const cabinLift = addNode(g, 'geom/transform', {
     position: { x: COL * 3, y: ROW },
     inputValues: {
       translate: [0, 0.3 + bodyHeight + cabinHeight / 2, -0.1],
@@ -465,7 +465,7 @@ export function buildCarSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const cabinEnt = addNode(g, 'core/scene-entity', {
+  const cabinEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: ROW },
   });
 
@@ -482,7 +482,7 @@ export function buildCarSubgraph(): SubgraphDef {
     [-wheelHalfWidth, wheelRadius, -wheelHalfLength],
   ];
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -510,15 +510,15 @@ export function buildCarSubgraph(): SubgraphDef {
 
   // Wheel wiring — one geometry + lift + entity per corner.
   wheelPositions.forEach((pos, i) => {
-    const wGeo = addNode(g, 'core/cylinder', {
+    const wGeo = addNode(g, 'geom/cylinder', {
       position: { x: COL * 2, y: ROW * (3 + i * 0.8) },
       inputValues: { radius: wheelRadius, height: wheelWidth, segments: 16 },
     });
-    const wLift = addNode(g, 'core/transform-geometry', {
+    const wLift = addNode(g, 'geom/transform', {
       position: { x: COL * 3, y: ROW * (3 + i * 0.8) },
       inputValues: { translate: pos, rotate: [0, 0, Math.PI / 2], scale: [1, 1, 1] },
     });
-    const wEnt = addNode(g, 'core/scene-entity', {
+    const wEnt = addNode(g, 'scene/entity', {
       position: { x: COL * 4, y: ROW * (3 + i * 0.8) },
     });
     addEdge(g, { node: wGeo.id, socket: 'geometry' }, { node: wLift.id, socket: 'geometry' });

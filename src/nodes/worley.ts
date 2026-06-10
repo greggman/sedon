@@ -20,7 +20,7 @@ import shader from './worley.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const worleyNode: NodeDef = {
-  id: 'core/worley',
+  id: 'tex/worley',
   category: 'Texture/Noise',
   inputs: [
     {
@@ -77,13 +77,13 @@ closest one. The result reads as a Voronoi-like field of cells with bright edges
 where two cells meet and dark centres where the seed point sits.
 
 Use for stone / scale / cracked-earth / leaf-vein patterns, foam masks on water,
-or as a base for [core/distance-transform](../../core/distance-transform) →
-[core/ramp](../../core/ramp) pipelines that want a more "structured" starting
+or as a base for [tex/distance-transform](../../tex/distance-transform) →
+[tex/ramp](../../tex/ramp) pipelines that want a more "structured" starting
 texture than smooth fbm noise.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/worley', {
+      addNode(g, 'tex/worley', {
         id: 'worley',
         position: { x: 0, y: 0 },
         inputValues: { scale: 6, octaves: 1, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },

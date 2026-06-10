@@ -21,7 +21,7 @@ export type DocsCallerLocation =
 
 // Relative path from the calling page's directory to the docs/ root
 // (always trailing-slashed). Node ids are split by '/' to count
-// directory levels: id `core/perlin` lives at docs/nodes/core/perlin/,
+// directory levels: id `tex/perlin` lives at docs/nodes/tex/perlin/,
 // so we need `../` × (segments + 1) to climb back to docs/.
 function docsRootRelativePrefix(from: DocsCallerLocation): string {
   if (from === 'site-root') return 'docs/';
@@ -36,7 +36,7 @@ function docsRootRelativePrefix(from: DocsCallerLocation): string {
  * `index` is useful when a static-site link checker doesn't follow
  * directory redirects.
  *
- * Node ids contain `/` (e.g. `core/perlin`). We preserve the slash as
+ * Node ids contain `/` (e.g. `tex/perlin`). We preserve the slash as
  * a real subdirectory split so each segment is its own folder.
  */
 export function docsUrlFor(

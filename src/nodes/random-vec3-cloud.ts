@@ -12,7 +12,7 @@ function hash3(i: number, seed: number): [number, number, number] {
 }
 
 export const randomVec3CloudNode: NodeDef = {
-  id: 'core/random-vec3-cloud',
+  id: 'cloud/random-vec3',
   category: 'Distribution/Attributes',
   inputs: [
     {
@@ -43,7 +43,7 @@ export const randomVec3CloudNode: NodeDef = {
     {
       name: 'values',
       type: 'Vec3Cloud',
-      description: 'one random Vec3 per source point. Feed into the `per_point_scale` or `per_point_tint` input of [core/instance-scene-on-points](../../core/instance-scene-on-points) / [core/instance-geometry-on-points](../../core/instance-geometry-on-points)',
+      description: 'one random Vec3 per source point. Feed into the `per_point_scale` or `per_point_tint` input of [scene/instance-on-points](../../scene/instance-on-points) / [geom/instance-on-points](../../geom/instance-on-points)',
     },
   ],
   doc: {
@@ -56,53 +56,53 @@ result is reproducible.
 
 The output Vec3Cloud is the right shape for the optional
 \`per_point_scale\` and \`per_point_tint\` inputs on
-[core/instance-scene-on-points](../../core/instance-scene-on-points)
-and [core/instance-geometry-on-points](../../core/instance-geometry-on-points).
+[scene/instance-on-points](../../scene/instance-on-points)
+and [geom/instance-on-points](../../geom/instance-on-points).
 Wire it in and every scattered copy gets its own per-axis scale
 multiplier (or tint), modulating the base value on the instancer.
 
 For scalar variation (per-point yaw, mask threshold, generic 0..1
-factor) reach for [core/random-float-cloud](../../core/random-float-cloud).
+factor) reach for [cloud/random-float](../../cloud/random-float).
 For non-random per-point attributes derived from point position or
-normal, see [core/cloud-altitude](../../core/cloud-altitude) and
-[core/cloud-slope](../../core/cloud-slope).
+normal, see [cloud/altitude](../../cloud/altitude) and
+[cloud/slope](../../cloud/slope).
 `,
     sampleGraph: () => {
       const g = createGraph();
       // Grid of cubes whose per-axis scale is randomised: each cube
       // becomes a tiny rectangular box with its own height/width
       // proportions. Visible per-instance scale variation = the point.
-      const points = addNode(g, 'core/grid-distribute', {
+      const points = addNode(g, 'points/grid', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { cols: 6, rows: 6, spacing: 0.8, jitter: 0, seed: 0 },
       });
-      const scales = addNode(g, 'core/random-vec3-cloud', {
+      const scales = addNode(g, 'cloud/random-vec3', {
         id: 'scales',
         position: { x: 280, y: 0 },
         inputValues: { min: [0.4, 0.4, 0.4], max: [1.6, 1.6, 1.6], seed: 0.31 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 380 },
         inputValues: { color: [0.1, 0.2, 0.4, 1], resolution: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 380 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 200 },
         inputValues: {},
       });
-      const inst = addNode(g, 'core/instance-scene-on-points', {
+      const inst = addNode(g, 'scene/instance-on-points', {
         id: 'inst',
         position: { x: 840, y: 100 },
         inputValues: { scale: 0.15, align: true, seed: 0 },

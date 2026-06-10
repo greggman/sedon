@@ -11,7 +11,7 @@ import {
   type ElementType,
 } from '../render/selection-ops.js';
 
-// Element-type enum codes — same values as `core/select-invert`.
+// Element-type enum codes — same values as `geom/select-invert`.
 const ELEMENT_EDGES    = 0;
 const ELEMENT_VERTICES = 1;
 const ELEMENT_FACES    = 2;
@@ -33,7 +33,7 @@ function modeFromCode(code: number): CombineMode {
 }
 
 export const selectCombineNode: NodeDef = {
-  id: 'core/select-combine',
+  id: 'geom/select-combine',
   category: 'Geometry/Selection',
   inputs: [
     {
@@ -116,27 +116,27 @@ want downstream as A.
       // combine actually merging two source masks instead of just
       // forwarding one.
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, segments: 32, rings: 16 },
       });
-      const squash = addNode(g, 'core/transform-geometry', {
+      const squash = addNode(g, 'geom/transform', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 0.5, 1] },
       });
-      const a = addNode(g, 'core/select-by-angle', {
+      const a = addNode(g, 'geom/select-by-angle', {
         id: 'select_a',
         position: { x: 560, y: -80 },
         inputValues: { threshold: 18 },
       });
-      const b = addNode(g, 'core/select-by-angle', {
+      const b = addNode(g, 'geom/select-by-angle', {
         id: 'select_b',
         position: { x: 560, y: 80 },
         inputValues: { threshold: 8, select_below: true },
       });
-      const comb = addNode(g, 'core/select-combine', {
+      const comb = addNode(g, 'geom/select-combine', {
         id: 'combine',
         position: { x: 840, y: 0 },
         inputValues: { mode: MODE_OR, element_type: ELEMENT_EDGES },
@@ -154,7 +154,7 @@ want downstream as A.
     const inputB = inputs.geometry_b as GeometryValue;
     if (!inputA.mesh) {
       throw new Error(
-        'core/select-combine requires a CPU-side mesh on geometry_a; '
+        'geom/select-combine requires a CPU-side mesh on geometry_a; '
         + 'this source produced GPU-only data.',
       );
     }

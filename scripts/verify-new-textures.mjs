@@ -51,9 +51,9 @@ try {
         version: 1,
         nodes: [
           { id: 'tex',  kind: ${JSON.stringify(texKind)}, position: {x:0,y:0},  inputValues: ${JSON.stringify(texInputs)} },
-          { id: 'mat',  kind: 'core/material',          position: {x:200,y:0},  inputValues: {} },
-          { id: 'box',  kind: 'core/box',               position: {x:0,y:200},  inputValues: { w: 2, h: 0.01, d: 2 } },
-          { id: 'ent',  kind: 'core/scene-entity',      position: {x:400,y:100} },
+          { id: 'mat',  kind: 'material/pbr',          position: {x:200,y:0},  inputValues: {} },
+          { id: 'box',  kind: 'geom/box',               position: {x:0,y:200},  inputValues: { w: 2, h: 0.01, d: 2 } },
+          { id: 'ent',  kind: 'scene/entity',      position: {x:400,y:100} },
           { id: 'out',  kind: 'core/output',            position: {x:600,y:100} },
         ],
         edges: [
@@ -73,19 +73,19 @@ try {
     await page.screenshot({ path: `${OUT}/${label}.png` });
   };
 
-  await runFor('checker', 'core/checker', {
+  await runFor('checker', 'tex/checker', {
     fg: [0.95, 0.95, 0.97, 1],
     bg: [0.10, 0.10, 0.12, 1],
     divisions: [8, 8],
     resolution: 256,
   });
-  await runFor('checker-crosswalk', 'core/checker', {
+  await runFor('checker-crosswalk', 'tex/checker', {
     fg: [0.95, 0.95, 0.97, 1],
     bg: [0.12, 0.12, 0.13, 1],
     divisions: [8, 1],
     resolution: 256,
   });
-  await runFor('dashed-stripe-yellow', 'core/dashed-stripe', {
+  await runFor('dashed-stripe-yellow', 'tex/dashed-stripe', {
     fg: [1, 0.85, 0.2, 1],
     bg: [0.12, 0.12, 0.13, 1],
     dash_count: 20,
@@ -94,7 +94,7 @@ try {
     orientation: 0,
     resolution: 256,
   });
-  await runFor('dashed-stripe-solid-edge', 'core/dashed-stripe', {
+  await runFor('dashed-stripe-solid-edge', 'tex/dashed-stripe', {
     fg: [0.95, 0.95, 0.97, 1],
     bg: [0.12, 0.12, 0.13, 1],
     dash_count: 1,
@@ -103,7 +103,7 @@ try {
     orientation: 0,
     resolution: 256,
   });
-  await runFor('dashed-stripe-vertical', 'core/dashed-stripe', {
+  await runFor('dashed-stripe-vertical', 'tex/dashed-stripe', {
     fg: [1, 0.85, 0.2, 1],
     bg: [0.12, 0.12, 0.13, 1],
     dash_count: 20,
@@ -120,8 +120,8 @@ try {
     const list = await window.sedonMcp.call('listNodeKinds', {});
     const ids = list.kinds.map((k) => k.id);
     return {
-      checker: ids.includes('core/checker'),
-      dashedStripe: ids.includes('core/dashed-stripe'),
+      checker: ids.includes('tex/checker'),
+      dashedStripe: ids.includes('tex/dashed-stripe'),
     };
   });
   console.log('In registry:', JSON.stringify(inRegistry));

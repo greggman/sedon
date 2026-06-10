@@ -15,7 +15,7 @@ import type { CpuMesh } from '../render/mesh.js';
 // can come as its own chunk; the type and the API don't change.
 //
 // UV mapping: U follows the polygon's bbox X, V follows bbox Z, both
-// in [0, 1]. Matches `core/plane`'s convention so a texture authored
+// in [0, 1]. Matches `geom/plane`'s convention so a texture authored
 // for plane works without re-mapping.
 //
 // Note: holes are ignored in this chunk (no node creates them yet).
@@ -93,7 +93,7 @@ function buildFanMesh(polygon: PolygonValue, y: number): CpuMesh | null {
 }
 
 export const polygonToMeshNode: NodeDef = {
-  id: 'core/polygon-to-mesh',
+  id: 'geom/from-polygon',
   category: 'Polygon',
   inputs: [
     {
@@ -127,18 +127,18 @@ A future upgrade to full ear-clipping will handle arbitrary concave
 polygons + holes (needed once \`polygon-difference\` lands), but the
 node's input/output contract stays the same.
 
-Pair with [core/scene-entity](../../core/scene-entity) and a
+Pair with [scene/entity](../../scene/entity) and a
 material to render the polygon as a coloured patch on the ground
 plane. Useful for visualising what your polygon ops produced.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [4, 4] },
       });
-      const mesh = addNode(g, 'core/polygon-to-mesh', {
+      const mesh = addNode(g, 'geom/from-polygon', {
         id: 'mesh',
         position: { x: 280, y: 0 },
       });

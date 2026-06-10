@@ -155,7 +155,7 @@ function sampleGradient(
 }
 
 export const rampNode: NodeDef = {
-  id: 'core/ramp',
+  id: 'tex/ramp',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -213,14 +213,14 @@ runs the lerp through a smoothstep curve so the transition reads softer;
 Constant draws each stop's colour up to the next stop with no blending
 (pixel-perfect step palette).
 
-Pair with [core/colorize](../../core/colorize) to remap a greyscale source
-([core/perlin](../../core/perlin), [core/worley](../../core/worley),
-[core/distance-transform](../../core/distance-transform), …) through the
+Pair with [tex/colorize](../../tex/colorize) to remap a greyscale source
+([tex/perlin](../../tex/perlin), [tex/worley](../../tex/worley),
+[tex/distance-transform](../../tex/distance-transform), …) through the
 gradient — same behaviour as Photoshop's Gradient Map.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/ramp', {
+      addNode(g, 'tex/ramp', {
         id: 'ramp',
         position: { x: 0, y: 0 },
         inputValues: {

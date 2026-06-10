@@ -14,7 +14,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 //   • Local +Y — OUTWARD from the wall
 //   • Local +Z — vertical (world-up after scatter)
 //
-// In `core/box`'s width/height/depth ordering that maps to:
+// In `geom/box`'s width/height/depth ordering that maps to:
 //   • width (X-extent)  = 0.9 m horizontal
 //   • height (Y-extent) = 0.4 m outward projection
 //   • depth (Z-extent)  = 0.6 m vertical
@@ -33,11 +33,11 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 4, y: ROW } });
 
   // Main body — beige metallic case.
-  const body = addNode(g, 'core/box', {
+  const body = addNode(g, 'geom/box', {
     position: { x: COL, y: 0 },
     inputValues: { width: 0.9, height: 0.4, depth: 0.6 },
   });
-  const bodyLift = addNode(g, 'core/transform-geometry', {
+  const bodyLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: {
       translate: [0, 0.2, 0],
@@ -45,7 +45,7 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const bodyMat = addNode(g, 'core/material', {
+  const bodyMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 0.5 },
     inputValues: {
       basecolor: [0.78, 0.78, 0.75, 1],
@@ -53,7 +53,7 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
       metallic: 0.25,
     },
   });
-  const bodyEnt = addNode(g, 'core/scene-entity', {
+  const bodyEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: 0 },
   });
   addEdge(g, { node: body.id, socket: 'geometry' },     { node: bodyLift.id, socket: 'geometry' });
@@ -62,11 +62,11 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
 
   // Grille on the outward face — slightly darker, slightly inset so
   // the silhouette reads as a recessed front.
-  const grille = addNode(g, 'core/box', {
+  const grille = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW * 1.2 },
     inputValues: { width: 0.78, height: 0.05, depth: 0.48 },
   });
-  const grilleLift = addNode(g, 'core/transform-geometry', {
+  const grilleLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 1.2 },
     inputValues: {
       // Centre on the outward face: y = 0.4 (the body's outer face) + 0.025 (half grille)
@@ -75,7 +75,7 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const grilleMat = addNode(g, 'core/material', {
+  const grilleMat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 1.7 },
     inputValues: {
       basecolor: [0.18, 0.20, 0.22, 1],
@@ -83,14 +83,14 @@ export function buildWallAcUnitSubgraph(): SubgraphDef {
       metallic: 0.1,
     },
   });
-  const grilleEnt = addNode(g, 'core/scene-entity', {
+  const grilleEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 1.2 },
   });
   addEdge(g, { node: grille.id, socket: 'geometry' },     { node: grilleLift.id, socket: 'geometry' });
   addEdge(g, { node: grilleLift.id, socket: 'geometry' }, { node: grilleEnt.id, socket: 'geometry' });
   addEdge(g, { node: grilleMat.id, socket: 'material' },  { node: grilleEnt.id, socket: 'material' });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3.5, y: ROW * 0.6 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

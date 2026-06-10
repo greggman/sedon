@@ -8,7 +8,7 @@ export function generateCube(size: number): CpuMesh {
 }
 
 // Same topology as generateCube but with independent half-extents per axis.
-// Centred at the origin, axis-aligned. Used by `core/box` to skip the
+// Centred at the origin, axis-aligned. Used by `geom/box` to skip the
 // cube+transform.scale boilerplate that's otherwise repeated dozens of times
 // in furniture / room-scale graphs.
 export function generateBox(width: number, height: number, depth: number): CpuMesh {

@@ -16,7 +16,7 @@ test('graph round-trips through JSON', () => {
   const g = createGraph();
   const a = addNode(g, 'test/color-source', { inputValues: { value: [1, 0, 0, 1] } });
   const b = addNode(g, 'test/color-source', { inputValues: { value: [0, 0, 1, 1] } });
-  const mix = addNode(g, 'core/mix');
+  const mix = addNode(g, 'math/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
   addEdge(g, { node: b.id, socket: 'color' }, { node: mix.id, socket: 'b' });
 
@@ -35,7 +35,7 @@ test('removeNode also removes connected edges', () => {
   const g = createGraph();
   const a = addNode(g, 'test/color-source');
   const b = addNode(g, 'test/color-source');
-  const mix = addNode(g, 'core/mix');
+  const mix = addNode(g, 'math/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
   addEdge(g, { node: b.id, socket: 'color' }, { node: mix.id, socket: 'b' });
 
@@ -49,7 +49,7 @@ test('validation accepts a well-formed graph', () => {
   const nodes = createRegistryForTests();
   const g = createGraph();
   const a = addNode(g, 'test/color-source');
-  const mix = addNode(g, 'core/mix');
+  const mix = addNode(g, 'math/mix');
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'a' });
 
   const result = validateGraph(g, types, nodes);
@@ -72,7 +72,7 @@ test('validation rejects type-incompatible edges', () => {
   const nodes = createRegistryForTests();
   const g = createGraph();
   const a = addNode(g, 'test/color-source');
-  const mix = addNode(g, 'core/mix');
+  const mix = addNode(g, 'math/mix');
   // 'color' (Color) -> 'factor' (Float) is not allowed.
   addEdge(g, { node: a.id, socket: 'color' }, { node: mix.id, socket: 'factor' });
 
@@ -86,7 +86,7 @@ test('validation rejects edges referencing missing sockets', () => {
   const nodes = createRegistryForTests();
   const g = createGraph();
   const a = addNode(g, 'test/color-source');
-  const mix = addNode(g, 'core/mix');
+  const mix = addNode(g, 'math/mix');
   addEdge(g, { node: a.id, socket: 'no-such-output' }, { node: mix.id, socket: 'a' });
 
   const result = validateGraph(g, types, nodes);

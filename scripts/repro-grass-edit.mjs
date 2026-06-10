@@ -1,6 +1,6 @@
 // Regression: (1) editing grass-blades colours must update the preview
 // (the card array is a one-time copy of a REUSED texture, so it must
-// re-blit on content change), and (2) lowering core/grass spacing must
+// re-blit on content change), and (2) lowering geom/grass spacing must
 // not throw WebGPU errors (the instance-buffer growth path used to leave
 // the compute/render bind groups null).
 
@@ -55,9 +55,9 @@ const findNode = (kind) => page.evaluate((k) => {
   return all.find((n) => n.kind === k)?.id ?? null;
 }, kind);
 
-const bladesId = await findNode('core/grass-blades');
-const grassId = await findNode('core/grass');
-console.log('grass-blades:', bladesId, ' core/grass:', grassId);
+const bladesId = await findNode('geom/grass-blades');
+const grassId = await findNode('geom/grass');
+console.log('grass-blades:', bladesId, ' geom/grass:', grassId);
 
 // Card-array blit counter (exposed under ?debug=1). A WebGPU canvas can't
 // be pixel-diffed via toDataURL (swap chain isn't preserved), so we assert

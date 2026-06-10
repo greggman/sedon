@@ -39,7 +39,7 @@ async function biggestCanvasShot(page, path) {
 // --- (3) distribute-in-volume docs page ---
 {
   const page = await browser.newPage();
-  await page.goto(`${server.url}docs/nodes/core/distribute-in-volume/`,
+  await page.goto(`${server.url}docs/nodes/points/in-volume/`,
     { waitUntil: 'networkidle2' });
   await new Promise((r) => setTimeout(r, 4000));
   await page.screenshot({ path: '/tmp/distribute-in-volume-docs.png', fullPage: false });

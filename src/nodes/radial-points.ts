@@ -16,11 +16,11 @@ import type { PointCloudValue } from '../core/resources.js';
 // `instance-geometry-on-points` with `align: true` will then orient
 // each instance to face along the tilted normal.
 //
-// Combine with `core/single-point` + `instance-scene-on-points` to
+// Combine with `points/single` + `instance-scene-on-points` to
 // place a whole flower scene in the world, or feed this directly into
 // `instance-geometry-on-points` with a single petal mesh.
 export const radialPointsNode: NodeDef = {
-  id: 'core/radial-points',
+  id: 'points/radial',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -93,7 +93,7 @@ direction lies in the plane perpendicular to \`axis\` at angle
 Each point's normal is that outward direction, optionally tilted
 toward \`axis\` by \`tilt\` degrees (with per-point random jitter).
 A downstream
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 with \`align: true\` will orient each instance to face along the
 tilted normal.
 
@@ -101,13 +101,13 @@ Use cases — anything radially-symmetric that doesn't grow from a
 branch: palm fronds (radiusOffset = 0, tilt > 0), daisy / dandelion
 petals (radiusOffset > 0, small tilt), halo of bracts around a flower
 center, asterisks of grass. Combine with
-[core/single-point](../../core/single-point) +
-[core/instance-scene-on-points](../../core/instance-scene-on-points)
+[points/single](../../points/single) +
+[scene/instance-on-points](../../scene/instance-on-points)
 to place a whole flower scene at a point.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const points = addNode(g, 'core/radial-points', {
+      const points = addNode(g, 'points/radial', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -116,12 +116,12 @@ to place a whole flower scene at a point.
           baseAngle: 0, seed: 0.37,
         },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.25, align: true },

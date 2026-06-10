@@ -40,28 +40,28 @@ export function buildTaperedLegSubgraph(): SubgraphDef {
   // is 2 mm thick — small enough not to read as a separate part but
   // not so small the topology degenerates. Extruding the top face
   // upward by `height - 0.002` lifts the leg to its final height.
-  const base = addNode(g, 'core/box', {
+  const base = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW },
     inputValues: { width: 0.04, height: 0.002, depth: 0.04 },
   });
   // Lift so the base plate's bottom sits at y=0 instead of straddling
   // the origin. Half the plate thickness.
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW },
     inputValues: { translate: [0, 0.001, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   // Select the top face (one face, normal = +Y).
-  const sel = addNode(g, 'core/select-by-normal', {
+  const sel = addNode(g, 'geom/select-by-normal', {
     position: { x: COL * 3, y: ROW },
     inputValues: { direction: [0, 1, 0], threshold: 10, select_below: false },
   });
   // Extrude up by (height - 0.002) with taper. taper_ratio < 1 →
   // the top is smaller than the base.
-  const extrude = addNode(g, 'core/extrude', {
+  const extrude = addNode(g, 'geom/extrude', {
     position: { x: COL * 4, y: ROW },
     inputValues: { offset: 0.448, scale: 0.7 },
   });
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW },
   });
 
@@ -117,21 +117,21 @@ export function buildCushionSubgraph(): SubgraphDef {
     position: { x: COL * 6, y: ROW },
   });
 
-  const body = addNode(g, 'core/box', {
+  const body = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW },
     inputValues: { width: 0.6, height: 0.15, depth: 0.7 },
   });
   // Select EVERY edge: a cube has 90° edges so any reasonable
   // threshold matches them all.
-  const sel = addNode(g, 'core/select-by-angle', {
+  const sel = addNode(g, 'geom/select-by-angle', {
     position: { x: COL * 2, y: ROW },
     inputValues: { threshold: 30 },
   });
-  const bevel = addNode(g, 'core/bevel', {
+  const bevel = addNode(g, 'geom/bevel', {
     position: { x: COL * 3, y: ROW },
     inputValues: { width: 0.04, segments: 2 },
   });
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: ROW },
   });
 
@@ -183,11 +183,11 @@ export function buildWoodPanelSubgraph(): SubgraphDef {
     position: { x: COL * 4, y: ROW },
   });
 
-  const body = addNode(g, 'core/box', {
+  const body = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW },
     inputValues: { width: 1.0, height: 0.04, depth: 1.0 },
   });
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: ROW },
   });
 
@@ -237,18 +237,18 @@ export function buildDrawerSubgraph(): SubgraphDef {
   });
 
   // Drawer body box.
-  const body = addNode(g, 'core/box', {
+  const body = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW },
     inputValues: { width: 0.4, height: 0.3, depth: 0.5 },
   });
   // Select the +Z face (drawer front).
-  const selFront = addNode(g, 'core/select-by-normal', {
+  const selFront = addNode(g, 'geom/select-by-normal', {
     position: { x: COL * 2, y: ROW },
     inputValues: { direction: [0, 0, 1], threshold: 10, select_below: false },
   });
   // Inset the front face by 2cm — gives a frame around an inner
   // recessed panel.
-  const inset = addNode(g, 'core/inset', {
+  const inset = addNode(g, 'geom/inset', {
     position: { x: COL * 3, y: ROW },
     inputValues: { width: 0.02 },
   });
@@ -256,26 +256,26 @@ export function buildDrawerSubgraph(): SubgraphDef {
   // offset) for the "recessed panel" look. The inset's output
   // selection.faces points at the new inner face, so this extrudes
   // exactly that face.
-  const recess = addNode(g, 'core/extrude', {
+  const recess = addNode(g, 'geom/extrude', {
     position: { x: COL * 4, y: ROW },
     inputValues: { offset: -0.005, scale: 1.0 },
   });
-  const bodyEntity = addNode(g, 'core/scene-entity', {
+  const bodyEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW },
   });
 
   // Pull: small cylinder lying horizontally, centred on the drawer
   // face. Rotated 90° around X so its axis points along +Z (sticking
   // out of the drawer).
-  const pullGeo = addNode(g, 'core/cylinder', {
+  const pullGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { radius: 0.012, height: 0.08, segments: 16 },
   });
   // Cylinder axis runs along Y; rotate 90° around X (π/2 radians) to
   // point its axis along Z so it sticks out toward the viewer. Then
   // translate to the drawer face position (z = depth/2 + half the
-  // pull length). core/transform-geometry takes RADIANS — not degrees.
-  const pullTransform = addNode(g, 'core/transform-geometry', {
+  // pull length). geom/transform takes RADIANS — not degrees.
+  const pullTransform = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3 },
     inputValues: {
       translate: [0, 0, 0.29],
@@ -283,11 +283,11 @@ export function buildDrawerSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const pullEntity = addNode(g, 'core/scene-entity', {
+  const pullEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW * 3 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -364,23 +364,23 @@ export function buildBookSubgraph(): SubgraphDef {
   // left corner of the cube ends up at the origin (rather than the
   // centre). Always fixed; per-book size happens via per_point_scale
   // at the instance step, not via this subgraph's inputs.
-  const body = addNode(g, 'core/box', {
+  const body = addNode(g, 'geom/box', {
     position: { x: COL, y: ROW },
     inputValues: { width: 1, height: 1, depth: 1 },
   });
-  const corner = addNode(g, 'core/transform-geometry', {
+  const corner = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW },
     inputValues: { translate: [0.5, 0.5, 0.5], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const tex = addNode(g, 'core/solid-color', {
+  const tex = addNode(g, 'tex/solid-color', {
     position: { x: COL, y: 0 },
     inputValues: { color: [0.6, 0.3, 0.25, 1], resolution: 4 },
   });
-  const material = addNode(g, 'core/material', {
+  const material = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: 0 },
     inputValues: { roughness: 0.7, metallic: 0 },
   });
-  const entity = addNode(g, 'core/scene-entity', {
+  const entity = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: ROW },
   });
 

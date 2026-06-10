@@ -6,7 +6,7 @@ import { computeNormalsWithCuspAngle } from '../render/compute-normals.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const computeNormalsNode: NodeDef = {
-  id: 'core/compute-normals',
+  id: 'geom/compute-normals',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -74,12 +74,12 @@ Edge cases:
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const normals = addNode(g, 'core/compute-normals', {
+      const normals = addNode(g, 'geom/compute-normals', {
         id: 'normals',
         position: { x: 280, y: 0 },
         inputValues: { cusp_angle: 30 },
@@ -93,7 +93,7 @@ Edge cases:
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/compute-normals requires a CPU-side mesh on the input geometry; '
+        'geom/compute-normals requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

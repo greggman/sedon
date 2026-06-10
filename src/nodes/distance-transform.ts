@@ -21,7 +21,7 @@ import shader from './distance-transform.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
-// core/distance-transform — for each pixel, the Euclidean distance to
+// tex/distance-transform — for each pixel, the Euclidean distance to
 // the nearest pixel above `threshold` in the input. Output is greyscale
 // 0..1 normalized by `maxDistance` (in UV units).
 //
@@ -35,7 +35,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // dilations, antialiased mask refinement, glow ramps that scale by
 // distance rather than Gaussian falloff.
 export const distanceTransformNode: NodeDef = {
-  id: 'core/distance-transform',
+  id: 'tex/distance-transform',
   category: 'Texture/Filters',
   inputs: [
     { name: 'texture', type: 'Texture2D' },
@@ -87,13 +87,13 @@ The killer use is "soft falloff from a feature". Pipe a vein texture
 (sharp lines) into a DT with invert=true and you get bright cores fading to
 dark cell-interiors over \`maxDistance\`. Pipe a city mask in and you get a
 gradient that's strongest at the streets and fades over a few blocks. Run
-it through a [core/ramp](../../core/ramp) +
-[core/colorize](../../core/colorize) and you have a usable albedo gradient
+it through a [tex/ramp](../../tex/ramp) +
+[tex/colorize](../../tex/colorize) and you have a usable albedo gradient
 from a binary mask.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/grid', {
+      const src = addNode(g, 'tex/grid', {
         id: 'src',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -104,7 +104,7 @@ from a binary mask.
           resolution: 512,
         },
       });
-      const dt = addNode(g, 'core/distance-transform', {
+      const dt = addNode(g, 'tex/distance-transform', {
         id: 'dt',
         position: { x: 280, y: 0 },
         inputValues: { threshold: 0.5, maxDistance: 0.25, invert: false, resolution: 512 },

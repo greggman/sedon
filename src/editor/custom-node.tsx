@@ -347,7 +347,7 @@ function inlineEditor(
       // an `[r,g,b,a]`). evaluate.ts auto-promotes that array into a
       // 1×1 cached Texture2DValue at eval time, so node code sees a
       // normal Texture2D and the user gets to skip the
-      // `core/solid-color → core/material.basecolor` boilerplate.
+      // `tex/solid-color → material/pbr.basecolor` boilerplate.
       // Texture2D inputs without a color default render nothing
       // inline — they're "wire a real texture in" sockets only.
       if (isRgbaArray(value)) {
@@ -770,7 +770,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // to step into. Header label looks up the body subgraph wrapper
   // currently placed inside the bridge so the canvas tells you which
   // body is bound at a glance.
-  const isForEachPoint = kind === 'core/for-each-point';
+  const isForEachPoint = kind === 'iter/for-each-point';
   const forEachBridgeId = isForEachPoint
     ? (inputValues?.__bridgeId as string | undefined) ?? ''
     : '';
@@ -900,7 +900,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     : undefined;
   // for-each-point shows "for-each: <body label>" (or "drop a subgraph
   // here" before a body is dropped) instead of the bare
-  // `core/for-each-point`, so the canvas at a glance tells you which
+  // `iter/for-each-point`, so the canvas at a glance tells you which
   // subgraph each instance is iterating without opening the inspector.
   //
   // Boundary kinds are registered per-subgraph as `<role>/<subgraphId>`
@@ -973,7 +973,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // list so hidden inputs don't leave invisible gaps in the node UI.
   const visibleInputs = def.inputs.filter((i) => !i.hidden);
   // Per-instance dynamic outputs (currently only set by
-  // `core/for-each-point` after a body is dropped) REPLACE the static
+  // `iter/for-each-point` after a body is dropped) REPLACE the static
   // def.outputs. Falls back to def.outputs when extraOutputs is
   // undefined or empty so regular nodes keep their static output
   // socket list.

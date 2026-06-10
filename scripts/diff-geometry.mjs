@@ -1,5 +1,5 @@
-// Deep-compare the GeometryValue produced by core/cube vs the one produced
-// by the bevel-test subgraph (core/bevel → core/compute-normals). Goal:
+// Deep-compare the GeometryValue produced by geom/cube vs the one produced
+// by the bevel-test subgraph (geom/bevel → geom/compute-normals). Goal:
 // find any property the cube sets that the bevel chain forgets to set
 // (or sets to a value that breaks shaded rendering).
 import puppeteer from 'puppeteer';
@@ -54,7 +54,7 @@ try {
       return out;
     };
 
-    // Find: one geometry value from a core/cube node, one from a core/bevel
+    // Find: one geometry value from a geom/cube node, one from a geom/bevel
     // chain. We have to look at the graph for node kinds, then the cache
     // entries for the corresponding outputs.
     //
@@ -76,7 +76,7 @@ try {
       }
     }
     // Also, an in-process produced plain cube for direct comparison:
-    // we can build a fresh core/cube via the graph's evaluator? Simpler:
+    // we can build a fresh geom/cube via the graph's evaluator? Simpler:
     // just report what's there.
     return { geos };
   });

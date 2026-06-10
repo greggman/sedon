@@ -12,7 +12,7 @@ import { nodeFingerprint } from '../../src/core/eval-cache.js';
 import { useEditorStore } from '../../src/editor/store.js';
 
 function resetStoreWith(graph: ReturnType<typeof createGraph>): string {
-  const node = addNode(graph, 'core/perlin');
+  const node = addNode(graph, 'tex/perlin');
   useEditorStore.setState({
     mainGraph: graph,
     graph,
@@ -62,7 +62,7 @@ test('renaming a node does NOT change its eval fingerprint', () => {
   // fingerprint stays identical across a rename.
   const before = nodeFingerprint({
     nodeId: 'n1',
-    kind: 'core/perlin',
+    kind: 'tex/perlin',
     inputValues: { scale: 4 },
     upstreamFingerprints: {},
     extraInputs: [],
@@ -72,7 +72,7 @@ test('renaming a node does NOT change its eval fingerprint', () => {
   // included name anyway — they must match.
   const after = nodeFingerprint({
     nodeId: 'n1',
-    kind: 'core/perlin',
+    kind: 'tex/perlin',
     inputValues: { scale: 4 },
     upstreamFingerprints: {},
     extraInputs: [],

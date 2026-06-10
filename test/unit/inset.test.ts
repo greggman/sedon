@@ -1,4 +1,4 @@
-// core/inset tests on hand-verifiable fixtures.
+// geom/inset tests on hand-verifiable fixtures.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

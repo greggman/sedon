@@ -16,11 +16,11 @@ function readPathAsProfile(path: PathValue | undefined): LatheProfilePoint[] {
 }
 
 export const latheNode: NodeDef = {
-  id: 'core/lathe',
+  id: 'geom/lathe',
   category: 'Geometry/Modifiers',
   inputs: [
     {
-      // 2D profile to revolve. Take a `Path` because `core/curve-2d`
+      // 2D profile to revolve. Take a `Path` because `path/curve-2d`
       // and `path/spline` both emit Paths and the lathe doesn't care
       // which authoring node produced it. Only X / Y are used —
       // Z gets ignored, since the lathe revolves the profile in the
@@ -28,7 +28,7 @@ export const latheNode: NodeDef = {
       name: 'profile',
       type: 'Path',
       description:
-        'silhouette to revolve around the Y axis. X = radius from axis, Y = height. Z is ignored (the lathe treats the path as a 2D shape). Wire from [core/curve-2d](../../core/curve-2d) for Bezier authoring with per-point handle types',
+        'silhouette to revolve around the Y axis. X = radius from axis, Y = height. Z is ignored (the lathe treats the path as a 2D shape). Wire from [path/curve-2d](../../path/curve-2d) for Bezier authoring with per-point handle types',
     },
     {
       name: 'segments',
@@ -66,7 +66,7 @@ export const latheNode: NodeDef = {
     description: `
 Procedural lathe. Takes a 2D profile (the X / Y components of a
 \`Path\`) and revolves it around the Y axis to produce a surface of
-revolution. Pair with [core/curve-2d](../../core/curve-2d) for the
+revolution. Pair with [path/curve-2d](../../path/curve-2d) for the
 profile authoring — that node authors Bezier control points with
 per-point handle types (smooth bulges + sharp corners on the same
 silhouette), which is exactly what most furniture parts want.
@@ -87,22 +87,22 @@ open-ended profiles (lamps, drinking-glass shapes).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const curve = addNode(g, 'core/curve-2d', {
+      const curve = addNode(g, 'path/curve-2d', {
         id: 'curve',
         position: { x: 0, y: 0 },
         inputValues: { samples_per_segment: 16 },
       });
-      const lathe = addNode(g, 'core/lathe', {
+      const lathe = addNode(g, 'geom/lathe', {
         id: 'lathe',
         position: { x: 280, y: 0 },
         inputValues: { segments: 32 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 280, y: 240 },
         inputValues: { basecolor: [0.55, 0.36, 0.20, 1], roughness: 0.7, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 100 },
       });

@@ -8,12 +8,12 @@ test('the POC graph (Grid → Material → SceneEntity ← Sphere → Output) va
   const types = createCoreTypeRegistry();
   const nodes = createCoreNodeRegistry();
   const g = createGraph();
-  const grid = addNode(g, 'core/grid', {
+  const grid = addNode(g, 'tex/grid', {
     inputValues: { fg: [0, 0, 0, 1], bg: [1, 1, 1, 1] },
   });
-  const material = addNode(g, 'core/material');
-  const sphere = addNode(g, 'core/sphere');
-  const sceneEntity = addNode(g, 'core/scene-entity');
+  const material = addNode(g, 'material/pbr');
+  const sphere = addNode(g, 'geom/sphere');
+  const sceneEntity = addNode(g, 'scene/entity');
   const output = addNode(g, 'core/output');
 
   addEdge(g, { node: grid.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
@@ -31,8 +31,8 @@ test('Material rejects non-Texture2D into basecolor', () => {
   const g = createGraph();
   // Sphere's geometry output (Geometry) into Material.basecolor (Texture2D)
   // — types are not compatible.
-  const sphere = addNode(g, 'core/sphere');
-  const material = addNode(g, 'core/material');
+  const sphere = addNode(g, 'geom/sphere');
+  const material = addNode(g, 'material/pbr');
   addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: material.id, socket: 'basecolor' });
 
   const result = validateGraph(g, types, nodes);
@@ -54,15 +54,15 @@ test('Output requires scene to be connected', () => {
 test('all production nodes are registered', () => {
   const r = createCoreNodeRegistry();
   for (const id of [
-    'core/mix',
-    'core/sphere',
-    'core/solid-color',
-    'core/grid',
-    'core/perlin',
-    'core/blend',
-    'core/material',
-    'core/scene-entity',
-    'core/scene-merge',
+    'math/mix',
+    'geom/sphere',
+    'tex/solid-color',
+    'tex/grid',
+    'tex/perlin',
+    'tex/blend',
+    'material/pbr',
+    'scene/entity',
+    'scene/merge',
     'core/output',
   ]) {
     assert.ok(r.has(id), `missing node ${id}`);

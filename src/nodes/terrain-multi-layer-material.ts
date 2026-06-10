@@ -12,14 +12,14 @@ import type {
 // Each layer is a `TerrainLayer` value produced by `terrain/layer`.
 //
 // Variadic layer sockets follow the same authoring pattern as
-// `core/scene-merge`: the node ships with no `layer_*` inputs declared
+// `scene/merge`: the node ships with no `layer_*` inputs declared
 // at the type level — users add them via the +Add input button (or a
 // demo pre-declares them via `extraInputs`), then wire each one to a
 // `terrain/layer` instance. Up to 4 are sampled by the shader; extras
 // are ignored in v1.
 //
-// Pair with `core/texture-to-heightfield-mesh` + `core/scene-entity` the same
-// way the old 2-layer `core/terrain-material` does. The shader runs
+// Pair with `geom/heightfield-from-texture` + `scene/entity` the same
+// way the old 2-layer `material/terrain` does. The shader runs
 // per-layer PBR shading at each layer's roughness and blends the lit
 // results — same blend-after-lighting trick used in `terrain-splat`,
 // extended to 4 layers with height-weighted weights.
@@ -57,7 +57,7 @@ export const terrainMultiLayerMaterialNode: NodeDef = {
     {
       name: 'material',
       type: 'Material',
-      description: 'multi-layer terrain material, consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [core/scene-entity](../../core/scene-entity) on a heightfield mesh',
+      description: 'multi-layer terrain material, consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [scene/entity](../../scene/entity) on a heightfield mesh',
     },
   ],
   extraInputsSpec: {
@@ -68,7 +68,7 @@ export const terrainMultiLayerMaterialNode: NodeDef = {
   doc: {
     summary: 'Up-to-4-layer terrain material — RGBA splat selects per-pixel between authored layers.',
     description: `
-The grown-up sibling of [core/terrain-material](../../core/terrain-material).
+The grown-up sibling of [material/terrain](../../material/terrain).
 Up to four layers (snow, tundra, forest, meadow, rocks, beach, …) each
 authored as a [terrain/layer](../../terrain/layer) instance with its
 own albedo / normal / height / roughness, combined by an RGBA splat
@@ -91,12 +91,12 @@ are ignored in v1.
       // Two layers (grass + rock) authored as terrain/layer instances,
       // a perlin-ish splat in the R/G channels selects between them,
       // applied to a sphere as a stand-in for a terrain mesh.
-      const grassCol = addNode(g, 'core/solid-color', {
+      const grassCol = addNode(g, 'tex/solid-color', {
         id: 'grassCol',
         position: { x: 0, y: 0 },
         inputValues: { color: [0.28, 0.46, 0.18, 1], resolution: 32 },
       });
-      const rockCol = addNode(g, 'core/solid-color', {
+      const rockCol = addNode(g, 'tex/solid-color', {
         id: 'rockCol',
         position: { x: 0, y: 180 },
         inputValues: { color: [0.55, 0.5, 0.45, 1], resolution: 32 },
@@ -113,12 +113,12 @@ are ignored in v1.
       });
       // The splat: perlin in R/G so the two layers each get organic
       // coverage. (For 3+ layers you'd compose an RGBA splat directly.)
-      const splat = addNode(g, 'core/perlin', {
+      const splat = addNode(g, 'tex/perlin', {
         id: 'splat',
         position: { x: 0, y: 360 },
         inputValues: { scale: [3, 3], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 560, y: -100 },
         inputValues: { radius: 1, segments: 48, rings: 24 },
@@ -133,7 +133,7 @@ are ignored in v1.
         extraInputs: extras,
         inputValues: { tile_scale: [1, 1], metallic: 0, height_blend_sharpness: 4 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 840, y: 50 },
         inputValues: {},

@@ -35,7 +35,7 @@ function makeWoodTexture(): SubgraphDef {
   ];
   sg.outputs = [{ name: 'material', type: 'Material' }];
   // Add a non-boundary node so we can verify ALL inner nodes get fresh ids.
-  addNode(sg.graph, 'core/box', { inputValues: { w: 1, h: 1, d: 1 } });
+  addNode(sg.graph, 'geom/box', { inputValues: { w: 1, h: 1, d: 1 } });
   return sg;
 }
 
@@ -131,8 +131,8 @@ test('cloneSubgraphDef: boundary kinds are rewritten to the new subgraph id', ()
 test('cloneSubgraphDef: inputValues are deep-copied (not shared)', () => {
   const orig = makeWoodTexture();
   const clone = cloneSubgraphDef(orig, 'clone-id', null, 'x');
-  const origBox = orig.graph.nodes.find((n) => n.kind === 'core/box')!;
-  const cloneBox = clone.graph.nodes.find((n) => n.kind === 'core/box')!;
+  const origBox = orig.graph.nodes.find((n) => n.kind === 'geom/box')!;
+  const cloneBox = clone.graph.nodes.find((n) => n.kind === 'geom/box')!;
   assert.ok(origBox.inputValues);
   assert.ok(cloneBox.inputValues);
   assert.notEqual(

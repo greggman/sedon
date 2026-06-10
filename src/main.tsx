@@ -8,7 +8,7 @@ import { setImageLoadedListener } from './nodes/image.js';
 import 'dockview/dist/styles/dockview.css';
 import './editor/editor.css';
 
-// When a `core/image` node's fetch lands, record the bitmap's natural
+// When a `tex/image` node's fetch lands, record the bitmap's natural
 // dimensions back into the matching node's hidden inputValues so a
 // future graph reload's placeholder texture comes up at the right size
 // instead of the 256×256 default. Bypasses dispatchProject so the
@@ -19,7 +19,7 @@ setImageLoadedListener(({ url, width, height }) => {
     const updateNodes = (nodes: GraphNode[]): GraphNode[] => {
       let changed = false;
       const next = nodes.map((n) => {
-        if (n.kind !== 'core/image') return n;
+        if (n.kind !== 'tex/image') return n;
         if (n.inputValues?.url !== url) return n;
         const cur = n.inputValues;
         if (cur.width === width && cur.height === height) return n;

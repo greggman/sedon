@@ -26,7 +26,7 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 // chains; useful for halos / soft shadows / softening procedural
 // patterns before they get gradient-mapped.
 export const blurNode: NodeDef = {
-  id: 'core/blur',
+  id: 'tex/blur',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -63,17 +63,17 @@ Runs a horizontal then vertical 1D Gaussian sweep over the source texture.
 Separable form means cost is O(2·radius) per pixel instead of O(radius²), so
 even large radii stay cheap.
 
-Use to soften noise before gradient-mapping ([core/perlin](../../core/perlin)
-→ blur → [core/colorize](../../core/colorize) reads as wash, not stipple), to
+Use to soften noise before gradient-mapping ([tex/perlin](../../tex/perlin)
+→ blur → [tex/colorize](../../tex/colorize) reads as wash, not stipple), to
 build halo and soft-shadow effects, to smooth a mask's transitions so
-[core/blend-mask](../../core/blend-mask) reads gradient instead of stepped,
+[tex/blend-mask](../../tex/blend-mask) reads gradient instead of stepped,
 or as the input to
-[core/normal-from-height](../../core/normal-from-height) when you want gentler
+[tex/normal-from-height](../../tex/normal-from-height) when you want gentler
 surface slopes.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/grid', {
+      const src = addNode(g, 'tex/grid', {
         id: 'src',
         position: { x: 0, y: 0 },
         inputValues: {
@@ -84,7 +84,7 @@ surface slopes.
           resolution: 512,
         },
       });
-      const blur = addNode(g, 'core/blur', {
+      const blur = addNode(g, 'tex/blur', {
         id: 'blur',
         position: { x: 280, y: 0 },
         inputValues: { radius: 16, resolution: 512 },

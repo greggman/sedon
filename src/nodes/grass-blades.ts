@@ -17,7 +17,7 @@ const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
 };
 import shader from './grass-blades.wgsl';
 
-// Procedural blade-card texture for core/grass. Renders tapered,
+// Procedural blade-card texture for geom/grass. Renders tapered,
 // leaning blades with an ALPHA SILHOUETTE so the grass shader's
 // alpha-cut carves out individual leaves (vs the solid quads you get
 // feeding it a plain texture). RGB is a base→tip gradient; the grass
@@ -26,7 +26,7 @@ import shader from './grass-blades.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const grassBladesNode: NodeDef = {
-  id: 'core/grass-blades',
+  id: 'geom/grass-blades',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -78,13 +78,13 @@ export const grassBladesNode: NodeDef = {
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'a single blade card: RGB is the base→tip gradient, A is the per-blade silhouette. Wire into [core/grass](../../core/grass)\'s `card_0` (or any `card_N`) input',
+      description: 'a single blade card: RGB is the base→tip gradient, A is the per-blade silhouette. Wire into [geom/grass](../../geom/grass)\'s `card_0` (or any `card_N`) input',
     },
   ],
   doc: {
-    summary: 'Procedural blade-card texture for core/grass — tapered blades with alpha silhouette.',
+    summary: 'Procedural blade-card texture for geom/grass — tapered blades with alpha silhouette.',
     description: `
-The default card art for [core/grass](../../core/grass). Renders
+The default card art for [geom/grass](../../geom/grass). Renders
 \`bladeCount\` tapered blades into an RGBA texture: RGB is a base→tip
 colour gradient, A is the per-blade silhouette. The alpha is what
 makes grass actually look like grass — without it the grass shader's
@@ -92,14 +92,14 @@ quad would render as a solid rectangle.
 
 Use multiple instances with different seeds / colors / blade counts
 to author a varied grass field (each one feeds a separate \`card_N\`
-on [core/grass](../../core/grass); the field's typeMap picks which
+on [geom/grass](../../geom/grass); the field's typeMap picks which
 card each blade samples). For exotic plants — clover, ferns, dry
 straw — author the card art externally and feed that texture in
 directly instead.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/grass-blades', {
+      addNode(g, 'geom/grass-blades', {
         id: 'blades',
         position: { x: 0, y: 0 },
         inputValues: {

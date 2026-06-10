@@ -66,7 +66,7 @@ export const CORE_TYPES: readonly SocketType[] = [
   { id: 'TerrainLayer', color: '#bf7c4d', description: 'one layer of a multi-layer terrain material (albedo + optional normal/height/roughness)' },
   { id: 'Path', color: '#a1887f', description: 'polyline through world space (road, river, …)' },
   { id: 'Polygon', color: '#26a69a', description: '2D polygon on the world XZ plane (closed outer ring + optional inner ring "holes" for canals, parks, lakes)' },
-  { id: 'PolygonList', color: '#00897b', description: 'an ordered list of Polygons — the natural output of subdivision ops (city → blocks → lots) and the input to `core/for-each-polygon`' },
+  { id: 'PolygonList', color: '#00897b', description: 'an ordered list of Polygons — the natural output of subdivision ops (city → blocks → lots) and the input to `iter/for-each-polygon`' },
 ];
 
 export const CORE_CONVERSIONS: readonly [string, string][] = [
@@ -79,7 +79,7 @@ export const CORE_CONVERSIONS: readonly [string, string][] = [
   // Color → Texture2D: a flat colour wired into a texture socket is
   // auto-promoted to a 1×1 texture at eval time (see evaluate.ts's
   // input-resolution loop + getColorTexture in resources.ts). Lets
-  // the user skip the boilerplate `core/solid-color` node for the
+  // the user skip the boilerplate `tex/solid-color` node for the
   // common "this material slot should just be this colour" case.
   // Same machinery powers the inline color picker on unwired
   // Texture2D inputs whose InputDef declares an `[r,g,b,a]` default.

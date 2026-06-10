@@ -6,14 +6,14 @@ import { insetMesh } from '../render/inset.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const insetNode: NodeDef = {
-  id: 'core/inset',
+  id: 'geom/inset',
   category: 'Geometry/Modifiers',
   inputs: [
     {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'mesh to inset. Must carry a CPU-side mesh AND a face selection mask (typically produced by `core/select-by-normal`). If the mask is missing or all-zero, the geometry passes through unchanged.',
+        'mesh to inset. Must carry a CPU-side mesh AND a face selection mask (typically produced by `geom/select-by-normal`). If the mask is missing or all-zero, the geometry passes through unchanged.',
     },
     {
       name: 'width',
@@ -75,22 +75,22 @@ Limitations of this MVP:
       // pipeline you'd typically chain `select-by-angle → bevel`
       // to round the resulting inside corner.
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const sel = addNode(g, 'core/select-by-normal', {
+      const sel = addNode(g, 'geom/select-by-normal', {
         id: 'select',
         position: { x: 280, y: 0 },
         inputValues: { direction: [0, 0, 1], threshold: 30 },
       });
-      const ins = addNode(g, 'core/inset', {
+      const ins = addNode(g, 'geom/inset', {
         id: 'inset',
         position: { x: 560, y: 0 },
         inputValues: { width: 0.1 },
       });
-      const ext = addNode(g, 'core/extrude', {
+      const ext = addNode(g, 'geom/extrude', {
         id: 'extrude',
         position: { x: 840, y: 0 },
         inputValues: { offset: -0.05 },
@@ -106,7 +106,7 @@ Limitations of this MVP:
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/inset requires a CPU-side mesh on the input geometry; '
+        'geom/inset requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

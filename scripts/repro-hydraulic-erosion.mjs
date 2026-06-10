@@ -58,7 +58,7 @@ await new Promise((r) => setTimeout(r, 3500));
 // Find the perlin node's and the erosion node's preview canvases.
 const previewCanvases = await page.evaluate(() => {
   const st = window.__sedonStore__.getState();
-  const perlin = st.graph.nodes.find((n) => n.kind === 'core/perlin');
+  const perlin = st.graph.nodes.find((n) => n.kind === 'tex/perlin');
   const erosion = st.graph.nodes.find((n) => n.kind === 'terrain/hydraulic-erosion');
   if (!perlin || !erosion) return { error: `missing nodes (perlin=${!!perlin}, erosion=${!!erosion})` };
   const lookup = (id) => {

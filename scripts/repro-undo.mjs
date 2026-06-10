@@ -12,13 +12,13 @@ page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/lathe/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/geom/lathe/?debug=1`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 2500));
 
   const curveId = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return { id: n?.id, points: (n?.inputValues?.points)?.length ?? 0, undoLen: state.undoStack.length };
   });
   console.log('before editor open:', JSON.stringify(curveId));
@@ -41,7 +41,7 @@ try {
 
   const afterClick = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return {
       points: (n?.inputValues?.points)?.length ?? 0,
       undoLen: state.undoStack.length,
@@ -68,7 +68,7 @@ try {
 
   const afterUndo = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const n = state.graph.nodes.find((n) => n.kind === 'core/curve-2d');
+    const n = state.graph.nodes.find((n) => n.kind === 'path/curve-2d');
     return {
       points: (n?.inputValues?.points)?.length ?? 0,
       undoLen: state.undoStack.length,

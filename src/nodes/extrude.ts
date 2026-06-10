@@ -6,14 +6,14 @@ import { extrudeMesh } from '../render/extrude.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const extrudeNode: NodeDef = {
-  id: 'core/extrude',
+  id: 'geom/extrude',
   category: 'Geometry/Modifiers',
   inputs: [
     {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'mesh to extrude. Must carry a CPU-side mesh AND a face selection mask (typically produced by a future `core/select-by-normal`, or any node that populates `selection.faces`). If the mask is missing or all-zero, the geometry passes through unchanged.',
+        'mesh to extrude. Must carry a CPU-side mesh AND a face selection mask (typically produced by a future `geom/select-by-normal`, or any node that populates `selection.faces`). If the mask is missing or all-zero, the geometry passes through unchanged.',
     },
     {
       name: 'offset',
@@ -44,7 +44,7 @@ export const extrudeNode: NodeDef = {
       'Push selected faces outward (or inward) along their cluster\'s normal, leaving wall quads connecting the offset cap back to the surrounding mesh — the universal "extrude region" op.',
     description: `
 Takes a Geometry carrying a face-selection mask (e.g. from a future
-\`core/select-by-normal\`) and, for each connected cluster of selected
+\`geom/select-by-normal\`) and, for each connected cluster of selected
 triangles, duplicates the cluster along its average outward normal
 by \`offset\` and welds the duplicate back to the original boundary
 with wall quads.
@@ -85,17 +85,17 @@ direction × cluster_normal sign tracks the offset sign).
       // intended graph, evaluator may show it as broken until that
       // node lands.
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const sel = addNode(g, 'core/select-by-normal', {
+      const sel = addNode(g, 'geom/select-by-normal', {
         id: 'select',
         position: { x: 280, y: 0 },
         inputValues: { direction: [0, 1, 0], threshold: 45 },
       });
-      const ext = addNode(g, 'core/extrude', {
+      const ext = addNode(g, 'geom/extrude', {
         id: 'extrude',
         position: { x: 560, y: 0 },
         inputValues: { offset: 0.3 },
@@ -110,7 +110,7 @@ direction × cluster_normal sign tracks the offset sign).
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/extrude requires a CPU-side mesh on the input geometry; '
+        'geom/extrude requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

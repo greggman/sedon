@@ -38,15 +38,15 @@ export function createCityFurniturePreviewDemo(): {
   // ── Ground plane: 30×15m of asphalt-grey concrete. Large enough
   // for the camera framing not to see the edges at the chosen
   // viewpoint.
-  const plane = addNode(g, 'core/plane', {
+  const plane = addNode(g, 'geom/plane', {
     position: { x: 0, y: 0 },
     inputValues: { size: [30, 15], divisions: [1, 1] },
   });
-  const groundMat = addNode(g, 'core/material', {
+  const groundMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: 0 },
     inputValues: { basecolor: [0.22, 0.22, 0.24, 1], roughness: 0.85, metallic: 0 },
   });
-  const groundEnt = addNode(g, 'core/scene-entity', {
+  const groundEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: 0 },
   });
 
@@ -56,34 +56,34 @@ export function createCityFurniturePreviewDemo(): {
   const lampWrap = addNode(g, `subgraph/${lamp.id}`, {
     position: { x: 0, y: ROW * 2 },
   });
-  const lampLift = addNode(g, 'core/transform-scene', {
+  const lampLift = addNode(g, 'scene/transform', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { translate: [-6, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   const signalWrap = addNode(g, `subgraph/${signal.id}`, {
     position: { x: 0, y: ROW * 3 },
   });
-  const signalLift = addNode(g, 'core/transform-scene', {
+  const signalLift = addNode(g, 'scene/transform', {
     position: { x: COL, y: ROW * 3 },
     inputValues: { translate: [-2, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   const hydrantWrap = addNode(g, `subgraph/${hydrant.id}`, {
     position: { x: 0, y: ROW * 4 },
   });
-  const hydrantLift = addNode(g, 'core/transform-scene', {
+  const hydrantLift = addNode(g, 'scene/transform', {
     position: { x: COL, y: ROW * 4 },
     inputValues: { translate: [2, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   const carWrap = addNode(g, `subgraph/${car.id}`, {
     position: { x: 0, y: ROW * 5 },
   });
-  const carLift = addNode(g, 'core/transform-scene', {
+  const carLift = addNode(g, 'scene/transform', {
     position: { x: COL, y: ROW * 5 },
     inputValues: { translate: [6, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
 
   // ── Scene merge: ground + four pieces.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 2.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

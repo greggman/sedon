@@ -6,7 +6,7 @@ import { generateCube } from '../render/cube.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const cubeNode: NodeDef = {
-  id: 'core/cube',
+  id: 'geom/cube',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -31,14 +31,14 @@ origin, axis-aligned, with per-face normals so it shades crisply (no
 averaged vertex normals smoothing the corners off).
 
 Use as a stand-in for buildings, crates, or any other rectangular shape;
-wire through [core/transform-geometry](../../core/transform-geometry) to scale it
+wire through [geom/transform](../../geom/transform) to scale it
 non-uniformly into a box, or feed into
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 to scatter blocks across a point cloud.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/cube', {
+      addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },

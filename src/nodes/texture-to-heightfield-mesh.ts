@@ -15,8 +15,8 @@ import shader from './texture-to-heightfield-mesh.wgsl';
 //     no readback, no CPU mesh build, no async wait. The mesh is
 //     renderable the same submit tick it's produced. The returned
 //     `GeometryValue` has NO `mesh` field, so downstream nodes that
-//     touch CPU data (`core/distribute-on-faces`,
-//     `core/merge-scene-entities`) will refuse it.
+//     touch CPU data (`points/on-faces`,
+//     `scene/merge-entities`) will refuse it.
 //
 //   cpu_access = true: legacy readback path. Copies the texture to
 //     CPU, builds the mesh on CPU, uploads, and ALSO populates
@@ -87,13 +87,13 @@ function allocOrReuseBuffer(
 }
 
 export const textureToHeightfieldMeshNode: NodeDef = {
-  id: 'core/texture-to-heightfield-mesh',
+  id: 'geom/heightfield-from-texture',
   category: 'Texture/Convert',
   inputs: [
     {
       name: 'texture',
       type: 'Texture2D',
-      description: "height texture; R channel is read as world Y in metres directly. Typically rgba16float — chain [core/texture-convert](../../core/texture-convert) + [core/texture-map-range](../../core/texture-map-range) ahead of this to scale [0,1] noise into real altitudes",
+      description: "height texture; R channel is read as world Y in metres directly. Typically rgba16float — chain [tex/convert](../../tex/convert) + [tex/map-range](../../tex/map-range) ahead of this to scale [0,1] noise into real altitudes",
     },
     {
       name: 'worldSize',
@@ -132,40 +132,40 @@ The result is a regular grid of quads (subdivided to two triangles each)
 with vertices snapped to the per-pixel texture value, so the mesh follows
 every bump in the source up to the \`divisions\` resolution. UVs span
 [0, 1] across the whole terrain — for fine surface detail (grass
-close-up), follow with [core/uv-transform](../../core/uv-transform) to
+close-up), follow with [geom/uv-transform](../../geom/uv-transform) to
 repeat the texture more densely.
 
 The R channel is treated as **world Y in metres directly**. Typical
 terrain-authoring chain:
 
-  [core/perlin](../../core/perlin) → [core/texture-convert](../../core/texture-convert)(rgba16float) → [core/texture-map-range](../../core/texture-map-range)(0,1 → 0,50) → here
+  [tex/perlin](../../tex/perlin) → [tex/convert](../../tex/convert)(rgba16float) → [tex/map-range](../../tex/map-range)(0,1 → 0,50) → here
 
 so the noise's [0, 1] values land at altitudes in metres before the
 texture is read as a heightfield.
 
 Set \`cpu_access = true\` only when a downstream node needs CPU-side
-vertex data ([core/distribute-on-faces](../../core/distribute-on-faces),
-[core/merge-scene-entities](../../core/merge-scene-entities)); the
+vertex data ([points/on-faces](../../points/on-faces),
+[scene/merge-entities](../../scene/merge-entities)); the
 readback is a few hundred ms and async.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const remap = addNode(g, 'core/texture-map-range', {
+      const remap = addNode(g, 'tex/map-range', {
         id: 'remap',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 2, clamp: false },
       });
-      const mesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+      const mesh = addNode(g, 'geom/heightfield-from-texture', {
         id: 'mesh',
         position: { x: 840, y: 0 },
         inputValues: { worldSize: [10, 10], divisions: [64, 64], cpu_access: true },

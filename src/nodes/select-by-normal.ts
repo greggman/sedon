@@ -4,14 +4,14 @@ import type { GeometryValue, MeshSelection } from '../core/resources.js';
 import { countSelectedFaces, selectFacesByNormal } from '../render/select-by-normal.js';
 
 export const selectByNormalNode: NodeDef = {
-  id: 'core/select-by-normal',
+  id: 'geom/select-by-normal',
   category: 'Geometry/Selection',
   inputs: [
     {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'mesh to select faces on. Must carry a CPU-side mesh. Any existing `selection.faces` mask is REPLACED in the output; use `core/select-combine` to merge. Other selection slots (edges, vertices) pass through.',
+        'mesh to select faces on. Must carry a CPU-side mesh. Any existing `selection.faces` mask is REPLACED in the output; use `geom/select-combine` to merge. Other selection slots (edges, vertices) pass through.',
     },
     {
       name: 'direction',
@@ -42,7 +42,7 @@ export const selectByNormalNode: NodeDef = {
       name: 'geometry',
       type: 'Geometry',
       description:
-        'the input geometry with its FACE selection mask set on `selection.faces`. Positions / indices / UVs / other selection masks pass through unchanged. Downstream face-consuming ops (`core/extrude`, future `core/inset`) read this mask.',
+        'the input geometry with its FACE selection mask set on `selection.faces`. Positions / indices / UVs / other selection masks pass through unchanged. Downstream face-consuming ops (`geom/extrude`, future `geom/inset`) read this mask.',
     },
     {
       name: 'selected_count',
@@ -88,17 +88,17 @@ Edge cases:
       // Squashed sphere → select-by-normal +Y, threshold 30° → the
       // top cap faces. Then extrude to push them up further.
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 1, slices: 32, stacks: 16 },
       });
-      const squash = addNode(g, 'core/transform-geometry', {
+      const squash = addNode(g, 'geom/transform', {
         id: 'squash',
         position: { x: 280, y: 0 },
         inputValues: { scale: [1, 0.5, 1] },
       });
-      const sel = addNode(g, 'core/select-by-normal', {
+      const sel = addNode(g, 'geom/select-by-normal', {
         id: 'select',
         position: { x: 560, y: 0 },
         inputValues: { direction: [0, 1, 0], threshold: 30 },
@@ -112,7 +112,7 @@ Edge cases:
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/select-by-normal requires a CPU-side mesh on the input geometry; '
+        'geom/select-by-normal requires a CPU-side mesh on the input geometry; '
         + 'this source produced GPU-only data.',
       );
     }

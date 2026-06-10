@@ -10,13 +10,13 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 // so each shop reads as a different colour from a curated palette.
 //
 // Authoring convention for the SCATTER-ALIGNED frame (matches
-// `core/instance-scene-on-points`'s "local X → tangent, Y → normal,
+// `scene/instance-on-points`'s "local X → tangent, Y → normal,
 // Z → bitangent" rule):
 //   • Local +X — along the wall (horizontal extent)
 //   • Local +Y — OUTWARD from the wall (the projection direction)
 //   • Local +Z — vertical (world-up after scatter)
 //
-// So in `core/box`'s width/height/depth ordering:
+// So in `geom/box`'s width/height/depth ordering:
 //   • width (X-extent)  = awning's horizontal width along the wall
 //   • height (Y-extent) = how far the awning projects outward
 //   • depth (Z-extent)  = vertical thickness of the canopy
@@ -36,7 +36,7 @@ export function buildAwningSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 4, y: ROW } });
 
   // Box: 2.5 m wide × 1.0 m outward × 0.35 m thick. Centred at origin.
-  const geo = addNode(g, 'core/box', {
+  const geo = addNode(g, 'geom/box', {
     position: { x: COL, y: 0 },
     inputValues: { width: 2.5, height: 1.0, depth: 0.35 },
   });
@@ -46,7 +46,7 @@ export function buildAwningSubgraph(): SubgraphDef {
   // Additional +Z (= up after scatter) offset of 1.6 m so the
   // awning sits at typical storefront-top height (just above doors
   // and shop windows), not at ground level.
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: {
       translate: [0, 0.5, 1.6],
@@ -56,7 +56,7 @@ export function buildAwningSubgraph(): SubgraphDef {
   });
   // White basecolour so per_point_tint reads cleanly. Slight
   // roughness so the painted-fabric/metal awning catches light.
-  const mat = addNode(g, 'core/material', {
+  const mat = addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: ROW * 0.5 },
     inputValues: {
       basecolor: [1, 1, 1, 1],
@@ -64,7 +64,7 @@ export function buildAwningSubgraph(): SubgraphDef {
       metallic: 0.05,
     },
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: 0 },
   });
   addEdge(g, { node: geo.id, socket: 'geometry' },  { node: lift.id, socket: 'geometry' });

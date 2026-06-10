@@ -27,7 +27,7 @@ function len2(x: number, z: number): number {
 }
 
 export const polygonPerimeterPointsNode: NodeDef = {
-  id: 'core/polygon-perimeter-points',
+  id: 'points/polygon-perimeter',
   category: 'Polygon',
   inputs: [
     {
@@ -81,12 +81,12 @@ Per-point output:
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 60] },
       });
-      const pts = addNode(g, 'core/polygon-perimeter-points', {
+      const pts = addNode(g, 'points/polygon-perimeter', {
         id: 'pts',
         position: { x: 280, y: 0 },
         inputValues: { spacing: 5 },

@@ -7,7 +7,7 @@ import type { PointCloudValue } from '../core/resources.js';
 // produce the classic furniture-grade "row of N things" (chair
 // spindles along the top rail, drawer pulls across a drawer front,
 // picket fence posts, balusters on a stair). Pairs with the existing
-// `core/grid-distribute` for 2D repeats.
+// `points/grid` for 2D repeats.
 //
 // Spacing rule: with count >= 2, the first point sits at `start` and
 // the last at `end` (endpoints inclusive — what you almost always
@@ -23,7 +23,7 @@ import type { PointCloudValue } from '../core/resources.js';
 // is shared by every point and a single uniform rotation downstream
 // is cleaner than per-point tangents here.
 export const pointsLineNode: NodeDef = {
-  id: 'core/points-line',
+  id: 'points/line',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -63,29 +63,29 @@ collapses to the midpoint so slider sweeps don't jump; \`count == 0\`
 emits an empty cloud.
 
 Normals are world-up so a downstream
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 with \`align: true\` keeps the instances upright — the right default
 for chair spindles, drawer pulls, balusters, fence posts, etc. If
 you want the instances to lean along the line direction instead,
 apply a uniform rotation on the line's tangent downstream (the
 tangent is just \`normalize(end - start)\`, shared by every point).
 
-Pair with [core/grid-distribute](../../core/grid-distribute) when
+Pair with [points/grid](../../points/grid) when
 you need a 2D repeat (tiles, drawer grids, button-tufting).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const points = addNode(g, 'core/points-line', {
+      const points = addNode(g, 'points/line', {
         id: 'points',
         position: { x: 0, y: 0 },
         inputValues: { start: [-1.5, 0, 0], end: [1.5, 0, 0], count: 6 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.2, align: true },

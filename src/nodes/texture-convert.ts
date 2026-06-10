@@ -39,7 +39,7 @@ const FORMAT_BY_INDEX: Record<number, GPUTextureFormat> = {
 };
 
 export const textureConvertNode: NodeDef = {
-  id: 'core/texture-convert',
+  id: 'tex/convert',
   category: 'Texture/Format',
   inputs: [
     {
@@ -76,9 +76,9 @@ when you need to upgrade (rgba8unorm → rgba16float) or downgrade
 The terrain-authoring pattern: a noise generator emits rgba8unorm
 values in [0, 1]; you pipe through this node with \`format:
 rgba16float\` to get a float texture, then use
-[core/texture-map-range](../../core/texture-map-range) to scale the
+[tex/map-range](../../tex/map-range) to scale the
 values to real altitudes (metres). The result feeds straight into
-[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+[geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 or [terrain/renderer](../../terrain/renderer) — the consumer reads R
 as world Y directly, no remap needed.
 
@@ -89,12 +89,12 @@ cheap enough not to bother optimising.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const convert = addNode(g, 'core/texture-convert', {
+      const convert = addNode(g, 'tex/convert', {
         id: 'convert',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },

@@ -22,7 +22,7 @@ import shader from './normal-from-height.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const normalFromHeightNode: NodeDef = {
-  id: 'core/normal-from-height',
+  id: 'tex/normal-from-height',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -62,19 +62,19 @@ into RGB.
 Negative strength flips the apparent direction — useful for "carved"
 features like leaf veins where the dark pixels in the height map should
 read as valleys not ridges. Pair with the output of
-[core/perlin](../../core/perlin) / [core/worley](../../core/worley) /
-[core/distance-transform](../../core/distance-transform) /
-[core/levels](../../core/levels) chains to get surface micro-detail "for
+[tex/perlin](../../tex/perlin) / [tex/worley](../../tex/worley) /
+[tex/distance-transform](../../tex/distance-transform) /
+[tex/levels](../../tex/levels) chains to get surface micro-detail "for
 free" without modelling geometry.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const src = addNode(g, 'core/perlin', {
+      const src = addNode(g, 'tex/perlin', {
         id: 'src',
         position: { x: 0, y: 0 },
         inputValues: { scale: [6, 6], octaves: 4, lacunarity: 2, gain: -0.75, seed: 0, resolution: 512 },
       });
-      const nfh = addNode(g, 'core/normal-from-height', {
+      const nfh = addNode(g, 'tex/normal-from-height', {
         id: 'normal',
         position: { x: 280, y: 0 },
         inputValues: { strength: 4, resolution: 512 },

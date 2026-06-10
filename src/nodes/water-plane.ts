@@ -200,37 +200,37 @@ is suppressed past the heightfield bounds automatically.
     sampleGraph: () => {
       const g = createGraph();
       // Terrain → terrain/renderer scene → water plane appended on top.
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const heightTex = addNode(g, 'core/texture-map-range', {
+      const heightTex = addNode(g, 'tex/map-range', {
         id: 'heightTex',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },
       });
-      const hfMesh = addNode(g, 'core/texture-to-heightfield-mesh', {
+      const hfMesh = addNode(g, 'geom/heightfield-from-texture', {
         id: 'hfMesh',
         position: { x: 840, y: 0 },
         inputValues: { worldSize: [40, 40], divisions: [64, 64], cpu_access: false },
       });
-      const albedo = addNode(g, 'core/solid-color', {
+      const albedo = addNode(g, 'tex/solid-color', {
         id: 'albedo',
         position: { x: 280, y: 200 },
         inputValues: { color: [0.42, 0.5, 0.35, 1], resolution: 32 },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'mat',
         position: { x: 560, y: 200 },
         inputValues: { roughness: 0.7, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 840, y: 100 },
         inputValues: {},

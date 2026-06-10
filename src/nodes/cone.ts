@@ -6,7 +6,7 @@ import { generateCone } from '../render/cone.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const coneNode: NodeDef = {
-  id: 'core/cone',
+  id: 'geom/cone',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -26,7 +26,7 @@ export const coneNode: NodeDef = {
       type: 'Int',
       default: 16,
       min: 2,
-      description: 'number of radial subdivisions around the base. Same smoothness vs. cost tradeoff as [core/cylinder](../../core/cylinder)',
+      description: 'number of radial subdivisions around the base. Same smoothness vs. cost tradeoff as [geom/cylinder](../../geom/cylinder)',
     },
   ],
   outputs: [
@@ -44,12 +44,12 @@ surface uses slanted normals so the shading reads smooth around the cone
 even though the silhouette is faceted to \`segments\`.
 
 Use for tree leaves on conifers (often with a tall, narrow aspect ratio),
-spires, instanced caps on top of [core/cylinder](../../core/cylinder)
+spires, instanced caps on top of [geom/cylinder](../../geom/cylinder)
 trunks for low-poly trees, or as a directional marker in debug scenes.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/cone', {
+      addNode(g, 'geom/cone', {
         id: 'cone',
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.5, height: 1.5, segments: 24 },

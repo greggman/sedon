@@ -78,11 +78,11 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
       color_light: [0.42, 0.28, 0.16, 1],
     },
   });
-  const trunkMat = addNode(g, 'core/material', {
+  const trunkMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: -ROW * 0.7 },
     inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.6 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const trunkEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: 0 },
   });
 
@@ -102,11 +102,11 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
       seed: 0.5,
     },
   });
-  const leafGeo = addNode(g, 'core/plane', {
+  const leafGeo = addNode(g, 'geom/plane', {
     position: { x: COL, y: ROW * 3.3 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform-geometry', {
+  const leafLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3.3 },
     inputValues: {
       translate: [0, 0.5, 0],
@@ -114,18 +114,18 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const leafScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 4, y: ROW * 2.7 },
     inputValues: { scale: 0.18, align: true, seed: 0.5 },
   });
   const leafCard = addNode(g, 'subgraph/oak-leaf', {
     position: { x: COL * 3, y: ROW * 4.2 },
   });
-  const leafMat = addNode(g, 'core/material', {
+  const leafMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: ROW * 4.2 },
     inputValues: { roughness: 0.85, metallic: 0, alpha_cutoff: 0.5 },
   });
-  const leafEntity = addNode(g, 'core/scene-entity', {
+  const leafEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW * 3 },
   });
 
@@ -142,15 +142,15 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
       seed: 0.85,
     },
   });
-  const flowerGeo = addNode(g, 'core/sphere', {
+  const flowerGeo = addNode(g, 'geom/sphere', {
     position: { x: COL, y: ROW * 6 },
     inputValues: { radius: 1, segments: 8, rings: 6 },
   });
-  const flowerScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const flowerScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 4, y: ROW * 5.7 },
     inputValues: { scale: 0.07, align: true },
   });
-  const flowerMat = addNode(g, 'core/material', {
+  const flowerMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: ROW * 6.8 },
     inputValues: {
       basecolor: [0.95, 0.55, 0.7, 1],
@@ -158,14 +158,14 @@ export function buildBranchTreeSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const flowerEntity = addNode(g, 'core/scene-entity', {
+  const flowerEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW * 6 },
   });
 
   // === Merge: trunk + leaves + flowers → final ===========================
-  // `core/scene-merge` is variadic — one merge with three sockets covers
+  // `scene/merge` is variadic — one merge with three sockets covers
   // every producer; no intermediate merges needed.
-  const mergeAll = addNode(g, 'core/scene-merge', {
+  const mergeAll = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 3 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -268,7 +268,7 @@ export function buildBranchBushSubgraph(): SubgraphDef {
     position: { x: COL * 3, y: 0 },
     inputValues: { sides: 6, uvTilingV: 1.2 },
   });
-  const stemMat = addNode(g, 'core/material', {
+  const stemMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: -ROW * 0.7 },
     inputValues: {
       basecolor: [0.25, 0.18, 0.1, 1],
@@ -276,7 +276,7 @@ export function buildBranchBushSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const stemEntity = addNode(g, 'core/scene-entity', {
+  const stemEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: 0 },
   });
 
@@ -295,11 +295,11 @@ export function buildBranchBushSubgraph(): SubgraphDef {
       seed: 0.42,
     },
   });
-  const leafGeo = addNode(g, 'core/plane', {
+  const leafGeo = addNode(g, 'geom/plane', {
     position: { x: COL, y: ROW * 3.2 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform-geometry', {
+  const leafLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3.2 },
     inputValues: {
       translate: [0, 0.5, 0],
@@ -307,22 +307,22 @@ export function buildBranchBushSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const leafScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 4, y: ROW * 2.4 },
     inputValues: { scale: 0.06, align: true, seed: 0.42 },
   });
   const leafCard = addNode(g, 'subgraph/oak-leaf', {
     position: { x: COL * 3, y: ROW * 4 },
   });
-  const leafMat = addNode(g, 'core/material', {
+  const leafMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: ROW * 4 },
     inputValues: { roughness: 0.85, metallic: 0, alpha_cutoff: 0.5 },
   });
-  const leafEntity = addNode(g, 'core/scene-entity', {
+  const leafEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW * 2.5 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 7, y: ROW * 1 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -405,11 +405,11 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
       color_light: [0.55, 0.45, 0.32, 1],
     },
   });
-  const trunkMat = addNode(g, 'core/material', {
+  const trunkMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: -ROW * 0.7 },
     inputValues: { roughness: 0.92, metallic: 0, detail_scale: 5, detail_strength: 0.5 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const trunkEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: 0 },
   });
 
@@ -430,15 +430,15 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
       seed: 0.41,
     },
   });
-  const frondGeo = addNode(g, 'core/cone', {
+  const frondGeo = addNode(g, 'geom/cone', {
     position: { x: COL, y: ROW * 3.4 },
     inputValues: { radius: 0.12, height: 2.4, segments: 6 },
   });
-  const frondScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const frondScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 4, y: ROW * 2.7 },
     inputValues: { scale: 1, align: true },
   });
-  const frondMat = addNode(g, 'core/material', {
+  const frondMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: ROW * 4.2 },
     inputValues: {
       basecolor: [0.18, 0.45, 0.18, 1],
@@ -446,11 +446,11 @@ export function buildBranchPalmSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const frondEntity = addNode(g, 'core/scene-entity', {
+  const frondEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: ROW * 3 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 7, y: ROW * 1.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -548,11 +548,11 @@ export function buildBranchPineSubgraph(): SubgraphDef {
       color_light: [0.36, 0.22, 0.12, 1],
     },
   });
-  const trunkMat = addNode(g, 'core/material', {
+  const trunkMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: -ROW * 0.7 },
     inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.5 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const trunkEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: 0 },
   });
 
@@ -571,15 +571,15 @@ export function buildBranchPineSubgraph(): SubgraphDef {
       seed: 0.55,
     },
   });
-  const needleGeo = addNode(g, 'core/sphere', {
+  const needleGeo = addNode(g, 'geom/sphere', {
     position: { x: COL, y: ROW * 3.4 },
     inputValues: { radius: 1, segments: 6, rings: 4 },
   });
-  const needleScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const needleScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 5, y: ROW * 2.7 },
     inputValues: { scale: 0.09, align: true },
   });
-  const needleMat = addNode(g, 'core/material', {
+  const needleMat = addNode(g, 'material/pbr', {
     position: { x: COL * 5, y: ROW * 4.2 },
     inputValues: {
       basecolor: [0.08, 0.28, 0.16, 1],
@@ -587,11 +587,11 @@ export function buildBranchPineSubgraph(): SubgraphDef {
       metallic: 0,
     },
   });
-  const needleEntity = addNode(g, 'core/scene-entity', {
+  const needleEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 6, y: ROW * 3 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 8, y: ROW * 1.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },
@@ -647,11 +647,11 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   });
 
   // === Attractor envelope: a sphere lifted into the canopy zone. ========
-  const crownSphere = addNode(g, 'core/sphere', {
+  const crownSphere = addNode(g, 'geom/sphere', {
     position: { x: 0, y: 0 },
     inputValues: { radius: 4, segments: 14, rings: 10 },
   });
-  const crownLift = addNode(g, 'core/transform-geometry', {
+  const crownLift = addNode(g, 'geom/transform', {
     position: { x: COL, y: 0 },
     inputValues: { translate: [0, 9, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -659,7 +659,7 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   // distribute-on-faces gave a hollow shell of attractors that left
   // the space-colonization growth with no interior structure to chase
   // (Runions's paper canonically uses a volume envelope).
-  const attractors = addNode(g, 'core/distribute-in-volume', {
+  const attractors = addNode(g, 'points/in-volume', {
     position: { x: COL * 2, y: 0 },
     inputValues: { density: 1.5, seed: 123 },
   });
@@ -703,11 +703,11 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
       color_light: [0.48, 0.32, 0.19, 1],
     },
   });
-  const trunkMat = addNode(g, 'core/material', {
+  const trunkMat = addNode(g, 'material/pbr', {
     position: { x: COL * 6, y: -ROW * 0.7 },
     inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.55 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const trunkEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 7, y: 0 },
   });
 
@@ -743,11 +743,11 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
       seed: 0.35,
     },
   });
-  const leafGeo = addNode(g, 'core/plane', {
+  const leafGeo = addNode(g, 'geom/plane', {
     position: { x: COL, y: ROW * 3.4 },
     inputValues: { size: [0.7, 1], divisions: [1, 1] },
   });
-  const leafLift = addNode(g, 'core/transform-geometry', {
+  const leafLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 3.4 },
     inputValues: {
       translate: [0, 0.5, 0],
@@ -755,7 +755,7 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
       scale: [1, 1, 1],
     },
   });
-  const leafScatter = addNode(g, 'core/instance-geometry-on-points', {
+  const leafScatter = addNode(g, 'geom/instance-on-points', {
     position: { x: COL * 6, y: ROW * 2.7 },
     // scale=1: the oak-leaf plane is already authored at a natural
     // foliage size; the previous 0.15 was a workaround for the dense
@@ -767,15 +767,15 @@ export function buildBranchCanopyTreeSubgraph(): SubgraphDef {
   const leafCard = addNode(g, 'subgraph/oak-leaf', {
     position: { x: COL * 5, y: ROW * 4.2 },
   });
-  const leafMat = addNode(g, 'core/material', {
+  const leafMat = addNode(g, 'material/pbr', {
     position: { x: COL * 6, y: ROW * 4.2 },
     inputValues: { roughness: 0.85, metallic: 0, alpha_cutoff: 0.5 },
   });
-  const leafEntity = addNode(g, 'core/scene-entity', {
+  const leafEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 7, y: ROW * 3 },
   });
 
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 9, y: ROW * 1.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

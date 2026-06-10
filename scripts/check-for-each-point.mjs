@@ -37,7 +37,7 @@ try {
 
   const summary = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const feNode = state.graph.nodes.find((n) => n.kind === 'core/for-each-point');
+    const feNode = state.graph.nodes.find((n) => n.kind === 'iter/for-each-point');
     if (!feNode) return { error: 'no for-each-point node in graph' };
     const panelIds = window.__sedonListPanelIds__();
     // Find which panel has eval outputs (Preview / canvas / asset

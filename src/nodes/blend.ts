@@ -23,7 +23,7 @@ import shader from './blend.wgsl';
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const blendNode: NodeDef = {
-  id: 'core/blend',
+  id: 'tex/blend',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -81,24 +81,24 @@ staying soft at the top end.
 Inputs are sampled with linear filtering and repeat addressing, so blending
 two textures of different resolutions still works — the smaller one tiles to
 cover the output. For per-pixel blending where the strength varies across
-the texture, reach for [core/blend-mask](../../core/blend-mask) instead.
+the texture, reach for [tex/blend-mask](../../tex/blend-mask) instead.
 `,
     sampleGraph: () => {
       // Perlin (smooth fbm) blended with Worley (cellular distance) so
       // the mix is visually obvious — pure noise on one side, cell
       // borders on the other, the result wears both signatures.
       const g = createGraph();
-      const a = addNode(g, 'core/perlin', {
+      const a = addNode(g, 'tex/perlin', {
         id: 'a',
         position: { x: 0, y: 0 },
         inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
       });
-      const b = addNode(g, 'core/worley', {
+      const b = addNode(g, 'tex/worley', {
         id: 'b',
         position: { x: 0, y: 220 },
         inputValues: { scale: 8, octaves: 1, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
       });
-      const blend = addNode(g, 'core/blend', {
+      const blend = addNode(g, 'tex/blend', {
         id: 'blend',
         position: { x: 280, y: 110 },
         inputValues: { factor: 0.5, mode: 0, resolution: 512 },

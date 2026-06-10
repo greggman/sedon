@@ -9,7 +9,7 @@ import { DocsSamplePreview } from './docs-sample-preview.js';
 // the `descriptionHtml` prop and gets stuffed straight into the DOM
 // via `dangerouslySetInnerHTML`. Doing the markdown render at build
 // time keeps showdown out of the runtime bundle and lets cross-node
-// links (`[core/blend](../../core/blend)`) become real `<a>` tags
+// links (`[tex/blend](../../tex/blend)`) become real `<a>` tags
 // before the page even loads.
 
 interface DocsPageProps {

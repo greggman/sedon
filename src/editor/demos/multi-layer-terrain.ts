@@ -24,15 +24,15 @@ export function createMultiLayerTerrainDemo(): {
   // carve realistic channels. 200×200m so LOD differences are
   // visible — near chunks ≈ a few metres, far chunks ≈ 100m+ where
   // the coarsest LOD looks fine.
-  const perlin = addNode(g, 'core/perlin', {
+  const perlin = addNode(g, 'tex/perlin', {
     position: { x: 0, y: 0 },
     inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 1, resolution: 512 },
   });
-  const heightFloat = addNode(g, 'core/texture-convert', {
+  const heightFloat = addNode(g, 'tex/convert', {
     position: { x: COL, y: 0 },
     inputValues: { format: 1 },
   });
-  const heightScale = addNode(g, 'core/texture-map-range', {
+  const heightScale = addNode(g, 'tex/map-range', {
     position: { x: COL * 1.25, y: 0 },
     inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 30, clamp: false },
   });
@@ -54,11 +54,11 @@ export function createMultiLayerTerrainDemo(): {
   });
 
   // A river-shaped path that meanders across the terrain. The
-  // authored control points live on a core/point-list (so the user
+  // authored control points live on a points/list (so the user
   // can drag them in the 2D editor with the heightfield as a
   // backdrop); path/spline smooths them into a polyline and
   // path/carve-heightfield cuts the route into the terrain.
-  const pathPoints = addNode(g, 'core/point-list', {
+  const pathPoints = addNode(g, 'points/list', {
     position: { x: COL * 1.55, y: ROW * 1.5 },
     inputValues: {
       world_size: [200, 200],
@@ -83,19 +83,19 @@ export function createMultiLayerTerrainDemo(): {
   });
 
   // Four solid-color layer albedos (red / green / blue / white).
-  const albedo0 = addNode(g, 'core/solid-color', {
+  const albedo0 = addNode(g, 'tex/solid-color', {
     position: { x: 0, y: ROW * 1.5 },
     inputValues: { color: [1.0, 0.2, 0.2, 1], resolution: 64 },
   });
-  const albedo1 = addNode(g, 'core/solid-color', {
+  const albedo1 = addNode(g, 'tex/solid-color', {
     position: { x: 0, y: ROW * 2.5 },
     inputValues: { color: [0.2, 1.0, 0.2, 1], resolution: 64 },
   });
-  const albedo2 = addNode(g, 'core/solid-color', {
+  const albedo2 = addNode(g, 'tex/solid-color', {
     position: { x: 0, y: ROW * 3.5 },
     inputValues: { color: [0.2, 0.2, 1.0, 1], resolution: 64 },
   });
-  const albedo3 = addNode(g, 'core/solid-color', {
+  const albedo3 = addNode(g, 'tex/solid-color', {
     position: { x: 0, y: ROW * 4.5 },
     inputValues: { color: [1.0, 1.0, 1.0, 1], resolution: 64 },
   });
@@ -105,7 +105,7 @@ export function createMultiLayerTerrainDemo(): {
   const layer3 = addNode(g, 'terrain/layer', { position: { x: COL, y: ROW * 4.5 } });
 
   // Splat with layer-0 dominant + smaller contributions from the rest.
-  const splat = addNode(g, 'core/solid-color', {
+  const splat = addNode(g, 'tex/solid-color', {
     position: { x: COL, y: ROW * 5.5 },
     inputValues: { color: [0.6, 0.2, 0.15, 0.05], resolution: 32 },
   });

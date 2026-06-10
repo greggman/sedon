@@ -30,7 +30,7 @@ export function createCubeOnWaterDemo(): {
   // Pink PBR material. basecolor is a colour default → evaluate.ts
   // auto-promotes to a 1×1 texture; no upstream solid-color node
   // needed for a flat fill.
-  const cubeMaterial = addNode(g, 'core/material', {
+  const cubeMaterial = addNode(g, 'material/pbr', {
     position: { x: COL, y: 0 },
     inputValues: {
       basecolor: [1.0, 0.42, 0.71, 1.0],
@@ -40,15 +40,15 @@ export function createCubeOnWaterDemo(): {
   });
 
   // Cube geometry, translated so its bottom sits on the water at y=0.
-  const cubeGeom = addNode(g, 'core/cube', {
+  const cubeGeom = addNode(g, 'geom/cube', {
     position: { x: 0, y: ROW },
     inputValues: { size: 2 },
   });
-  const cubeXform = addNode(g, 'core/transform-geometry', {
+  const cubeXform = addNode(g, 'geom/transform', {
     position: { x: COL, y: ROW },
     inputValues: { translate: [0, 1, 0] },
   });
-  const cubeEntity = addNode(g, 'core/scene-entity', {
+  const cubeEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: ROW / 2 },
   });
 

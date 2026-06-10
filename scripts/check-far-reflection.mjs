@@ -25,7 +25,7 @@ await page.evaluate(() => {
   const hf = st.graph.nodes.find((n) => n.kind === 'core/heightfield');
   if (hf) st.setInputValue(hf.id, 'heightRange', [-20, 50]);
   // Distinguishable colors.
-  const solids = st.graph.nodes.filter((n) => n.kind === 'core/solid-color').slice(0, 4);
+  const solids = st.graph.nodes.filter((n) => n.kind === 'tex/solid-color').slice(0, 4);
   st.setInputValue(solids[0].id, 'color', [1.0, 0.2, 0.2, 1]);
   st.setInputValue(solids[1].id, 'color', [0.2, 0.8, 0.2, 1]);
   st.setInputValue(solids[2].id, 'color', [0.2, 0.4, 1.0, 1]);

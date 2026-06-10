@@ -4,7 +4,7 @@ import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 
 // Two-layer splat-painted terrain material. Each layer brings its own
 // basecolor + roughness; the mask's red channel selects between them per
-// pixel (0 = layer A, 1 = layer B). Pair with core/slope-from-height to
+// pixel (0 = layer A, 1 = layer B). Pair with tex/slope-from-height to
 // route grass to flats and rock to steeps; pair with the heightfield
 // texture itself for altitude-based snow/grass; or compose your own mask
 // via blend / colorize / step-from-tex.
@@ -13,7 +13,7 @@ import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 // per-layer normals, triplanar projection, and heightblend transitions are
 // the natural extensions but out of scope for the initial seam.
 export const terrainMaterialNode: NodeDef = {
-  id: 'core/terrain-material',
+  id: 'material/terrain',
   category: 'Materials',
   inputs: [
     { name: 'layer_a', type: 'Texture2D', description: 'basecolor where mask is 0' },
@@ -44,7 +44,7 @@ export const terrainMaterialNode: NodeDef = {
     {
       name: 'material',
       type: 'Material',
-      description: 'two-layer terrain-splat material; consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [core/scene-entity](../../core/scene-entity) on top of a heightfield mesh',
+      description: 'two-layer terrain-splat material; consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [scene/entity](../../scene/entity) on top of a heightfield mesh',
     },
   ],
   doc: {
@@ -57,12 +57,12 @@ roughness and optional per-layer normal maps.
 The mask's red channel selects between layers per pixel — 0 = layer A,
 1 = layer B, intermediate values blend smoothly. Common mask sources:
 
-- [core/slope-from-height](../../core/slope-from-height) routes grass
+- [tex/slope-from-height](../../tex/slope-from-height) routes grass
   to flats and rock to steeps.
 - The heightfield texture itself routes by altitude (snow up high,
   forest mid, beach low).
-- A composed [core/blend](../../core/blend) /
-  [core/colorize](../../core/colorize) chain authors the splat by
+- A composed [tex/blend](../../tex/blend) /
+  [tex/colorize](../../tex/colorize) chain authors the splat by
   hand.
 
 \`tile_scale\` tiles the two BASECOLOR samples at a tighter rate than
@@ -76,32 +76,32 @@ instead.
       const g = createGraph();
       // Two flat colours stand in for grass + rock textures; a perlin
       // noise mask routes them across the surface.
-      const grassCol = addNode(g, 'core/solid-color', {
+      const grassCol = addNode(g, 'tex/solid-color', {
         id: 'grass',
         position: { x: 0, y: 0 },
         inputValues: { color: [0.28, 0.46, 0.18, 1], resolution: 32 },
       });
-      const rockCol = addNode(g, 'core/solid-color', {
+      const rockCol = addNode(g, 'tex/solid-color', {
         id: 'rock',
         position: { x: 0, y: 180 },
         inputValues: { color: [0.55, 0.5, 0.45, 1], resolution: 32 },
       });
-      const mask = addNode(g, 'core/perlin', {
+      const mask = addNode(g, 'tex/perlin', {
         id: 'mask',
         position: { x: 0, y: 360 },
         inputValues: { scale: [3, 3], octaves: 4, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
       });
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 280, y: -100 },
         inputValues: { radius: 1, segments: 48, rings: 24 },
       });
-      const material = addNode(g, 'core/terrain-material', {
+      const material = addNode(g, 'material/terrain', {
         id: 'material',
         position: { x: 280, y: 180 },
         inputValues: { roughness_a: 0.9, roughness_b: 0.7, tile_scale: [1, 1] },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 560, y: 50 },
         inputValues: {},

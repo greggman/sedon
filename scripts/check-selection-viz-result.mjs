@@ -9,9 +9,9 @@ const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
 const pages = [
-  'docs/nodes/core/select-by-angle/',
-  'docs/nodes/core/select-invert/',
-  'docs/nodes/core/select-combine/',
+  'docs/nodes/geom/select-by-angle/',
+  'docs/nodes/geom/select-invert/',
+  'docs/nodes/geom/select-combine/',
 ];
 
 try {

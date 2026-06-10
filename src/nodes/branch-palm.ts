@@ -7,7 +7,7 @@ import {
 
 // Single unbranched curving trunk — palm, banana, tree fern, agave. Crown
 // fronds are placed downstream by `branch/sample-points` with onlyTips=true
-// and tipCount=N feeding `core/instance-geometry-on-points`.
+// and tipCount=N feeding `geom/instance-on-points`.
 export const branchPalmNode: NodeDef = {
   id: 'branch/palm',
   category: 'Branches/Generators',
@@ -57,7 +57,7 @@ No children — palms don't branch. Crown fronds are placed downstream
 with [branch/sample-points](../../branch/sample-points) using
 \`onlyTips=true\` and \`tipCount=N\` (typically 8–14 fronds), each
 sample point feeding a leaf-card instance through
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 with \`align: true\`.
 `,
     sampleGraph: () => {

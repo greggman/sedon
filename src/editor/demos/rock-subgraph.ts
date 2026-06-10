@@ -3,7 +3,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 
 // A "rock" subgraph: a single low-poly sphere wearing the rock texture,
 // at origin. NO scatter — the parent graph composes this with
-// core/instance-scene-on-points to place rocks.
+// scene/instance-on-points to place rocks.
 //
 // Low-poly is intentional — 8 segments × 6 rings gives a faceted-enough
 // silhouette to read as "rock" when scattered at small scale. Future work
@@ -25,11 +25,11 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   // Low-poly sphere → uv-transform (so the rock texture tiles a few times
   // around the rock surface, not stretched once). Base radius is 1m; the
   // parent's scatter applies per-instance scale variation.
-  const rockGeo = addNode(g, 'core/sphere', {
+  const rockGeo = addNode(g, 'geom/sphere', {
     position: { x: COL, y: 0 },
     inputValues: { radius: 1, segments: 10, rings: 7 },
   });
-  const rockUv = addNode(g, 'core/uv-transform', {
+  const rockUv = addNode(g, 'geom/uv-transform', {
     position: { x: COL * 2, y: 0 },
     inputValues: { scale: [3, 2] },
   });
@@ -41,11 +41,11 @@ export function buildRockMeshSubgraph(): SubgraphDef {
   // detail_scale + detail_strength stay on the material — they're a
   // function of how the rock mesh's UVs (post uv-transform) map to world
   // units, not a property of the rock texture itself.
-  const rockMat = addNode(g, 'core/material', {
+  const rockMat = addNode(g, 'material/pbr', {
     position: { x: COL * 3, y: ROW * 0.7 },
     inputValues: { roughness: 0.85, metallic: 0, detail_scale: 5, detail_strength: 0.55 },
   });
-  const rockEntity = addNode(g, 'core/scene-entity', {
+  const rockEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: 0 },
   });
 

@@ -9,7 +9,7 @@ import type { PolygonListValue, PolygonValue } from '../core/resources.js';
 //
 // Restriction: this v1 emits cells based purely on the polygon's
 // BOUNDING BOX. For axis-aligned rectangular input polygons (the
-// common case, including everything `core/polygon-aabb` produces) the
+// common case, including everything `poly/aabb` produces) the
 // cells perfectly tile the polygon's interior. For arbitrary polygon
 // outlines the cells outside the polygon are emitted unchanged — once
 // real polygon clipping lands (Vatti / Greiner-Hormann), this node
@@ -18,7 +18,7 @@ import type { PolygonListValue, PolygonValue } from '../core/resources.js';
 // AABB so it doesn't hit the corner case.
 
 export const polygonGridSubdivideNode: NodeDef = {
-  id: 'core/polygon-grid-subdivide',
+  id: 'poly/grid-subdivide',
   category: 'Polygon',
   inputs: [
     {
@@ -59,8 +59,8 @@ index 1 steps one column along +X; index \`cols\` steps one row along
 +Z; the last cell is at (+X, +Z).
 
 Each cell is a CCW rectangle with 4 vertices, ready for
-[core/polygon-offset](../../core/polygon-offset) (sidewalk inset) and
-[core/polygon-perimeter-points](../../core/polygon-perimeter-points)
+[poly/offset](../../poly/offset) (sidewalk inset) and
+[points/polygon-perimeter](../../points/polygon-perimeter)
 (building placement).
 
 For a hand-irregular city outline this v1 emits cells outside the
@@ -70,12 +70,12 @@ polygon clipping ships.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const aabb = addNode(g, 'core/polygon-aabb', {
+      const aabb = addNode(g, 'poly/aabb', {
         id: 'aabb',
         position: { x: 0, y: 0 },
         inputValues: { center: [0, 0], size: [40, 40] },
       });
-      const grid = addNode(g, 'core/polygon-grid-subdivide', {
+      const grid = addNode(g, 'poly/grid-subdivide', {
         id: 'grid',
         position: { x: 280, y: 0 },
         inputValues: { cols: 4, rows: 4 },

@@ -74,7 +74,7 @@ export const branchSamplePointsNode: NodeDef = {
     {
       name: 'points',
       type: 'PointCloud',
-      description: 'points on the branch SURFACE (offset by local radius from the centerline). Normals point outward radially so leaf/flower cards attached via [core/instance-geometry-on-points](../../core/instance-geometry-on-points) with `align: true` face away from the branch',
+      description: 'points on the branch SURFACE (offset by local radius from the centerline). Normals point outward radially so leaf/flower cards attached via [geom/instance-on-points](../../geom/instance-on-points) with `align: true` face away from the branch',
     },
   ],
   doc: {
@@ -83,7 +83,7 @@ export const branchSamplePointsNode: NodeDef = {
 Walks each branch's centerline and emits points on the SURFACE
 (offset outward by the local radius), with normals pointing outward
 radially. A downstream
-[core/instance-geometry-on-points](../../core/instance-geometry-on-points)
+[geom/instance-on-points](../../geom/instance-on-points)
 with \`align: true\` attaches leaf cards / flowers / fruit flush to
 the branch surface, facing away from it.
 
@@ -126,12 +126,12 @@ flowers on the same tree without re-running the generator.
       });
       // Instance small cubes at the sample points so the wireframe
       // preview shows where leaves would attach.
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 560, y: 100 },
         inputValues: { scale: 0.08, align: true },

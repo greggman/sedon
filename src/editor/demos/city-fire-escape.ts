@@ -21,7 +21,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 //   • Local +Y → normal   (OUTWARD from the wall)
 //   • Local +Z → bitangent (VERTICAL — world up)
 //
-// So in `core/box`'s width/height/depth ordering:
+// So in `geom/box`'s width/height/depth ordering:
 //
 //   • width  (X-extent) = horizontal along the wall
 //   • HEIGHT (Y-extent) = OUTWARD projection from the wall
@@ -42,7 +42,7 @@ const PLATFORM_PROJECTION = 1.4;  // outward extent (Y)
 // .sedon fix didn't dedupe materials inside each module (only across
 // the water-tank body+cap), so we mirror that.
 function addSteelMaterial(g: ReturnType<typeof createGraph>, yOff: number): ReturnType<typeof addNode> {
-  return addNode(g, 'core/material', {
+  return addNode(g, 'material/pbr', {
     position: { x: COL * 2, y: yOff + ROW * 0.5 },
     inputValues: {
       basecolor: [0.20, 0.21, 0.23, 1],
@@ -59,15 +59,15 @@ function addSteelBox(
   centre: [number, number, number],
   rotate: [number, number, number] = [0, 0, 0],
 ): ReturnType<typeof addNode> {
-  const geo = addNode(g, 'core/box', {
+  const geo = addNode(g, 'geom/box', {
     position: { x: COL, y: yOff },
     inputValues: { width: size[0], height: size[1], depth: size[2] },
   });
-  const lift = addNode(g, 'core/transform-geometry', {
+  const lift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: yOff },
     inputValues: { translate: centre, rotate, scale: [1, 1, 1] },
   });
-  const ent = addNode(g, 'core/scene-entity', {
+  const ent = addNode(g, 'scene/entity', {
     position: { x: COL * 3, y: yOff },
   });
   addEdge(g, { node: geo.id, socket: 'geometry' }, { node: lift.id, socket: 'geometry' });
@@ -83,7 +83,7 @@ function mergeEntities(
   outputNode: ReturnType<typeof addNode>,
   yOff: number,
 ): void {
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3.5, y: yOff },
     extraInputs: ents.map((_, i) => ({ name: `scene_${i}`, type: 'Scene' as const })),
   });
@@ -277,7 +277,7 @@ export function buildFireEscapeTopModuleSubgraph(): SubgraphDef {
 //     translate=(0, 0, 1.5) so its platform sits 1.5 m above the
 //     assembly's local origin.
 //   • Top module wrapped in a `transform-scene` whose Z is fed
-//     from `core/add(totalSpan, 1)`. The new `core/add` node is the
+//     from `math/add(totalSpan, 1)`. The new `math/add` node is the
 //     cleanup of the old map-range workarounds for additive math.
 export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   const id = 'fire-escape-assembled';
@@ -286,7 +286,7 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 7, y: ROW * 5 } });
 
   // total_floor_span = num_floors * floor_height.
-  const totalFloorSpan = addNode(g, 'core/multiply', {
+  const totalFloorSpan = addNode(g, 'math/multiply', {
     position: { x: COL, y: ROW * 0 },
   });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: totalFloorSpan.id, socket: 'a' });
@@ -294,7 +294,7 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
 
   // Per-floor placement points on the +Y face (rows distribute along
   // world Z = vertical when this assembly is scattered on a wall).
-  const floorPts = addNode(g, 'core/box-face-points', {
+  const floorPts = addNode(g, 'points/box-face', {
     position: { x: COL * 2, y: ROW * 0 },
     inputValues: {
       axis: [0, 1, 0],
@@ -313,7 +313,7 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
     position: { x: COL * 2, y: ROW * 1 },
   });
   addEdge(g, { node: inputNode.id, socket: 'floor_height' }, { node: floorWrap.id, socket: 'floor_height' });
-  const floorScatter = addNode(g, 'core/instance-scene-on-points', {
+  const floorScatter = addNode(g, 'scene/instance-on-points', {
     position: { x: COL * 3, y: ROW * 0 },
     inputValues: { scale: 1, align: false },
   });
@@ -323,18 +323,18 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   // Floor lift: translate=(1, 0, halfTotal). The x=1 default puts the
   // floor stack offset 1 m along the wall direction relative to the
   // bottom + top modules at x=0; matches the .sedon fix verbatim.
-  const halfTotal = addNode(g, 'core/multiply', {
+  const halfTotal = addNode(g, 'math/multiply', {
     position: { x: COL * 2, y: ROW * 1.5 },
     inputValues: { b: 0.5 },
   });
   addEdge(g, { node: totalFloorSpan.id, socket: 'result' }, { node: halfTotal.id, socket: 'a' });
-  const floorLiftVec = addNode(g, 'core/vec3-from-floats', {
+  const floorLiftVec = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 4, y: ROW * 0 },
     // x=1 IS the default here (per .sedon fix). Z is wired below.
     inputValues: { x: 1, y: 0, z: 0 },
   });
   addEdge(g, { node: halfTotal.id, socket: 'result' }, { node: floorLiftVec.id, socket: 'z' });
-  const floorLift = addNode(g, 'core/transform-scene', {
+  const floorLift = addNode(g, 'scene/transform', {
     position: { x: COL * 5, y: ROW * 0 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -345,28 +345,28 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   const bottomWrap = addNode(g, 'subgraph/fire-escape-bottom', {
     position: { x: COL * 2, y: ROW * 3 },
   });
-  const bottomShift = addNode(g, 'core/transform-scene', {
+  const bottomShift = addNode(g, 'scene/transform', {
     position: { x: COL * 5, y: ROW * 3 },
     inputValues: { translate: [0, 0, 1.5], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   addEdge(g, { node: bottomWrap.id, socket: 'scene' }, { node: bottomShift.id, socket: 'scene' });
 
-  // Top module wrapped + lifted to Z = totalSpan + 1 via core/add.
+  // Top module wrapped + lifted to Z = totalSpan + 1 via math/add.
   const topWrap = addNode(g, 'subgraph/fire-escape-top', {
     position: { x: COL * 2, y: ROW * 4 },
   });
   addEdge(g, { node: inputNode.id, socket: 'top_height' }, { node: topWrap.id, socket: 'top_height' });
-  const topZ = addNode(g, 'core/add', {
+  const topZ = addNode(g, 'math/add', {
     position: { x: COL * 3, y: ROW * 4.5 },
     inputValues: { b: 1 },
   });
   addEdge(g, { node: totalFloorSpan.id, socket: 'result' }, { node: topZ.id, socket: 'a' });
-  const topLiftVec = addNode(g, 'core/vec3-from-floats', {
+  const topLiftVec = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { x: 0, y: 0, z: 0 },
   });
   addEdge(g, { node: topZ.id, socket: 'result' }, { node: topLiftVec.id, socket: 'z' });
-  const topShift = addNode(g, 'core/transform-scene', {
+  const topShift = addNode(g, 'scene/transform', {
     position: { x: COL * 5, y: ROW * 4 },
     inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
@@ -374,7 +374,7 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   addEdge(g, { node: topLiftVec.id, socket: 'value' }, { node: topShift.id, socket: 'translate' });
 
   // Merge the three sub-scenes.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 6, y: ROW * 2.5 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

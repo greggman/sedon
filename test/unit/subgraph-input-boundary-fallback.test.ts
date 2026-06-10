@@ -137,7 +137,7 @@ test('per-key fallback also applies to bridge-style subgraphs (the for-each-poin
     inputNodeId: inputNode.id,
     outputNodeId: iterOutputNode.id,
     owner: { kind: 'iteration-bridge', nodeId: 'fep' },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
   };
   const registry = createNodeRegistry();
   for (const def of defineSubgraph(bridge, registry)) registry.register(def);

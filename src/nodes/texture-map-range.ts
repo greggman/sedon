@@ -23,7 +23,7 @@ const UNIFORM_TEX_SAMP_BGL: GPUBindGroupLayoutDescriptor = {
 import shader from './texture-map-range.wgsl';
 
 // Per-pixel linear remap: textures-shaped counterpart to
-// `core/map-range`. Each output pixel's RGB is computed from the
+// `math/map-range`. Each output pixel's RGB is computed from the
 // input's RGB by the same formula:
 //
 //     t = (value - in_min) / (in_max - in_min)
@@ -36,18 +36,18 @@ import shader from './texture-map-range.wgsl';
 // [0, 1]; pipe through this with in_min=0, in_max=1, out_min=0,
 // out_max=50 to get a heightfield with altitudes in [0, 50] metres.
 // Because the output format matches the input, you'd typically run
-// the noise through `core/texture-convert` to rgba16float FIRST so
+// the noise through `tex/convert` to rgba16float FIRST so
 // the post-remap values aren't clipped to [0, 1] by the rgba8unorm
 // format.
 
 export const textureMapRangeNode: NodeDef = {
-  id: 'core/texture-map-range',
+  id: 'tex/map-range',
   category: 'Texture/Filters',
   inputs: [
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'source texture; RGB channels are remapped, alpha is passed through. For values that need to exceed [0, 1] (heightfields, signed data), the source must be rgba16float — use [core/texture-convert](../../core/texture-convert) to upgrade format first',
+      description: 'source texture; RGB channels are remapped, alpha is passed through. For values that need to exceed [0, 1] (heightfields, signed data), the source must be rgba16float — use [tex/convert](../../tex/convert) to upgrade format first',
     },
     {
       name: 'in_min',
@@ -88,7 +88,7 @@ export const textureMapRangeNode: NodeDef = {
     },
   ],
   doc: {
-    summary: 'Per-pixel linear remap of a texture — same shape as [core/map-range](../../core/map-range) but for textures.',
+    summary: 'Per-pixel linear remap of a texture — same shape as [math/map-range](../../math/map-range) but for textures.',
     description: `
 For each pixel \`(r, g, b, a)\` in the source, compute \`t = (rgb -
 in_min) / (in_max - in_min)\`, then \`out_rgb = out_min + t · (out_max
@@ -100,26 +100,26 @@ The canonical terrain-authoring use: a Perlin noise emits values in
 [0, 1]; pipe through this with \`out_min=0, out_max=50\` to get
 altitudes in [0, 50] metres. The values exceed [0, 1] so the texture
 needs to be rgba16float — run through
-[core/texture-convert](../../core/texture-convert) first to upgrade
+[tex/convert](../../tex/convert) first to upgrade
 the format, then map-range, then feed the result into
-[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+[geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 or [terrain/renderer](../../terrain/renderer).
 
-For Float-to-Float remapping see [core/map-range](../../core/map-range).
+For Float-to-Float remapping see [math/map-range](../../math/map-range).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const remap = addNode(g, 'core/texture-map-range', {
+      const remap = addNode(g, 'tex/map-range', {
         id: 'remap',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 50, clamp: false },

@@ -3,11 +3,11 @@ import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
 // One-point PointCloud at a user-provided position. Useful when you need
-// `core/instance-scene-on-points` to drop a single scene at a specific
+// `scene/instance-on-points` to drop a single scene at a specific
 // world-space location — e.g. placing each species at its own offset in a
 // "tree family" demo where there's no Scene-level transform node yet.
 export const singlePointNode: NodeDef = {
-  id: 'core/single-point',
+  id: 'points/single',
   category: 'Geometry/Distribution',
   inputs: [
     {
@@ -27,14 +27,14 @@ export const singlePointNode: NodeDef = {
     {
       name: 'points',
       type: 'PointCloud',
-      description: 'a 1-point cloud carrying position + normal. Feed into [core/instance-geometry-on-points](../../core/instance-geometry-on-points) or [core/instance-scene-on-points](../../core/instance-scene-on-points) to drop a single object at the position',
+      description: 'a 1-point cloud carrying position + normal. Feed into [geom/instance-on-points](../../geom/instance-on-points) or [scene/instance-on-points](../../scene/instance-on-points) to drop a single object at the position',
     },
   ],
   doc: {
     summary: 'A 1-point PointCloud at a user-provided world-space position.',
     description: `
 The trivial distributor. Useful when you need
-[core/instance-scene-on-points](../../core/instance-scene-on-points) to
+[scene/instance-on-points](../../scene/instance-on-points) to
 drop a single scene at a specific world-space location — e.g. placing
 each species at its own offset in a "tree family" demo where there's
 no Scene-level transform node yet, or hand-placing one boulder in a
@@ -42,26 +42,26 @@ forest demo.
 
 For multiple specific positions, use multiple single-point nodes and
 merge them upstream of the instancer, or reach for a real distributor
-like [core/grid-distribute](../../core/grid-distribute),
-[core/radial-points](../../core/radial-points),
-[core/phyllotaxis-points](../../core/phyllotaxis-points), or
-[core/distribute-on-faces](../../core/distribute-on-faces).
+like [points/grid](../../points/grid),
+[points/radial](../../points/radial),
+[points/phyllotaxis](../../points/phyllotaxis), or
+[points/on-faces](../../points/on-faces).
 `,
     sampleGraph: () => {
       const g = createGraph();
       // One point → one cube via the instancer. Wireframe preview
       // shows the cube exactly where the point lives.
-      const point = addNode(g, 'core/single-point', {
+      const point = addNode(g, 'points/single', {
         id: 'point',
         position: { x: 0, y: 0 },
         inputValues: { position: [0, 0, 0], normal: [0, 1, 0] },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const inst = addNode(g, 'core/instance-geometry-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 280, y: 100 },
         inputValues: { scale: 0.5, align: true },

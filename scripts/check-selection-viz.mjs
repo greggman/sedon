@@ -1,4 +1,4 @@
-// Capture the docs preview for core/select-by-angle so we can verify
+// Capture the docs preview for geom/select-by-angle so we can verify
 // (a) the new selection visualization actually renders, and (b) the
 // squashed-sphere sample produces a partial selection (some edges
 // orange/red, others green/blue).
@@ -13,9 +13,9 @@ page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
 
 const pages = [
-  'docs/nodes/core/select-by-angle/',
-  'docs/nodes/core/select-invert/',
-  'docs/nodes/core/select-combine/',
+  'docs/nodes/geom/select-by-angle/',
+  'docs/nodes/geom/select-invert/',
+  'docs/nodes/geom/select-combine/',
 ];
 
 try {
@@ -25,7 +25,7 @@ try {
     await new Promise((r) => setTimeout(r, 2500));
     const count = await page.evaluate(() => {
       const state = window.__sedonStore__.getState();
-      const root = state.graph.nodes.find((n) => n.kind === 'core/select-by-angle' || n.kind === 'core/select-invert' || n.kind === 'core/select-combine');
+      const root = state.graph.nodes.find((n) => n.kind === 'geom/select-by-angle' || n.kind === 'geom/select-invert' || n.kind === 'geom/select-combine');
       return { kinds: state.graph.nodes.map(n => n.kind), root: root?.kind };
     });
     console.log(p, JSON.stringify(count));

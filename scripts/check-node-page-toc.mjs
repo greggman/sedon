@@ -1,4 +1,4 @@
-// Load a node doc page (core/perlin), scroll to bottom, and screenshot
+// Load a node doc page (tex/perlin), scroll to bottom, and screenshot
 // the bottom mini-TOC so we can eyeball the 300 px column layout and
 // the "current node" highlight.
 
@@ -11,7 +11,7 @@ const browser = await puppeteer.launch({
   defaultViewport: { width: 1400, height: 900 },
 });
 const page = await browser.newPage();
-await page.goto(`${server.url}docs/nodes/core/perlin/`, { waitUntil: 'networkidle2' });
+await page.goto(`${server.url}docs/nodes/tex/perlin/`, { waitUntil: 'networkidle2' });
 // Give React + the in-page sample preview a beat to mount so the page
 // is at its final scroll height.
 await new Promise((r) => setTimeout(r, 2500));

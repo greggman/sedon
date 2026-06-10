@@ -3,7 +3,7 @@ import type { SubgraphDef } from '../../core/subgraph.js';
 
 // A tree subgraph: cylinder trunk + (sphere | cone) foliage at origin,
 // merged into a 2-entity Scene. NO scatter — that's the parent's job
-// (compose with core/instance-scene-on-points and a point cloud).
+// (compose with scene/instance-on-points and a point cloud).
 // Standalone view shows the single tree directly.
 //
 // `id` and `label` are visible in the editor; everything else is implicit.
@@ -51,7 +51,7 @@ function buildTreeSubgraph(opts: {
   // seed and color palette, then feeds basecolor + normal into the
   // material. Drilling into "Bark Texture" in the graph switcher reveals
   // the noise + colorize + normal-from-height internals.
-  const trunkGeo = addNode(g, 'core/cylinder', {
+  const trunkGeo = addNode(g, 'geom/cylinder', {
     position: { x: COL, y: 0 },
     inputValues: {
       radius: opts.trunk.radius,
@@ -70,17 +70,17 @@ function buildTreeSubgraph(opts: {
   // detail_scale + detail_strength control HOW the material uses the
   // detail textures supplied by the bark subgraph; the textures themselves
   // live inside subgraph/bark-texture.
-  const trunkMat = addNode(g, 'core/material', {
+  const trunkMat = addNode(g, 'material/pbr', {
     position: { x: COL * 4, y: -ROW * 0.4 },
     inputValues: { roughness: 0.95, metallic: 0, detail_scale: 6, detail_strength: 0.6 },
   });
-  const trunkEntity = addNode(g, 'core/scene-entity', {
+  const trunkEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 5, y: 0 },
   });
 
   // Foliage chain.
   const foliageGeo = opts.foliage.kind === 'sphere'
-    ? addNode(g, 'core/sphere', {
+    ? addNode(g, 'geom/sphere', {
         position: { x: COL, y: ROW * 2 },
         inputValues: {
           radius: opts.foliage.radius,
@@ -88,7 +88,7 @@ function buildTreeSubgraph(opts: {
           rings: opts.foliage.rings ?? 12,
         },
       })
-    : addNode(g, 'core/cone', {
+    : addNode(g, 'geom/cone', {
         position: { x: COL, y: ROW * 2 },
         inputValues: {
           radius: opts.foliage.radius,
@@ -96,7 +96,7 @@ function buildTreeSubgraph(opts: {
           segments: opts.foliage.segments,
         },
       });
-  const foliageLift = addNode(g, 'core/transform-geometry', {
+  const foliageLift = addNode(g, 'geom/transform', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: {
       translate: [0, opts.foliage.liftY, 0],
@@ -104,7 +104,7 @@ function buildTreeSubgraph(opts: {
       scale: [1, 1, 1],
     },
   });
-  const foliageMat = addNode(g, 'core/material', {
+  const foliageMat = addNode(g, 'material/pbr', {
     position: { x: COL * 3, y: ROW * 3 },
     inputValues: {
       basecolor: opts.foliage.color,
@@ -112,12 +112,12 @@ function buildTreeSubgraph(opts: {
       metallic: 0,
     },
   });
-  const foliageEntity = addNode(g, 'core/scene-entity', {
+  const foliageEntity = addNode(g, 'scene/entity', {
     position: { x: COL * 4, y: ROW * 2 },
   });
 
   // Merge into a 2-entity tree scene — this is the subgraph's output.
-  const treeMerge = addNode(g, 'core/scene-merge', {
+  const treeMerge = addNode(g, 'scene/merge', {
     position: { x: COL * 5, y: ROW },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

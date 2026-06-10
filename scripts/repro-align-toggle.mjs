@@ -1,6 +1,6 @@
 // Reproduce user-reported bug: with the tree-bush scene editing the
 // Branch Canopy subgraph and previewing it, toggling the `align`
-// boolean on `core/instance-geometry-on-points` off then on again
+// boolean on `geom/instance-on-points` off then on again
 // leaves the leaves stuck in the un-aligned configuration even
 // though the input value matches the original.
 
@@ -28,7 +28,7 @@ const setup = await page.evaluate(() => {
   // Match by name (case-insensitive) since ids may be machine-generated.
   const canopy = subgraphs.find((s) => /branch.?canopy/i.test(s.name ?? s.id));
   if (!canopy) return { error: 'no canopy subgraph', names: subgraphs.map((s) => s.name) };
-  const igon = canopy.graph.nodes.find((n) => n.kind === 'core/instance-geometry-on-points');
+  const igon = canopy.graph.nodes.find((n) => n.kind === 'geom/instance-on-points');
   return {
     canopyId: canopy.id,
     canopyName: canopy.name,

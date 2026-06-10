@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import type { MaterialValue, Texture2DValue } from '../core/resources.js';
 
 export const materialNode: NodeDef = {
-  id: 'core/material',
+  id: 'material/pbr',
   category: 'Materials',
   inputs: [
     {
@@ -13,7 +13,7 @@ export const materialNode: NodeDef = {
       // texture. Unwired basecolor inputs show an inline color
       // picker (custom-node.tsx routes Texture2D-with-color-default
       // through ColorInput); wiring a Color edge or a real
-      // Texture2D works as before. Saves the user a `core/solid-color`
+      // Texture2D works as before. Saves the user a `tex/solid-color`
       // node for the "I just want a flat colour here" case.
       default: [1, 1, 1, 1],
       description: 'albedo texture. Unwired: shows a color picker (the colour becomes a 1×1 texture). Wire any Texture2D-producing chain for patterned surfaces',
@@ -34,7 +34,7 @@ export const materialNode: NodeDef = {
       name: 'normal',
       type: 'Texture2D',
       optional: true,
-      description: 'tangent-space normal map. Wire a [core/normal-from-height](../../core/normal-from-height) here to add surface micro-detail without modelling geometry',
+      description: 'tangent-space normal map. Wire a [tex/normal-from-height](../../tex/normal-from-height) here to add surface micro-detail without modelling geometry',
     },
     {
       name: 'detail_basecolor',
@@ -87,7 +87,7 @@ export const materialNode: NodeDef = {
     {
       name: 'material',
       type: 'Material',
-      description: 'PBR Cook-Torrance material ready to feed into [core/scene-entity](../../core/scene-entity)',
+      description: 'PBR Cook-Torrance material ready to feed into [scene/entity](../../scene/entity)',
     },
   ],
   doc: {
@@ -95,7 +95,7 @@ export const materialNode: NodeDef = {
     description: `
 The workhorse material node. Bundles a basecolor texture, scalar
 roughness, scalar metallic, and an optional normal map into a PBR
-\`MaterialValue\` ready for [core/scene-entity](../../core/scene-entity).
+\`MaterialValue\` ready for [scene/entity](../../scene/entity).
 
 The detail trio (\`detail_basecolor\`, \`detail_normal\`, \`detail_scale\`,
 \`detail_strength\`) addresses tile repetition: a single grass texture
@@ -114,12 +114,12 @@ opaque and back-face-culled.
       // A noise-driven albedo + height → normal chain gives the
       // preview enough visual interest to actually show the PBR shading
       // working (a flat colour ball reads as a uniform circle).
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [6, 6], octaves: 3, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
       });
-      const ramp = addNode(g, 'core/ramp', {
+      const ramp = addNode(g, 'tex/ramp', {
         id: 'ramp',
         position: { x: 0, y: 200 },
         inputValues: {
@@ -131,27 +131,27 @@ opaque and back-face-culled.
           resolution: 64,
         },
       });
-      const basecolor = addNode(g, 'core/colorize', {
+      const basecolor = addNode(g, 'tex/colorize', {
         id: 'basecolor',
         position: { x: 280, y: 100 },
         inputValues: { resolution: 256 },
       });
-      const normalMap = addNode(g, 'core/normal-from-height', {
+      const normalMap = addNode(g, 'tex/normal-from-height', {
         id: 'normal',
         position: { x: 280, y: 320 },
         inputValues: { strength: 3, resolution: 256 },
       });
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 560, y: -100 },
         inputValues: { radius: 1, segments: 48, rings: 24 },
       });
-      const material = addNode(g, 'core/material', {
+      const material = addNode(g, 'material/pbr', {
         id: 'material',
         position: { x: 560, y: 200 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entity = addNode(g, 'core/scene-entity', {
+      const entity = addNode(g, 'scene/entity', {
         id: 'entity',
         position: { x: 840, y: 50 },
         inputValues: {},

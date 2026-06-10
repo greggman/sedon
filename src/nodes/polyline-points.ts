@@ -4,7 +4,7 @@ import type { PointCloudValue } from '../core/resources.js';
 
 // Distribute points along a list of polylines at a fixed spacing,
 // optionally offset perpendicular to the line direction. Pairs with
-// `core/polyline-buffer-list` — same `lines` input format (flat
+// `poly/polyline-buffer` — same `lines` input format (flat
 // Vec3[] of pairs, each pair = one infinite line) — so the same
 // authored road network can drive both the asphalt mesh and the
 // "lamp post every 25 m along the kerb" placements.
@@ -28,13 +28,13 @@ function len2(x: number, z: number): number {
 }
 
 export const polylinePointsNode: NodeDef = {
-  id: 'core/polyline-points',
+  id: 'points/from-polyline',
   category: 'Polyline',
   inputs: [
     {
       name: 'lines',
       type: 'Vec3',
-      description: 'flat array of Vec3 endpoints, two per line. Same format as `core/polyline-buffer-list` so one ROAD_LINES const drives both road meshes and per-line point placement',
+      description: 'flat array of Vec3 endpoints, two per line. Same format as `poly/polyline-buffer` so one ROAD_LINES const drives both road meshes and per-line point placement',
     },
     {
       name: 'spacing',
@@ -82,18 +82,18 @@ export const polylinePointsNode: NodeDef = {
     description: `
 For each pair of points in \`lines\`, walk the line at a fixed
 \`spacing\` and emit a point per step, offset perpendicular by
-\`side_offset\`. Pair with [core/polyline-buffer-list](../../core/polyline-buffer-list)
+\`side_offset\`. Pair with [poly/polyline-buffer](../../poly/polyline-buffer)
 so a single \`ROAD_LINES\` const drives both the asphalt mesh and the
 furniture placements.
 
-Output orientation matches [core/polygon-perimeter-points](../../core/polygon-perimeter-points):
+Output orientation matches [points/polygon-perimeter](../../points/polygon-perimeter):
 \`normals\` are world-up so downstream \`align: true\` keeps instances
 vertical, and \`tangents\` point along the line so the instance's
 local +X axis lines up with the line direction.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const pts = addNode(g, 'core/polyline-points', {
+      const pts = addNode(g, 'points/from-polyline', {
         id: 'pts',
         position: { x: 0, y: 0 },
         inputValues: {

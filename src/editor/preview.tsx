@@ -996,7 +996,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
   registryRef.current = registry;
   const evalCacheRef = useRef(evalCache);
   evalCacheRef.current = evalCache;
-  // Bumps when any core/image's async fetch lands; in this effect's
+  // Bumps when any tex/image's async fetch lands; in this effect's
   // dep list so the eval re-fires with the new bitmap-cache state.
   // The image node's dynamicFingerprintExtra contributes a per-URL
   // version so the eval cache misses just for that node, not the

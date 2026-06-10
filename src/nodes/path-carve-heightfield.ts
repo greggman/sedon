@@ -133,7 +133,7 @@ tapers smoothly to zero over an additional \`falloff\` world units.
 
 The result keeps the same format and dimensions as the input texture —
 only the R channel changes. Wire the output straight into
-[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+[geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 to render the terrain with the carved road; or feed it into another
 filter stage first (a [terrain/hydraulic-erosion](../../terrain/hydraulic-erosion)
 pass after carving will deposit sediment inside the road channel,
@@ -145,17 +145,17 @@ Path from spline samples, so it follows any control-point layout.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/perlin', {
+      const noise = addNode(g, 'tex/perlin', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const heightTex = addNode(g, 'core/texture-map-range', {
+      const heightTex = addNode(g, 'tex/map-range', {
         id: 'heightTex',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 4, clamp: false },

@@ -43,7 +43,7 @@ function makeBridgeSubgraph(): SubgraphDef {
     inputNodeId: inputBoundary.id,
     outputNodeId: iterOutputBoundary.id,
     owner: { kind: 'iteration-bridge', nodeId: 'fep' },
-    iterationKind: 'core/for-each-point',
+    iterationKind: 'iter/for-each-point',
     version: 7,
   };
 }
@@ -62,7 +62,7 @@ test('parseSaveFile round-trips a bridge subgraph with owner + iterationKind + v
   const reparsed = parseSaveFile(text);
   const round = reparsed.project.subgraphs[0]!;
   assert.deepEqual(round.owner, { kind: 'iteration-bridge', nodeId: 'fep' });
-  assert.equal(round.iterationKind, 'core/for-each-point');
+  assert.equal(round.iterationKind, 'iter/for-each-point');
   assert.equal(round.version, 7);
 });
 

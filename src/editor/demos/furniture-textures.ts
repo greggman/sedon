@@ -17,7 +17,7 @@ const ROW = 180;
 // Strongly anisotropic perlin — high frequency along U (grain), low
 // frequency along V (cross-grain) — so the texture reads as long
 // running wood fibers. Colorize through a dark/light gradient drawn
-// from a `core/palette` so the boundary's two Color inputs can shift
+// from a `tex/palette` so the boundary's two Color inputs can shift
 // the wood species (oak, walnut, pine, …) without rebuilding the
 // graph.
 export function buildWoodTextureSubgraph(): SubgraphDef {
@@ -35,7 +35,7 @@ export function buildWoodTextureSubgraph(): SubgraphDef {
   // is what makes the noise look like fibers instead of soap-bubble
   // patches. octaves=4 keeps the fiber pattern from feeling synthetic
   // at close-range; gain<0.5 keeps high octaves subtle.
-  const grain = addNode(g, 'core/perlin', {
+  const grain = addNode(g, 'tex/perlin', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: [18, 2],
@@ -45,19 +45,19 @@ export function buildWoodTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 2, y: 0 },
     inputValues: { brightness: -0.05, contrast: 1.5, gamma: 1.0, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 3, y: 0 },
     inputValues: { resolution: 256 },
   });
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: { strength: 1.5, resolution: 256 },
   });
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 2.5, y: ROW * 0.6 },
   });
 
@@ -110,7 +110,7 @@ export function buildFabricTextureSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW },
   });
 
-  const weave = addNode(g, 'core/perlin', {
+  const weave = addNode(g, 'tex/perlin', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: [12, 12],
@@ -120,21 +120,21 @@ export function buildFabricTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 2, y: 0 },
     inputValues: { brightness: 0.0, contrast: 1.15, gamma: 1.0, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 3, y: 0 },
     inputValues: { resolution: 256 },
   });
   // Strength is high here — perlin gradients are gentle and the
   // weave reads as flat-color without amplification.
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: { strength: 4, resolution: 256 },
   });
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 2.5, y: ROW * 0.6 },
   });
 
@@ -187,7 +187,7 @@ export function buildMetalTextureSubgraph(): SubgraphDef {
     position: { x: COL * 5, y: ROW },
   });
 
-  const brush = addNode(g, 'core/perlin', {
+  const brush = addNode(g, 'tex/perlin', {
     position: { x: COL, y: 0 },
     inputValues: {
       scale: [2, 32],
@@ -197,19 +197,19 @@ export function buildMetalTextureSubgraph(): SubgraphDef {
       resolution: 256,
     },
   });
-  const levels = addNode(g, 'core/levels', {
+  const levels = addNode(g, 'tex/levels', {
     position: { x: COL * 2, y: 0 },
     inputValues: { brightness: 0.1, contrast: 1.1, gamma: 1.0, resolution: 256 },
   });
-  const colorize = addNode(g, 'core/colorize', {
+  const colorize = addNode(g, 'tex/colorize', {
     position: { x: COL * 3, y: 0 },
     inputValues: { resolution: 256 },
   });
-  const normal = addNode(g, 'core/normal-from-height', {
+  const normal = addNode(g, 'tex/normal-from-height', {
     position: { x: COL * 3, y: ROW * 1.5 },
     inputValues: { strength: 2, resolution: 256 },
   });
-  const palette = addNode(g, 'core/palette', {
+  const palette = addNode(g, 'tex/palette', {
     position: { x: COL * 2.5, y: ROW * 0.6 },
   });
 

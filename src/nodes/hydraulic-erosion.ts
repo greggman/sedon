@@ -14,7 +14,7 @@ import shader from './hydraulic-erosion.wgsl';
 // shared fixed-point buffer, then writes the result back to a fresh
 // texture in the SAME format as the input. The output is a filter-style
 // in→out texture; the worldSize the texture represents is owned by the
-// downstream consumer node ([core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+// downstream consumer node ([geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 // / [terrain/renderer](../../terrain/renderer)).
 //
 // Notable choices:
@@ -104,7 +104,7 @@ export const hydraulicErosionNode: NodeDef = {
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'source heightfield texture to erode. R channel is the height; format is preserved in the output (rgba8unorm or rgba16float). For real altitudes in metres use rgba16float — see [core/texture-convert](../../core/texture-convert)',
+      description: 'source heightfield texture to erode. R channel is the height; format is preserved in the output (rgba8unorm or rgba16float). For real altitudes in metres use rgba16float — see [tex/convert](../../tex/convert)',
     },
     {
       name: 'drops',
@@ -210,22 +210,22 @@ Tuning notes:
   rivers carving mountains, drop \`gravity\` and crank \`evaporation\`.
 
 Output format matches the input format. Wire the result into
-[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh)
+[geom/heightfield-from-texture](../../geom/heightfield-from-texture)
 or [terrain/renderer](../../terrain/renderer).
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const noise = addNode(g, 'core/ridged-noise', {
+      const noise = addNode(g, 'tex/ridged-noise', {
         id: 'noise',
         position: { x: 0, y: 0 },
         inputValues: { scale: [3, 3], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 256 },
       });
-      const toFloat = addNode(g, 'core/texture-convert', {
+      const toFloat = addNode(g, 'tex/convert', {
         id: 'toFloat',
         position: { x: 280, y: 0 },
         inputValues: { format: 1 },
       });
-      const remap = addNode(g, 'core/texture-map-range', {
+      const remap = addNode(g, 'tex/map-range', {
         id: 'remap',
         position: { x: 560, y: 0 },
         inputValues: { in_min: 0, in_max: 1, out_min: 0, out_max: 2, clamp: false },

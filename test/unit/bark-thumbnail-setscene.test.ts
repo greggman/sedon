@@ -49,7 +49,7 @@ test('bark eval → synthesizeTiles → setScene: editing perlin.octaves does no
   // driving the wood grain).
   const fibers = bark.graph.nodes.find(
     (n) =>
-      n.kind === 'core/perlin' &&
+      n.kind === 'tex/perlin' &&
       Array.isArray(n.inputValues?.scale) &&
       (n.inputValues!.scale as number[])[1] === 14,
   );

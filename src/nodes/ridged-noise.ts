@@ -19,13 +19,13 @@ import shader from './ridged-noise.wgsl';
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
-// Ridged fBm — same lattice/wrap/uniform layout as core/perlin, but the
+// Ridged fBm — same lattice/wrap/uniform layout as tex/perlin, but the
 // inner fBm sum uses `(1 - abs(perlin))²` per octave and weights each
 // octave by the previous one (Musgrave's ridged multifractal). Produces
 // sharp creases instead of soft hills — perfect for mountain spines,
 // rock-fracture patterns, dry-riverbed networks (inverted).
 export const ridgedNoiseNode: NodeDef = {
-  id: 'core/ridged-noise',
+  id: 'tex/ridged-noise',
   category: 'Texture/Noise',
   inputs: [
     {
@@ -77,7 +77,7 @@ export const ridgedNoiseNode: NodeDef = {
   doc: {
     summary: 'Ridged-multifractal noise — sharp creases instead of soft hills.',
     description: `
-Same lattice and tiling layout as [core/perlin](../../core/perlin), but each
+Same lattice and tiling layout as [tex/perlin](../../tex/perlin), but each
 octave is folded through \`(1 − |perlin|)²\` and weighted by the previous
 octave's value (Musgrave's ridged multifractal). The result has sharp bright
 ridges where the underlying Perlin noise crosses zero, with each successive
@@ -86,13 +86,13 @@ concentrating creases along major spines.
 
 Perfect for mountain ridges and rock-fracture patterns when used as a
 heightfield directly, or as the input to a
-[core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) chain. Invert
+[geom/heightfield-from-texture](../../geom/heightfield-from-texture) chain. Invert
 (1 − result) and you get a dry-riverbed network of dark grooves on a light
 plateau.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/ridged-noise', {
+      addNode(g, 'tex/ridged-noise', {
         id: 'ridged',
         position: { x: 0, y: 0 },
         inputValues: { scale: [4, 4], octaves: 5, lacunarity: 2, gain: 0.5, seed: 0, resolution: 512 },
@@ -130,7 +130,7 @@ plateau.
         GPUTextureUsage.COPY_SRC,
     });
 
-    // Params layout matches core/perlin: scale vec2 (8B) + octaves,
+    // Params layout matches tex/perlin: scale vec2 (8B) + octaves,
     // lacunarity, gain, seed (4 × 4B = 16B) = 24B padded to 32 to meet
     // the 16-byte uniform minimum.
     const uniformData = new Float32Array(8);

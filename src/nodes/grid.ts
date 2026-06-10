@@ -26,7 +26,7 @@ const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export const gridNode: NodeDef = {
-  id: 'core/grid',
+  id: 'tex/grid',
   category: 'Texture/Generators',
   inputs: [
     {
@@ -83,7 +83,7 @@ tile/brick/checker effects.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/grid', {
+      addNode(g, 'tex/grid', {
         id: 'grid',
         position: { x: 0, y: 0 },
         inputValues: {

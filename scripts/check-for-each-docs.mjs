@@ -33,7 +33,7 @@ page.on('console', (msg) => {
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}\n${e.stack ?? ''}`));
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/for-each-point/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/iter/for-each-point/?debug=1`, { waitUntil: 'networkidle2' });
   // The docs entry exposes the same debug hooks the editor entry does
   // when ?debug=1. Wait for the store to be ready.
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
@@ -41,7 +41,7 @@ try {
 
   const summary = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const feNode = state.graph.nodes.find((n) => n.kind === 'core/for-each-point');
+    const feNode = state.graph.nodes.find((n) => n.kind === 'iter/for-each-point');
     const panelIds = (window.__sedonListPanelIds__?.() ?? []);
     let outputs;
     for (const pid of panelIds) {

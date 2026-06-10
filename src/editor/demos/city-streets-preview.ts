@@ -87,22 +87,22 @@ export function createCityStreetsPreviewDemo(): {
   // sidewalks / stripes lifted a hair above that). The 0.1m gap is
   // invisible at the city overview camera distance but bigger than
   // any depth-buffer precision wobble at this scene scale.
-  const plane = addNode(g, 'core/plane', {
+  const plane = addNode(g, 'geom/plane', {
     position: { x: 0, y: 0 },
     inputValues: { size: [400, 600], divisions: [1, 1] },
   });
-  const groundLift = addNode(g, 'core/transform-geometry', {
+  const groundLift = addNode(g, 'geom/transform', {
     position: { x: COL * 0.5, y: 0 },
     inputValues: { translate: [0, -0.1, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
-  const groundMat = addNode(g, 'core/material', {
+  const groundMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: 0 },
     inputValues: {
       basecolor: [0.30, 0.32, 0.28, 1],  // a hint of green so non-road areas read as ground
       roughness: 0.95, metallic: 0,
     },
   });
-  const groundEnt = addNode(g, 'core/scene-entity', {
+  const groundEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: 0 },
   });
 
@@ -111,7 +111,7 @@ export function createCityStreetsPreviewDemo(): {
   for (let i = 0; i < placements.length; i++) {
     extraInputs.push({ name: `scene_${i + 1}`, type: 'Scene' as const, optional: true });
   }
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 4, y: ROW * 2 },
     extraInputs,
   });
@@ -128,7 +128,7 @@ export function createCityStreetsPreviewDemo(): {
     const wrap = addNode(g, `subgraph/${p.sg.id}`, {
       position: { x: 0, y: ROW * (2 + i * 0.6) },
     });
-    const lift = addNode(g, 'core/transform-scene', {
+    const lift = addNode(g, 'scene/transform', {
       position: { x: COL, y: ROW * (2 + i * 0.6) },
       inputValues: {
         translate: [p.tx, 0, p.tz],

@@ -16,8 +16,8 @@ import { useEditorStore } from '../../src/editor/store.js';
 
 function seedTwoNodes(): { aId: string; bId: string } {
   const g = createGraph();
-  const a = addNode(g, 'core/perlin', { position: { x: 100, y: 100 } });
-  const b = addNode(g, 'core/perlin', { position: { x: 200, y: 200 } });
+  const a = addNode(g, 'tex/perlin', { position: { x: 100, y: 100 } });
+  const b = addNode(g, 'tex/perlin', { position: { x: 200, y: 200 } });
   useEditorStore.setState({
     graph: g,
     mainGraph: g,

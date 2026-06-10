@@ -23,10 +23,10 @@ const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 // Per-pixel mask blend: each output texel = mix(a, b, mask.r). Use cases:
 // splat-paint terrain (grass × rock keyed by a slope mask), regional color
-// swaps, weather effects, etc. The companion `core/blend` uses a uniform
+// swaps, weather effects, etc. The companion `tex/blend` uses a uniform
 // factor instead of a mask texture.
 export const blendMaskNode: NodeDef = {
-  id: 'core/blend-mask',
+  id: 'tex/blend-mask',
   category: 'Texture/Filters',
   inputs: [
     {
@@ -56,18 +56,18 @@ export const blendMaskNode: NodeDef = {
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'per-pixel `mix(a, b, mask.r)` — same shape as core/blend but each pixel\'s factor comes from the mask instead of a uniform value',
+      description: 'per-pixel `mix(a, b, mask.r)` — same shape as tex/blend but each pixel\'s factor comes from the mask instead of a uniform value',
     },
   ],
   doc: {
     summary: 'Per-pixel mask blend: mix(a, b, mask.r) per texel.',
     description: `
-Same operation as [core/blend](../../core/blend)'s \`mix\` mode, but the blend
+Same operation as [tex/blend](../../tex/blend)'s \`mix\` mode, but the blend
 factor comes from a mask texture instead of a single Float. Each output
 pixel = \`mix(a, b, mask.r)\`.
 
 The classic use is splat-painting terrain — wire a
-[core/slope-from-height](../../core/slope-from-height) mask into \`mask\`,
+[tex/slope-from-height](../../tex/slope-from-height) mask into \`mask\`,
 rock into \`b\`, grass into \`a\`, and you get rock on the steeps and grass on
 the flats with smooth transitions. Other use cases: regional colour swaps
 (paint where a city goes), weather effects (snow accumulation by altitude
@@ -75,22 +75,22 @@ mask), or any blend where the strength varies across the texture.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const a = addNode(g, 'core/solid-color', {
+      const a = addNode(g, 'tex/solid-color', {
         id: 'grass',
         position: { x: 0, y: 0 },
         inputValues: { color: [1, 0, 0, 1], resolution: 256 },
       });
-      const b = addNode(g, 'core/solid-color', {
+      const b = addNode(g, 'tex/solid-color', {
         id: 'rock',
         position: { x: 0, y: 180 },
         inputValues: { color: [0, 1, 1, 1], resolution: 256 },
       });
-      const mask = addNode(g, 'core/perlin', {
+      const mask = addNode(g, 'tex/perlin', {
         id: 'mask',
         position: { x: 0, y: 360 },
         inputValues: { scale: [4, 4], octaves: 4, lacunarity: 2, gain: -0.75, seed: 0, resolution: 256 },
       });
-      const blendMask = addNode(g, 'core/blend-mask', {
+      const blendMask = addNode(g, 'tex/blend-mask', {
         id: 'blend',
         position: { x: 280, y: 180 },
         inputValues: { resolution: 256 },

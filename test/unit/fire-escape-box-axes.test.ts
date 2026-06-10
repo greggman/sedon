@@ -8,7 +8,7 @@
 //   • local +Y → normal   (OUTWARD from the wall)
 //   • local +Z → bitangent (VERTICAL — world up)
 //
-// `core/box` uses (width = X, height = Y, depth = Z), so any box
+// `geom/box` uses (width = X, height = Y, depth = Z), so any box
 // authored for a wall-facade module MUST have:
 //
 //   • height (Y-extent) = OUTWARD projection (~1.4 m for a fire
@@ -35,11 +35,11 @@ import {
 import { buildWaterTankSubgraph } from '../../src/editor/demos/city-rooftop.js';
 import type { GraphNode } from '../../src/core/graph.js';
 
-// Pull all `core/box` instances out of a subgraph, sorted by their
+// Pull all `geom/box` instances out of a subgraph, sorted by their
 // (width, height, depth) tuple so the test is order-independent.
 function boxesIn(nodes: GraphNode[]): { width: number; height: number; depth: number }[] {
   return nodes
-    .filter((n) => n.kind === 'core/box')
+    .filter((n) => n.kind === 'geom/box')
     .map((n) => {
       const v = n.inputValues as { width: number; height: number; depth: number };
       return { width: v.width, height: v.height, depth: v.depth };
@@ -96,13 +96,13 @@ test('fire-escape-assembled exposes (num_floors, floor_height, bottom_height, to
   ]);
 });
 
-test('fire-escape-assembled uses core/add for the top-module Z placement', () => {
+test('fire-escape-assembled uses math/add for the top-module Z placement', () => {
   // The .sedon fix swapped a map-range workaround for a real
-  // core/add node. If a regression replaces it with a map-range
+  // math/add node. If a regression replaces it with a map-range
   // chain again, this test catches it.
   const sg = buildFireEscapeAssembledSubgraph();
   const kinds = new Set(sg.graph.nodes.map((n) => n.kind));
-  assert.ok(kinds.has('core/add'), 'expected core/add in fire-escape-assembled');
+  assert.ok(kinds.has('math/add'), 'expected math/add in fire-escape-assembled');
 });
 
 test('water-tank: 4 legs share ONE box geometry via grid-distribute + instance-on-points', () => {
@@ -113,16 +113,16 @@ test('water-tank: 4 legs share ONE box geometry via grid-distribute + instance-o
   }
   // The leg cluster uses 1 box + 1 grid-distribute + 1
   // instance-geometry-on-points (was 4 separate boxes).
-  assert.equal(kinds['core/box'], 1, 'expected exactly 1 leg box');
-  assert.equal(kinds['core/grid-distribute'], 1);
-  assert.equal(kinds['core/instance-geometry-on-points'], 1);
+  assert.equal(kinds['geom/box'], 1, 'expected exactly 1 leg box');
+  assert.equal(kinds['points/grid'], 1);
+  assert.equal(kinds['geom/instance-on-points'], 1);
 });
 
 test('water-tank: body + cap share ONE wood material (was 2 copies)', () => {
   // Exactly two materials total — wood (shared by body + cap) and
   // steel (for the leg cluster).
   const sg = buildWaterTankSubgraph();
-  const materials = sg.graph.nodes.filter((n) => n.kind === 'core/material');
+  const materials = sg.graph.nodes.filter((n) => n.kind === 'material/pbr');
   assert.equal(materials.length, 2, 'expected exactly 2 materials (wood + steel)');
 });
 
@@ -138,7 +138,7 @@ test('water-tank has 2 cylinders (body + cap), 3 transforms, 3 entities', () => 
   for (const n of sg.graph.nodes) {
     kinds[n.kind] = (kinds[n.kind] || 0) + 1;
   }
-  assert.equal(kinds['core/cylinder'], 2);
-  assert.equal(kinds['core/transform-geometry'], 3);
-  assert.equal(kinds['core/scene-entity'], 3);
+  assert.equal(kinds['geom/cylinder'], 2);
+  assert.equal(kinds['geom/transform'], 3);
+  assert.equal(kinds['scene/entity'], 3);
 });

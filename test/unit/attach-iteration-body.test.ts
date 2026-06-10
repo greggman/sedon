@@ -52,7 +52,7 @@ function makeBodySubgraph(opts: {
 function seedWithForEachAndBody(body: SubgraphDef): { feNodeId: string } {
   const feNodeId = 'fep';
   const main = createGraph();
-  addNode(main, 'core/for-each-point', { id: feNodeId });
+  addNode(main, 'iter/for-each-point', { id: feNodeId });
   useEditorStore.setState({
     mainGraph: main,
     graph: main,
@@ -296,7 +296,7 @@ test('marks the bridge node-owned (owner.kind === iteration-bridge) and tags ite
   useEditorStore.getState().attachIterationBody(feNodeId, 'subgraph/b1');
   const bridge = getBridge(feNodeId);
   assert.deepEqual(bridge.owner, { kind: 'iteration-bridge', nodeId: feNodeId });
-  assert.equal(bridge.iterationKind, 'core/for-each-point');
+  assert.equal(bridge.iterationKind, 'iter/for-each-point');
 });
 
 test('re-attaching a different body replaces the bridge wholesale', () => {
@@ -321,7 +321,7 @@ test('re-attaching a different body replaces the bridge wholesale', () => {
   });
   const feNodeId = 'fep';
   const main = createGraph();
-  addNode(main, 'core/for-each-point', { id: feNodeId });
+  addNode(main, 'iter/for-each-point', { id: feNodeId });
   useEditorStore.setState({
     mainGraph: main,
     graph: main,
@@ -354,14 +354,14 @@ test('re-attaching a different body replaces the bridge wholesale', () => {
   assert.ok(fe?.extraOutputs?.find((o) => o.name === 'weight'), 'new lifted output present');
 });
 
-test('attachIterationBody is a no-op when the target node is not core/for-each-point', () => {
+test('attachIterationBody is a no-op when the target node is not iter/for-each-point', () => {
   const body = makeBodySubgraph({
     id: 'b1',
     inputs: [],
     outputs: [{ name: 'scene', type: 'Scene' }],
   });
   const main = createGraph();
-  addNode(main, 'core/perlin', { id: 'noise' });
+  addNode(main, 'tex/perlin', { id: 'noise' });
   useEditorStore.setState({
     mainGraph: main,
     graph: main,

@@ -6,7 +6,7 @@ import { generateCylinder } from '../render/cylinder.js';
 import { uploadMeshToGpu } from '../render/mesh.js';
 
 export const cylinderNode: NodeDef = {
-  id: 'core/cylinder',
+  id: 'geom/cylinder',
   category: 'Geometry/Primitives',
   inputs: [
     {
@@ -45,13 +45,13 @@ the join is smooth; the body uses face-aligned normals so the radial
 seams shade as expected (no smearing from averaged normals).
 
 Use for pipes, columns, tree trunks (when paired with a noise-driven
-[core/transform-geometry](../../core/transform-geometry) to vary diameter), or as the base
-for instanced [core/grass-blades](../../core/grass-blades) if you ever want
+[geom/transform](../../geom/transform) to vary diameter), or as the base
+for instanced [geom/grass-blades](../../geom/grass-blades) if you ever want
 square-ish blades.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'core/cylinder', {
+      addNode(g, 'geom/cylinder', {
         id: 'cylinder',
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.5, height: 1.5, segments: 24 },

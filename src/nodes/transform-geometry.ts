@@ -5,7 +5,7 @@ import { requireDevice } from '../core/resources.js';
 import { transformMesh, uploadMeshToGpu } from '../render/mesh.js';
 
 export const transformGeometryNode: NodeDef = {
-  id: 'core/transform-geometry',
+  id: 'geom/transform',
   category: 'Geometry/Modifiers',
   inputs: [
     {
@@ -48,21 +48,21 @@ normals so lighting still works after a non-uniform scale. Rotation order
 is X then Y then Z (so \`rotate.y\` is yaw, \`rotate.x\` is pitch when
 applied on its own).
 
-Use to position primitive meshes ([core/cube](../../core/cube),
-[core/sphere](../../core/sphere), …) before merging into a scene, to
+Use to position primitive meshes ([geom/cube](../../geom/cube),
+[geom/sphere](../../geom/sphere), …) before merging into a scene, to
 non-uniformly stretch a cube into a box, or to scale a procedural mesh by
 a noise-driven Float (run through
-[core/map-range](../../core/map-range) into a Vec3 first) for per-instance
+[math/map-range](../../math/map-range) into a Vec3 first) for per-instance
 variation.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 0 },
         inputValues: { size: 1 },
       });
-      const tx = addNode(g, 'core/transform-geometry', {
+      const tx = addNode(g, 'geom/transform', {
         id: 'transform-geometry',
         position: { x: 280, y: 0 },
         inputValues: { translate: [0, 0.5, 0], rotate: [0, 0.5, 0], scale: [2, 0.5, 1] },
@@ -76,7 +76,7 @@ variation.
     const input = inputs.geometry as GeometryValue;
     if (!input.mesh) {
       throw new Error(
-        'core/transform-geometry requires a CPU-side mesh on the input geometry; ' +
+        'geom/transform requires a CPU-side mesh on the input geometry; ' +
           'this source produced GPU-only data.',
       );
     }

@@ -33,11 +33,11 @@ await page.evaluate(() => {
 await new Promise((r) => setTimeout(r, 3500));
 
 // Sanity check: regular (non-subgraph) nodes must NOT render any
-// dot. core/perlin is a regular node — its rows should have ZERO
+// dot. tex/perlin is a regular node — its rows should have ZERO
 // .sedon-override-dot elements.
 const regularNodeDots = await page.evaluate(() => {
   const state = window.__sedonStore__.getState();
-  const perlin = state.mainGraph.nodes.find((n) => n.kind === 'core/perlin');
+  const perlin = state.mainGraph.nodes.find((n) => n.kind === 'tex/perlin');
   if (!perlin) return null;
   const el = document.querySelector(`.react-flow__node[data-id="${perlin.id}"]`);
   return el ? el.querySelectorAll('.sedon-override-dot').length : null;

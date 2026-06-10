@@ -18,7 +18,7 @@ import { useEditorStore } from '../../src/editor/store.js';
 
 function resetStoreWith(): string {
   const g = createGraph();
-  const node = addNode(g, 'core/perlin');
+  const node = addNode(g, 'tex/perlin');
   useEditorStore.setState({
     mainGraph: g,
     graph: g,

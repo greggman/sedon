@@ -64,7 +64,7 @@ function applyTransformToMesh(mesh: CpuMesh, m: Float32Array): CpuMesh {
 // data (no per-vertex color attribute today). Two entities with same material
 // but different tints stay as separate output entities.
 export const mergeSceneEntitiesNode: NodeDef = {
-  id: 'core/merge-scene-entities',
+  id: 'scene/merge-entities',
   category: 'Scene',
   // Re-stamps provenance to this merge node + ctx.subgraphPath, so the
   // cached output depends on context.
@@ -73,7 +73,7 @@ export const mergeSceneEntitiesNode: NodeDef = {
     {
       name: 'scene',
       type: 'Scene',
-      description: 'input scene whose entities will be grouped + flattened. Every entity must have CPU-side mesh data — feed [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) outputs through with `cpu_access: true`, primitive geometries have it by default',
+      description: 'input scene whose entities will be grouped + flattened. Every entity must have CPU-side mesh data — feed [geom/heightfield-from-texture](../../geom/heightfield-from-texture) outputs through with `cpu_access: true`, primitive geometries have it by default',
     },
   ],
   outputs: [
@@ -92,7 +92,7 @@ merges every group's meshes into one. Output is a new Scene with one
 entity per unique group — same visual result as the input, but fewer
 draw calls.
 
-The classic use: a [core/instance-scene-on-points](../../core/instance-scene-on-points)
+The classic use: a [scene/instance-on-points](../../scene/instance-on-points)
 that scatters 5,000 trees produces 5,000 entities, all sharing the same
 material. Run the result through this node and you get a single mesh
 covering all 5,000 trunks — one draw call instead of 5,000.
@@ -104,46 +104,46 @@ the same material but different tints stay as separate output entities.
 Caveats:
 - Every input entity needs CPU-side mesh data (\`geometry.mesh\` must
   be populated). Primitives have it by default; GPU-native sources
-  like [core/texture-to-heightfield-mesh](../../core/texture-to-heightfield-mesh) need
+  like [geom/heightfield-from-texture](../../geom/heightfield-from-texture) need
   \`cpu_access: true\`.
 - The merge throws away per-source identity. Picking a merged entity
   routes back to THIS merge node, not the original scene-entity that
   contributed the geometry.
 - For a non-flattening combine, use
-  [core/scene-merge](../../core/scene-merge) instead — it just
+  [scene/merge](../../scene/merge) instead — it just
   concatenates entity lists without re-meshing.
 `,
     sampleGraph: () => {
       const g = createGraph();
-      const sphere = addNode(g, 'core/sphere', {
+      const sphere = addNode(g, 'geom/sphere', {
         id: 'sphere',
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.4, segments: 24, rings: 12 },
       });
-      const cube = addNode(g, 'core/cube', {
+      const cube = addNode(g, 'geom/cube', {
         id: 'cube',
         position: { x: 0, y: 200 },
         inputValues: { size: 0.6 },
       });
       // Two entities sharing the same material — that's the case the
-      // merge actually collapses into one mesh. core/material needs a
+      // merge actually collapses into one mesh. material/pbr needs a
       // basecolor texture, not optional.
-      const basecolor = addNode(g, 'core/solid-color', {
+      const basecolor = addNode(g, 'tex/solid-color', {
         id: 'basecolor',
         position: { x: 0, y: 400 },
         inputValues: { color: [0.55, 0.62, 0.45, 1], resolution: 32 },
       });
-      const mat = addNode(g, 'core/material', {
+      const mat = addNode(g, 'material/pbr', {
         id: 'mat',
         position: { x: 280, y: 400 },
         inputValues: { roughness: 0.6, metallic: 0 },
       });
-      const entA = addNode(g, 'core/scene-entity', {
+      const entA = addNode(g, 'scene/entity', {
         id: 'entA',
         position: { x: 560, y: 0 },
         inputValues: {},
       });
-      const entB = addNode(g, 'core/scene-entity', {
+      const entB = addNode(g, 'scene/entity', {
         id: 'entB',
         position: { x: 560, y: 220 },
         inputValues: {},
@@ -152,13 +152,13 @@ Caveats:
         { name: 'scene_0', type: 'Scene' },
         { name: 'scene_1', type: 'Scene' },
       ];
-      const sceneMerge = addNode(g, 'core/scene-merge', {
+      const sceneMerge = addNode(g, 'scene/merge', {
         id: 'scenes',
         position: { x: 840, y: 110 },
         extraInputs: extras,
         inputValues: {},
       });
-      const flatten = addNode(g, 'core/merge-scene-entities', {
+      const flatten = addNode(g, 'scene/merge-entities', {
         id: 'flatten',
         position: { x: 1120, y: 110 },
         inputValues: {},
@@ -187,7 +187,7 @@ Caveats:
     for (const entity of scene.entities) {
       if (!entity.geometry.mesh) {
         throw new Error(
-          'core/merge-scene-entities requires CPU-side meshes on every ' +
+          'scene/merge-entities requires CPU-side meshes on every ' +
             'entity; one of the upstream geometries is GPU-only.',
         );
       }

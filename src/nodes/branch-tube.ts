@@ -57,7 +57,7 @@ The terminal realize node for branches. Sweeps a circular cross-section
 radius from root to tip according to the per-segment radii authored
 by the generator. The output is one merged mesh — every branch and
 every twig in the same Geometry — ready to wire into
-[core/scene-entity](../../core/scene-entity) with a bark material.
+[scene/entity](../../scene/entity) with a bark material.
 
 UV layout: U runs once around each tube cross-section, V runs along
 the arc length multiplied by \`uvTilingV\`. That makes tiling bark

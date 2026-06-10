@@ -51,15 +51,15 @@ export function createSingleBuildingDemo(): {
   // ── Ground plane (asphalt grey). Big enough to extend past the
   // building's footprint by ~10 m on each side so it reads as a city
   // block, not a floating slab.
-  const plane = addNode(g, 'core/plane', {
+  const plane = addNode(g, 'geom/plane', {
     position: { x: 0, y: 0 },
     inputValues: { size: [80, 80], divisions: [1, 1] },
   });
-  const groundMat = addNode(g, 'core/material', {
+  const groundMat = addNode(g, 'material/pbr', {
     position: { x: COL, y: 0 },
     inputValues: { basecolor: [0.18, 0.18, 0.19, 1], roughness: 0.95, metallic: 0 },
   });
-  const groundEnt = addNode(g, 'core/scene-entity', {
+  const groundEnt = addNode(g, 'scene/entity', {
     position: { x: COL * 2, y: 0 },
   });
   addEdge(g, { node: plane.id, socket: 'geometry' }, { node: groundEnt.id, socket: 'geometry' });
@@ -77,7 +77,7 @@ export function createSingleBuildingDemo(): {
   });
 
   // ── Merge ground + office into the scene.
-  const merge = addNode(g, 'core/scene-merge', {
+  const merge = addNode(g, 'scene/merge', {
     position: { x: COL * 3, y: ROW * 1 },
     extraInputs: [
       { name: 'scene_0', type: 'Scene', optional: true },

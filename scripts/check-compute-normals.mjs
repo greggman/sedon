@@ -1,4 +1,4 @@
-// Sanity check the new core/compute-normals node by rendering its
+// Sanity check the new geom/compute-normals node by rendering its
 // docs sample scene and capturing a screenshot. Visual smoke test —
 // the algorithm is unit-tested; this just verifies the node wires
 // up + the GPU mesh round-trips through the renderer.
@@ -13,14 +13,14 @@ page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/compute-normals/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/geom/compute-normals/?debug=1`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 2500));
 
   // Verify the eval ran cleanly and produced output.
   const info = await page.evaluate(() => {
     const state = window.__sedonStore__.getState();
-    const cn = state.graph.nodes.find((n) => n.kind === 'core/compute-normals');
+    const cn = state.graph.nodes.find((n) => n.kind === 'geom/compute-normals');
     return {
       hasNode: !!cn,
       cuspDefault: cn?.inputValues?.cusp_angle,

@@ -80,7 +80,7 @@ export function createEvalCache(): EvalCache {
  * identities of the input arguments. The output is a short string suitable
  * for use as a Map key.
  *
- * - `kind`: the node's kind id (e.g. "core/perlin").
+ * - `kind`: the node's kind id (e.g. "tex/perlin").
  * - `version`: optional version stamp — populated for subgraph wrappers
  *   so an edit inside the subgraph invalidates the wrapper's cached
  *   output. Undefined for normal nodes (whose behavior is fixed by their

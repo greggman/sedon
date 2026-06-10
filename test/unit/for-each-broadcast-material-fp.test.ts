@@ -119,7 +119,7 @@ test('broadcast Material input: changing the upstream material handle invalidate
   const matSrc1 = makeMaterialSource('test/mat-src', matWhite);
   const reg1 = buildRegistry(bridge1, matSrc1);
   const src1 = addNode(g1, 'test/mat-src', { inputValues: { tag: 'white' } });
-  const fep1 = addNode(g1, 'core/for-each-point', {
+  const fep1 = addNode(g1, 'iter/for-each-point', {
     extraInputs: [{ name: 'material', type: 'Material', optional: true }],
     inputValues: {
       points: makePointCloud([[0, 0, 0], [1, 0, 0]]),
@@ -139,7 +139,7 @@ test('broadcast Material input: changing the upstream material handle invalidate
   const matSrc2 = makeMaterialSource('test/mat-src', matRed);
   const reg2 = buildRegistry(bridge2, matSrc2);
   const src2 = addNode(g2, 'test/mat-src', { inputValues: { tag: 'red' } });
-  const fep2 = addNode(g2, 'core/for-each-point', {
+  const fep2 = addNode(g2, 'iter/for-each-point', {
     extraInputs: [{ name: 'material', type: 'Material', optional: true }],
     inputValues: {
       points: makePointCloud([[0, 0, 0], [1, 0, 0]]),

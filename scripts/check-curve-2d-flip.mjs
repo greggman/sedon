@@ -11,7 +11,7 @@ const browser = await puppeteer.launch({ headless: 'new', defaultViewport: { wid
 const page = await browser.newPage();
 
 try {
-  await page.goto(`${server.url}docs/nodes/core/lathe/?debug=1`, { waitUntil: 'networkidle2' });
+  await page.goto(`${server.url}docs/nodes/geom/lathe/?debug=1`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof window.__sedonStore__ === 'function', { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 2500));
 

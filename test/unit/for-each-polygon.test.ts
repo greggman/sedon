@@ -1,7 +1,7 @@
 // Integration tests for chunk-3 polygon dispatch:
-//   • core/polygon-list — variadic combiner that gathers per-input
+//   • poly/list — variadic combiner that gathers per-input
 //     Polygons into a PolygonList in socket-index order.
-//   • core/for-each-polygon — iterates a PolygonList, evaluates a
+//   • iter/for-each-polygon — iterates a PolygonList, evaluates a
 //     bridge subgraph once per polygon, merges Scene outputs.
 //
 // We register a synthetic `bridge-eval/b1` NodeDef that captures what
@@ -90,13 +90,13 @@ test('for-each-polygon: runs the bridge once per polygon, merges scenes in order
 
   const g = createGraph();
   // Two distinguishable aabb polygons.
-  const a = addNode(g, 'core/polygon-aabb', {
+  const a = addNode(g, 'poly/aabb', {
     inputValues: { center: [-5, 0], size: [2, 2] },
   });
-  const b = addNode(g, 'core/polygon-aabb', {
+  const b = addNode(g, 'poly/aabb', {
     inputValues: { center: [5, 0], size: [2, 2] },
   });
-  const list = addNode(g, 'core/polygon-list', {
+  const list = addNode(g, 'poly/list', {
     extraInputs: [
       { name: 'polygon_0', type: 'Polygon', optional: true },
       { name: 'polygon_1', type: 'Polygon', optional: true },
@@ -104,7 +104,7 @@ test('for-each-polygon: runs the bridge once per polygon, merges scenes in order
   });
   addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
   addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
-  const fep = addNode(g, 'core/for-each-polygon', {
+  const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: 'b1' },
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
@@ -134,8 +134,8 @@ test('for-each-polygon: empty polygon list → empty scene, no bridge calls', as
   reg.register(makeBridgeWithCapture(calls, 'b1'));
 
   const g = createGraph();
-  const list = addNode(g, 'core/polygon-list', { extraInputs: [] });
-  const fep = addNode(g, 'core/for-each-polygon', {
+  const list = addNode(g, 'poly/list', { extraInputs: [] });
+  const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: 'b1' },
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
@@ -152,14 +152,14 @@ test('for-each-polygon: missing bridge id → empty scene fallback', async () =>
   const reg = registry();
   // No bridge registered.
   const g = createGraph();
-  const a = addNode(g, 'core/polygon-aabb', {
+  const a = addNode(g, 'poly/aabb', {
     inputValues: { center: [0, 0], size: [2, 2] },
   });
-  const list = addNode(g, 'core/polygon-list', {
+  const list = addNode(g, 'poly/list', {
     extraInputs: [{ name: 'polygon_0', type: 'Polygon', optional: true }],
   });
   addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
-  const fep = addNode(g, 'core/for-each-polygon', {
+  const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: '' }, // unattached
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
@@ -195,9 +195,9 @@ test('for-each-polygon: PolygonList wired to a Polygon broadcast input pickForIt
   // path that's interesting is "wire a PolygonList into the polygon
   // broadcast slot". Override the type so we can wire a list-source.
   const g = createGraph();
-  const a = addNode(g, 'core/polygon-aabb', { inputValues: { center: [-5, 0], size: [2, 2] } });
-  const b = addNode(g, 'core/polygon-aabb', { inputValues: { center: [5, 0], size: [2, 2] } });
-  const list = addNode(g, 'core/polygon-list', {
+  const a = addNode(g, 'poly/aabb', { inputValues: { center: [-5, 0], size: [2, 2] } });
+  const b = addNode(g, 'poly/aabb', { inputValues: { center: [5, 0], size: [2, 2] } });
+  const list = addNode(g, 'poly/list', {
     extraInputs: [
       { name: 'polygon_0', type: 'Polygon', optional: true },
       { name: 'polygon_1', type: 'Polygon', optional: true },
@@ -205,7 +205,7 @@ test('for-each-polygon: PolygonList wired to a Polygon broadcast input pickForIt
   });
   addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
   addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
-  const fep = addNode(g, 'core/for-each-polygon', {
+  const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: 'b2' },
     extraInputs: [{ name: 'polygon', type: 'PolygonList', optional: true }],
     extraOutputs: [{ name: 'scene', type: 'Scene' }],

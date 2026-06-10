@@ -56,7 +56,7 @@ export interface SubgraphDef {
   /**
    * Marks this SubgraphDef as private node-owned state rather than a
    * user-authored asset. Set for the iteration bridge subgraphs that
-   * `core/for-each-point` (and future for-each-* nodes) own — one
+   * `iter/for-each-point` (and future for-each-* nodes) own — one
    * bridge per for-each-* instance, lifecycle bound to that instance.
    * Bridges:
    *   • are filtered out of the Assets panel (user never sees them
@@ -74,7 +74,7 @@ export interface SubgraphDef {
   };
   /**
    * The "iteration kind" this bridge is wired against — e.g.
-   * `core/for-each-point`. Determines which iteration-context outputs
+   * `iter/for-each-point`. Determines which iteration-context outputs
    * appear on the `iteration-input/<id>` boundary inside the bridge
    * (sourced from that NodeDef's `providedIterationContext`). Only
    * meaningful when `owner.kind === 'iteration-bridge'`.
@@ -369,7 +369,7 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
 
 /**
  * Compile a BRIDGE SubgraphDef — the private node-owned graph held by
- * `core/for-each-point` (and future for-each-* nodes). Produces 3
+ * `iter/for-each-point` (and future for-each-* nodes). Produces 3
  * NodeDefs, NONE of them a regular `subgraph/<id>` wrapper (bridges
  * are never instanced from a user-authored graph; they're invoked
  * directly by for-each-* nodes' evaluate via `ctx.iterationContext`):
