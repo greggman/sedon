@@ -44,7 +44,25 @@ export type Command =
       coalesce?: boolean;
     }
   | { kind: 'replaceGraph'; before: GraphState; after: GraphState }
-  | { kind: 'replaceProject'; before: ProjectSnapshot; after: ProjectSnapshot };
+  | {
+      kind: 'replaceProject';
+      before: ProjectSnapshot;
+      after: ProjectSnapshot;
+      /**
+       * Coalescing key for continuous scrubs that hit `dispatchProject`.
+       * Two consecutive `replaceProject` commands with the SAME
+       * non-null `coalesceKey` merge into one undo entry (the new
+       * `after` overwrites the old `after`, the old `before` is
+       * preserved). A non-coalescing command (any other kind, or a
+       * `replaceProject` with no key or a different key) acts as a
+       * barrier — the next scrub starts a fresh entry.
+       *
+       * Used by `setSubgraphInputDefault` so a drag-to-scrub on a
+       * subgraph-input default field produces ONE undo step on
+       * pointer-up, not hundreds.
+       */
+      coalesceKey?: string;
+    };
 
 export interface GraphState {
   graph: Graph;

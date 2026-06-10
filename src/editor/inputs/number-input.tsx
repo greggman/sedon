@@ -2,7 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 
 interface NumberInputProps {
   value: number;
-  onChange: (next: number) => void;
+  /**
+   * Called when the user changes the value. The second argument
+   * forwards undo-coalescing intent to the dispatcher:
+   *
+   *   • Drag scrub (pointer-move): undefined opts → the dispatcher's
+   *     default-on coalescing collapses the per-pixel calls into a
+   *     SINGLE undo entry that covers the whole pointer-down →
+   *     pointer-up window.
+   *   • Typed commit (Enter / blur / Tab): `{coalesce: false}` —
+   *     each typed commit is its own discrete undo step. Without
+   *     this, typing 456 ⏎ then 789 ⏎ would merge into one entry
+   *     covering both edits, and undo would jump straight back to
+   *     the pre-456 value.
+   */
+  onChange: (next: number, opts?: { coalesce?: boolean }) => void;
+  /**
+   * Called once after the pointer leaves the slider AND the user
+   * actually dragged (not just clicked). Two consecutive scrubs on
+   * the same socket would otherwise share a coalescing chain — both
+   * use default opts, and there's no `coalesce: false` command
+   * between them to break the chain — so `markUndoBarrier()` here
+   * is what makes "scrub → release → scrub again" produce two undo
+   * entries instead of one merged blob.
+   */
+  onScrubEnd?: () => void;
   integer?: boolean;
   /**
    * Inclusive declared bounds from the InputDef. The widget clamps
@@ -66,7 +90,7 @@ function format(v: number, integer: boolean): string {
   return str.replace(/\.?0+$/, '');
 }
 
-export function NumberInput({ value, onChange, integer = false, min, max }: NumberInputProps) {
+export function NumberInput({ value, onChange, onScrubEnd, integer = false, min, max }: NumberInputProps) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(() => format(value, integer));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -111,7 +135,12 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
     const n = integer ? parseInt(text, 10) : parseFloat(text);
     if (Number.isFinite(n)) {
       const clamped = clamp(integer ? Math.round(n) : n, min, max);
-      if (clamped !== value) onChange(clamped);
+      // `coalesce: false` so each typed Enter / blur is its OWN undo
+      // step. Without this opt-out, two consecutive typed commits on
+      // the same socket would merge under the dispatcher's default
+      // same-socket coalescing — which is what we WANT for scrubs
+      // but explicitly NOT what we want for typed values.
+      if (clamped !== value) onChange(clamped, { coalesce: false });
     }
     setEditing(false);
   };
@@ -161,6 +190,7 @@ export function NumberInput({ value, onChange, integer = false, min, max }: Numb
           min={min}
           max={max}
           onChange={onChange}
+          {...(onScrubEnd ? { onScrubEnd } : {})}
           onStartEditing={() => {
             setText(format(value, integer));
             setEditing(true);
@@ -179,7 +209,14 @@ interface NumberInputSliderProps {
   integer: boolean;
   min: number | undefined;
   max: number | undefined;
-  onChange: (n: number) => void;
+  // Drag-scrub path. Always called without opts so the dispatcher's
+  // default coalescing groups the pixel-by-pixel updates into one
+  // undo entry per pointer-down → pointer-up cycle.
+  onChange: (n: number, opts?: { coalesce?: boolean }) => void;
+  // Fired once on pointer-up IF the user actually dragged. Wired to
+  // `markUndoBarrier()` upstream so a second scrub starts a fresh
+  // undo entry.
+  onScrubEnd?: () => void;
   onStartEditing: () => void;
   startXRef: React.MutableRefObject<number>;
   startValueRef: React.MutableRefObject<number>;
@@ -192,6 +229,7 @@ function NumberInputSlider({
   min,
   max,
   onChange,
+  onScrubEnd,
   onStartEditing,
   startXRef,
   startValueRef,
@@ -236,6 +274,13 @@ function NumberInputSlider({
         }
         if (!draggedRef.current) {
           onStartEditing();
+        } else {
+          // Pointer-up after an actual drag: mark a barrier so the
+          // NEXT scrub on this socket doesn't merge into this one.
+          // Without this, two scrubs in a row collapse into a single
+          // coalesced undo entry — same socket, same coalesce-true
+          // policy, nothing tells the dispatcher the user "released."
+          onScrubEnd?.();
         }
       }}
     >

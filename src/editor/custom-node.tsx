@@ -283,6 +283,10 @@ function inlineEditor(
   // self-contained.
   nodeId?: string,
   panelId?: string | null,
+  // Number widgets call this on pointer-up after a scrub. Wired to
+  // `markUndoBarrier()` so consecutive scrubs on the same socket
+  // stay as separate undo entries.
+  onScrubEnd?: () => void,
 ): React.ReactNode {
   // Widget override comes first: an input may declare a `widget`
   // (e.g. 'gradient') that maps to a special editor regardless of
@@ -315,7 +319,7 @@ function inlineEditor(
   if (input.max !== undefined) numBounds.max = input.max;
   switch (input.type) {
     case 'Float':
-      return <NumberInput value={asNumber(value, 0)} onChange={onChange} {...numBounds} />;
+      return <NumberInput value={asNumber(value, 0)} onChange={onChange} {...(onScrubEnd ? { onScrubEnd } : {})} {...numBounds} />;
     case 'Int':
       // Enum-typed Int gets a dropdown instead of a number scrubber.
       if (input.enumOptions && input.enumOptions.length > 0) {
@@ -327,7 +331,7 @@ function inlineEditor(
           />
         );
       }
-      return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} {...numBounds} />;
+      return <NumberInput value={asNumber(value, 0)} integer onChange={onChange} {...(onScrubEnd ? { onScrubEnd } : {})} {...numBounds} />;
     case 'Bool':
       return <BoolInput value={asBool(value)} onChange={onChange} />;
     case 'String':
@@ -760,6 +764,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const renameNode = useEditorStore((s) => s.renameNode);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
   const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
+  const markUndoBarrier = useEditorStore((s) => s.markUndoBarrier);
   const attachIterationBody = useEditorStore((s) => s.attachIterationBody);
   // for-each-point's "Edit" navigation needs the bridge id
   // to step into. Header label looks up the body subgraph wrapper
@@ -1286,6 +1291,7 @@ export function CustomNode({ id, data, selected }: NodeProps) {
               (v, opts) => setInputValue(id, input.name, v, opts),
               id,
               canvasPanelId,
+              markUndoBarrier,
             )
           : null;
         const displayLabel = input.label ?? input.name;
@@ -1400,7 +1406,10 @@ export function CustomNode({ id, data, selected }: NodeProps) {
                 // keep the row labelled if anything refs them.
                 { name: output.name, type: output.type, label: displayLabel },
                 boundaryInputDef.default,
-                (v) => setSubgraphInputDefault(boundary.subgraphId, output.name, v),
+                (v, opts) => setSubgraphInputDefault(boundary.subgraphId, output.name, v, opts),
+                undefined,
+                undefined,
+                markUndoBarrier,
               )
             : null;
         return (

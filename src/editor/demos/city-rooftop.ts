@@ -186,31 +186,22 @@ export function buildWaterTankSubgraph(): SubgraphDef {
   addEdge(g, { node: legLift.id, socket: 'geometry' }, { node: legEnt.id, socket: 'geometry' });
   addEdge(g, { node: steelMat.id, socket: 'material' }, { node: legEnt.id, socket: 'material' });
 
-  // ─── Body: wood cylinder, two transforms.
-  // First translate +Y=4 puts the centred cylinder above the legs;
-  // second translate -Y=2 pulls it back so its centre is at Y=2.
-  // Kept as TWO transforms (matching the .sedon fix) so a future
-  // edit can drive the second translate parametrically.
+  // ─── Body: wood cylinder, single +Y=2 lift so its centre sits at
+  // Y=2 (the top of the legs). The .sedon fix had two chained
+  // transforms (+4 then −2) — collapsed here to one.
   const bodyCyl = addNode(g, 'core/cylinder', {
     position: { x: COL, y: ROW * 2 },
     inputValues: { radius: 1.5, height: 4, segments: 16 },
   });
-  const bodyLift1 = addNode(g, 'core/transform-geometry', {
+  const bodyLift = addNode(g, 'core/transform-geometry', {
     position: { x: COL * 2, y: ROW * 2 },
-    inputValues: { translate: [0, 4, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
-  });
-  const bodyLift2 = addNode(g, 'core/transform-geometry', {
-    position: { x: COL * 3, y: ROW * 2 },
-    // Matches the .sedon fix: only `translate` set (rotate/scale
-    // default to identity at eval).
-    inputValues: { translate: [0, -2, 0] },
+    inputValues: { translate: [0, 2, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   const bodyEnt = addNode(g, 'core/scene-entity', {
-    position: { x: COL * 4, y: ROW * 2 },
+    position: { x: COL * 3, y: ROW * 2 },
   });
-  addEdge(g, { node: bodyCyl.id, socket: 'geometry' }, { node: bodyLift1.id, socket: 'geometry' });
-  addEdge(g, { node: bodyLift1.id, socket: 'geometry' }, { node: bodyLift2.id, socket: 'geometry' });
-  addEdge(g, { node: bodyLift2.id, socket: 'geometry' }, { node: bodyEnt.id, socket: 'geometry' });
+  addEdge(g, { node: bodyCyl.id, socket: 'geometry' }, { node: bodyLift.id, socket: 'geometry' });
+  addEdge(g, { node: bodyLift.id, socket: 'geometry' }, { node: bodyEnt.id, socket: 'geometry' });
   addEdge(g, { node: woodMat.id, socket: 'material' }, { node: bodyEnt.id, socket: 'material' });
 
   // ─── Cap: shorter wider cylinder sharing the wood material.

@@ -126,17 +126,19 @@ test('water-tank: body + cap share ONE wood material (was 2 copies)', () => {
   assert.equal(materials.length, 2, 'expected exactly 2 materials (wood + steel)');
 });
 
-test('water-tank has 2 cylinders (body + cap), 4 transforms, 3 entities', () => {
-  // Pins the topology the user's .sedon fix landed on. Any change
-  // to the leg cluster (e.g. reverting to 4 separate boxes) would
-  // bump the box count and trip the box test above; this one
-  // catches subtler restructurings.
+test('water-tank has 2 cylinders (body + cap), 3 transforms, 3 entities', () => {
+  // Pins the topology. One transform per major piece — legs lift,
+  // body lift, cap lift. (Earlier revision had the body chain TWO
+  // transforms +4/-2 — collapsed to a single +2.) Any change to the
+  // leg cluster (e.g. reverting to 4 separate boxes) would bump the
+  // box count and trip the box test above; this one catches subtler
+  // restructurings.
   const sg = buildWaterTankSubgraph();
   const kinds: Record<string, number> = {};
   for (const n of sg.graph.nodes) {
     kinds[n.kind] = (kinds[n.kind] || 0) + 1;
   }
   assert.equal(kinds['core/cylinder'], 2);
-  assert.equal(kinds['core/transform-geometry'], 4);
+  assert.equal(kinds['core/transform-geometry'], 3);
   assert.equal(kinds['core/scene-entity'], 3);
 });

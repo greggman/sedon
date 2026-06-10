@@ -120,6 +120,24 @@ export interface EditorState {
   // both apply and reverse it.
   undoStack: Command[];
   redoStack: Command[];
+  /**
+   * Single-shot barrier flag. When true, the NEXT dispatch's
+   * coalescing check is skipped (treated as if the previous undo
+   * entry had `coalesce: false`), and the flag is reset to false.
+   *
+   * Set by `markUndoBarrier()`. Used by widgets with natural
+   * "session" boundaries the dispatcher can't otherwise detect — a
+   * NumberInput slider's pointer-up marks the end of a scrub
+   * session so the NEXT scrub on the same socket starts a fresh
+   * undo entry rather than merging into the previous scrub's
+   * entry.
+   *
+   * Without this, two scrubs in a row (pointer-down → drag →
+   * pointer-up → pointer-down → drag → pointer-up) would collapse
+   * into ONE undo entry because no command kind / coalesce flag
+   * changes between them.
+   */
+  undoBarrierPending: boolean;
   // Bumped on undo/redo/replaceGraph so node-canvas re-syncs React Flow's
   // local state. Normal action paths (onConnect, onNodesChange, etc.) update
   // RF themselves so they don't bump this; only graph-mutating-from-outside
@@ -238,6 +256,18 @@ export interface EditorState {
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
   setInputValue: (nodeId: string, name: string, value: unknown, opts?: { coalesce?: boolean }) => void;
+  /**
+   * One-shot barrier: arms `undoBarrierPending` so the NEXT
+   * coalesce-eligible dispatch will NOT merge with the previous
+   * undo entry. Use to mark "session boundaries" the dispatcher
+   * can't otherwise detect — most notably a NumberInput scrub's
+   * pointer-up, so two consecutive scrubs on the same socket stay
+   * as two distinct undo entries instead of collapsing.
+   *
+   * If the next dispatch never comes (the barrier stays armed), no
+   * harm: subsequent calls find the flag, skip coalescing, clear it.
+   */
+  markUndoBarrier: () => void;
   /**
    * Set or clear the cosmetic name of a node (shown in the node header).
    * An empty / whitespace-only string clears the name back to the kind
@@ -428,6 +458,13 @@ export interface EditorState {
     subgraphId: string,
     inputName: string,
     value: unknown,
+    /**
+     * Same shape as `setInputValue`'s opts: when `coalesce` is unset
+     * or true (the default), consecutive scrubs on the same
+     * (subgraphId, inputName) merge into one undo step. Pass
+     * `coalesce: false` to commit each call as a discrete entry.
+     */
+    opts?: { coalesce?: boolean },
   ) => void;
 
   /** Persist camera state for a given editing context. */
@@ -539,7 +576,7 @@ function projectStateSlice(init: ProjectInit): Pick<
   | 'graph' | 'rootNodeId' | 'mainGraph' | 'mainRootNodeId'
   | 'subgraphs' | 'folders' | 'currentEditingId'
   | 'cameras' | 'viewports' | 'nodePositions'
-  | 'undoStack' | 'redoStack' | 'dirty'
+  | 'undoStack' | 'redoStack' | 'undoBarrierPending' | 'dirty'
 > {
   const nodePositions: EditorState['nodePositions'] = { main: extractPositions(init.graph) };
   for (const sg of init.subgraphs ?? []) {
@@ -558,6 +595,7 @@ function projectStateSlice(init: ProjectInit): Pick<
     nodePositions,
     undoStack: [],
     redoStack: [],
+    undoBarrierPending: false,
     dirty: false,
   };
 }
@@ -715,7 +753,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
   // "this changed" signal. Centralising the bump here means no caller
   // has to remember to do it; the eval cache stays consistent
   // automatically.
-  function dispatchProject(after: ProjectSnapshot) {
+  function dispatchProject(after: ProjectSnapshot, opts?: { coalesceKey?: string }) {
     const before = projectSnapshot();
     const beforeById = new Map(before.subgraphs.map((s) => [s.id, s]));
     const bumpedSubgraphs = after.subgraphs.map((s) => {
@@ -746,12 +784,41 @@ export const useEditorStore = create<EditorState>((set, get) => {
     for (const sg of bumped.subgraphs) {
       nodePositions[sg.id] = mergeNodePositions(prevPositions[sg.id], sg.graph);
     }
-    const cmd: Command = { kind: 'replaceProject', before, after: bumped };
+    // Coalesce consecutive replaceProject commands sharing a
+    // `coalesceKey`. NumberInput drag-edit on a subgraph-input
+    // default fires one dispatchProject per pixel; without
+    // coalescing the undo stack fills with full-project snapshots.
+    // Merge: keep the OLD `before` (so undo lands on the start of
+    // the scrub) and take the NEW `after`. Any command with a
+    // different key, no key, or any non-replaceProject kind acts as
+    // a barrier (the next scrub starts fresh) because the merge
+    // only triggers when both the previous undo entry AND this new
+    // command have matching `coalesceKey`.
+    const stack = get().undoStack;
+    const last = stack[stack.length - 1];
+    // Consume the one-shot barrier flag: if armed, refuse to
+    // coalesce regardless of key match (next scrub session starts
+    // fresh). Always clear, even if no coalesce would have happened
+    // anyway — the flag is single-use.
+    const barrierArmed = get().undoBarrierPending;
+    const coalesce =
+      !barrierArmed
+      && opts?.coalesceKey !== undefined
+      && last !== undefined
+      && last.kind === 'replaceProject'
+      && last.coalesceKey === opts.coalesceKey;
+    const cmd: Command = {
+      kind: 'replaceProject',
+      before: coalesce ? (last as Extract<Command, { kind: 'replaceProject' }>).before : before,
+      after: bumped,
+      ...(opts?.coalesceKey !== undefined ? { coalesceKey: opts.coalesceKey } : {}),
+    };
     set({
       ...bumped,
       nodePositions,
-      undoStack: [...get().undoStack, cmd],
+      undoStack: coalesce ? [...stack.slice(0, -1), cmd] : [...stack, cmd],
       redoStack: [],
+      undoBarrierPending: false,
       dirty: true,
       syncCounter: get().syncCounter + 1,
     });
@@ -778,8 +845,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // add/drag-end/paste/delete) pass `coalesce: false`; each command is
     // its own undo entry, and a non-coalescing command also prevents
     // the NEXT setInputValue from merging into it (acts as a barrier).
+    //
+    // The one-shot `undoBarrierPending` flag also blocks coalescing — it
+    // covers the scrub → pointer-up → scrub case where neither end has a
+    // `coalesce: false` command to break the chain on its own.
+    const barrierArmed = get().undoBarrierPending;
     if (
-      cmd.kind === 'setInputValue'
+      !barrierArmed
+      && cmd.kind === 'setInputValue'
       && cmd.coalesce !== false
     ) {
       const stack = get().undoStack;
@@ -827,6 +900,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
       ...(nodePositions !== prevPositions ? { nodePositions } : {}),
       undoStack: [...get().undoStack, cmd],
       redoStack: [],
+      // Consume the one-shot barrier flag if it was set — we either
+      // used it above to block coalescing, or we're a non-coalescing
+      // command (still resets so a stale flag doesn't leak forward).
+      undoBarrierPending: false,
       dirty: true,
       ...(opts.bumpSync ? { syncCounter: get().syncCounter + 1 } : {}),
     });
@@ -1592,7 +1669,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
     },
 
-    setSubgraphInputDefault: (subgraphId, inputName, value) => {
+    setSubgraphInputDefault: (subgraphId, inputName, value, opts) => {
       const state = get();
       const target = state.subgraphs.find((s) => s.id === subgraphId);
       if (!target) return;
@@ -1612,6 +1689,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const subgraphs = state.subgraphs.map((s) =>
         s.id === subgraphId ? { ...s, inputs: updatedInputs } : s,
       );
+      // Coalesce by (subgraphId, inputName) by default — drag-to-edit
+      // emits one call per pixel, so a non-coalesced path would fill
+      // the undo stack with a full project snapshot per pixel. Opt
+      // out with `coalesce: false` for discrete-action callers.
+      const dispatchOpts =
+        opts?.coalesce === false
+          ? undefined
+          : { coalesceKey: `subgraph-input-default:${subgraphId}:${inputName}` };
       dispatchProject({
         subgraphs,
         folders: state.folders,
@@ -1620,7 +1705,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         graph: state.graph,
         rootNodeId: state.rootNodeId,
         currentEditingId: state.currentEditingId,
-      });
+      }, dispatchOpts);
     },
 
     setActiveEditing: (id) => {
@@ -1673,6 +1758,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     markClean: () => set({ dirty: false }),
+
+    markUndoBarrier: () => set({ undoBarrierPending: true }),
 
     addNode: (node) => {
       dispatch({ kind: 'addNode', node, prevRootNodeId: get().rootNodeId });
