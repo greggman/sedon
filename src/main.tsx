@@ -97,6 +97,22 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
     (window as unknown as { __sedonSetAnimating__: typeof m.setAnimating }).__sedonSetAnimating__ = m.setAnimating;
     (window as unknown as { __sedonForceSerial__: typeof m.currentForceSerial }).__sedonForceSerial__ = m.currentForceSerial;
   });
+  // Add-node helpers so headless repros can drive the same flow the
+  // toolbar / picker hit (including drop-on-wire when a single edge
+  // is selected on the active canvas). Returns the new node id, or
+  // null if no canvas is registered.
+  void import('./editor/commands.js').then((m) => {
+    (window as unknown as {
+      __sedonAddNodeAtCanvasCenter__: typeof m.addNodeAtCanvasCenter;
+    }).__sedonAddNodeAtCanvasCenter__ = m.addNodeAtCanvasCenter;
+  });
+  // Active-canvas RF instance so headless repros can drive selection
+  // directly (clicking SVG edge paths in puppeteer is flaky).
+  void import('./editor/rf-registry.js').then((m) => {
+    (window as unknown as {
+      __sedonGetActiveRf__: typeof m.getActiveCanvasRf;
+    }).__sedonGetActiveRf__ = m.getActiveCanvasRf;
+  });
   // Canvas-data getters so headless repros can inspect per-node eval
   // outputs (textures, scenes, …) by node id without going through
   // React. Used for texture-readback diagnostics.

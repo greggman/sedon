@@ -296,6 +296,94 @@ test('delete a connected node — restored by ONE Cmd-Z', async () => {
   }
 });
 
+// -----------------------------------------------------------------
+// Drop-on-wire: adding a node while one edge is selected splices the
+// new node into the wire as ONE undo step.
+// -----------------------------------------------------------------
+
+test('drop-on-wire: addNode with one edge selected splices node into the wire (1 undo)', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    // Find an edge whose endpoint TYPES will splice cleanly with
+    // `geom/transform` (Geometry in + Geometry out): the edge must
+    // carry a Geometry value.
+    const target = await page.evaluate(() => {
+      const s = window.__sedonStore__.getState();
+      // Look at every edge and find one whose source's output socket
+      // and target's input socket are both Geometry. That guarantees
+      // the splice picks geom/transform's geometry in + geometry out.
+      for (const e of s.graph.edges) {
+        const fromNode = s.graph.nodes.find((n) => n.id === e.from.node);
+        const toNode = s.graph.nodes.find((n) => n.id === e.to.node);
+        if (!fromNode || !toNode) continue;
+        // Inputs/outputs on the GraphNode are def-derived; we don't
+        // have a registry here in puppeteer. The simplest signal:
+        // socket names. core/output's `scene` input takes Scene;
+        // anything wired to .scene won't suit geom/transform. The
+        // `scene/entity` → `geometry` and `scene/entity` → `material`
+        // edges DO carry Geometry / Material respectively. Use the
+        // edge whose to.socket is literally `geometry`.
+        if (e.to.socket === 'geometry') return { id: e.id };
+      }
+      return null;
+    });
+    assert.ok(target, 'scene=basic must contain at least one Geometry edge');
+
+    // Select the edge via the active RF instance.
+    await page.evaluate((edgeId) => {
+      const rf = window.__sedonGetActiveRf__?.();
+      if (!rf) throw new Error('no active canvas RF');
+      rf.setEdges((edges) => edges.map((e) => ({
+        ...e,
+        selected: e.id === edgeId,
+      })));
+    }, target.id);
+
+    const before = await page.evaluate(() => {
+      const s = window.__sedonStore__.getState();
+      return { n: s.graph.nodes.length, e: s.graph.edges.length, u: s.undoStack.length };
+    });
+
+    // Drive the same code path the toolbar / picker / palette
+    // hits. The helper checks for a selected edge and splices in
+    // when types match.
+    await page.evaluate(() => {
+      const id = window.__sedonAddNodeAtCanvasCenter__('geom/transform');
+      if (!id) throw new Error('add failed');
+    });
+    await page.waitForFunction(
+      (u) => window.__sedonStore__.getState().undoStack.length === u + 1,
+      { timeout: 2000 },
+      before.u,
+    );
+    const after = await page.evaluate(() => {
+      const s = window.__sedonStore__.getState();
+      return { n: s.graph.nodes.length, e: s.graph.edges.length, u: s.undoStack.length };
+    });
+    assert.equal(after.n, before.n + 1, 'one new node');
+    assert.equal(after.e, before.e + 1, '+2 new edges minus the deleted one = +1');
+    assert.equal(after.u, before.u + 1, 'one undo entry');
+
+    // Cmd-Z restores everything in a single step.
+    await page.keyboard.down('Meta');
+    await page.keyboard.press('z');
+    await page.keyboard.up('Meta');
+    await page.waitForFunction(
+      (n) => window.__sedonStore__.getState().graph.nodes.length === n,
+      { timeout: 2000 },
+      before.n,
+    );
+    const restored = await page.evaluate(() => {
+      const s = window.__sedonStore__.getState();
+      return { n: s.graph.nodes.length, e: s.graph.edges.length };
+    });
+    assert.equal(restored.n, before.n);
+    assert.equal(restored.e, before.e);
+  } finally {
+    await page.close();
+  }
+});
+
 // Scrub-coalescing browser test was here but skipped — it required a
 // visible Float-input handle in scene=basic, which isn't guaranteed.
 // Unit tests in test/unit/setInputValue-coalesce.test.ts pin the

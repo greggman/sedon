@@ -1,10 +1,9 @@
-import { useReactFlow } from '@xyflow/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { NodeDef } from '../core/node-def.js';
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
+import { addNodeAtFlowPosition } from './commands.js';
 import { useRegistry } from './registry.js';
-import { useEditorStore } from './store.js';
 
 // Portal'd, position-aware Add-Node picker. Same search-and-filter UX
 // that the canvas's toolbar "+ Add Node" button shows; reused by the
@@ -42,8 +41,6 @@ export function AddNodePicker({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-  const rf = useReactFlow();
-  const addNodeToStore = useEditorStore((s) => s.addNode);
   const registry = useRegistry();
 
   const allDefs = useMemo(() => {
@@ -130,14 +127,11 @@ export function AddNodePicker({
   }, [anchorX, anchorY]);
 
   const addNode = (kind: string) => {
-    const id = crypto.randomUUID();
-    const position = { x: flowX, y: flowY };
-    rf.addNodes({ id, type: 'sedon', position, data: { kind } });
-    // Pass position through to the store so the position survives
-    // save/load even if the user never drags the new node. Without
-    // this the position lives only in RF's local state; on reload
-    // the conversion falls back to a default grid layout.
-    addNodeToStore({ id, kind, position });
+    // Goes through addNodeAtFlowPosition so the drop-on-wire
+    // behaviour fires when a single edge is selected — same code
+    // path as the toolbar/palette add. Falls back to a plain add
+    // at (flowX, flowY) otherwise.
+    addNodeAtFlowPosition(kind, flowX, flowY);
     onClose();
   };
 

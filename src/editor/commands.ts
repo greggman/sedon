@@ -1,4 +1,5 @@
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
+import { createCoreTypeRegistry } from '../core/types.js';
 import { confirmDiscardIfDirty } from './confirm-dirty.js';
 import { DEMOS } from './demos/index.js';
 import { loadDemoSaveFile } from './demos/demo-loader.js';
@@ -315,6 +316,13 @@ function slugifyForSubgraph(label: string, existing: ReadonlySet<string>): strin
 // Insert a node of the given kind at an explicit flow-coordinate
 // position on the active canvas. Returns the new node's id (or null
 // if no canvas is registered).
+//
+// Drop-on-wire: if exactly one edge is selected on the active canvas
+// AND the new kind has matching input + output sockets, the helper
+// splices the node into the wire as a SINGLE undo step (see
+// `tryInsertOnSelectedEdge`) and selects the two new edges so the
+// user can press Delete to peel them off if the auto-route picked
+// the wrong matching socket.
 export function addNodeAtFlowPosition(
   kind: string,
   flowX: number,
@@ -322,8 +330,13 @@ export function addNodeAtFlowPosition(
 ): string | null {
   const rf = getActiveCanvasRf();
   if (!rf) return null;
-  const id = crypto.randomUUID();
   const position = { x: flowX, y: flowY };
+  // Try the drop-on-wire path first. If it succeeds, the store
+  // dispatched a batched add+rewire and we return the new node id.
+  const inserted = tryInsertOnSelectedEdge(kind, position);
+  if (inserted) return inserted;
+  // Plain add otherwise.
+  const id = crypto.randomUUID();
   rf.addNodes({ id, type: 'sedon', position, data: { kind } });
   // Pass position through to the store too; the RF instance has it
   // locally, but the store's GraphNode is what gets serialised at
@@ -331,6 +344,93 @@ export function addNodeAtFlowPosition(
   // reload until the user dragged the node at least once.
   useEditorStore.getState().addNode({ id, kind, position });
   return id;
+}
+
+// Drop-on-wire helper. Returns the new node's id when it spliced the
+// node in, null when the conditions didn't match and the caller
+// should fall back to a plain add.
+//
+// Conditions:
+//   • exactly one edge selected on the active canvas
+//   • new kind has an input whose type accepts the source's output
+//   • new kind has an output whose type the target's input accepts
+// "Match" means `types.isCompatible` per the core type registry,
+// same rule the validator + `connect` action use — so broadcasts
+// (Float → Vec3, Color ↔ Vec4 etc.) work for free. First-matching
+// input/output wins; if the wrong one is chosen, the two new edges
+// are SELECTED so a single Delete removes them.
+function tryInsertOnSelectedEdge(
+  kind: string,
+  position: { x: number; y: number },
+): string | null {
+  const rf = getActiveCanvasRf();
+  if (!rf) return null;
+  const selectedEdges = rf.getEdges().filter((e) => e.selected);
+  if (selectedEdges.length !== 1) return null;
+  const rfEdge = selectedEdges[0]!;
+
+  const state = useEditorStore.getState();
+  const graphEdge = state.graph.edges.find((e) => e.id === rfEdge.id);
+  if (!graphEdge) return null;
+  const fromNode = state.graph.nodes.find((n) => n.id === graphEdge.from.node);
+  const toNode = state.graph.nodes.find((n) => n.id === graphEdge.to.node);
+  if (!fromNode || !toNode) return null;
+
+  const registry = buildRegistry(state.subgraphs);
+  const fromDef = registry.get(fromNode.kind);
+  const toDef = registry.get(toNode.kind);
+  const newDef = registry.get(kind);
+  if (!fromDef || !toDef || !newDef) return null;
+
+  // Resolve endpoint types — output side may live on extraOutputs
+  // (for-each-* lifted outputs), input side on extraInputs.
+  const fromOut = fromDef.outputs.find((o) => o.name === graphEdge.from.socket)
+    ?? fromNode.extraOutputs?.find((o) => o.name === graphEdge.from.socket);
+  const toIn = toDef.inputs.find((i) => i.name === graphEdge.to.socket)
+    ?? toNode.extraInputs?.find((i) => i.name === graphEdge.to.socket);
+  if (!fromOut || !toIn) return null;
+
+  // First-matching socket on the new node. Type direction matters:
+  // input check is "source's output → candidate input"; output check
+  // is "candidate output → target's input". Easy to flip; don't.
+  const types = createCoreTypeRegistry();
+  const matchInput = newDef.inputs.find((i) => types.isCompatible(fromOut.type, i.type));
+  const matchOutput = newDef.outputs.find((o) => types.isCompatible(o.type, toIn.type));
+  if (!matchInput || !matchOutput) return null;
+
+  const newNodeId = crypto.randomUUID();
+  const inputEdgeId = crypto.randomUUID();
+  const outputEdgeId = crypto.randomUUID();
+
+  // Visual update first so the new node appears at `position` even if
+  // the syncCounter effect lags a frame. Store dispatch fires the
+  // batched undo entry.
+  rf.addNodes({ id: newNodeId, type: 'sedon', position, data: { kind } });
+  useEditorStore.getState().insertNodeOnEdge({
+    oldEdgeId: graphEdge.id,
+    newNode: { id: newNodeId, kind, position },
+    inputEdgeId,
+    outputEdgeId,
+    newInputSocket: matchInput.name,
+    newOutputSocket: matchOutput.name,
+  });
+
+  // Select the two fresh edges so the user can press Delete to peel
+  // them off if the wrong matching socket was chosen. Wait one frame
+  // for the syncCounter effect to land the edges in RF state, then
+  // overwrite their selection. requestAnimationFrame is enough — the
+  // sync effect runs in a layout-effect during the same React commit
+  // the store dispatch triggered.
+  requestAnimationFrame(() => {
+    rf.setEdges((edges) =>
+      edges.map((e) => ({
+        ...e,
+        selected: e.id === inputEdgeId || e.id === outputEdgeId,
+      })),
+    );
+  });
+
+  return newNodeId;
 }
 
 // Insert a node positioned at the active canvas's visible center.

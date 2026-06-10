@@ -269,6 +269,28 @@ export interface EditorState {
   renameSubgraph: (subgraphId: string, newLabel: string) => void;
   addNode: (node: GraphNode) => void;
   connect: (id: string, from: SocketRef, to: SocketRef) => void;
+  /**
+   * Drop a new node into the middle of an existing wire as a single
+   * undoable step: removes the old edge, adds the new node, and
+   * connects the new node into the original endpoints. Caller is
+   * responsible for picking matching sockets — the action does no
+   * type-compatibility check itself (the caller in commands.ts already
+   * ran the registry's `isCompatible` to choose `newInputSocket` and
+   * `newOutputSocket`).
+   *
+   * Returns the two new edge ids so the canvas can mark them
+   * selected immediately after — same recovery shape every node
+   * editor uses for "drop on wire", per
+   * [[browser-test-simplicity]] convention.
+   */
+  insertNodeOnEdge: (spec: {
+    oldEdgeId: string;
+    newNode: GraphNode;
+    inputEdgeId: string;
+    outputEdgeId: string;
+    newInputSocket: string;
+    newOutputSocket: string;
+  }) => { inputEdgeId: string; outputEdgeId: string };
   removeEdges: (ids: ReadonlySet<string>) => void;
   removeNodes: (ids: ReadonlySet<string>) => void;
   /**
@@ -1816,6 +1838,40 @@ export const useEditorStore = create<EditorState>((set, get) => {
             (e) => e.to.node === to.node && e.to.socket === to.socket,
           ) ?? null);
       dispatch({ kind: 'connect', edge: { id, from, to }, replaced });
+    },
+
+    insertNodeOnEdge: (spec) => {
+      const state = get();
+      const oldEdge = state.graph.edges.find((e) => e.id === spec.oldEdgeId);
+      if (!oldEdge) {
+        throw new Error(`insertNodeOnEdge: no edge with id "${spec.oldEdgeId}"`);
+      }
+      // Caller has already verified type compat + the new node's
+      // sockets exist; we just assemble the batch. Order matters:
+      //   1. remove the old edge
+      //   2. add the new node (so subsequent connects see it)
+      //   3. connect upstream → newNode.input
+      //   4. connect newNode.output → downstream
+      // Wrapping all four in `batch` gives the user a single Cmd-Z to
+      // undo the whole drop-on-wire operation.
+      const inputEdge = {
+        id: spec.inputEdgeId,
+        from: oldEdge.from,
+        to: { node: spec.newNode.id, socket: spec.newInputSocket },
+      };
+      const outputEdge = {
+        id: spec.outputEdgeId,
+        from: { node: spec.newNode.id, socket: spec.newOutputSocket },
+        to: oldEdge.to,
+      };
+      const commands: import('./command.js').Command[] = [
+        { kind: 'removeEdges', edges: [oldEdge] },
+        { kind: 'addNode', node: spec.newNode, prevRootNodeId: state.rootNodeId },
+        { kind: 'connect', edge: inputEdge, replaced: null },
+        { kind: 'connect', edge: outputEdge, replaced: null },
+      ];
+      dispatch({ kind: 'batch', commands });
+      return { inputEdgeId: spec.inputEdgeId, outputEdgeId: spec.outputEdgeId };
     },
 
     removeEdges: (ids) => {
