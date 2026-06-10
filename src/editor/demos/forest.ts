@@ -207,7 +207,6 @@ export function createForestDemo(): {
   });
   const forestGrass = addNode(g, 'geom/grass', {
     position: { x: COL * 4, y: ROW * 6 },
-    extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
       worldSize: [100, 100],
       maxDistance: 45, spacing: 0.2, bladeWidth: 0.2, bladeHeight: 0.6,
@@ -313,8 +312,8 @@ export function createForestDemo(): {
   addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: forestGrass.id, socket: 'heightTexture' });
   addEdge(g, { node: grassDensity.id, socket: 'texture' }, { node: forestGrass.id, socket: 'density' });
   addEdge(g, { node: perlin.id, socket: 'texture' }, { node: forestGrass.id, socket: 'typeMap' });
-  addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_0' });
-  addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'card_1' });
+  addEdge(g, { node: grassCardLush.id, socket: 'texture' }, { node: forestGrass.id, socket: 'cards' });
+  addEdge(g, { node: grassCardDry.id, socket: 'texture' }, { node: forestGrass.id, socket: 'cards' });
   addEdge(g, { node: forestGrass.id, socket: 'scene' }, { node: mergeAll.id, socket: 'scenes' });
 
   // Water takes the merged Scene, appends a water entity sized to the

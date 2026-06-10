@@ -13,10 +13,10 @@ import type {
 // src/render/grass.ts). Output is a Scene carrying one GrassFieldValue
 // so it merges with the terrain scene through scene/merge.
 //
-// Cards are variadic (one per grass TYPE): the first card is `card_0`;
-// "+ Add card" appends `card_1`, `card_2`, … All cards must share the
-// same resolution + format — the renderer packs them into one
-// texture-2d-array and `typeMap` (R → type index) selects per blade.
+// Cards are multi-fan-in on the single `cards` socket — wire one or
+// more Texture2D outputs in and the renderer packs them into one
+// texture-2d-array. `typeMap` (R → type index) selects per blade
+// which one to sample. All cards must share resolution + format.
 export const grassNode: NodeDef = {
   id: 'geom/grass',
   category: 'Scene',
@@ -41,12 +41,13 @@ export const grassNode: NodeDef = {
       name: 'typeMap',
       type: 'Texture2D',
       optional: true,
-      description: 'R channel → which card (type) a blade uses. Unwired ⇒ all blades draw from card_0',
+      description: 'R channel → which card (type) a blade uses. Unwired ⇒ all blades draw from the first wired card',
     },
     {
-      name: 'card_0',
+      name: 'cards',
       type: 'Texture2D',
-      description: 'Blade card art (RGB colour, A silhouette). Use [geom/grass-blades](../../geom/grass-blades) or any RGBA texture you author externally',
+      multi: true,
+      description: 'Blade card art (RGB colour, A silhouette). Wire one or more — every wired card joins the GPU texture-array, and the optional `typeMap` (R channel → card index) selects per blade which one to sample. Use [geom/grass-blades](../../geom/grass-blades) for procedural blade silhouettes',
     },
     {
       name: 'maxDistance',
@@ -128,11 +129,6 @@ export const grassNode: NodeDef = {
       description: 'a Scene carrying the grass field as a render-time recipe (empty entities; the renderer picks up the grass sidecar). Compose with terrain via [scene/merge](../../scene/merge) and [core/output](../../core/output)',
     },
   ],
-  extraInputsSpec: {
-    type: 'Texture2D',
-    namePrefix: 'card',
-    addLabel: '+ Add card',
-  },
   doc: {
     summary: 'Camera-relative grass field — bills per frame, not baked into the project.',
     description: `
@@ -148,11 +144,12 @@ keep in memory. Drawing them as a camera-relative disc capped at
 whole world, so density / draw-distance trade off independently of
 terrain size.
 
-Cards are variadic. The first one is \`card_0\`; click "+ Add card"
-for \`card_1\`, \`card_2\`, …. All cards share one texture-2d-array on
-the GPU, and the optional \`typeMap\` (R channel → card index) selects
-per blade which one to sample. Use that to mix grass types — short
-clover near paths, tall meadow grass on flats, dry straw on slopes.
+Cards live on a single multi-fan-in \`cards\` socket — wire as many
+Texture2D outputs into it as you want. All cards share one texture-
+2d-array on the GPU, and the optional \`typeMap\` (R channel → card
+index) selects per blade which one to sample. Use that to mix grass
+types — short clover near paths, tall meadow grass on flats, dry
+straw on slopes.
 
 The output Scene has empty entities; the grass field lives in the
 Scene's \`grass\` sidecar, which composes through
@@ -217,22 +214,17 @@ grass stays on the flats and off the roads.
       addEdge(g, { node: toFloat.id, socket: 'texture' }, { node: heightTex.id, socket: 'texture' });
       addEdge(g, { node: heightTex.id, socket: 'texture' }, { node: grass.id, socket: 'heightTexture' });
       addEdge(g, { node: density.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
-      addEdge(g, { node: card.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
+      addEdge(g, { node: card.id, socket: 'texture' }, { node: grass.id, socket: 'cards' });
       return { graph: g, rootNodeId: 'grass' };
     },
   },
   evaluate(_ctx, inputs): { scene: SceneValue } {
     const heightTexture = inputs.heightTexture as Texture2DValue | undefined;
     const density = inputs.density as Texture2DValue | undefined;
-    // Gather card_0, card_1, … in numeric order. Skips gaps/unwired.
-    const cards: Texture2DValue[] = [];
-    const cardKeys = Object.keys(inputs)
-      .filter((k) => /^card_\d+$/.test(k))
-      .sort((a, b) => Number(a.slice(5)) - Number(b.slice(5)));
-    for (const k of cardKeys) {
-      const c = inputs[k] as Texture2DValue | undefined;
-      if (c && c.texture) cards.push(c);
-    }
+    // Multi-fan-in `cards`: every wired Texture2D arrives in
+    // edge-creation order. Filter broken / textureless entries.
+    const cardsIn = (inputs['cards'] as Texture2DValue[] | undefined) ?? [];
+    const cards: Texture2DValue[] = cardsIn.filter((c) => c && c.texture);
     // Without the essential GPU inputs there's nothing to plant — emit
     // an empty scene so partial wiring during authoring doesn't crash.
     if (!heightTexture || !density || cards.length === 0) {

@@ -60,12 +60,14 @@ function registry(): NodeRegistry {
 
 const ctx = { nodeId: 'test', subgraphPath: [] };
 
-test('polygon-list: gathers connected polygons in socket-index order', () => {
+test('polygon-list: gathers connected polygons in edge-creation order', () => {
+  // Multi-fan-in: the evaluator receives every wired Polygon as an
+  // array on the `polygons` input, ordered by the order edges were
+  // created. Two entries here → two output polygons.
   const polyA: PolygonValue = { outer: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]) };
   const polyB: PolygonValue = { outer: new Float32Array([10, 10, 11, 10, 11, 11, 10, 11]) };
   const r = polygonListNode.evaluate(ctx, {
-    polygon_0: polyA,
-    polygon_1: polyB,
+    polygons: [polyA, polyB],
   }) as { polygons: { polygons: PolygonValue[] } };
   assert.equal(r.polygons.polygons.length, 2);
   // First entry has A's coords; second has B's coords.
@@ -73,12 +75,13 @@ test('polygon-list: gathers connected polygons in socket-index order', () => {
   assert.equal(r.polygons.polygons[1]!.outer[0], 10);
 });
 
-test('polygon-list: skips unwired (undefined) inputs silently', () => {
+test('polygon-list: skips broken (undefined / wrong-shape) array entries silently', () => {
+  // Edges to a broken upstream resolve to `undefined` in the multi
+  // array; the node filters those out so partial wiring during
+  // authoring doesn't crash downstream.
   const polyA: PolygonValue = { outer: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]) };
   const r = polygonListNode.evaluate(ctx, {
-    polygon_0: polyA,
-    polygon_1: undefined,
-    polygon_2: polyA,
+    polygons: [polyA, undefined, polyA],
   }) as { polygons: { polygons: PolygonValue[] } };
   assert.equal(r.polygons.polygons.length, 2, 'undefined slot is skipped');
 });
@@ -96,14 +99,9 @@ test('for-each-polygon: runs the bridge once per polygon, merges scenes in order
   const b = addNode(g, 'poly/aabb', {
     inputValues: { center: [5, 0], size: [2, 2] },
   });
-  const list = addNode(g, 'poly/list', {
-    extraInputs: [
-      { name: 'polygon_0', type: 'Polygon', optional: true },
-      { name: 'polygon_1', type: 'Polygon', optional: true },
-    ],
-  });
-  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
-  addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
+  const list = addNode(g, 'poly/list', {});
+  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
+  addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
   const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: 'b1' },
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
@@ -156,9 +154,9 @@ test('for-each-polygon: missing bridge id → empty scene fallback', async () =>
     inputValues: { center: [0, 0], size: [2, 2] },
   });
   const list = addNode(g, 'poly/list', {
-    extraInputs: [{ name: 'polygon_0', type: 'Polygon', optional: true }],
+    /* multi-fan-in: no extras needed */
   });
-  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
+  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
   const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: '' }, // unattached
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
@@ -197,14 +195,9 @@ test('for-each-polygon: PolygonList wired to a Polygon broadcast input pickForIt
   const g = createGraph();
   const a = addNode(g, 'poly/aabb', { inputValues: { center: [-5, 0], size: [2, 2] } });
   const b = addNode(g, 'poly/aabb', { inputValues: { center: [5, 0], size: [2, 2] } });
-  const list = addNode(g, 'poly/list', {
-    extraInputs: [
-      { name: 'polygon_0', type: 'Polygon', optional: true },
-      { name: 'polygon_1', type: 'Polygon', optional: true },
-    ],
-  });
-  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
-  addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
+  const list = addNode(g, 'poly/list', {});
+  addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
+  addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
   const fep = addNode(g, 'iter/for-each-polygon', {
     inputValues: { __bridgeId: 'b2' },
     extraInputs: [{ name: 'polygon', type: 'PolygonList', optional: true }],

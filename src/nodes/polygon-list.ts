@@ -3,45 +3,34 @@ import type { NodeDef } from '../core/node-def.js';
 import type { PolygonListValue, PolygonValue } from '../core/resources.js';
 
 // Variadic combiner: turn N individual Polygons into a PolygonList.
-// Starts with no input sockets — every input is a per-instance
-// `polygon_<i>` added via the "+ Add polygon" button. Same pattern as
-// `scene/merge`; the natural way to author "here's the set of
-// districts" by hand when no subdivision op has produced the list
-// yet.
-//
-// Unconnected inputs are silently skipped (matches scene-merge's
-// partial-wiring tolerance during authoring).
-//
-// Once subdivision ops land (polygon-subdivide-grid in chunk 4, road-
-// network face extraction later), most PolygonList values will come
-// out of those ops directly rather than this combiner.
+// Single multi-fan-in socket — wire as many Polygon outputs as you
+// want into `polygons`; the evaluator hands them in as an array in
+// edge-creation order. The natural way to author "here's the set of
+// districts" by hand when no subdivision op has produced the list yet.
 
 export const polygonListNode: NodeDef = {
   id: 'poly/list',
   category: 'Polygon',
-  inputs: [],
+  inputs: [
+    {
+      name: 'polygons',
+      type: 'Polygon',
+      multi: true,
+      description: 'wire as many Polygon outputs into this socket as you want; the node bundles them into a PolygonList in edge-creation order',
+    },
+  ],
   outputs: [
     {
       name: 'polygons',
       type: 'PolygonList',
-      description: 'list of every connected input polygon, in socket-index order. Unconnected inputs are skipped',
+      description: 'list of every connected input polygon, in edge-creation order',
     },
   ],
-  extraInputsSpec: {
-    type: 'Polygon',
-    namePrefix: 'polygon',
-    addLabel: '+ Add polygon',
-  },
   doc: {
     summary: 'Variadic combiner — gather any number of Polygons into a PolygonList.',
     description: `
-Starts with no input sockets. Click "+ Add polygon" (or drag a Polygon
-output onto the phantom drop target on the left edge) to add another
-input. Each instance carries its own socket count, persisted with the
-graph.
-
-Iterates every connected input and pushes its polygon into the output
-list, in socket-index order. Unconnected sockets are silently skipped.
+One multi-fan-in input socket, \`polygons\`. Wire as many Polygon
+outputs into it as you like; edge-creation order is the list order.
 
 Useful for hand-authoring district sets ("downtown polygon",
 "residential polygon", "park polygon") to feed into
@@ -65,21 +54,21 @@ emit a PolygonList directly without going through this combiner.
       const list = addNode(g, 'poly/list', {
         id: 'list',
         position: { x: 280, y: 100 },
-        extraInputs: [
-          { name: 'polygon_0', type: 'Polygon', optional: true },
-          { name: 'polygon_1', type: 'Polygon', optional: true },
-        ],
       });
-      addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_0' });
-      addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygon_1' });
+      addEdge(g, { node: a.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
+      addEdge(g, { node: b.id, socket: 'polygon' }, { node: list.id, socket: 'polygons' });
       return { graph: g, rootNodeId: list.id };
     },
   },
   evaluate(_ctx, inputs): { polygons: PolygonListValue } {
+    const incoming = (inputs['polygons'] as PolygonValue[] | undefined) ?? [];
     const polys: PolygonValue[] = [];
-    for (const v of Object.values(inputs)) {
+    for (const v of incoming) {
+      // Skip slots that resolved to a falsy / wrong-shape value
+      // (e.g. broken upstream). Same partial-wiring tolerance the
+      // old extraInputs variant had.
       if (v && typeof v === 'object' && 'outer' in v && (v as PolygonValue).outer instanceof Float32Array) {
-        polys.push(v as PolygonValue);
+        polys.push(v);
       }
     }
     return { polygons: { polygons: polys } };

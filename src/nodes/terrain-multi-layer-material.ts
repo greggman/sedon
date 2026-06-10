@@ -1,5 +1,5 @@
 import { addEdge, addNode, createGraph } from '../core/graph.js';
-import type { InputDef, NodeDef } from '../core/node-def.js';
+import type { NodeDef } from '../core/node-def.js';
 import type {
   MaterialValue,
   TerrainLayerValue,
@@ -11,12 +11,9 @@ import type {
 // texture: R = layer 0 weight, G = layer 1, B = layer 2, A = layer 3.
 // Each layer is a `TerrainLayer` value produced by `terrain/layer`.
 //
-// Variadic layer sockets follow the same authoring pattern as
-// `scene/merge`: the node ships with no `layer_*` inputs declared
-// at the type level — users add them via the +Add input button (or a
-// demo pre-declares them via `extraInputs`), then wire each one to a
-// `terrain/layer` instance. Up to 4 are sampled by the shader; extras
-// are ignored in v1.
+// Layers wire into a single multi-fan-in `layers` socket — edge-creation
+// order maps to splat channels (first edge → R, second → G, …). Up to
+// 4 layers are sampled by the shader; extras beyond 4 are ignored.
 //
 // Pair with `geom/heightfield-from-texture` + `scene/entity` the same
 // way the old 2-layer `material/terrain` does. The shader runs
@@ -31,7 +28,13 @@ export const terrainMultiLayerMaterialNode: NodeDef = {
       name: 'splat',
       type: 'Texture2D',
       description:
-        'RGBA splat: R/G/B/A = weight for layers 0/1/2/3. Sampled at un-tiled UVs so the splat pattern spans the whole terrain',
+        'RGBA splat: R/G/B/A = weight for layers 0/1/2/3 (in edge-creation order on `layers`). Sampled at un-tiled UVs so the splat pattern spans the whole terrain',
+    },
+    {
+      name: 'layers',
+      type: 'TerrainLayer',
+      multi: true,
+      description: 'wire one to four [terrain/layer](../../terrain/layer) outputs. Edge-creation order determines splat channel (1st → R, 2nd → G, 3rd → B, 4th → A). Extras beyond 4 are ignored in v1',
     },
     {
       name: 'tile_scale',
@@ -60,11 +63,6 @@ export const terrainMultiLayerMaterialNode: NodeDef = {
       description: 'multi-layer terrain material, consumed by [terrain/renderer](../../terrain/renderer) or by an ordinary [scene/entity](../../scene/entity) on a heightfield mesh',
     },
   ],
-  extraInputsSpec: {
-    type: 'TerrainLayer',
-    namePrefix: 'layer',
-    addLabel: '+ Add layer',
-  },
   doc: {
     summary: 'Up-to-4-layer terrain material — RGBA splat selects per-pixel between authored layers.',
     description: `
@@ -82,9 +80,9 @@ has the locally-tallest height channel at each pixel; high values
 produce "painted" transitions (cobblestones poking through grass)
 rather than cross-fades.
 
-Variadic: ships with no layer sockets declared. Add them via the "+
-Add layer" button — only the first 4 are sampled by the shader; extras
-are ignored in v1.
+Layers feed into a single multi-fan-in \`layers\` socket. Edge-
+creation order is the splat-channel mapping: first edge → R, second
+→ G, third → B, fourth → A. Extras beyond 4 are silently ignored.
 `,
     sampleGraph: () => {
       const g = createGraph();
@@ -123,14 +121,9 @@ are ignored in v1.
         position: { x: 560, y: -100 },
         inputValues: { radius: 1, segments: 48, rings: 24 },
       });
-      const extras: InputDef[] = [
-        { name: 'layer_0', type: 'TerrainLayer' },
-        { name: 'layer_1', type: 'TerrainLayer' },
-      ];
       const material = addNode(g, 'terrain/material', {
         id: 'material',
         position: { x: 560, y: 200 },
-        extraInputs: extras,
         inputValues: { tile_scale: [1, 1], metallic: 0, height_blend_sharpness: 4 },
       });
       const entity = addNode(g, 'scene/entity', {
@@ -140,8 +133,8 @@ are ignored in v1.
       });
       addEdge(g, { node: grassCol.id, socket: 'texture' }, { node: layerA.id, socket: 'albedo' });
       addEdge(g, { node: rockCol.id, socket: 'texture' }, { node: layerB.id, socket: 'albedo' });
-      addEdge(g, { node: layerA.id, socket: 'layer' }, { node: material.id, socket: 'layer_0' });
-      addEdge(g, { node: layerB.id, socket: 'layer' }, { node: material.id, socket: 'layer_1' });
+      addEdge(g, { node: layerA.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
+      addEdge(g, { node: layerB.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
       addEdge(g, { node: splat.id, socket: 'texture' }, { node: material.id, socket: 'splat' });
       addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
       addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
@@ -149,16 +142,13 @@ are ignored in v1.
     },
   },
   evaluate(_ctx, inputs): { material: MaterialValue } {
-    // Variadic: scan inputs for layer_0..layer_3 in order, taking only
-    // the contiguous prefix that's actually wired. v1 caps at 4.
-    const layers: TerrainLayerValue[] = [];
-    for (let i = 0; i < 4; i++) {
-      const v = inputs[`layer_${i}`] as TerrainLayerValue | undefined;
-      if (v) layers.push(v);
-    }
+    // Multi-fan-in: every wired layer arrives as an array in edge-
+    // creation order. v1 shader samples up to 4; drop extras.
+    const incoming = (inputs['layers'] as TerrainLayerValue[] | undefined) ?? [];
+    const layers = incoming.filter((v): v is TerrainLayerValue => !!v).slice(0, 4);
     if (layers.length === 0) {
       throw new Error(
-        'terrain/material: at least one layer must be wired (use the + button to add layer_0 and connect a terrain/layer node)',
+        'terrain/material: at least one layer must be wired into the `layers` socket',
       );
     }
     return {

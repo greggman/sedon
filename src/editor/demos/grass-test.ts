@@ -101,9 +101,6 @@ export function createGrassTestDemo(): {
 
   const grass = addNode(g, 'geom/grass', {
     position: { x: COL * 3, y: ROW * 2 },
-    // card_1 is a per-instance extra socket (matches the node's
-    // extraInputsSpec namePrefix 'card'); card_0 is the static input.
-    extraInputs: [{ name: 'card_1', type: 'Texture2D', optional: true }],
     inputValues: {
       worldSize: [60, 60],
       maxDistance: 35,
@@ -146,8 +143,10 @@ export function createGrassTestDemo(): {
   addEdge(g, { node: heightScale.id, socket: 'texture' }, { node: grass.id, socket: 'heightTexture' });
   addEdge(g, { node: density.id, socket: 'texture' }, { node: grass.id, socket: 'density' });
   addEdge(g, { node: typeNoise.id, socket: 'texture' }, { node: grass.id, socket: 'typeMap' });
-  addEdge(g, { node: cardGreen.id, socket: 'texture' }, { node: grass.id, socket: 'card_0' });
-  addEdge(g, { node: cardGold.id, socket: 'texture' }, { node: grass.id, socket: 'card_1' });
+  // Both cards wire into the single multi-fan-in `cards` socket;
+  // edge-creation order is the card-index order the renderer sees.
+  addEdge(g, { node: cardGreen.id, socket: 'texture' }, { node: grass.id, socket: 'cards' });
+  addEdge(g, { node: cardGold.id, socket: 'texture' }, { node: grass.id, socket: 'cards' });
 
   // Merge terrain + grass → output.
   addEdge(g, { node: terrainEntity.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });

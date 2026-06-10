@@ -323,36 +323,15 @@ export interface EditorState {
   attachIterationBody: (nodeId: string, bodyKind: string) => void;
 
   /**
-   * Append a new per-instance dynamic input socket on a variadic node.
-   * Caller is the node's renderer, which knows the def's
-   * `extraInputsSpec` and passes the new socket's type + name prefix.
-   * The new name is auto-generated as `${namePrefix}_${k}` where k is
-   * the next free index past the base + existing extras. Dispatched as
-   * a `replaceGraph` command so it's undoable.
-   */
-  addNodeExtraInput: (
-    nodeId: string,
-    socketType: string,
-    namePrefix: string,
-    baseInputCount: number,
-  ) => void;
-
-  /**
-   * Atomic "drop on +Add" action: append a new extra input AND connect
-   * the dragged-from socket to it as a single undoable step. Mirrors
-   * `addSubgraphSocketWithEdge` for the subgraph-boundary equivalent.
-   */
-  addNodeExtraInputWithEdge: (
-    nodeId: string,
-    socketType: string,
-    namePrefix: string,
-    baseInputCount: number,
-    from: SocketRef,
-  ) => void;
-
-  /**
    * Remove a per-instance dynamic input socket plus any edges connected
    * to it. Undoable.
+   *
+   * Today only `iter/for-each-point` and `iter/for-each-polygon`
+   * populate `node.extraInputs` (for lifted body broadcast inputs);
+   * the "×" affordance gives the user an escape hatch when state gets
+   * stuck after a bridge-body change. The old user-driven "+ Add
+   * variadic input" pattern is gone — variadic now uses the
+   * `multi: true` flag on a single socket.
    */
   removeNodeExtraInput: (nodeId: string, name: string) => void;
 
@@ -2221,62 +2200,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
         mainGraph: nextMainGraph,
         graph: nextGraph,
       });
-    },
-
-    addNodeExtraInput: (nodeId, socketType, namePrefix, baseInputCount) => {
-      const state = get();
-      const node = state.graph.nodes.find((n) => n.id === nodeId);
-      if (!node) return;
-      const existing = node.extraInputs ?? [];
-      // Next free k = total socket count so far. Avoids colliding with
-      // base inputs OR existing extras.
-      const k = baseInputCount + existing.length;
-      // Extras are always optional — adding a socket shouldn't break the
-      // node until it's wired up. The node's evaluate() is responsible
-      // for tolerating undefined-valued inputs (scene-merge skips them).
-      const newInput = { name: `${namePrefix}_${k}`, type: socketType, optional: true };
-      const updatedNode: GraphNode = {
-        ...node,
-        extraInputs: [...existing, newInput],
-      };
-      const before = { graph: state.graph, rootNodeId: state.rootNodeId };
-      const after = {
-        graph: {
-          ...state.graph,
-          nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
-        },
-        rootNodeId: state.rootNodeId,
-      };
-      dispatch({ kind: 'replaceGraph', before, after });
-    },
-
-    addNodeExtraInputWithEdge: (nodeId, socketType, namePrefix, baseInputCount, from) => {
-      const state = get();
-      const node = state.graph.nodes.find((n) => n.id === nodeId);
-      if (!node) return;
-      const existing = node.extraInputs ?? [];
-      const k = baseInputCount + existing.length;
-      const socketName = `${namePrefix}_${k}`;
-      const newInput = { name: socketName, type: socketType, optional: true };
-      const updatedNode: GraphNode = {
-        ...node,
-        extraInputs: [...existing, newInput],
-      };
-      const newEdge = {
-        id: crypto.randomUUID(),
-        from,
-        to: { node: nodeId, socket: socketName },
-      };
-      const before = { graph: state.graph, rootNodeId: state.rootNodeId };
-      const after = {
-        graph: {
-          ...state.graph,
-          nodes: state.graph.nodes.map((n) => (n.id === nodeId ? updatedNode : n)),
-          edges: [...state.graph.edges, newEdge],
-        },
-        rootNodeId: state.rootNodeId,
-      };
-      dispatch({ kind: 'replaceGraph', before, after });
     },
 
     removeNodeExtraInput: (nodeId, name) => {

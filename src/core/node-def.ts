@@ -304,20 +304,6 @@ export interface NodeDef {
    */
   doc?: NodeDoc;
   /**
-   * When set, instances of this node may carry per-instance
-   * `extraInputs` appended after `inputs`. The UI shows a "+ Add"
-   * affordance on this node; clicking creates a new InputDef with
-   * `namePrefix_${nextIdx}` and the given type. Used by `scene/merge`
-   * (variadic merge) — most nodes leave this undefined and keep their
-   * static input list.
-   */
-  extraInputsSpec?: {
-    type: string;
-    namePrefix: string;
-    /** Button label, e.g. "Add scene". Defaults to "+ Add input". */
-    addLabel?: string;
-  };
-  /**
    * Optional version stamp mixed into the eval cache's per-node fingerprint.
    * Undefined for core nodes — their behavior is fixed by the kind id, so
    * the kind is the version. Subgraph wrappers set this to the inner

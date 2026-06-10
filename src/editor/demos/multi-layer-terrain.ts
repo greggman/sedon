@@ -113,12 +113,6 @@ export function createMultiLayerTerrainDemo(): {
   const material = addNode(g, 'terrain/material', {
     position: { x: COL * 2, y: ROW * 2 },
     inputValues: { tile_scale: [12, 12], metallic: 0, height_blend_sharpness: 4 },
-    extraInputs: [
-      { name: 'layer_0', type: 'TerrainLayer', optional: true },
-      { name: 'layer_1', type: 'TerrainLayer', optional: true },
-      { name: 'layer_2', type: 'TerrainLayer', optional: true },
-      { name: 'layer_3', type: 'TerrainLayer', optional: true },
-    ],
   });
 
   // Chunked-LOD renderer replaces the old heightfield-to-mesh +
@@ -179,10 +173,10 @@ export function createMultiLayerTerrainDemo(): {
   addEdge(g, { node: albedo2.id, socket: 'texture' }, { node: layer2.id, socket: 'albedo' });
   addEdge(g, { node: albedo3.id, socket: 'texture' }, { node: layer3.id, socket: 'albedo' });
 
-  addEdge(g, { node: layer0.id, socket: 'layer' }, { node: material.id, socket: 'layer_0' });
-  addEdge(g, { node: layer1.id, socket: 'layer' }, { node: material.id, socket: 'layer_1' });
-  addEdge(g, { node: layer2.id, socket: 'layer' }, { node: material.id, socket: 'layer_2' });
-  addEdge(g, { node: layer3.id, socket: 'layer' }, { node: material.id, socket: 'layer_3' });
+  addEdge(g, { node: layer0.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
+  addEdge(g, { node: layer1.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
+  addEdge(g, { node: layer2.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
+  addEdge(g, { node: layer3.id, socket: 'layer' }, { node: material.id, socket: 'layers' });
 
   addEdge(g, { node: splat.id, socket: 'texture' }, { node: material.id, socket: 'splat' });
   addEdge(g, { node: material.id, socket: 'material' }, { node: terrainRenderer.id, socket: 'material' });

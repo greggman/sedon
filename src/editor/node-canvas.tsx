@@ -35,7 +35,6 @@ import { buildCanvasMenuItems } from './canvas-menu-items.js';
 import { CanvasPanelContext } from './canvas-panel-context.js';
 import { clearCanvasData, setCanvasGraph, setCanvasOutputs } from './canvas-data.js';
 import {
-  ADD_EXTRA_INPUT_HANDLE_ID,
   ADD_INPUT_HANDLE_ID,
   ADD_OUTPUT_HANDLE_ID,
   CustomNode,
@@ -187,7 +186,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const connect = useEditorStore((s) => s.connect);
   const removeNodesAndEdges = useEditorStore((s) => s.removeNodesAndEdges);
   const addSubgraphSocketWithEdge = useEditorStore((s) => s.addSubgraphSocketWithEdge);
-  const addNodeExtraInputWithEdge = useEditorStore((s) => s.addNodeExtraInputWithEdge);
   // Project-level viewports map — used only as the initial seed for a
   // panel that hasn't recorded its own viewport for this graph yet.
   // Once the user pans/zooms in a panel, the per-panel layout-store
@@ -656,30 +654,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         return;
       }
 
-      // Phantom drop on a variadic node's "+ Add" handle: create a new
-      // extra input and connect the dropped edge to it in one undoable
-      // step.
-      if (params.targetHandle === ADD_EXTRA_INPUT_HANDLE_ID) {
-        const toNode = findNode(graph, params.target);
-        const toDef = toNode ? registry.get(toNode.kind) : undefined;
-        const spec = toDef?.extraInputsSpec;
-        if (!toDef || !spec) return;
-        const fromNode = findNode(graph, params.source);
-        if (!fromNode) return;
-        const fromDef = registry.get(fromNode.kind);
-        const fromOut = findOutputOnNode(fromNode, fromDef, params.sourceHandle ?? '');
-        if (!fromOut) return;
-        if (!types.isCompatible(fromOut.type, spec.type)) return;
-        addNodeExtraInputWithEdge(
-          params.target,
-          spec.type,
-          spec.namePrefix,
-          toDef.inputs.length,
-          { node: params.source, socket: params.sourceHandle },
-        );
-        return;
-      }
-
       const id = crypto.randomUUID();
       const color = edgeColor(graph, params.source, params.sourceHandle, registry);
       // Visual: when the target socket is multi-fan-in (declared
@@ -712,7 +686,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
         { node: params.target, socket: params.targetHandle },
       );
     },
-    [connect, setRfEdges, registry, addSubgraphSocketWithEdge, addNodeExtraInputWithEdge],
+    [connect, setRfEdges, registry, addSubgraphSocketWithEdge],
   );
 
   const isValidConnection = useCallback<IsValidConnection>(
@@ -749,16 +723,6 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           !!toNode.extraInputs?.find((i) => i.name === targetHandle)
         );
       }
-      // Phantom drop on a variadic node's "+ Add" handle: source must be
-      // a real output whose type is compatible with the spec's type.
-      if (targetHandle === ADD_EXTRA_INPUT_HANDLE_ID) {
-        const spec = toDef.extraInputsSpec;
-        if (!spec) return false;
-        const fromOut = findOutputOnNode(fromNode, fromDef, sourceHandle);
-        if (!fromOut) return false;
-        return types.isCompatible(fromOut.type, spec.type);
-      }
-
       const fromOut = findOutputOnNode(fromNode, fromDef, sourceHandle);
       const toIn =
         toDef.inputs.find((i) => i.name === targetHandle) ??

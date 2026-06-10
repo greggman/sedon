@@ -571,12 +571,6 @@ export function subgraphIdFromBoundaryKind(kind: string | undefined): {
 export const ADD_OUTPUT_HANDLE_ID = '__add_output__';
 export const ADD_INPUT_HANDLE_ID = '__add_input__';
 
-// Phantom handle id for variadic node-defs (those that declare
-// `extraInputsSpec`). Drops here create a new per-instance extra input
-// and connect the dropped edge in one undoable step. Same drag-target
-// shape as the subgraph boundary's phantom — different routing.
-export const ADD_EXTRA_INPUT_HANDLE_ID = '__add_extra_input__';
-
 // Inline-editable node title shown in the header. Two concepts:
 //   • name      — the user's chosen identifier; undefined until they
 //                 set one. Renaming to "" clears it back to undefined.
@@ -789,7 +783,6 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const removeSubgraphSocket = useEditorStore((s) => s.removeSubgraphSocket);
   const renameSubgraphSocket = useEditorStore((s) => s.renameSubgraphSocket);
   const setActiveEditing = useEditorStore((s) => s.setActiveEditing);
-  const addNodeExtraInput = useEditorStore((s) => s.addNodeExtraInput);
   const removeNodeExtraInput = useEditorStore((s) => s.removeNodeExtraInput);
   const renameNode = useEditorStore((s) => s.renameNode);
   const renameSubgraph = useEditorStore((s) => s.renameSubgraph);
@@ -1511,36 +1504,6 @@ export function CustomNode({ id, data, selected }: NodeProps) {
         )
       )}
 
-      {/* Variadic-node "+ Add" affordance — phantom drop target on the
-       * left edge plus a button. Dragging a source output onto the
-       * phantom creates a new extra socket AND the edge in one undoable
-       * step; clicking the button just adds an empty socket. Only
-       * renders when the def opts in via `extraInputsSpec`. */}
-      {def.extraInputsSpec && !boundary && (
-        <>
-          <AddExtraInputHandle
-            top={
-              inputsTop +
-              (visibleInputs.length + extraInputs.length + def.outputs.length) * ROW_HEIGHT +
-              ROW_HEIGHT / 2
-            }
-          />
-          <button
-            type="button"
-            className="nodrag nopan sedon-boundary-add"
-            onClick={() =>
-              addNodeExtraInput(
-                id,
-                def.extraInputsSpec!.type,
-                def.extraInputsSpec!.namePrefix,
-                def.inputs.length,
-              )
-            }
-          >
-            {def.extraInputsSpec.addLabel ?? '+ Add input'}
-          </button>
-        </>
-      )}
       {nodeMenu && (
         <CanvasContextMenu
           x={nodeMenu.screenX}
@@ -1553,32 +1516,6 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   );
 }
 
-// Phantom drop target for a variadic node's "+ Add" row. Highlights
-// whenever a source-side drag is in progress (the only kind we can
-// receive — extras are inputs, so the user is dragging an output here).
-function AddExtraInputHandle({ top }: { top: number }) {
-  const connection = useConnection();
-  let active = false;
-  if (connection.inProgress && connection.fromHandle) {
-    active = connection.fromHandle.type === 'source';
-  }
-  const style: React.CSSProperties = {
-    top,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-    background: '#bbb',
-    border: '1px dashed #fff',
-    boxShadow: active ? '0 0 0 3px #ffffff44, 0 0 8px #ffffffaa' : 'none',
-  };
-  return (
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={ADD_EXTRA_INPUT_HANDLE_ID}
-      style={style}
-    />
-  );
-}
 
 // Drop target on the "+ Add" row of a subgraph boundary. Adopts whatever
 // type the user is dragging — node-canvas.tsx detects the phantom id and

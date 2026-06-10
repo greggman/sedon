@@ -27,7 +27,9 @@ const baseInputs = (): { inputs: Record<string, unknown>; handles: Record<string
       heightTexture: hf.value,
       worldSize: [10, 10] as [number, number],
       density: density.value,
-      card_0: card0.value,
+      // Multi-fan-in `cards` arrives as an array; tests start with one
+      // card by default and append more for the multi-type case.
+      cards: [card0.value],
       maxDistance: 40, spacing: 0.4, bladeWidth: 0.3, bladeHeight: 0.6,
       densityScale: 1, maxSlope: 0.6, windStrength: 0.08, windSpeed: 2,
       baseColor: [0.1, 0.3, 0.1, 1], tipColor: [0.4, 0.6, 0.2, 1],
@@ -51,10 +53,12 @@ test('geom/grass emits a Scene with one grass field and no baked entities', () =
   assert.deepEqual(f.baseColor, [0.1, 0.3, 0.1], 'Color input → rgb only (alpha dropped)');
 });
 
-test('geom/grass gathers card_0, card_1, … in numeric order for multi-type', () => {
+test('geom/grass packs every entry of the multi `cards` array in order', () => {
   const { inputs } = baseInputs();
-  inputs.card_1 = fakeTex('card1').value;
-  inputs.card_2 = fakeTex('card2').value;
+  // Append two more cards to the array — edge-creation order in real
+  // graphs becomes array order here.
+  (inputs.cards as unknown[]).push(fakeTex('card1').value);
+  (inputs.cards as unknown[]).push(fakeTex('card2').value);
   const out = grassNode.evaluate({}, inputs) as { scene: SceneValue };
   const f = out.scene.grass![0]!;
   assert.equal(f.cards.length, 3, 'three types');
@@ -64,9 +68,12 @@ test('geom/grass gathers card_0, card_1, … in numeric order for multi-type', (
 });
 
 test('geom/grass with missing essential inputs emits an empty scene (partial-wiring safe)', () => {
-  for (const drop of ['heightTexture', 'density', 'card_0']) {
+  // `cards` is now multi-fan-in — "missing" means an empty array
+  // rather than a deleted key. Test all three failure modes here.
+  for (const drop of ['heightTexture', 'density', 'cards']) {
     const { inputs } = baseInputs();
-    delete inputs[drop];
+    if (drop === 'cards') inputs.cards = [];
+    else delete inputs[drop];
     const out = grassNode.evaluate({}, inputs) as { scene: SceneValue };
     assert.deepEqual(out.scene.entities, [], `missing ${drop} → empty`);
     assert.equal(out.scene.grass, undefined, `missing ${drop} → no grass field`);

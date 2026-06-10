@@ -87,14 +87,14 @@ That's the whole pipeline. To recolour the cube, no extra node:
 
 MORE THAN ONE OBJECT. \`core/output.scene\` takes a SINGLE Scene.
 To render multiple objects, combine them with \`scene/merge\` first:
-  cube/entity → scene/merge.scene_0
-  sphere/entity → scene/merge.scene_1
+  cube/entity → scene/merge.scenes
+  sphere/entity → scene/merge.scenes
   scene/merge.scene  →  core/output.scene
-\`scene/merge\` is variadic — it starts with NO input sockets. Use
-\`addNodeExtraInput\` to grow it one slot at a time before calling
-\`connect\` on those slots. Each call appends a slot named
-\`scene_0\`, \`scene_1\`, … in order. The same pattern applies to any
-node whose listNodeKinds entry shows \`extraInputsSpec\`.
+\`scene/merge.scenes\` is a MULTI-FAN-IN socket: you can connect any
+number of Scene outputs into the same socket name and the merge
+concatenates them in edge-creation order. \`listNodeKinds\` flags
+multi sockets with \`multi: true\` on the InputDef; treat any such
+socket the same way.
 
 DEFAULTS EXIST. Don't wire a constant node just to feed a literal
 value. Every input has a default; if you want a different scalar /
@@ -152,9 +152,7 @@ Codes you'll see and what to do:
   socket_not_found     → the socket name is wrong on that node.
                          \`detail.side\` tells you whether it's an
                          input or output. Re-read the node's
-                         schema in listNodeKinds. For variadic
-                         nodes, the slot may not exist yet — add
-                         it with addNodeExtraInput first.
+                         schema in listNodeKinds.
   type_mismatch        → either the output type can't connect to
                          the input type (check the broadcast list
                          above), or a setInputValue got a value
