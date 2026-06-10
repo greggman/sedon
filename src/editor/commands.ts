@@ -5,6 +5,7 @@ import { loadDemoSaveFile } from './demos/demo-loader.js';
 import { getDockviewApi } from './dockview-handle.js';
 import { useLayoutStore } from './layout-store.js';
 import { layoutGraph, type NodeMeasurement } from './auto-layout.js';
+import { activePanelIsPreview, getActivePreview } from './preview-registry.js';
 import { buildRegistry } from './registry.js';
 import { requestNodeRename, requestSubgraphRename } from './rename-bus.js';
 import { getActiveCanvasEl, getActiveCanvasRf, getCanvasRf } from './rf-registry.js';
@@ -123,12 +124,36 @@ function defaultTitle(component: string): string {
   }
 }
 
-// Frame selected nodes in the active canvas (or fit-all if nothing is
-// selected). Mirrors the in-canvas F-key handler so the View menu and
-// shortcut share one definition.
+// `View → Frame Selected` action. Routes based on which panel type
+// is currently active so the same menu item / shortcut works in
+// both contexts:
+//   • Canvas active → fit React Flow viewport to selected nodes (or
+//     all nodes if nothing is selected).
+//   • Preview active → orbit camera frames the selected entity (or
+//     the whole scene if nothing is selected).
+//
+// Function name is kept (callers depend on it) but it now also
+// covers the preview path. When BOTH a preview and canvas panel
+// exist, dockview's `activePanel` wins; otherwise we prefer the
+// canvas (default focus in most layouts).
 export function frameSelectedInActiveCanvas(): void {
+  if (activePanelIsPreview()) {
+    const preview = getActivePreview();
+    if (preview) {
+      preview.frameSelected();
+      return;
+    }
+  }
   const rf = getActiveCanvasRf();
-  if (!rf) return;
+  if (!rf) {
+    // Canvas isn't focused — try the preview as a fallback before
+    // bailing. Covers the case where the user clicked the menu bar
+    // (dockview's active panel is now the menu) but they were last
+    // looking at a preview.
+    const preview = getActivePreview();
+    if (preview) preview.frameSelected();
+    return;
+  }
   const allNodes = rf.getNodes();
   if (allNodes.length === 0) return;
   const selected = allNodes.filter((n) => n.selected);

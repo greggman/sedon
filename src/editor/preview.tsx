@@ -10,6 +10,7 @@ import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordina
 import { useLayoutStore } from './layout-store.js';
 import { openGraphInCanvas } from './open-graph.js';
 import { applyLookAround } from './orbit-camera.js';
+import { registerPreview, unregisterPreview } from './preview-registry.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
@@ -106,6 +107,12 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // Last cursor position (clientX/Y, in CSS px). Updated on pointermove
   // even outside drag so F-on-hover knows where to pick.
   const lastCursorRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // Latest `frameSelected` closure — refreshed every render of the
+  // big input effect. Exposed through `preview-registry` so the
+  // `View → Frame Selected` menu action can dispatch into the active
+  // preview panel without prop-drilling. Defaults to a no-op until
+  // the input effect runs.
+  const frameSelectedRef = useRef<() => void>(() => {});
   // PreviewTile takes `onTileReady` as a dependency — a fresh callback
   // every Preview render would force it to tear down + rebuild the
   // SceneRenderer (and its batches) on every state change, which makes
@@ -315,6 +322,20 @@ export function Preview({ panelId }: PreviewProps = {}) {
     };
   }, [setDevice]);
 
+  // Register this preview's `frameSelected` handler so the
+  // `View → Frame Selected` menu action can dispatch into the active
+  // preview when no canvas is focused. The closure inside the ref is
+  // re-assigned by the input effect on every render; we forward
+  // through a stable wrapper so the registry doesn't need to be
+  // re-bumped each time.
+  useEffect(() => {
+    if (!panelId) return;
+    registerPreview(panelId, {
+      frameSelected: () => frameSelectedRef.current(),
+    });
+    return () => unregisterPreview(panelId);
+  }, [panelId]);
+
   // Wrapper-level input. Every drag/wheel/key event lands here regardless
   // of which tile the pointer is over, so we don't duplicate handlers per
   // tile. The wrapper itself is the focus target for keyboard input —
@@ -509,22 +530,29 @@ export function Preview({ panelId }: PreviewProps = {}) {
       return null;
     }
 
-    // F-key target: frame whatever is currently selected. A no-op if
-    // nothing is selected — matches Blender / Maya / Unity, where F is
-    // "view selected" and a no-op without a selection. The user picks
-    // first (click-to-select or right-click → Frame menu) and then F
-    // re-frames whatever's outlined.
+    // F-key target: frame whatever is currently selected. Falls back
+    // to FRAMING THE WHOLE SCENE when nothing is selected — Blender /
+    // Maya behaviour where F with no selection means "fit all" rather
+    // than do-nothing. (The do-nothing branch used to land users with
+    // an empty preview when the scene was far from the default camera
+    // pose; the fit-all fallback recovers visibility.)
     function frameSelected(): void {
       const sel = selectionRef.current;
-      if (!sel) return;
       // Any registered tile's renderer can answer — selection is
       // mirrored to every tile via applySelection, so they all carry
       // the same matched entities + transforms. Use the first one.
       const tile = tilesRef.current.values().next().value;
       if (!tile) return;
-      const bounds = tile.renderer.getSelectionBounds(sel);
+      const bounds = sel
+        ? tile.renderer.getSelectionBounds(sel)
+        : tile.renderer.getSceneBounds();
       if (bounds) frameCameraToBounds(bounds.center, bounds.radius);
+      else frameSceneDefault();
     }
+    // Publish the latest closure to the ref so the panel-registry
+    // effect (below) and any external command (View → Frame Selected
+    // from the menu / palette) can call it without prop-drilling.
+    frameSelectedRef.current = frameSelected;
 
     // Click-to-select: pick at (clientX, clientY) and outline the hit
     // without moving the camera. Plain left-click → select. The F-key

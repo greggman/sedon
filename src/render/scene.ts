@@ -197,6 +197,14 @@ export interface SceneRenderer {
    * because its geometry carries its CpuMeshRef.
    */
   getSelectionBounds(sel: SceneSelection): { center: [number, number, number]; radius: number } | null;
+  /**
+   * World-space bounding sphere of EVERY entity in the scene — the
+   * "frame all" fallback for `View → Frame Selected` when there's no
+   * active selection. Same caveat as `getSelectionBounds`: entities
+   * whose geometry has no CPU mesh are skipped. Returns `null` for an
+   * empty scene.
+   */
+  getSceneBounds(): { center: [number, number, number]; radius: number } | null;
 }
 
 /** What `setSelection` interprets as "the selection." */
@@ -1514,7 +1522,13 @@ export function createSceneRenderer(
     return prov.originNodeId === sel.originNodeId;
   }
 
-  function getSelectionBounds(sel: SceneSelection): { center: [number, number, number]; radius: number } | null {
+  // Shared aabb-accumulator used by both Frame Selected and the
+  // Frame All fallback. `match` returns true for entities that should
+  // contribute to the bounds; pass `() => true` for "frame the whole
+  // scene", or a selection check for "frame just the selection."
+  function entityBounds(
+    match: (provenance: SceneEntity['provenance']) => boolean,
+  ): { center: [number, number, number]; radius: number } | null {
     let any = false;
     let mnx = Infinity, mny = Infinity, mnz = Infinity;
     let mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
@@ -1522,7 +1536,7 @@ export function createSceneRenderer(
       const local = geometryLocalAabb(b.geometry);
       if (!local) continue;
       for (const e of b.entities) {
-        if (!entityMatchesSelection(e.provenance, sel)) continue;
+        if (!match(e.provenance)) continue;
         const t = e.transform;
         // Transform all 8 local-AABB corners — needed because the
         // entity's transform might rotate/scale, so the world-space
@@ -1549,6 +1563,14 @@ export function createSceneRenderer(
     const dy = (mxy - mny) * 0.5;
     const dz = (mxz - mnz) * 0.5;
     return { center: [cx, cy, cz], radius: Math.sqrt(dx * dx + dy * dy + dz * dz) };
+  }
+
+  function getSelectionBounds(sel: SceneSelection): { center: [number, number, number]; radius: number } | null {
+    return entityBounds((prov) => entityMatchesSelection(prov, sel));
+  }
+
+  function getSceneBounds(): { center: [number, number, number]; radius: number } | null {
+    return entityBounds(() => true);
   }
 
   function ensurePickResources(batchCount: number): PickResources {
@@ -1974,6 +1996,7 @@ export function createSceneRenderer(
     getPickInfo,
     setSelection,
     getSelectionBounds,
+    getSceneBounds,
     render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, time = 0 }) {
       const [width, height] = size;
       // Acquire intermediates for THIS size. If we previously held a
