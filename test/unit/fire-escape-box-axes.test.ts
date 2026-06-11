@@ -105,6 +105,28 @@ test('fire-escape-assembled uses math/add for the top-module Z placement', () =>
   assert.ok(kinds.has('math/add'), 'expected math/add in fire-escape-assembled');
 });
 
+test('fire-escape-assembled wires bottom_height + top_height to actual placement (no longer declared-but-ignored)', () => {
+  // The two inputs used to be present on the SubgraphDef surface
+  // but with nothing on the inside reading them — comments called it
+  // out as a TODO. Verify both are now consumed somewhere in the
+  // inner graph.
+  const sg = buildFireEscapeAssembledSubgraph();
+  const inputNode = sg.graph.nodes.find((n) => n.id === sg.inputNodeId)!;
+  const edgesFromInput = sg.graph.edges.filter((e) => e.from.node === inputNode.id);
+  const wiredInputs = new Set(edgesFromInput.map((e) => e.from.socket));
+  assert.ok(wiredInputs.has('bottom_height'), 'bottom_height must be wired into the inner graph');
+  assert.ok(wiredInputs.has('top_height'), 'top_height must be wired into the inner graph');
+});
+
+test('fire-escape-top no longer declares an unused top_height input', () => {
+  // The roof ladder is intrinsic to the top module; placement above
+  // the floor stack is the assembled subgraph's job. The inner
+  // top_height input was dead weight (`void inputNode;`) — keep it
+  // gone so the API surface tells the truth.
+  const sg = buildFireEscapeTopModuleSubgraph();
+  assert.deepEqual(sg.inputs, [], 'fire-escape-top should have no parametric inputs');
+});
+
 test('water-tank: 4 legs share ONE box geometry via grid-distribute + instance-on-points', () => {
   const sg = buildWaterTankSubgraph();
   const kinds: Record<string, number> = {};

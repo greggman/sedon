@@ -251,9 +251,12 @@ export function buildFireEscapeTopModuleSubgraph(): SubgraphDef {
     id,
     label: 'Fire escape · top module',
     category: 'Subgraphs',
-    inputs: [
-      { name: 'top_height', type: 'Float', default: 2.0 },
-    ],
+    // The roof ladder's vertical extent is intrinsic to this module
+    // (geometry is hard-baked at 2 m). Placement of the whole module
+    // relative to the floor stack — i.e. how far above the floor stack
+    // the platform sits — is the assembled subgraph's responsibility,
+    // not this one's, so no `top_height` input here.
+    inputs: [],
     outputs: [{ name: 'scene', type: 'Scene' }],
     graph: g,
     inputNodeId: inputNode.id,
@@ -340,26 +343,38 @@ export function buildFireEscapeAssembledSubgraph(): SubgraphDef {
   addEdge(g, { node: floorScatter.id, socket: 'scene' }, { node: floorLift.id, socket: 'scene' });
   addEdge(g, { node: floorLiftVec.id, socket: 'value' }, { node: floorLift.id, socket: 'translate' });
 
-  // Bottom module wrapped + lifted to Z=1.5.
+  // Bottom module wrapped + lifted to Z = bottom_height. The input
+  // controls the vertical offset of the bottom landing platform
+  // within this assembly's local frame; the wall-scatter that
+  // ultimately places the fire escape then lifts the whole thing so
+  // the bottom landing sits at street level.
   const bottomWrap = addNode(g, 'subgraph/fire-escape-bottom', {
     position: { x: COL * 2, y: ROW * 3 },
   });
+  const bottomLiftVec = addNode(g, 'math/vec3-from-floats', {
+    position: { x: COL * 4, y: ROW * 3 },
+    inputValues: { x: 0, y: 0, z: 0 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'bottom_height' }, { node: bottomLiftVec.id, socket: 'z' });
   const bottomShift = addNode(g, 'scene/transform', {
     position: { x: COL * 5, y: ROW * 3 },
-    inputValues: { translate: [0, 0, 1.5], rotate: [0, 0, 0], scale: [1, 1, 1] },
+    inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
   });
   addEdge(g, { node: bottomWrap.id, socket: 'scene' }, { node: bottomShift.id, socket: 'scene' });
+  addEdge(g, { node: bottomLiftVec.id, socket: 'value' }, { node: bottomShift.id, socket: 'translate' });
 
-  // Top module wrapped + lifted to Z = totalSpan + 1 via math/add.
+  // Top module wrapped + lifted to Z = totalFloorSpan + top_height.
+  // `top_height` is the gap between the top of the floor stack and
+  // the roof landing platform. math/add does the addition the way
+  // the city scenes already do scalar math.
   const topWrap = addNode(g, 'subgraph/fire-escape-top', {
     position: { x: COL * 2, y: ROW * 4 },
   });
-  addEdge(g, { node: inputNode.id, socket: 'top_height' }, { node: topWrap.id, socket: 'top_height' });
   const topZ = addNode(g, 'math/add', {
     position: { x: COL * 3, y: ROW * 4.5 },
-    inputValues: { b: 1 },
   });
   addEdge(g, { node: totalFloorSpan.id, socket: 'result' }, { node: topZ.id, socket: 'a' });
+  addEdge(g, { node: inputNode.id, socket: 'top_height' }, { node: topZ.id, socket: 'b' });
   const topLiftVec = addNode(g, 'math/vec3-from-floats', {
     position: { x: COL * 4, y: ROW * 3.5 },
     inputValues: { x: 0, y: 0, z: 0 },

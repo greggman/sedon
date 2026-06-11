@@ -1,22 +1,35 @@
 # TODOs
 
-- [ ] need LODs so trees work?
+---
+Suggested next steps in order
+Use core/add to make fire-escape-assembled properly honour its bottom_height/top_height inputs (currently they're declared but ignored — the comments call this out).
+Apply the modular pattern to the parametric office: office-ground-floor / office-upper-floor / office-roof-cap / office-assembled. Same Houdini decomposition that landed for fire escapes.
+Then back to facade work — wall billboards / signs
+---
+
+- [ ] undo does not always work (need repo)
+- [ ] Add blender style camera widgets
 - [ ] move options to hash
-- [ ] scene-merge needs to work even if it's missing an input
+- [ ] need LODs so trees work?
+- [ ] We need random buildings again. At the moment they are all the same
+  building. I think Blender/Houdini must have some node that given inputs
+  like maybe a lot? Or current lot + adjacent lots, selects which building
+  subgraph to execute?
+- [ ] add more tests - we called "scripts/verify-outline-clamp.mjs"
+  a regression test but it's not useful if it's not run. We need to run
+  all the test.
 - [ ] flip-normals node
-- [ ] points needs to be able to zoom out further
-- [ ] points probably needs a points only mode - no lines
+- [ ] do we need leaf-mesh? It seems very specific. It kind of looks like
+  a portion of a sphere which we could just add. It does have a few unique-ish
+  features. Just wondering if a more parameterized sphere and or some modifiers
+  might be more useful?
 - [ ] need a way to include scenes so they can be updated in separate files?
-- [*] actions should carry descriptions - vs menus having different descriptions?
 - [ ] Test rename with multiple asset views open. 
   Also test Add New Subgraph which indirectly does a rename
-- [ ] dragging and dropping cushion from asset to canvas in furniture scene shows no node preview. Should it? It has defaults right? Did I forgot why this doesn't work or is it a bug?
-- [ ] deleting subgraph node from street bugs
-  - [ ] stops displaying preview
-  - [ ] undo does not restore
+- [ ] dragging and dropping cushion from asset to canvas in the furniture scene shows no node preview. Should it? It has defaults right? Did I forgot why this doesn't work or is it a bug?
 - [ ] subdivision, loop-cut, smooth, edge-split
   same blocker as bevel — needs the connectivity layer.
-- [ ] add nodes for city
+- [*] add nodes for city
   What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
 - [*] import png, jpg, webp (use URL where # is local)
   - [ ] drag and drop
@@ -70,20 +83,17 @@ based on distance from the camera.
   - [ ] list, icon
   - [ ] drag into graph
 - [ ] double click frames?
-- [ ] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders)
 - [ ] future nodes
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
 - [ ] left/skeleton needs to start from bottom center?
 - [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
-- [ ] design should not be "extra inputs". It should be "array of input name,type"
 - [ ] move the WebGPU parts to a worker
 - [ ] need a better UI than 3 numbers for setting a direction 
 - [ ] change sky to use a lookup table for speed - need to recompute
   when the sun changes.
 - [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
 - [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to list?
-- [ ] is there a list/array entry type
 - [ ] editable texture? a node with a pixel editor?
   This is mostly for drawing terrain? Though I can
   guess you'd want to edit terrain in the preview
@@ -128,6 +138,39 @@ based on distance from the camera.
 
 ## --- done ---
 
+- [*] select a connection and pick "add node" should connect the node
+- [*] is there a list/array entry type (added `multi: true`)
+- [*] design should not be "extra inputs". It should be "array of input name,type" (added `multi: true`)
+- [*] how many nodes should have an array of inputs? (added `multi: true`)
+- [*] WebMCP should probably mention minimum knowledge like you need to connect scenes to core/output OR to a subscene-output. I'm not sure what else to add it's just that I tried WebMCP today and the service made a graph but failed to connect the nodes to the output. That's one example where maybe some tips in the WebMCP data would help.
+- [*] do we need transform-points?
+- [*] we need to rename nodes. core/grid is a texture. vs core/grid-distribute
+  which is a point generator. These are hard to find. It seems like we should name them starting with what they generate? scene-transform, points-transform, texture-grid, points-grid, etc... I don't know if that's the best naming scheme.
+  I get that it's a big chore to rename all of these and I get that existing
+  data will break but it feels like it's better to fix now if it will make the
+  app easier to use.
+- [*] make WebMCP api resilient to bad input
+- [*] undo needs to work on the graph node placement
+- [*] rooftop water tank needs TLC
+- [*] preview 'F' with nothing selected should frame the entire scene
+- [*] canvas 'F' with nothing select should frame the entire graph
+- [*] label all GPU resources (buffers, textures, samplers, pipelines, bindgroups, bingrouplayouts, encoders, renderPassEncoders, computePassEncoders, samplers)
+- [*] at build time, can you run the auto-layout code on the demos scenes graphs and subgraphs before saving?git 
+- [*] scrubbing numbers should not add to undo - happens only on scene-input in fire escape assembled.
+- [*] some operations are 2 undos, they should be one. Delete a node with  connections for example is one operation to the user but it takes two undos. Can we fix that? I'm not sure what the right way to fix it is but my guess would be to add a "play-until-end-marker" undo command and "end-play-marker" so where as before the undo-stack was ["remove-connections", "delete-nodes"], the new undo-stack would be ["end-play-marker", "remove-connections","delete-nodes", "play-until-end-marker"]. On picking undo, the system pops "play-until-end-marker", which puts it in a state to continue playing undo commands from the stack until it hits "end-play-marker". "play-until-end-marker" would need to increment some count and "end-play-marker"
+would decrement some count and the system would only stop when the count is 0.
+That way, if multi-undo sequences can be nested later when they need to be. Another
+way would be a batch command that can nest other commands.
+- [*] preview selection rendering broke - it doesn't render after picking
+  or unpicking
+- [*] scene-merge needs to work even if it's missing an input
+- [*] I feel like the city layout is not what blender/houdini would do.
+  They seem to define areas and have the areas filled with buildings.
+- [*] add turn in place camera controls (maybe modifier key?)
+- [*] city camera has issue - jumps forward
+- [*] points needs to be able to zoom out further
+- [*] points probably needs a points only mode - no lines
+- [*] actions should carry descriptions - vs menus having different descriptions?
 - [*] remove `layout: 'auto'`
 - [*] copy/copy/paste nodes
 - [*] need to be able to set default on subgraph-input
