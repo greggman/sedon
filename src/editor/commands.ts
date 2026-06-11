@@ -337,7 +337,18 @@ export function addNodeAtFlowPosition(
   if (inserted) return inserted;
   // Plain add otherwise.
   const id = crypto.randomUUID();
-  rf.addNodes({ id, type: 'sedon', position, data: { kind } });
+  // Mark the new node `selected: true` AND deselect every existing
+  // node. Two things this gets us:
+  //   1. RF's `elevateNodesOnSelect` puts the new node above any
+  //      previously-dragged node whose zIndex is still elevated from
+  //      its drag. Without this, "drag node A, add node B" can leave
+  //      B rendering behind A and nearly invisible.
+  //   2. Matches the modern-editor expectation that the newly-added
+  //      node is the active selection — ready to drag, delete, etc.
+  rf.setNodes((nodes) => [
+    ...nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+    { id, type: 'sedon', position, data: { kind }, selected: true },
+  ]);
   // Pass position through to the store too; the RF instance has it
   // locally, but the store's GraphNode is what gets serialised at
   // save time, and without this the position wouldn't survive a

@@ -51,11 +51,18 @@ const coreTypes = createCoreTypeRegistry();
 // Stored per editing context (main + each subgraph) so navigating back to a
 // graph restores how you had it framed.
 //
-// `mode` toggles between perspective and orthographic projection (Blender
-// numpad-5 / camera gizmo). In ortho mode, `orthoHeight` is the world-space
-// height of the view frustum at the target plane; we keep distance in sync
-// for ray casting / picking but the projection ignores it. Both fields are
-// optional so older saves load cleanly as perspective.
+// `mode` is the projection ('persp' / 'ortho'). `orthoHeight` is the
+// world-space height of the view frustum at the target plane while in
+// ortho — ignored in persp. All fields are optional so older saves
+// load cleanly as perspective.
+//
+// `snapBackToPerspOnOrbit` is a transient flag (Blender-style): set
+// when the user clicks an axis dot on the camera gizmo (the
+// numpad-1/3/7 equivalent), cleared by either the persp/ortho
+// toggle (numpad-5 — sticky) or by the next orbit drag (which also
+// flips `mode` back to 'persp'). Persisted alongside `mode` so a
+// reload doesn't change orbit-drag behaviour out from under you,
+// but in practice the flag clears within one user input.
 export interface CameraState {
   yaw: number;
   pitch: number;
@@ -63,6 +70,7 @@ export interface CameraState {
   target: [number, number, number];
   mode?: 'persp' | 'ortho';
   orthoHeight?: number;
+  snapBackToPerspOnOrbit?: boolean;
 }
 
 // React Flow viewport (graph canvas pan + zoom). Stored per editing

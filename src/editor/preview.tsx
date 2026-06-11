@@ -74,6 +74,7 @@ function cloneCamera(c: OrbitCamera): OrbitCamera {
     mode: c.mode ?? 'persp',
   };
   if (c.orthoHeight !== undefined) out.orthoHeight = c.orthoHeight;
+  if (c.snapBackToPerspOnOrbit !== undefined) out.snapBackToPerspOnOrbit = c.snapBackToPerspOnOrbit;
   return out;
 }
 
@@ -461,7 +462,24 @@ export function Preview({ panelId }: PreviewProps = {}) {
         const r = multiply(rotationX(cam.pitch), rotationY(cam.yaw));
         const rightX = r[0]!, rightY = r[4]!, rightZ = r[8]!;
         const upX = r[1]!, upY = r[5]!, upZ = r[9]!;
-        const panSens = 0.0025 * cam.distance;
+        // World units per cursor pixel.
+        //   • Ortho: the renderer maps a vertical screen span of
+        //     `canvas.height` pixels to a vertical world span of
+        //     `orthoHeight`. So `worldPerPixel = orthoHeight /
+        //     canvas.height` gives EXACT cursor-stick on the target
+        //     plane (the same factor works for horizontal because
+        //     ortho's aspect-matched width cancels out). Without
+        //     this the pan ran at the persp formula's distance-based
+        //     speed regardless of how far the user had zoomed in
+        //     orthographically — felt broken at high zoom.
+        //   • Persp: keep the existing approximation. A perfect
+        //     cursor-stick would need a per-cursor inverse-project,
+        //     and the `0.0025 * distance` heuristic is close enough
+        //     to feel right at typical orbit distances.
+        const gridHeight = grid.clientHeight || 1;
+        const panSens = cam.mode === 'ortho'
+          ? (cam.orthoHeight ?? cam.distance * 2 * Math.tan(PREVIEW_FOV_Y / 2)) / gridHeight
+          : 0.0025 * cam.distance;
         const px = -dx * panSens;
         const py = dy * panSens;
         cam.target[0] += rightX * px + upX * py;
@@ -470,6 +488,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
       } else if (lookingAround) {
         applyLookAround(cam, dx, dy, 0.005);
       } else {
+        // First orbit drag after an axis-dot snap flips ortho → persp
+        // (matches Blender numpad-1/3/7 → drag). Skipped when the
+        // user explicitly entered ortho via the persp/ortho toggle
+        // (that path clears `snapBackToPerspOnOrbit`).
+        if (cam.snapBackToPerspOnOrbit && cam.mode === 'ortho') {
+          cam.mode = 'persp';
+          cam.snapBackToPerspOnOrbit = false;
+        }
         const sens = 0.005;
         // Horizontal drag flips sign: dragging right rotates the camera
         // LEFT around the target (matches Blender / Maya — the scene
@@ -518,7 +544,18 @@ export function Preview({ panelId }: PreviewProps = {}) {
       e.preventDefault();
       const cam = cameraRef.current;
       const factor = Math.exp(e.deltaY * 0.001);
-      cam.distance = Math.max(0.5, Math.min(2500, cam.distance * factor));
+      // In ortho mode the projection ignores `distance` — view scale
+      // is controlled by `orthoHeight`. Scaling `distance` would do
+      // nothing visible (the wheel would feel broken). Mirror the
+      // dolly gizmo: scale orthoHeight while in ortho, distance in
+      // persp.
+      if (cam.mode === 'ortho') {
+        const PERSP_FOV_Y = (60 * Math.PI) / 180;
+        const baseH = cam.orthoHeight ?? cam.distance * 2 * Math.tan(PERSP_FOV_Y / 2);
+        cam.orthoHeight = Math.max(0.01, Math.min(10000, baseH * factor));
+      } else {
+        cam.distance = Math.max(0.5, Math.min(2500, cam.distance * factor));
+      }
       const id = effectiveGraphIdRef.current;
       commitCamera(id, cameraRef.current);
       requestRender();

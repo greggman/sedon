@@ -16,6 +16,7 @@ export interface TweenTarget {
   orthoHeight?: number;
   target?: [number, number, number];
   mode?: 'persp' | 'ortho';
+  snapBackToPerspOnOrbit?: boolean;
 }
 
 export interface CameraTweenHandle {
@@ -53,6 +54,9 @@ export function tweenCamera(
 ): CameraTweenHandle {
   // mode flips immediately — animating projection types looks wrong.
   if (to.mode !== undefined) cam.mode = to.mode;
+  // snapBackToPerspOnOrbit also flips immediately; it's a flag, not
+  // a continuous quantity.
+  if (to.snapBackToPerspOnOrbit !== undefined) cam.snapBackToPerspOnOrbit = to.snapBackToPerspOnOrbit;
 
   // Snapshot of where we start and the targets we'll lerp to. We
   // resolve the yaw target against the shortest-arc rule once, up

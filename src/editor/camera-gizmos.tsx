@@ -123,10 +123,6 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     tweenRef.current = null;
   };
 
-  // Did the user just snap to an axis? If so, the next orbit drag
-  // flips the projection back to perspective (matches Blender).
-  const recentlySnappedRef = useRef(false);
-
   const cam = cameraRef.current;
   const axes = buildAxisProjections(cam.yaw, cam.pitch);
 
@@ -159,9 +155,20 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     const c = cameraRef.current;
     const fovY = PERSP_FOV_Y;
     const orthoH = c.orthoHeight ?? c.distance * 2 * Math.tan(fovY / 2);
+    // Axis-dot click is the Blender numpad-1/3/7 equivalent — flips
+    // to ortho AND sets `snapBackToPerspOnOrbit` so the next orbit
+    // drag (canvas OR gizmo) returns to persp. The persp/ortho
+    // toggle (numpad-5 equivalent) clears the flag, making ortho
+    // sticky.
     tweenRef.current = tweenCamera(
       c,
-      { yaw: snap.yaw, pitch: snap.pitch, mode: 'ortho', orthoHeight: orthoH },
+      {
+        yaw: snap.yaw,
+        pitch: snap.pitch,
+        mode: 'ortho',
+        orthoHeight: orthoH,
+        snapBackToPerspOnOrbit: true,
+      },
       180,
       () => requestRender(),
     );
@@ -169,7 +176,6 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
       tweenRef.current = null;
       onCommit();
     });
-    recentlySnappedRef.current = true;
   };
 
   const onOrbitPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -213,15 +219,16 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
       const total = Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY);
       if (total < CLICK_DRAG_THRESHOLD_PX) return;
       drag.pendingDot = null;
-      // First orbit drag after an axis snap flips ortho → persp
-      // (matches Blender). Reset the marker now that the user is
-      // committing to a drag instead of a click.
-      if (recentlySnappedRef.current && cameraRef.current.mode === 'ortho') {
-        cameraRef.current.mode = 'persp';
-      }
-      recentlySnappedRef.current = false;
     }
     const c = cameraRef.current;
+    // First orbit drag after an axis-dot snap flips ortho → persp
+    // (matches Blender numpad-1/3/7 → drag). Skipped when the user
+    // explicitly entered ortho via the persp/ortho toggle (that
+    // path clears `snapBackToPerspOnOrbit`).
+    if (c.snapBackToPerspOnOrbit && c.mode === 'ortho') {
+      c.mode = 'persp';
+      c.snapBackToPerspOnOrbit = false;
+    }
     const sens = 0.01;
     // Horizontal sign matches the canvas-orbit handler in preview.tsx.
     c.yaw -= dx * sens;
@@ -328,7 +335,21 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     const upX = sp * sy;
     const upY = cp;
     const upZ = sp * cy;
-    const sens = (c.mode === 'ortho' ? (c.orthoHeight ?? 1) : c.distance) * 0.0025;
+    // World units per cursor pixel. In ortho, lock to the actual
+    // renderer mapping (orthoHeight / canvas-pixel-height) so a
+    // 100 px drag moves the scene by exactly 100 px of the rendered
+    // view — same "cursor sticks" semantics as the canvas pan in
+    // preview.tsx. We find the tile's canvas via DOM walk because
+    // the gizmo is mounted next to it in the tile.
+    let sens: number;
+    if (c.mode === 'ortho') {
+      const tileEl = (e.currentTarget as Element).closest('.sedon-preview-tile');
+      const canvasEl = tileEl?.querySelector('canvas') as HTMLCanvasElement | null;
+      const canvasH = canvasEl?.clientHeight || 1;
+      sens = (c.orthoHeight ?? c.distance * 2 * Math.tan(PERSP_FOV_Y / 2)) / canvasH;
+    } else {
+      sens = c.distance * 0.0025;
+    }
     c.target[0] -= rightX * dx * sens;
     c.target[1] -= rightY * dx * sens;
     c.target[2] -= rightZ * dx * sens;
@@ -371,7 +392,10 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
         c.orthoHeight = c.distance * 2 * Math.tan(PERSP_FOV_Y / 2);
       }
     }
-    recentlySnappedRef.current = false;
+    // The explicit toggle is the "make my choice sticky" gesture —
+    // clear the snap-back flag whether we just entered ortho or
+    // persp. A subsequent orbit drag now does NOT change the mode.
+    c.snapBackToPerspOnOrbit = false;
     requestRender();
     onCommit();
   };
