@@ -14,6 +14,12 @@ import {
   buildOfficeUpperFloorSubgraph,
 } from './city-office.js';
 import {
+  buildApartmentAssembledSubgraph,
+  buildApartmentGroundFloorSubgraph,
+  buildApartmentRoofCapSubgraph,
+  buildApartmentUpperFloorSubgraph,
+} from './city-apartment.js';
+import {
   buildCarSubgraph,
   buildFireHydrantSubgraph,
   buildLampPostSubgraph,
@@ -105,6 +111,92 @@ const Z_SPACING = BLOCK_LONG + STREET_WIDTH;   // 218
 // office GeometryValue from the cache. With `width_step` quantising
 // widths to whole metres and num_floors held constant per block, we
 // get O(range) unique office geometries shared across all lots.
+// Per-lot variant dispatcher. Reusable named subgraph that takes
+// (width, depth, num_floors) and emits `scene` — fanning the same
+// inputs into N parametric building variants and routing the
+// width-picked one through scene/switch. Adding a new variant later
+// is a 2-line change here (register the wrapper + add it to the
+// switch's `scenes` fan-in) plus the variant's own subgraph
+// authoring.
+//
+// `scene/switch.scenes` is `lazy: true`, so unselected variants
+// never evaluate per lot — see src/core/node-def.ts InputDef.lazy.
+// Without that, every lot would run BOTH the office AND the
+// apartment graphs every round.
+//
+// Picker rule: width in [MIN_LOT_WIDTH .. MAX_LOT_WIDTH] maps to
+// [0 .. 1.999], floored inside scene/switch. Narrow lots → variant
+// 0 (apartment, friendlier residential). Wide lots → variant 1
+// (office, bigger commercial). Reads as zoning that follows lot
+// size — natural-looking variety without random churn.
+function buildBuildingSelectSubgraph(opts: { minWidth: number; maxWidth: number }): SubgraphDef {
+  const id = 'building-select';
+  const g = createGraph();
+  const COL = 240;
+  const ROW = 160;
+  const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW * 2 } });
+  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW * 2 } });
+
+  // Variant 0: apartment. Wired from the same boundary inputs as
+  // variant 1 — both variants honour width/depth/num_floors with
+  // their own internal parametric scaling.
+  const apartmentWrap = addNode(g, 'subgraph/apartment-assembled', {
+    position: { x: COL * 2, y: ROW * 0 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },      { node: apartmentWrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: apartmentWrap.id, socket: 'depth' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: apartmentWrap.id, socket: 'num_floors' });
+
+  // Variant 1: office.
+  const officeWrap = addNode(g, 'subgraph/office-assembled', {
+    position: { x: COL * 2, y: ROW * 3 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },      { node: officeWrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: officeWrap.id, socket: 'depth' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: officeWrap.id, socket: 'num_floors' });
+
+  // Width → variant index. Output range stops at 1.999 so the
+  // widest possible lot picks variant 1, not variant 0 (which
+  // would happen if we landed exactly on 2 — `((2 % 2) + 2) % 2`
+  // wraps back to 0).
+  const picker = addNode(g, 'math/map-range', {
+    position: { x: COL, y: ROW * 1.5 },
+    inputValues: {
+      in_min: opts.minWidth,
+      in_max: opts.maxWidth,
+      out_min: 0,
+      out_max: 1.999,
+    },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: picker.id, socket: 'value' });
+
+  // scene/switch with `scenes` as a lazy multi-fan-in. Wire order
+  // is significant — index 0 = apartment, index 1 = office.
+  const sw = addNode(g, 'scene/switch', {
+    position: { x: COL * 4, y: ROW * 2 },
+    inputValues: { index: 0 },
+  });
+  addEdge(g, { node: picker.id,        socket: 'result' }, { node: sw.id, socket: 'index' });
+  addEdge(g, { node: apartmentWrap.id, socket: 'scene' },  { node: sw.id, socket: 'scenes' });
+  addEdge(g, { node: officeWrap.id,    socket: 'scene' },  { node: sw.id, socket: 'scenes' });
+  addEdge(g, { node: sw.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
+
+  return {
+    id,
+    label: 'Building select',
+    category: 'Subgraphs',
+    inputs: [
+      { name: 'width',      type: 'Float', default: 20 },
+      { name: 'depth',      type: 'Float', default: 22 },
+      { name: 'num_floors', type: 'Float', default: 6 },
+    ],
+    outputs: [{ name: 'scene', type: 'Scene' }],
+    graph: g,
+    inputNodeId: inputNode.id,
+    outputNodeId: outputNode.id,
+  };
+}
+
 function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef {
   const g = createGraph();
   const COL = 240;
@@ -112,12 +204,12 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
   const inputNode = addNode(g, `subgraph-input/${bodyId}`, { position: { x: 0, y: ROW } });
   const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
 
-  // Parametric office wrapper. Inputs come from this body's
-  // subgraph-input boundary; the wrapper resolves to the `office-
-  // assembled` subgraph (composed of office-ground-floor / office-
-  // upper-floor / office-roof-cap modules) registered with the
-  // project.
-  const wrap = addNode(g, 'subgraph/office-assembled', {
+  // Variant dispatcher. Inputs come from this body's subgraph-input
+  // boundary; the wrapper resolves to the `building-select`
+  // subgraph (which internally fans width/depth/num_floors into N
+  // parametric building variants and picks one by width via a lazy
+  // scene/switch).
+  const wrap = addNode(g, 'subgraph/building-select', {
     position: { x: COL, y: 0 },
     inputValues: { depth: officeDepth },
   });
@@ -352,6 +444,16 @@ export function createCityDemo(): {
   const officeUpperFloor = buildOfficeUpperFloorSubgraph();
   const officeRoofCap = buildOfficeRoofCapSubgraph();
   const parametricOffice = buildOfficeAssembledSubgraph();
+  // Modular parametric apartment. Same Houdini-style decomposition as
+  // the parametric office (ground / upper / roof modules + an
+  // assembled composer), authored with a distinct visual signature
+  // (beige concrete, denser windows, no setback, no facade
+  // decorations) so the city reads as having residential + commercial
+  // mixed-use at silhouette distance.
+  const apartmentGroundFloor = buildApartmentGroundFloorSubgraph();
+  const apartmentUpperFloor = buildApartmentUpperFloorSubgraph();
+  const apartmentRoofCap = buildApartmentRoofCapSubgraph();
+  const parametricApartment = buildApartmentAssembledSubgraph();
   // Rooftop fittings. The parametric office's body wires a scatter
   // of these on its +Y face, so registering them here is what makes
   // the `subgraph/city-roof-hvac` wrapper inside the office resolve
@@ -497,6 +599,14 @@ export function createCityDemo(): {
   const OFFICE_DEPTH = 22;
   const CORNER_CLEARANCE = MAX_LOT_WIDTH;
 
+  // Variant dispatcher subgraph — wire MIN_LOT_WIDTH / MAX_LOT_WIDTH
+  // here so the picker's input range matches the actual lot range
+  // produced by poly/edge-lots. Authored once per city; instanced
+  // every lot via subgraph/building-select inside the lot body.
+  const buildingSelect = buildBuildingSelectSubgraph({
+    minWidth: MIN_LOT_WIDTH,
+    maxWidth: MAX_LOT_WIDTH,
+  });
   const lotBodySubgraph = buildLotBodySubgraph(`lot-body-${forEachId}`, OFFICE_DEPTH);
   const lotForEachId = `lot-iter-${forEachId}`;
   const lotBridgeSubgraph = buildLotBridgeSubgraph(lotForEachId, lotBodySubgraph);
@@ -670,6 +780,11 @@ export function createCityDemo(): {
       sidewalk, longStreet, shortStreet, intersection,
       tower, office, apartment, shop,
       officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
+      apartmentGroundFloor, apartmentUpperFloor, apartmentRoofCap, parametricApartment,
+      // Width-keyed variant dispatcher. Wraps office + apartment in
+      // a scene/switch with lazy `scenes` — only the picked variant
+      // evaluates per lot.
+      buildingSelect,
       hvacUnit, waterTank, awning, wallSign, wallAc,
       fireFloorMod, fireBottomMod, fireTopMod, fireEscape,
       lampPost, trafficSignal, fireHydrant, car,
