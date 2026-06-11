@@ -229,7 +229,7 @@ function buildBuildingSelectSubgraph(opts: { minWidth: number; maxWidth: number 
   };
 }
 
-function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef {
+function buildLotBodySubgraph(bodyId: string): SubgraphDef {
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
@@ -240,12 +240,12 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
   // boundary; the wrapper resolves to the `building-select`
   // subgraph (which internally fans width/depth/num_floors into N
   // parametric building variants and picks one by width via a lazy
-  // scene/switch).
-  const wrap = addNode(g, 'subgraph/building-select', {
-    position: { x: COL, y: 0 },
-    inputValues: { depth: officeDepth },
-  });
+  // scene/switch). All three sizing inputs (width / depth /
+  // num_floors) flow through as PER-LOT FloatClouds, so the city
+  // gets size variety even within a single variant's bucket.
+  const wrap = addNode(g, 'subgraph/building-select', { position: { x: COL, y: 0 } });
   addEdge(g, { node: inputNode.id, socket: 'width' },      { node: wrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: wrap.id, socket: 'depth' });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: wrap.id, socket: 'num_floors' });
 
   // halfWidth = width * 0.5 — used for the inner shift that puts the
@@ -305,6 +305,7 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
       // travel through for-each-point as FloatClouds.
       { name: 'position',   type: 'Vec3',  default: [0, 0, 0] },
       { name: 'width',      type: 'Float', default: 20 },
+      { name: 'depth',      type: 'Float', default: 22 },
       { name: 'yaw',        type: 'Float', default: 0 },
       { name: 'num_floors', type: 'Float', default: 7 },
     ],
@@ -331,6 +332,7 @@ function buildLotBridgeSubgraph(forEachId: string, lotBody: SubgraphDef): Subgra
   const bodyNode = addNode(g, `subgraph/${lotBody.id}`, { position: { x: COL * 1.5, y: ROW } });
   addEdge(g, { node: iterInputNode.id, socket: 'position' }, { node: bodyNode.id, socket: 'position' });
   addEdge(g, { node: inputNode.id, socket: 'width' },        { node: bodyNode.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },        { node: bodyNode.id, socket: 'depth' });
   addEdge(g, { node: inputNode.id, socket: 'yaw' },          { node: bodyNode.id, socket: 'yaw' });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' },   { node: bodyNode.id, socket: 'num_floors' });
   addEdge(g, { node: bodyNode.id, socket: 'scene' }, { node: iterOutputNode.id, socket: 'scene' });
@@ -340,6 +342,7 @@ function buildLotBridgeSubgraph(forEachId: string, lotBody: SubgraphDef): Subgra
     category: 'Subgraphs',
     inputs: [
       { name: 'width',      type: 'Float', default: 20 },
+      { name: 'depth',      type: 'Float', default: 22 },
       { name: 'yaw',        type: 'Float', default: 0 },
       { name: 'num_floors', type: 'Float', default: 7 },
     ],
@@ -358,7 +361,15 @@ function buildLotBridgeSubgraph(forEachId: string, lotBody: SubgraphDef): Subgra
 function buildBlockBodySubgraph(
   bodyId: string,
   lotBridge: SubgraphDef,
-  opts: { minWidth: number; maxWidth: number; cornerClearance: number; numFloors: number },
+  opts: {
+    minWidth: number;
+    maxWidth: number;
+    cornerClearance: number;
+    minDepth: number;
+    maxDepth: number;
+    minFloors: number;
+    maxFloors: number;
+  },
 ): SubgraphDef {
   const g = createGraph();
   const COL = 240;
@@ -379,26 +390,60 @@ function buildBlockBodySubgraph(
   });
   addEdge(g, { node: inputNode.id, socket: 'polygon' }, { node: lots.id, socket: 'polygon' });
 
-  // for-each-point iterates lots. Broadcast inputs come straight
-  // from the lots node's FloatClouds (widths, yaws). num_floors is a
-  // constant for now — a future chunk can drive it from a random
-  // per-lot cloud for height variety.
+  // Per-lot random clouds for depth + num_floors. cloud/random-float
+  // is deterministic on (points, seed) — same lots + same seed →
+  // same per-lot values across re-renders → cache-friendly. The
+  // seeds are mixed with the block's iteration index so neighbouring
+  // blocks don't get the same depth pattern. Distinct base offsets
+  // (depth: 1000, floors: 2000) keep the two clouds decorrelated;
+  // without that the deepest buildings would also always be the
+  // tallest, banding the silhouette.
+  const depthSeed = addNode(g, 'math/add', {
+    position: { x: COL, y: ROW * 2 },
+    inputValues: { b: 1000 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'index' }, { node: depthSeed.id, socket: 'a' });
+  const depthRand = addNode(g, 'cloud/random-float', {
+    position: { x: COL * 2, y: ROW * 2 },
+    inputValues: { min: opts.minDepth, max: opts.maxDepth, seed: 0 },
+  });
+  addEdge(g, { node: lots.id,      socket: 'points' }, { node: depthRand.id, socket: 'points' });
+  addEdge(g, { node: depthSeed.id, socket: 'result' }, { node: depthRand.id, socket: 'seed' });
+
+  const floorsSeed = addNode(g, 'math/add', {
+    position: { x: COL, y: ROW * 2.6 },
+    inputValues: { b: 2000 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'index' }, { node: floorsSeed.id, socket: 'a' });
+  const floorsRand = addNode(g, 'cloud/random-float', {
+    position: { x: COL * 2, y: ROW * 2.6 },
+    inputValues: { min: opts.minFloors, max: opts.maxFloors, seed: 0 },
+  });
+  addEdge(g, { node: lots.id,       socket: 'points' }, { node: floorsRand.id, socket: 'points' });
+  addEdge(g, { node: floorsSeed.id, socket: 'result' }, { node: floorsRand.id, socket: 'seed' });
+
+  // for-each-point iterates lots. Every broadcast input is a
+  // FloatCloud now — width / yaw come directly from poly/edge-lots,
+  // depth / num_floors come from the random clouds above. Each lot
+  // gets its own (width, depth, yaw, num_floors) so the city has
+  // visible size variety WITHIN each variant's bucket, not just
+  // BETWEEN variants.
   const foreach = addNode(g, 'iter/for-each-point', {
     position: { x: COL * 3, y: ROW },
-    inputValues: {
-      __bridgeId: lotBridge.id,
-      num_floors: opts.numFloors,
-    },
+    inputValues: { __bridgeId: lotBridge.id },
     extraInputs: [
-      { name: 'width', type: 'FloatCloud' },
-      { name: 'yaw',   type: 'FloatCloud' },
-      { name: 'num_floors', type: 'Float' },
+      { name: 'width',      type: 'FloatCloud' },
+      { name: 'depth',      type: 'FloatCloud' },
+      { name: 'yaw',        type: 'FloatCloud' },
+      { name: 'num_floors', type: 'FloatCloud' },
     ],
     extraOutputs: [{ name: 'scene', type: 'Scene' }],
   });
   addEdge(g, { node: lots.id, socket: 'points' }, { node: foreach.id, socket: 'points' });
   addEdge(g, { node: lots.id, socket: 'widths' }, { node: foreach.id, socket: 'width' });
   addEdge(g, { node: lots.id, socket: 'yaws' },   { node: foreach.id, socket: 'yaw' });
+  addEdge(g, { node: depthRand.id,  socket: 'values' }, { node: foreach.id, socket: 'depth' });
+  addEdge(g, { node: floorsRand.id, socket: 'values' }, { node: foreach.id, socket: 'num_floors' });
   addEdge(g, { node: foreach.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -643,10 +688,18 @@ export function createCityDemo(): {
   // prevents interpenetration.
   const MIN_LOT_WIDTH = 14;
   const MAX_LOT_WIDTH = 28;
-  const NUM_FLOORS = 7;
-  // Office depth (perpendicular to street). Constant for now; future
-  // chunks can drive it from a per-lot random or a city-wide style.
-  const OFFICE_DEPTH = 22;
+  // Per-lot random ranges for depth + num_floors. cloud/random-float
+  // (seeded per-block-index) gives every lot a unique value inside
+  // these ranges, so buildings within the same variant bucket still
+  // differ in size. Ranges chosen so even the shortest tower (5
+  // floors → 5×2=10 body floors × 2.5 m = 25 m body) still reads as
+  // a tower vs the tallest apartment (10 floors × 3 m = 30 m total);
+  // overlap is fine because the variants have different
+  // architecture not just height.
+  const MIN_DEPTH = 18;
+  const MAX_DEPTH = 26;
+  const MIN_FLOORS = 5;
+  const MAX_FLOORS = 10;
   const CORNER_CLEARANCE = MAX_LOT_WIDTH;
 
   // Variant dispatcher subgraph — wire MIN_LOT_WIDTH / MAX_LOT_WIDTH
@@ -657,14 +710,17 @@ export function createCityDemo(): {
     minWidth: MIN_LOT_WIDTH,
     maxWidth: MAX_LOT_WIDTH,
   });
-  const lotBodySubgraph = buildLotBodySubgraph(`lot-body-${forEachId}`, OFFICE_DEPTH);
+  const lotBodySubgraph = buildLotBodySubgraph(`lot-body-${forEachId}`);
   const lotForEachId = `lot-iter-${forEachId}`;
   const lotBridgeSubgraph = buildLotBridgeSubgraph(lotForEachId, lotBodySubgraph);
   const blockBody = buildBlockBodySubgraph(`body-${forEachId}`, lotBridgeSubgraph, {
     minWidth: MIN_LOT_WIDTH,
     maxWidth: MAX_LOT_WIDTH,
     cornerClearance: CORNER_CLEARANCE,
-    numFloors: NUM_FLOORS,
+    minDepth: MIN_DEPTH,
+    maxDepth: MAX_DEPTH,
+    minFloors: MIN_FLOORS,
+    maxFloors: MAX_FLOORS,
   });
   const bridgeSubgraph = buildBuildingPerimeterBridgeSubgraph(forEachId, blockBody);
   const blocksForEach = addNode(g, 'iter/for-each-polygon', {
