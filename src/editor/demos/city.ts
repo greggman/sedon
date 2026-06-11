@@ -26,6 +26,7 @@ import {
 import {
   buildAwningSubgraph,
 } from './city-storefront.js';
+import { buildWallSignSubgraph } from './city-billboard.js';
 import {
   buildWallAcUnitSubgraph,
 } from './city-wall-ac.js';
@@ -361,6 +362,10 @@ export function createCityDemo(): {
   // here so the parametric office's `subgraph/city-storefront-
   // awning` wrapper resolves at eval time.
   const awning = buildAwningSubgraph();
+  // Upper-wall illuminated signs — sparse scatter on the street-
+  // facing -X wall, body region, with per-sign random saturated tint
+  // and emissive bloom. The Spider-Man-2 NYC dusk lift.
+  const wallSign = buildWallSignSubgraph();
   // Wall AC units stuck on the ±Z side walls of every parametric
   // office.
   const wallAc = buildWallAcUnitSubgraph();
@@ -665,7 +670,7 @@ export function createCityDemo(): {
       sidewalk, longStreet, shortStreet, intersection,
       tower, office, apartment, shop,
       officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
-      hvacUnit, waterTank, awning, wallAc,
+      hvacUnit, waterTank, awning, wallSign, wallAc,
       fireFloorMod, fireBottomMod, fireTopMod, fireEscape,
       lampPost, trafficSignal, fireHydrant, car,
       // For-each-polygon's bridge → its body (= blockBody) →

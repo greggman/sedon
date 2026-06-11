@@ -487,6 +487,73 @@ export function buildOfficeAssembledSubgraph(): SubgraphDef {
   });
   addEdge(g, { node: awningScatter.id, socket: 'scene' }, { node: awningLift.id, socket: 'scene' });
 
+  // ── Wall signs on -X (street) face, upper-body region ────────────
+  // Sparse 3×3 = 9 candidate slots over the upper-body, ~25% activated
+  // for a non-gridded "some buildings have a sign, some don't" look.
+  // Per-sign tint comes from a separate random-vec3 cloud, same
+  // pattern the awnings use; emissive material in the wall-sign
+  // subgraph adds the bloom glow.
+  const signPts = addNode(g, 'points/box-face', {
+    position: { x: COL * 2, y: ROW * 7.7 },
+    inputValues: { axis: [-1, 0, 0], height: 1, cols: 3, rows: 3, inset: 1.5, offset: 0.05 },
+  });
+  addEdge(g, { node: inputNode.id,  socket: 'width' },  { node: signPts.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id,  socket: 'depth' },  { node: signPts.id, socket: 'depth' });
+  addEdge(g, { node: bodyHeight.id, socket: 'result' }, { node: signPts.id, socket: 'height' });
+  const signSeed = addNode(g, 'math/add', {
+    position: { x: COL * 3, y: ROW * 7.4 },
+    // +600 offset keeps the per-slot pattern independent of awnings
+    // (200), wall AC (300 / 400), and fire escape (500).
+    inputValues: { b: 600 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' }, { node: signSeed.id, socket: 'a' });
+  const signRand = addNode(g, 'cloud/random-float', {
+    position: { x: COL * 3, y: ROW * 7.7 },
+    inputValues: { min: 0, max: 1, seed: 0 },
+  });
+  addEdge(g, { node: signPts.id,  socket: 'points' }, { node: signRand.id, socket: 'points' });
+  addEdge(g, { node: signSeed.id, socket: 'result' }, { node: signRand.id, socket: 'seed' });
+  const signMask = addNode(g, 'cloud/step', {
+    position: { x: COL * 4, y: ROW * 7.7 },
+    // 0.75 → ~25% activation. Sparser than awnings (0.4 / ~60%) so
+    // signs don't dominate the building's silhouette.
+    inputValues: { threshold: 0.75, invert: false },
+  });
+  addEdge(g, { node: signRand.id, socket: 'values' }, { node: signMask.id, socket: 'values' });
+  // Vibrant saturated colours, full RGB range so a single building
+  // can sport cool (blue / cyan / green) signs as well as warm
+  // (red / orange / pink) ones — distinct from the warm-yellow
+  // office facade so signs read at a glance.
+  const signTint = addNode(g, 'cloud/random-vec3', {
+    position: { x: COL * 3, y: ROW * 7.95 },
+    inputValues: { min: [0.2, 0.2, 0.2], max: [1, 1, 1], seed: 0 },
+  });
+  addEdge(g, { node: signPts.id,  socket: 'points' }, { node: signTint.id, socket: 'points' });
+  addEdge(g, { node: signSeed.id, socket: 'result' }, { node: signTint.id, socket: 'seed' });
+  const signWrap = addNode(g, 'subgraph/city-wall-sign', { position: { x: COL * 2, y: ROW * 8.2 } });
+  const signScatter = addNode(g, 'scene/instance-on-points', {
+    position: { x: COL * 5, y: ROW * 7.7 },
+    inputValues: { scale: 1, align: true, seed: 0 },
+  });
+  addEdge(g, { node: signPts.id,  socket: 'points' }, { node: signScatter.id, socket: 'points' });
+  addEdge(g, { node: signMask.id, socket: 'mask' },   { node: signScatter.id, socket: 'per_point_active' });
+  addEdge(g, { node: signTint.id, socket: 'values' }, { node: signScatter.id, socket: 'per_point_tint' });
+  addEdge(g, { node: signWrap.id, socket: 'scene' },  { node: signScatter.id, socket: 'instance' });
+  // Lift the sign scatter to the body's vertical centre. The
+  // box-face-points grid sits at face-centre Y=0; same lift logic
+  // wall AC uses.
+  const signLiftVec = addNode(g, 'math/vec3-from-floats', {
+    position: { x: COL * 5, y: ROW * 8 },
+    inputValues: { x: 0, y: 0, z: 0 },
+  });
+  addEdge(g, { node: bodyCentreY.id, socket: 'result' }, { node: signLiftVec.id, socket: 'y' });
+  const signLift = addNode(g, 'scene/transform', {
+    position: { x: COL * 6, y: ROW * 7.7 },
+    inputValues: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: [1, 1, 1] },
+  });
+  addEdge(g, { node: signScatter.id, socket: 'scene' }, { node: signLift.id, socket: 'scene' });
+  addEdge(g, { node: signLiftVec.id, socket: 'value' }, { node: signLift.id, socket: 'translate' });
+
   // ── Side-wall AC on ±Z faces, body region ─────────────────────────
   function addWallAcScatter(
     axis: [number, number, number],
@@ -595,6 +662,7 @@ export function buildOfficeAssembledSubgraph(): SubgraphDef {
   addEdge(g, { node: floorScatter.id, socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: roofShift.id,    socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: awningLift.id,   socket: 'scene' }, { node: merge.id, socket: 'scenes' });
+  addEdge(g, { node: signLift.id,     socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: acPlusZ.id,      socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: acMinusZ.id,     socket: 'scene' }, { node: merge.id, socket: 'scenes' });
   addEdge(g, { node: fireLift.id,     socket: 'scene' }, { node: merge.id, socket: 'scenes' });

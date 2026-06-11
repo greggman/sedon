@@ -15,6 +15,7 @@ import {
 } from './city-fire-escape.js';
 import { buildHvacUnitSubgraph, buildWaterTankSubgraph } from './city-rooftop.js';
 import { buildAwningSubgraph } from './city-storefront.js';
+import { buildWallSignSubgraph } from './city-billboard.js';
 import { buildWallAcUnitSubgraph } from './city-wall-ac.js';
 
 // Single-building development scene. Just ONE parametric office at
@@ -49,6 +50,7 @@ export function createSingleBuildingDemo(): {
   const hvacUnit = buildHvacUnitSubgraph();
   const waterTank = buildWaterTankSubgraph();
   const awning = buildAwningSubgraph();
+  const wallSign = buildWallSignSubgraph();
   const wallAc = buildWallAcUnitSubgraph();
   const fireFloor = buildFireEscapeFloorModuleSubgraph();
   const fireBottom = buildFireEscapeBottomModuleSubgraph();
@@ -110,7 +112,7 @@ export function createSingleBuildingDemo(): {
     rootNodeId: output.id,
     subgraphs: [
       officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
-      hvacUnit, waterTank, awning, wallAc,
+      hvacUnit, waterTank, awning, wallSign, wallAc,
       fireFloor, fireBottom, fireTop, fireEscape,
     ],
     cameras: {

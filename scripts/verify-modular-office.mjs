@@ -18,6 +18,33 @@ await page.waitForFunction(
 );
 await new Promise((r) => setTimeout(r, 5000));
 
+const diag = await page.evaluate(() => {
+  const s = window.__sedonStore__.getState();
+  const panels = window.__sedonListPanelIds__?.() ?? [];
+  for (const p of panels) {
+    const out = window.__sedonGetOutputs__(p, s.rootNodeId);
+    if (out && out.scene) {
+      const ents = out.scene.entities ?? [];
+      const tinted = ents.filter((e) => {
+        const t = e.tint;
+        return t && (Math.abs(t[0] - 1) > 0.01 || Math.abs(t[1] - 1) > 0.01 || Math.abs(t[2] - 1) > 0.01);
+      });
+      return {
+        total: ents.length,
+        tinted: tinted.length,
+        sigs: tinted.map((e) => ({
+          x: +e.transform[12].toFixed(1),
+          y: +e.transform[13].toFixed(1),
+          z: +e.transform[14].toFixed(1),
+          tint: [+e.tint[0].toFixed(2), +e.tint[1].toFixed(2), +e.tint[2].toFixed(2)],
+        })),
+      };
+    }
+  }
+  return {};
+});
+console.log('diag:', JSON.stringify(diag));
+
 const box = await page.evaluate(() => {
   const all = Array.from(document.querySelectorAll('canvas'));
   let best = null, bestA = 0;
