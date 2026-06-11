@@ -5,7 +5,7 @@ import { generateSphere } from '../../src/render/sphere.js';
 test('sphere has expected vertex and index counts', () => {
   const segments = 8;
   const rings = 4;
-  const sphere = generateSphere(1, segments, rings);
+  const sphere = generateSphere({ radius: 1, segments, rings });
   const verts = (rings + 1) * (segments + 1);
   assert.equal(sphere.positions.length, verts * 3);
   assert.equal(sphere.normals.length, verts * 3);
@@ -14,7 +14,7 @@ test('sphere has expected vertex and index counts', () => {
 });
 
 test('sphere uvs span the unit square', () => {
-  const sphere = generateSphere(1, 8, 4);
+  const sphere = generateSphere({ radius: 1, segments: 8, rings: 4 });
   let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
   for (let i = 0; i < sphere.uvs.length; i += 2) {
     minU = Math.min(minU, sphere.uvs[i]!);
@@ -30,7 +30,7 @@ test('sphere uvs span the unit square', () => {
 
 test('sphere vertices lie on the expected radius', () => {
   const radius = 2.5;
-  const sphere = generateSphere(radius, 16, 8);
+  const sphere = generateSphere({ radius, segments: 16, rings: 8 });
   for (let i = 0; i < sphere.positions.length; i += 3) {
     const x = sphere.positions[i]!;
     const y = sphere.positions[i + 1]!;
@@ -41,7 +41,7 @@ test('sphere vertices lie on the expected radius', () => {
 });
 
 test('sphere normals are unit length', () => {
-  const sphere = generateSphere(3, 16, 8);
+  const sphere = generateSphere({ radius: 3, segments: 16, rings: 8 });
   for (let i = 0; i < sphere.normals.length; i += 3) {
     const x = sphere.normals[i]!;
     const y = sphere.normals[i + 1]!;
@@ -54,7 +54,7 @@ test('sphere normals are unit length', () => {
 test('sphere indices are all in range', () => {
   const segments = 12;
   const rings = 6;
-  const sphere = generateSphere(1, segments, rings);
+  const sphere = generateSphere({ radius: 1, segments, rings });
   const vertCount = (rings + 1) * (segments + 1);
   for (let i = 0; i < sphere.indices.length; i++) {
     const idx = sphere.indices[i]!;

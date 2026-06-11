@@ -28,6 +28,24 @@ export const coneNode: NodeDef = {
       min: 2,
       description: 'number of radial subdivisions around the base. Same smoothness vs. cost tradeoff as [geom/cylinder](../../geom/cylinder)',
     },
+    {
+      name: 'angle_start',
+      type: 'Float',
+      default: 0,
+      description: 'start of the angle window around Y, DEGREES. Default 0; together with angle_end = 360 gives a full cone',
+    },
+    {
+      name: 'angle_end',
+      type: 'Float',
+      default: 360,
+      description: 'end of the angle window around Y, DEGREES. Default 360. Set to 180 for a half-cone, 90 for a quarter wedge',
+    },
+    {
+      name: 'cap',
+      type: 'Bool',
+      default: true,
+      description: 'close every open boundary: bottom disc (always — becomes a pie slice when partial); plus two radial triangle walls when the angle range is partial. Set false for an open cone shell',
+    },
   ],
   outputs: [
     {
@@ -59,11 +77,15 @@ trunks for low-poly trees, or as a directional marker in debug scenes.
   },
   evaluate(ctx, inputs): { geometry: GeometryValue } {
     const device = requireDevice(ctx);
-    const mesh = generateCone(
-      inputs.radius as number,
-      inputs.height as number,
-      inputs.segments as number,
-    );
+    const deg = Math.PI / 180;
+    const mesh = generateCone({
+      radius: inputs.radius as number,
+      height: inputs.height as number,
+      segments: inputs.segments as number,
+      angleStart: (inputs.angle_start as number) * deg,
+      angleEnd: (inputs.angle_end as number) * deg,
+      cap: inputs.cap as boolean,
+    });
     return {
       geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
     };

@@ -28,6 +28,24 @@ export const cylinderNode: NodeDef = {
       min: 2,
       description: 'number of radial subdivisions around the circumference. 8 reads octagonal, 16 is the smoothness sweet spot, 32+ for close-up renders',
     },
+    {
+      name: 'angle_start',
+      type: 'Float',
+      default: 0,
+      description: 'start of the angle window around Y, DEGREES. Default 0; together with angle_end = 360 gives a full cylinder',
+    },
+    {
+      name: 'angle_end',
+      type: 'Float',
+      default: 360,
+      description: 'end of the angle window around Y, DEGREES. Default 360. Set to 180 for a half-cylinder, 90 for a quarter pie-slice',
+    },
+    {
+      name: 'cap',
+      type: 'Bool',
+      default: true,
+      description: 'close every open boundary with a flat cap: top + bottom discs (always); plus two radial walls when the angle range is partial. Set false for a tube / open shell',
+    },
   ],
   outputs: [
     {
@@ -61,11 +79,15 @@ square-ish blades.
   },
   evaluate(ctx, inputs): { geometry: GeometryValue } {
     const device = requireDevice(ctx);
-    const mesh = generateCylinder(
-      inputs.radius as number,
-      inputs.height as number,
-      inputs.segments as number,
-    );
+    const deg = Math.PI / 180;
+    const mesh = generateCylinder({
+      radius: inputs.radius as number,
+      height: inputs.height as number,
+      segments: inputs.segments as number,
+      angleStart: (inputs.angle_start as number) * deg,
+      angleEnd: (inputs.angle_end as number) * deg,
+      cap: inputs.cap as boolean,
+    });
     return {
       geometry: uploadMeshToGpu(device, mesh, ctx.previousOutput?.geometry as GeometryValue | undefined),
     };

@@ -31,7 +31,7 @@ function getResources(device: GPUDevice): PreviewResources {
   if (cached) return cached;
 
   const plane = uploadMeshToGpu(device, generatePlane(2, 2, 4, 4));
-  const sphere = uploadMeshToGpu(device, generateSphere(1, 32, 16));
+  const sphere = uploadMeshToGpu(device, generateSphere({ radius: 1, segments: 32, rings: 16 }));
 
   const format: GPUTextureFormat = 'rgba8unorm';
   const texture = device.createTexture({

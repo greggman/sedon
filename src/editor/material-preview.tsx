@@ -71,7 +71,7 @@ export function MaterialPreview({ device, material, size = 128 }: MaterialPrevie
   // across material edits — only changing the sphere/cube toggle
   // reallocates them.
   useEffect(() => {
-    const mesh = shape === 'sphere' ? generateSphere(1, 32, 16) : generateCube(1.4);
+    const mesh = shape === 'sphere' ? generateSphere({ radius: 1, segments: 32, rings: 16 }) : generateCube(1.4);
     const geometry = uploadMeshToGpu(device, mesh);
     geometryRef.current = geometry;
     return () => {
