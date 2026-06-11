@@ -194,6 +194,64 @@ export async function evaluateGraph(
     else incomingBySocket.set(key, [e.from]);
   }
 
+  // Lazy-eval pre-pass: figure out which nodes we MUST evaluate this
+  // round and which are reachable only through `lazy: true` inputs
+  // (deferred — evaluated on demand when the consumer calls a thunk).
+  //
+  // A node is "eager" if there's a path from it forward to a node we
+  // care about, via at least one non-lazy edge. Equivalently: walk
+  // backward from the wanted sinks through non-lazy edges only.
+  //
+  // Sinks depend on scope:
+  //   • 'rootAncestors' — only `options.rootNodeId` is wanted; the
+  //     boundary outputs lookup needs that node's evaluate to run.
+  //   • 'all'           — every node is potentially wanted (the
+  //     editor renders previews for every node). In practice this
+  //     marks every node as eager; lazy semantics only meaningfully
+  //     activate inside `rootAncestors` callees (bridges, wrappers).
+  //
+  // For each non-lazy incoming edge to an eager node, the upstream
+  // becomes eager too. Lazy edges DON'T propagate eagerness — the
+  // upstream of a lazy edge only runs if and when a thunk fires.
+  //
+  // We still compute fingerprints for lazy-deferred nodes (the main
+  // loop falls through after the fp computation) so consumers' fps
+  // correctly reflect upstream identity and downstream cache lookups
+  // invalidate when any branch changes.
+  const eagerNodes = new Set<string>();
+  {
+    const incomingByNode = new Map<string, GraphEdge[]>();
+    for (const e of graph.edges) {
+      const list = incomingByNode.get(e.to.node) ?? [];
+      list.push(e);
+      incomingByNode.set(e.to.node, list);
+    }
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const queue: string[] = scope === 'all'
+      ? graph.nodes.map((n) => n.id)
+      : [options.rootNodeId];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (eagerNodes.has(id)) continue;
+      eagerNodes.add(id);
+      const node = nodeById.get(id);
+      if (!node) continue;
+      const def = registry.get(node.kind);
+      if (!def) continue;
+      const inputDefs = node.extraInputs
+        ? [...def.inputs, ...node.extraInputs]
+        : def.inputs;
+      const inputByName = new Map(inputDefs.map((i) => [i.name, i]));
+      const edges = incomingByNode.get(id) ?? [];
+      for (const e of edges) {
+        const inputDef = inputByName.get(e.to.socket);
+        // Skip lazy edges — the upstream isn't eagerly needed.
+        if (inputDef?.lazy) continue;
+        queue.push(e.from.node);
+      }
+    }
+  }
+
   for (const nodeId of order) {
     const node = graph.nodes.find((n) => n.id === nodeId);
     if (!node) continue;
@@ -224,7 +282,44 @@ export async function evaluateGraph(
       // Fingerprint is the comma-joined list of upstream fps so the
       // node re-evaluates when ANY contributor's output changes.
       let resolved = false;
-      if (input.multi) {
+      // Lazy inputs: don't read from `outputs` (the upstream is
+      // probably lazy-deferred and never evaluated). Build a thunk
+      // per branch instead — the consumer's evaluate() decides
+      // whether to call it. See InputDef.lazy.
+      if (input.lazy) {
+        const fpItems: string[] = [];
+        const makeThunk = (upNodeId: string, upSocket: string) => () => {
+          const innerOpts: EvaluateOptions = {
+            rootNodeId: upNodeId,
+            scope: 'rootAncestors',
+            context: sharedCtx,
+          };
+          if (cache !== undefined) innerOpts.cache = cache;
+          if (touched !== undefined) innerOpts.touched = touched;
+          return evaluateGraph(graph, registry, innerOpts).then((r) => r.outputs[upSocket]);
+        };
+        if (input.multi) {
+          const thunks: Array<() => Promise<unknown>> = [];
+          for (const u of upstreams) {
+            thunks.push(makeThunk(u.node, u.socket));
+            const upFp = fingerprints.get(u.node);
+            if (upFp !== undefined) fpItems.push(upFp);
+          }
+          inputs[input.name] = thunks;
+          upstreamFingerprints[input.name] = `lazy-multi:[${fpItems.join(',')}]`;
+          resolved = true;
+        } else if (upstreams[0]) {
+          const u = upstreams[0];
+          inputs[input.name] = makeThunk(u.node, u.socket);
+          const upFp = fingerprints.get(u.node);
+          if (upFp !== undefined) upstreamFingerprints[input.name] = `lazy:${upFp}`;
+          resolved = true;
+        }
+        // Lazy single with no upstream falls through to the
+        // default/optional/missing chain. Lazy multi with no
+        // upstreams produced an empty array above — same shape as
+        // eager multi with no wires.
+      } else if (input.multi) {
         const items: unknown[] = [];
         const fpItems: string[] = [];
         for (const u of upstreams) {
@@ -367,6 +462,13 @@ export async function evaluateGraph(
     const fp = nodeFingerprint(fpParams);
     fingerprints.set(nodeId, fp);
     if (touched) touched.add(fp);
+
+    // Lazy-deferred node: its fp is recorded so consumers' fps move
+    // correctly, but we don't evaluate it here. Whichever consumer's
+    // thunk fires for this branch will trigger a recursive
+    // evaluateGraph call against this nodeId; that call evaluates
+    // through the shared cache and hits the cache on repeat calls.
+    if (!eagerNodes.has(nodeId)) continue;
 
     // Per-context tracker key. The same inner-graph nodeId can evaluate
     // multiple times per round when the same subgraph is instantiated

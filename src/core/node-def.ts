@@ -36,6 +36,31 @@ export interface InputDef {
    */
   multi?: boolean;
   /**
+   * Lazy / on-demand evaluation. When true, the evaluator does NOT
+   * eagerly evaluate the upstream subDAG feeding this input. Instead
+   * it hands the node's `evaluate()` a callable thunk (per branch
+   * when `multi: true`, otherwise a single thunk). The node decides
+   * whether and which branches to invoke; unused branches never run.
+   *
+   * Contract:
+   *   • `lazy + multi: true`  → `inputs[name]: Array<() => Promise<T>>`
+   *   • `lazy + single (multi:false)` → `inputs[name]: () => Promise<T>`
+   *   • Calling a thunk evaluates ONLY that branch's upstream subDAG.
+   *     The shared eval cache means repeated calls in the same round
+   *     are free; the branch's underlying work runs once per distinct
+   *     fingerprint.
+   *   • Lazy-deferred upstream nodes still get fingerprinted in topo
+   *     order so the consumer's fingerprint (and therefore downstream
+   *     consumers' fingerprints) correctly invalidate when any
+   *     branch's identity, version, or upstream values change.
+   *
+   * Use case: dispatch / switch nodes that pick ONE of N inputs by
+   * index — `scene/switch` is the canonical example. Without lazy,
+   * every branch evaluates per call (multiply that by an outer
+   * for-each loop and the waste is enormous).
+   */
+  lazy?: boolean;
+  /**
    * For `Int` inputs that represent an enum, the closed set of valid
    * (value, label) pairs. When set, the UI renders a `<select>`
    * dropdown instead of a number scrubber, and the runtime still

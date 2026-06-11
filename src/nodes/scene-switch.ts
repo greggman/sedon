@@ -31,7 +31,14 @@ export const sceneSwitchNode: NodeDef = {
       name: 'scenes',
       type: 'Scene',
       multi: true,
-      description: 'wire two or more scenes here; `index` picks which one to forward (wrapping modulo the wired count)',
+      // Lazy: each wired branch is handed in as a thunk and only the
+      // picked one fires. Critical for the city-style "N building
+      // variants under a for-each-polygon" pattern — without lazy,
+      // every variant's GPU work runs per lot per round, even though
+      // only one variant survives the switch. See InputDef.lazy for
+      // the contract: inputs.scenes is `Array<() => Promise<Scene>>`.
+      lazy: true,
+      description: 'wire two or more scenes here; `index` picks which one to forward (wrapping modulo the wired count). Branches are evaluated lazily — unselected wires never run',
     },
   ],
   outputs: [
@@ -80,19 +87,28 @@ without bounds checks. Negative values wrap too.
       return { graph: g, rootNodeId: 'swt' };
     },
   },
-  evaluate(_ctx, inputs): { scene: SceneValue } {
+  async evaluate(_ctx, inputs): Promise<{ scene: SceneValue }> {
     const index = Math.floor(inputs.index as number);
-    const incoming = (inputs['scenes'] as SceneValue[] | undefined) ?? [];
-    // Drop broken / wrong-shape entries — partial-wiring tolerance,
-    // same as scene/merge.
-    const connected = incoming.filter(
-      (v) => v && typeof v === 'object' && Array.isArray(v.entities),
-    );
-    if (connected.length === 0) return { scene: { entities: [] } };
-    // JS `%` keeps the dividend's sign, so an extra `+ n) % n` step
-    // lands the result in [0, n) for negative indices too.
-    const n = connected.length;
+    // With `lazy: true`, the evaluator hands us an array of THUNKS
+    // (functions that evaluate their upstream subDAG on demand)
+    // rather than evaluated Scene values. Pick the index first, then
+    // invoke just the chosen branch — the unselected branches never
+    // fire.
+    const thunks = (inputs['scenes'] as Array<() => Promise<unknown>> | undefined) ?? [];
+    const n = thunks.length;
+    if (n === 0) return { scene: { entities: [] } };
     const i = ((index % n) + n) % n;
-    return { scene: connected[i]! };
+    const picked = await thunks[i]!();
+    // Defensive: if the picked branch evaluated to something
+    // non-Scene-shaped (broken upstream, missing required input
+    // somewhere in the chain), fall back to empty scene rather than
+    // poisoning downstream consumers.
+    if (
+      picked && typeof picked === 'object'
+      && Array.isArray((picked as SceneValue).entities)
+    ) {
+      return { scene: picked as SceneValue };
+    }
+    return { scene: { entities: [] } };
   },
 };
