@@ -1,36 +1,19 @@
 # TODOs
 
----
-Suggested next steps in order
-Use core/add to make fire-escape-assembled properly honour its bottom_height/top_height inputs (currently they're declared but ignored — the comments call this out).
-Apply the modular pattern to the parametric office: office-ground-floor / office-upper-floor / office-roof-cap / office-assembled. Same Houdini decomposition that landed for fire escapes.
-Then back to facade work — wall billboards / signs
----
-
-- [ ] undo does not always work (need repo)
-- [ ] Add blender style camera widgets
+- [ ] need preferences (saved in local storage?)
+  - [ ] default sky settings (used in all node previews)
+  - [ ] default material color (should not be white)
 - [ ] move options to hash
 - [ ] need LODs so trees work?
-- [ ] We need random buildings again. At the moment they are all the same
-  building. I think Blender/Houdini must have some node that given inputs
-  like maybe a lot? Or current lot + adjacent lots, selects which building
-  subgraph to execute?
 - [ ] add more tests - we called "scripts/verify-outline-clamp.mjs"
   a regression test but it's not useful if it's not run. We need to run
   all the test.
 - [ ] flip-normals node
-- [ ] do we need leaf-mesh? It seems very specific. It kind of looks like
-  a portion of a sphere which we could just add. It does have a few unique-ish
-  features. Just wondering if a more parameterized sphere and or some modifiers
-  might be more useful?
 - [ ] need a way to include scenes so they can be updated in separate files?
 - [ ] Test rename with multiple asset views open. 
   Also test Add New Subgraph which indirectly does a rename
-- [ ] dragging and dropping cushion from asset to canvas in the furniture scene shows no node preview. Should it? It has defaults right? Did I forgot why this doesn't work or is it a bug?
 - [ ] subdivision, loop-cut, smooth, edge-split
   same blocker as bevel — needs the connectivity layer.
-- [*] add nodes for city
-  What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
 - [*] import png, jpg, webp (use URL where # is local)
   - [ ] drag and drop
     issue, what does it mean? Drag and drop is for local files os this would
@@ -75,9 +58,10 @@ Then back to facade work — wall billboards / signs
   - [ ] branch/tropism
   - [ ] branch/sample-points
   - [ ] branch/whorled-pine
-- [ ] The readback in heightfield-to-mesh is unacceptable. There should be no reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
-terrain renderer that tessellates the terrain
-based on distance from the camera. 
+- [ ] The readback in heightfield-to-mesh is unacceptable. There should be no
+   reason to read back the data from the GPU. Keep it on the GPU. Do the heightMapToMesh on the GPU. Besides, we need a
+   terrain renderer that tessellates the terrain
+   based on distance from the camera. 
 - [ ] node view (like assets)
   - [ ] nodes in folders
   - [ ] list, icon
@@ -87,20 +71,24 @@ based on distance from the camera.
 - [ ] add UI tests
 - [ ] isTexture2D and related seems brittle
 - [ ] left/skeleton needs to start from bottom center?
-- [ ] scene-merge or somewhere should probably have TRS hierarchy and let you select nodes and drag to move in preview
+- [ ] scene-merge or somewhere should probably have TRS hierarchy and let you
+  select nodes and drag to move in preview
 - [ ] move the WebGPU parts to a worker
 - [ ] need a better UI than 3 numbers for setting a direction 
 - [ ] change sky to use a lookup table for speed - need to recompute
   when the sun changes.
-- [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse for defaults
-- [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to list?
+- [ ] WGSL snippet node - meta data for types (quat vs vec4f vs color) but parse 
+  for defaults
+- [ ] is core/grid a valid node. maybe should be list of colors with +/- to add to
+  list?
 - [ ] editable texture? a node with a pixel editor?
   This is mostly for drawing terrain? Though I can
   guess you'd want to edit terrain in the preview
   with pull up, push down.
   - [ ] simple brush with alpha - like 2d blend demo
   - [ ] needs undo
-- [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc, with "custom" as option)
+- [ ] texture size should be drop down (64x64, 128x128, 256x256, 512x512, etc,
+  with "custom" as option)
 - [ ] need preview always - even if bad inputs (example heightfield)
 - [ ] let you pull off an input (?)
   prefs because easy to break when trying to move node
@@ -138,6 +126,29 @@ based on distance from the camera.
 
 ## --- done ---
 
+- [*] persp camera changes zFar?
+- [*] ortho drag should stick to stuff
+- [*] zoom (dolly) doesn't work in ortho mod
+- [*] camera doesn't snap out of ortho mode like blender
+- [*] new nodes should be placed on top - in basic, add cone, then add cylinder.
+  cylinder is placed under cone.
+- [*] dragging and dropping cushion from asset to canvas in the furniture scene
+  shows no node preview. Should it? It has defaults right? Did I forgot why this doesn't work or is it a bug?
+- [*] add nodes for city
+  What nodes do we need to add to make the city? We want various kinds of buildings, windows, doors, antennas, street lights, cars, roads, intersections, storefronts, etc...
+- [*] We need random buildings in the city again. At the moment they are all the
+  same building. I think Blender/Houdini must have some node that given inputs like maybe a lot, Or current lot + adjacent lots, selects which building subgraph to execute?
+- [*] Add blender style camera widgets
+- [*] do we need leaf-mesh? It seems very specific. It kind of looks like
+  a portion of a sphere which we could just add. It does have a few unique-ish
+  features. Just wondering if a more parameterized sphere and or some modifiers
+  might be more useful? A sphere that has longitude_start, longitude_end, latitude_start, latitude_end seems like it would make the leaf. A geometry transform and squish it. I'm not against keeping the leaf if it's the right
+  thing to do. It's just very specific. (decided yes, but added start/end params
+  for sphere/cone/cylinder)
+- [*] do we an math/aabb-points, math/aabb-scene, math/aabb-geom?
+  They would take in points/geom/scene and output vec3 min, vec3 max, vec3 size.
+  Then we'd probably want floats-from-vec3 that takes in a vec3 and outputs
+  x,y,z each as a float?
 - [*] select a connection and pick "add node" should connect the node
 - [*] is there a list/array entry type (added `multi: true`)
 - [*] design should not be "extra inputs". It should be "array of input name,type" (added `multi: true`)
