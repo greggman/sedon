@@ -24,6 +24,7 @@
 
 import type { Graph, GraphEdge, GraphNode } from '../core/graph.js';
 import type { SubgraphDef } from '../core/subgraph.js';
+import { isIterNodeKind } from '../core/iter-family.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 
 export const FRAGMENT_FORMAT_VERSION = 1;
@@ -464,11 +465,11 @@ export function importFragment(
     if (remapped.position) {
       out.position = { x: remapped.position.x + dx, y: remapped.position.y + dy };
     }
-    // for-each-point's `__bridgeId` references its owned bridge,
+    // An iter node's `__bridgeId` references its owned bridge,
     // whose id we just renamed to `bridge-<newNodeId>` above. Patch
-    // the inputValue to match — otherwise the imported for-each
+    // the inputValue to match — otherwise the imported iter node
     // would point at the OLD bridge id and fail to look up its body.
-    if (out.kind === 'iter/for-each-point' && out.inputValues?.__bridgeId !== undefined) {
+    if (isIterNodeKind(out.kind) && out.inputValues?.__bridgeId !== undefined) {
       const newBridgeId = `bridge-${out.id}`;
       out.inputValues = { ...out.inputValues, __bridgeId: newBridgeId };
     }
@@ -611,7 +612,7 @@ function collectSubgraphClosure(
         queue.push(id);
       }
     }
-    if (n.kind === 'iter/for-each-point') {
+    if (isIterNodeKind(n.kind)) {
       const bridgeId = n.inputValues?.__bridgeId;
       if (typeof bridgeId === 'string' && bridgeId !== '' && !visited.has(bridgeId)) {
         visited.add(bridgeId);

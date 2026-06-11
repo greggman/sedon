@@ -28,7 +28,7 @@ import { requestNodeRename } from './rename-bus.js';
 // Node-only items (omitted when right-clicking the empty pane):
 //   • Rename
 //   • Edit          for subgraph wrappers (drills in)
-//   • Edit iter…    for for-each-point (drills into its bridge)
+//   • Edit iter…    for any iter/* node (drills into its bridge)
 
 export interface CanvasMenuContext {
   /** Flow-coordinate position of the right-click — where Add Node
@@ -47,15 +47,15 @@ export interface CanvasMenuContext {
 export interface CanvasMenuNode {
   id: string;
   isSubgraphWrapper: boolean;
-  isForEachPoint: boolean;
+  isIterNode: boolean;
   /** Truthy on subgraph wrappers — enables "Edit" (drill-in). */
   subgraphId?: string;
-  /** Truthy on for-each-point nodes with a bridge — enables
+  /** Truthy on iter/* nodes with a bridge — enables
    *  "Edit iteration" (drill into the bridge graph). */
-  forEachBridgeId?: string;
+  iterBridgeId?: string;
   /** Drill-in callback for subgraph wrappers. */
   onEdit?: () => void;
-  /** Drill-in callback for for-each-point bridges. */
+  /** Drill-in callback for iter bridges. */
   onEditIteration?: () => void;
   /** Set on nodes whose def carries a `doc` block — enables
    *  "Open Docs". Same URL the inline `?` header link uses. */
@@ -146,7 +146,7 @@ export function buildCanvasMenuItems(ctx: CanvasMenuContext): CanvasContextMenuI
         run: ctx.node.onEdit,
       });
     }
-    if (ctx.node.isForEachPoint && ctx.node.forEachBridgeId && ctx.node.onEditIteration) {
+    if (ctx.node.isIterNode && ctx.node.iterBridgeId && ctx.node.onEditIteration) {
       items.push({
         label: 'Edit iteration',
         run: ctx.node.onEditIteration,

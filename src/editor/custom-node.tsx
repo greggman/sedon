@@ -11,6 +11,7 @@ import type {
   SceneValue,
   Texture2DValue,
 } from '../core/resources.js';
+import { getIterKindInfo } from '../core/iter-family.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
@@ -789,17 +790,20 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   const setSubgraphInputDefault = useEditorStore((s) => s.setSubgraphInputDefault);
   const markUndoBarrier = useEditorStore((s) => s.markUndoBarrier);
   const attachIterationBody = useEditorStore((s) => s.attachIterationBody);
-  // for-each-point's "Edit" navigation needs the bridge id
-  // to step into. Header label looks up the body subgraph wrapper
-  // currently placed inside the bridge so the canvas tells you which
-  // body is bound at a glance.
-  const isForEachPoint = kind === 'iter/for-each-point';
-  const forEachBridgeId = isForEachPoint
+  // iter/* node's "Edit" navigation needs the bridge id to step into.
+  // Header label looks up the body subgraph wrapper currently placed
+  // inside the bridge so the canvas tells you which body is bound at
+  // a glance. Centralised in core/iter-family so for-each-point and
+  // for-each-polygon (and any future iter/* kind) share the same
+  // code path automatically.
+  const iterKindInfo = kind ? getIterKindInfo(kind) : undefined;
+  const isIterNode = iterKindInfo !== undefined;
+  const iterBridgeId = isIterNode
     ? (inputValues?.__bridgeId as string | undefined) ?? ''
     : '';
-  const forEachBodyLabel = useEditorStore((s) => {
-    if (!forEachBridgeId) return undefined;
-    const bridge = s.subgraphs.find((sg) => sg.id === forEachBridgeId);
+  const iterBodyLabel = useEditorStore((s) => {
+    if (!iterBridgeId) return undefined;
+    const bridge = s.subgraphs.find((sg) => sg.id === iterBridgeId);
     if (!bridge) return undefined;
     // The body wrapper is whichever `subgraph/<id>` node lives inside
     // the bridge inner graph. There can only ever be at most one
@@ -843,13 +847,13 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     subgraphId ? s.subgraphs.find((g) => g.id === subgraphId)?.label : undefined,
   );
 
-  // for-each-point's "drag a subgraph asset onto this node" hover state.
+  // iter/* node's "drag a subgraph asset onto this node" hover state.
   // Lives above the `if (!def)` bail-out below so the hook count stays
   // constant — without this, an unknown-kind frame skips the useState
   // and the next valid-def render throws "rendered fewer hooks than
-  // expected." Could only matter for for-each-point nodes, but the hook
+  // expected." Could only matter for iter nodes, but the hook
   // ALWAYS runs; cost is one boolean cell.
-  const [forEachDragOver, setForEachDragOver] = useState(false);
+  const [iterDragOver, setIterDragOver] = useState(false);
 
   // Per-node context menu (right-click on the node body or header).
   // `null` = closed; otherwise screen + flow coordinates of the
@@ -891,40 +895,40 @@ export function CustomNode({ id, data, selected }: NodeProps) {
   // up the node so the drop target is unambiguous mid-drag. The
   // useState itself lives ABOVE the `if (!def) return` bail-out so the
   // hook count stays constant; see there.
-  const onForEachDragOver = isForEachPoint
+  const onIterDragOver = isIterNode
     ? (e: React.DragEvent<HTMLDivElement>) => {
         if (!e.dataTransfer.types.includes(ASSET_DND_TYPE)) return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'link';
-        if (!forEachDragOver) setForEachDragOver(true);
+        if (!iterDragOver) setIterDragOver(true);
       }
     : undefined;
-  const onForEachDragLeave = isForEachPoint
-    ? () => { if (forEachDragOver) setForEachDragOver(false); }
+  const onIterDragLeave = isIterNode
+    ? () => { if (iterDragOver) setIterDragOver(false); }
     : undefined;
-  const onForEachDrop = isForEachPoint
+  const onIterDrop = isIterNode
     ? (e: React.DragEvent<HTMLDivElement>) => {
         const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
         if (!raw) return;
         e.preventDefault();
         e.stopPropagation();
-        setForEachDragOver(false);
+        setIterDragOver(false);
         let items: AssetDndItem[];
         try { items = JSON.parse(raw) as AssetDndItem[]; }
         catch { return; }
         // First subgraph item wins. Multi-asset drops onto a single
-        // for-each-point don't really have a sensible interpretation —
+        // iter node don't really have a sensible interpretation —
         // a for-each has exactly one body.
         const sg = items.find((it) => it.kind === 'subgraph');
         if (!sg) return;
         attachIterationBody(id, `subgraph/${sg.id}`);
       }
     : undefined;
-  // for-each-point shows "for-each: <body label>" (or "drop a subgraph
-  // here" before a body is dropped) instead of the bare
-  // `iter/for-each-point`, so the canvas at a glance tells you which
-  // subgraph each instance is iterating without opening the inspector.
+  // iter/* nodes show "<prefix>: <body label>" (or "drop a subgraph
+  // here" before a body is dropped) instead of the bare kind, so the
+  // canvas at a glance tells you which subgraph each instance is
+  // iterating without opening the inspector.
   //
   // Boundary kinds are registered per-subgraph as `<role>/<subgraphId>`
   // (e.g. `subgraph-input/cabinet-cell`, `iteration-output/bridge-abc…`)
@@ -940,8 +944,8 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     : null;
   const typeLabel = isSubgraphWrapper
     ? 'subgraph'
-    : isForEachPoint
-      ? `for-each: ${forEachBodyLabel ?? (forEachBridgeId ? '(empty bridge)' : 'drop a subgraph here')}`
+    : isIterNode
+      ? `${iterKindInfo!.bridgeLabelPrefix}: ${iterBodyLabel ?? (iterBridgeId ? '(empty bridge)' : 'drop a subgraph here')}`
       : boundaryRole ?? def.id;
   // What the editor shows + commits on. For wrappers we always have a
   // label (SubgraphDef requires one), so wrappers are always "named".
@@ -972,15 +976,15 @@ export function CustomNode({ id, data, selected }: NodeProps) {
       setActiveEditing(subgraphId);
     }
   };
-  // for-each-point's bridge is just a subgraph the user can drill
+  // The iter node's bridge is just a subgraph the user can drill
   // into the same way as a regular wrapper, but reached via the
   // owning node instead of an Assets-panel pick.
   const onEditIteration = () => {
-    if (!forEachBridgeId) return;
+    if (!iterBridgeId) return;
     if (canvasPanelId) {
-      navigateCanvasTo(canvasPanelId, forEachBridgeId);
+      navigateCanvasTo(canvasPanelId, iterBridgeId);
     } else {
-      setActiveEditing(forEachBridgeId);
+      setActiveEditing(iterBridgeId);
     }
   };
 
@@ -1064,13 +1068,13 @@ export function CustomNode({ id, data, selected }: NodeProps) {
               node: {
                 id,
                 isSubgraphWrapper,
-                isForEachPoint,
+                isIterNode,
                 ...(subgraphId !== null ? { subgraphId } : {}),
-                ...(forEachBridgeId !== '' ? { forEachBridgeId } : {}),
+                ...(iterBridgeId !== '' ? { iterBridgeId } : {}),
                 ...(isSubgraphWrapper && subgraphId !== null
                   ? { onEdit: () => onEditSubgraph() }
                   : {}),
-                ...(isForEachPoint && forEachBridgeId !== ''
+                ...(isIterNode && iterBridgeId !== ''
                   ? { onEditIteration: () => onEditIteration() }
                   : {}),
                 // Same URL the inline `?` header link uses. Only
@@ -1088,11 +1092,11 @@ export function CustomNode({ id, data, selected }: NodeProps) {
     <div
       className={
         (selected ? 'sedon-node sedon-node--selected' : 'sedon-node')
-        + (forEachDragOver ? ' sedon-node--drop-target' : '')
+        + (iterDragOver ? ' sedon-node--drop-target' : '')
       }
-      onDragOver={onForEachDragOver}
-      onDragLeave={onForEachDragLeave}
-      onDrop={onForEachDrop}
+      onDragOver={onIterDragOver}
+      onDragLeave={onIterDragLeave}
+      onDrop={onIterDrop}
       // Right-click on the node body opens its context menu. We stop
       // propagation so RF's pane handler (which would otherwise show
       // the "Add Node" search popup on the bare canvas) doesn't also
@@ -1147,11 +1151,11 @@ export function CustomNode({ id, data, selected }: NodeProps) {
             Edit
           </button>
         )}
-        {isForEachPoint && forEachBridgeId && (
+        {isIterNode && iterBridgeId && (
           <button
             type="button"
             className="nodrag nopan sedon-subgraph-edit"
-            title="Edit this for-each-point's bridge graph (wires iteration context onto body inputs)"
+            title={`Edit this ${iterKindInfo!.bridgeLabelPrefix}'s bridge graph (wires iteration context onto body inputs)`}
             onClick={onEditIteration}
           >
             Edit
@@ -1253,8 +1257,8 @@ export function CustomNode({ id, data, selected }: NodeProps) {
                 size={PREVIEW_SIZE}
               />
             )
-          ) : isForEachPoint && !forEachBodyLabel ? (
-            // for-each-point with no body attached: the preview slot
+          ) : isIterNode && !iterBodyLabel ? (
+            // iter node with no body attached: the preview slot
             // doubles as the drop hint so the user knows what to do
             // with the node. The drop-target outline (cyan border via
             // `.sedon-node--drop-target`) appears the moment a

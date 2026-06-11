@@ -9,6 +9,7 @@ import {
   liftForEachInputType,
   liftForEachOutputType,
 } from '../nodes/for-each-point.js';
+import { getIterKindInfo, isIterNodeKind } from '../core/iter-family.js';
 import { createEmptySubgraph, isSubgraphInternalKind, type SubgraphDef } from '../core/subgraph.js';
 import {
   cloneFolderSubtree,
@@ -725,9 +726,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
       });
     }
 
-    // Static input names on for-each-point that must always survive
-    // (not extras — part of the NodeDef.inputs declaration).
-    const STATIC_FOR_EACH_INPUTS = new Set(['points', '__bridgeId']);
+    // Static input names on the iter node that must always survive
+    // (not extras — part of the NodeDef.inputs declaration). Per
+    // iter kind: the iteration source input name (points / polygons /
+    // ...) varies, but `__bridgeId` is the shared hidden socket.
+    const staticInputsFor = (nodeKind: string): Set<string> => {
+      const info = getIterKindInfo(nodeKind);
+      return info
+        ? new Set([info.iterationSourceInput, '__bridgeId'])
+        : new Set(['__bridgeId']);
+    };
     const sameList = <T extends { name: string; type: string }>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean => {
       if (a.length !== b.length) return false;
       for (let i = 0; i < a.length; i++) {
@@ -737,9 +745,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
     };
     const applyToGraph = (graph: Graph): Graph => {
       let nodesChanged = false;
+      // Per-iter-kind static input set for the edge filter — built
+      // once per applyToGraph to keep the hot path cheap.
+      const nodeKindById = new Map<string, string>();
       const nextNodes = graph.nodes.map((n) => {
         const u = updates.get(n.id);
-        if (!u || n.kind !== 'iter/for-each-point') return n;
+        if (!u || !isIterNodeKind(n.kind)) return n;
+        nodeKindById.set(n.id, n.kind);
         if (sameList(n.extraInputs ?? [], u.extraInputs)
           && sameList(n.extraOutputs ?? [], u.extraOutputs)) return n;
         nodesChanged = true;
@@ -748,7 +760,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!nodesChanged) return graph;
       const nextEdges = graph.edges.filter((e) => {
         const toU = updates.get(e.to.node);
-        if (toU && !STATIC_FOR_EACH_INPUTS.has(e.to.socket) && !toU.survivingInputs.has(e.to.socket)) return false;
+        if (toU) {
+          const statics = staticInputsFor(nodeKindById.get(e.to.node) ?? '');
+          if (!statics.has(e.to.socket) && !toU.survivingInputs.has(e.to.socket)) return false;
+        }
         const fromU = updates.get(e.from.node);
         if (fromU && !fromU.survivingOutputs.has(e.from.socket)) return false;
         return true;
@@ -2100,20 +2115,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const state = get();
       const node = state.graph.nodes.find((n) => n.id === nodeId);
       if (!node) return;
-      if (node.kind !== 'iter/for-each-point') return;
+      const iterInfo = getIterKindInfo(node.kind);
+      if (!iterInfo) return;
       if (!bodyKind.startsWith('subgraph/')) return;
       const bodySubgraphId = bodyKind.slice('subgraph/'.length);
       const bodySg = state.subgraphs.find((s) => s.id === bodySubgraphId);
       if (!bodySg) return;
 
-      // Resolve iteration context names this kind provides (for the
-      // bridge's iteration-input boundary's outputs + the auto-wire
-      // step below).
-      const ITERATION_KIND = 'iter/for-each-point';
-      const providedContext = [
-        { name: 'position', type: 'Vec3' },
-        { name: 'index', type: 'Int' },
-      ];
+      // Iteration context comes from the iter-kind registry — names
+      // + types the bridge's iteration-input boundary exposes (and
+      // that the auto-wire step matches body-subgraph input names
+      // against).
+      const ITERATION_KIND = iterInfo.kind;
+      const providedContext = iterInfo.providedContext;
 
       // Build the bridge SubgraphDef from scratch — its three
       // boundary nodes plus one wrapper instance of the body. Default
@@ -2200,7 +2214,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           { node: bodyWrapper.id, socket: bIn.name });
       }
 
-      // for-each-point's outer outputs: lift each bridge output.
+      // Iter node's outer outputs: lift each bridge output.
       const mirroredOuterOutputs: OutputDef[] = bridgeOutputs.map((o) => ({
         name: o.name,
         type: liftForEachOutputType(o.type)!,
@@ -2208,7 +2222,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
       const newBridge: SubgraphDef = {
         id: bridgeId,
-        label: `for-each-point body (${bodySg.label})`,
+        label: `${iterInfo.bridgeLabelPrefix} body (${bodySg.label})`,
         category: 'Subgraphs',
         inputs: bridgeInputs,
         outputs: bridgeOutputs,
@@ -2226,10 +2240,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
         .filter((s) => !(s.owner?.kind === 'iteration-bridge' && s.owner.nodeId === nodeId))
         .concat(newBridge);
 
-      // Drop edges to/from now-stale extra sockets on the for-each-point.
+      // Drop edges to/from now-stale extra sockets on the iter node.
       const survivingInputNames = new Set(mirroredOuterInputs.map((m) => m.name));
       const survivingOutputNames = new Set(mirroredOuterOutputs.map((m) => m.name));
-      const staticInputNames = new Set(['points', '__bridgeId']);
+      // Static input names depend on the iter kind (the iteration
+      // source name differs); `__bridgeId` is shared across all kinds.
+      const staticInputNames = new Set([iterInfo.iterationSourceInput, '__bridgeId']);
       const edges: GraphEdge[] = state.graph.edges.filter((e) => {
         if (e.to.node === nodeId) {
           if (staticInputNames.has(e.to.socket)) return true;
