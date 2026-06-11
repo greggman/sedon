@@ -20,6 +20,19 @@ import {
   buildApartmentUpperFloorSubgraph,
 } from './city-apartment.js';
 import {
+  buildShopAssembledSubgraph,
+  buildShopGroundFloorSubgraph,
+  buildShopRoofCapSubgraph,
+  buildShopUpperFloorSubgraph,
+} from './city-shop.js';
+import {
+  buildTowerAssembledSubgraph,
+  buildTowerBodyFloorSubgraph,
+  buildTowerLobbySubgraph,
+  buildTowerRoofCapSubgraph,
+  buildTowerSetbackFloorSubgraph,
+} from './city-tower.js';
+import {
   buildCarSubgraph,
   buildFireHydrantSubgraph,
   buildLampPostSubgraph,
@@ -121,64 +134,83 @@ const Z_SPACING = BLOCK_LONG + STREET_WIDTH;   // 218
 //
 // `scene/switch.scenes` is `lazy: true`, so unselected variants
 // never evaluate per lot — see src/core/node-def.ts InputDef.lazy.
-// Without that, every lot would run BOTH the office AND the
-// apartment graphs every round.
+// Without that, every lot would run ALL FOUR variant graphs every
+// round.
 //
 // Picker rule: width in [MIN_LOT_WIDTH .. MAX_LOT_WIDTH] maps to
-// [0 .. 1.999], floored inside scene/switch. Narrow lots → variant
-// 0 (apartment, friendlier residential). Wide lots → variant 1
-// (office, bigger commercial). Reads as zoning that follows lot
-// size — natural-looking variety without random churn.
+// [0 .. 3.999], floored inside scene/switch. Zoning by lot size:
+//   • narrowest  → shop      (2-floor mixed-use, fixed height)
+//   • narrow-mid → apartment (5-floor residential, no setback)
+//   • mid-wide   → office    (mid-rise commercial w/ facade detail)
+//   • widest     → tower     (skyscraper w/ setback crown)
+//
+// Reads as natural zoning — wider lots get bigger / taller / more
+// commercial — without any random per-lot churn.
 function buildBuildingSelectSubgraph(opts: { minWidth: number; maxWidth: number }): SubgraphDef {
   const id = 'building-select';
   const g = createGraph();
   const COL = 240;
   const ROW = 160;
-  const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW * 2 } });
-  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW * 2 } });
+  const inputNode = addNode(g, `subgraph-input/${id}`, { position: { x: 0, y: ROW * 3 } });
+  const outputNode = addNode(g, `subgraph-output/${id}`, { position: { x: COL * 5, y: ROW * 3 } });
 
-  // Variant 0: apartment. Wired from the same boundary inputs as
-  // variant 1 — both variants honour width/depth/num_floors with
-  // their own internal parametric scaling.
-  const apartmentWrap = addNode(g, 'subgraph/apartment-assembled', {
+  // Variant 0: shop. Narrowest lots — small-business mixed-use.
+  const shopWrap = addNode(g, 'subgraph/shop-assembled', {
     position: { x: COL * 2, y: ROW * 0 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },      { node: shopWrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: shopWrap.id, socket: 'depth' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: shopWrap.id, socket: 'num_floors' });
+
+  // Variant 1: apartment. Narrow-mid — residential.
+  const apartmentWrap = addNode(g, 'subgraph/apartment-assembled', {
+    position: { x: COL * 2, y: ROW * 2 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' },      { node: apartmentWrap.id, socket: 'width' });
   addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: apartmentWrap.id, socket: 'depth' });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: apartmentWrap.id, socket: 'num_floors' });
 
-  // Variant 1: office.
+  // Variant 2: office. Mid-wide — mid-rise commercial.
   const officeWrap = addNode(g, 'subgraph/office-assembled', {
-    position: { x: COL * 2, y: ROW * 3 },
+    position: { x: COL * 2, y: ROW * 4 },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' },      { node: officeWrap.id, socket: 'width' });
   addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: officeWrap.id, socket: 'depth' });
   addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: officeWrap.id, socket: 'num_floors' });
 
-  // Width → variant index. Output range stops at 1.999 so the
-  // widest possible lot picks variant 1, not variant 0 (which
-  // would happen if we landed exactly on 2 — `((2 % 2) + 2) % 2`
-  // wraps back to 0).
+  // Variant 3: tower. Widest lots — skyscraper with setback crown.
+  const towerWrap = addNode(g, 'subgraph/tower-assembled', {
+    position: { x: COL * 2, y: ROW * 6 },
+  });
+  addEdge(g, { node: inputNode.id, socket: 'width' },      { node: towerWrap.id, socket: 'width' });
+  addEdge(g, { node: inputNode.id, socket: 'depth' },      { node: towerWrap.id, socket: 'depth' });
+  addEdge(g, { node: inputNode.id, socket: 'num_floors' }, { node: towerWrap.id, socket: 'num_floors' });
+
+  // Width → variant index. out_max stops just short of 4 so the
+  // widest possible lot picks variant 3, not variant 0 (which would
+  // happen if we landed exactly on 4 — `((4 % 4) + 4) % 4` = 0).
   const picker = addNode(g, 'math/map-range', {
-    position: { x: COL, y: ROW * 1.5 },
+    position: { x: COL, y: ROW * 3 },
     inputValues: {
       in_min: opts.minWidth,
       in_max: opts.maxWidth,
       out_min: 0,
-      out_max: 1.999,
+      out_max: 3.999,
     },
   });
   addEdge(g, { node: inputNode.id, socket: 'width' }, { node: picker.id, socket: 'value' });
 
   // scene/switch with `scenes` as a lazy multi-fan-in. Wire order
-  // is significant — index 0 = apartment, index 1 = office.
+  // is significant — 0=shop, 1=apartment, 2=office, 3=tower.
   const sw = addNode(g, 'scene/switch', {
-    position: { x: COL * 4, y: ROW * 2 },
+    position: { x: COL * 4, y: ROW * 3 },
     inputValues: { index: 0 },
   });
   addEdge(g, { node: picker.id,        socket: 'result' }, { node: sw.id, socket: 'index' });
+  addEdge(g, { node: shopWrap.id,      socket: 'scene' },  { node: sw.id, socket: 'scenes' });
   addEdge(g, { node: apartmentWrap.id, socket: 'scene' },  { node: sw.id, socket: 'scenes' });
   addEdge(g, { node: officeWrap.id,    socket: 'scene' },  { node: sw.id, socket: 'scenes' });
+  addEdge(g, { node: towerWrap.id,     socket: 'scene' },  { node: sw.id, socket: 'scenes' });
   addEdge(g, { node: sw.id, socket: 'scene' }, { node: outputNode.id, socket: 'scene' });
 
   return {
@@ -454,6 +486,24 @@ export function createCityDemo(): {
   const apartmentUpperFloor = buildApartmentUpperFloorSubgraph();
   const apartmentRoofCap = buildApartmentRoofCapSubgraph();
   const parametricApartment = buildApartmentAssembledSubgraph();
+  // Modular parametric shop — 2-floor mixed-use, cream concrete +
+  // bright storefront. Always 2 floors (semantically a shop is
+  // low-rise; num_floors is accepted for signature parity but
+  // ignored).
+  const shopGroundFloor = buildShopGroundFloorSubgraph();
+  const shopUpperFloor = buildShopUpperFloorSubgraph();
+  const shopRoofCap = buildShopRoofCapSubgraph();
+  const parametricShop = buildShopAssembledSubgraph();
+  // Modular parametric tower — five modules (lobby + body floor +
+  // setback floor + roof). num_floors is multiplied internally
+  // (×2 for body, ×0.8 for setback) so the tower dominates the
+  // skyline. Setback section pulls in to 60% width for the
+  // classic crown silhouette.
+  const towerLobby = buildTowerLobbySubgraph();
+  const towerBodyFloor = buildTowerBodyFloorSubgraph();
+  const towerSetbackFloor = buildTowerSetbackFloorSubgraph();
+  const towerRoofCap = buildTowerRoofCapSubgraph();
+  const parametricTower = buildTowerAssembledSubgraph();
   // Rooftop fittings. The parametric office's body wires a scatter
   // of these on its +Y face, so registering them here is what makes
   // the `subgraph/city-roof-hvac` wrapper inside the office resolve
@@ -781,8 +831,10 @@ export function createCityDemo(): {
       tower, office, apartment, shop,
       officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
       apartmentGroundFloor, apartmentUpperFloor, apartmentRoofCap, parametricApartment,
-      // Width-keyed variant dispatcher. Wraps office + apartment in
-      // a scene/switch with lazy `scenes` — only the picked variant
+      shopGroundFloor, shopUpperFloor, shopRoofCap, parametricShop,
+      towerLobby, towerBodyFloor, towerSetbackFloor, towerRoofCap, parametricTower,
+      // Width-keyed variant dispatcher. Wraps all 4 variants in a
+      // scene/switch with lazy `scenes` — only the picked variant
       // evaluates per lot.
       buildingSelect,
       hvacUnit, waterTank, awning, wallSign, wallAc,
