@@ -132,8 +132,46 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
 
   // ────────────────────────────────────────────────────────────────
   // Orbit gizmo pointer handling.
+  //
+  // Blender behavior: pressing on an axis dot does NOT snap
+  // immediately. If the user releases without moving (a true click),
+  // we snap to that axis on pointerup. If they drag past a small
+  // threshold, the pending snap is abandoned and we orbit instead —
+  // dragging a dot just rotates the view, same as dragging the disc.
+  //
+  // `pendingDot` carries the candidate snap target; once it's set
+  // the move handler waits to see whether this becomes a click or
+  // a drag. Pressing on disc background sets `pendingDot=null` and
+  // orbits immediately (no threshold).
   // ────────────────────────────────────────────────────────────────
-  const orbitDragRef = useRef<{ pointerId: number; lastX: number; lastY: number; isOrbit: boolean } | null>(null);
+  const orbitDragRef = useRef<{
+    pointerId: number;
+    lastX: number;
+    lastY: number;
+    downX: number;
+    downY: number;
+    pendingDot: AxisProj['label'] | null;
+  } | null>(null);
+  const CLICK_DRAG_THRESHOLD_PX = 4;
+
+  const fireAxisSnap = (label: AxisProj['label']) => {
+    const snap = AXIS_SNAPS[label]!;
+    const c = cameraRef.current;
+    const fovY = PERSP_FOV_Y;
+    const orthoH = c.orthoHeight ?? c.distance * 2 * Math.tan(fovY / 2);
+    tweenRef.current = tweenCamera(
+      c,
+      { yaw: snap.yaw, pitch: snap.pitch, mode: 'ortho', orthoHeight: orthoH },
+      180,
+      () => requestRender(),
+    );
+    tweenRef.current.done.then(() => {
+      tweenRef.current = null;
+      onCommit();
+    });
+    recentlySnappedRef.current = true;
+  };
+
   const onOrbitPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     cancelTween();
@@ -151,35 +189,14 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     // reaches the gizmo, so click handlers (and per-control drags)
     // silently miss.
     e.nativeEvent.stopPropagation();
-    if (dotHit) {
-      // Axis-dot click: animated snap to that view + ortho. Match
-      // Blender: clicking a dot ALWAYS flips to ortho — even from
-      // perspective and even from ortho along another axis.
-      const snap = AXIS_SNAPS[dotHit]!;
-      const c = cameraRef.current;
-      const fovY = PERSP_FOV_Y;
-      const orthoH = c.orthoHeight ?? c.distance * 2 * Math.tan(fovY / 2);
-      tweenRef.current = tweenCamera(
-        c,
-        { yaw: snap.yaw, pitch: snap.pitch, mode: 'ortho', orthoHeight: orthoH },
-        180,
-        () => requestRender(),
-      );
-      tweenRef.current.done.then(() => {
-        tweenRef.current = null;
-        onCommit();
-      });
-      recentlySnappedRef.current = true;
-      return;
-    }
-    // Drag-on-disc = orbit. If we were snapped to an axis (ortho), the
-    // first orbit drag flips back to perspective.
-    if (recentlySnappedRef.current && cameraRef.current.mode === 'ortho') {
-      cameraRef.current.mode = 'persp';
-      requestRender();
-    }
-    recentlySnappedRef.current = false;
-    orbitDragRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY, isOrbit: true };
+    orbitDragRef.current = {
+      pointerId: e.pointerId,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      downX: e.clientX,
+      downY: e.clientY,
+      pendingDot: dotHit,
+    };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   };
   const onOrbitPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -189,6 +206,21 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     const dy = e.clientY - drag.lastY;
     drag.lastX = e.clientX;
     drag.lastY = e.clientY;
+    // If a snap is pending, hold off on orbiting until the pointer
+    // crosses the drag threshold. Once crossed, drop the pending snap
+    // and treat the rest of the gesture as an orbit drag.
+    if (drag.pendingDot) {
+      const total = Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY);
+      if (total < CLICK_DRAG_THRESHOLD_PX) return;
+      drag.pendingDot = null;
+      // First orbit drag after an axis snap flips ortho → persp
+      // (matches Blender). Reset the marker now that the user is
+      // committing to a drag instead of a click.
+      if (recentlySnappedRef.current && cameraRef.current.mode === 'ortho') {
+        cameraRef.current.mode = 'persp';
+      }
+      recentlySnappedRef.current = false;
+    }
     const c = cameraRef.current;
     const sens = 0.01;
     // Horizontal sign matches the canvas-orbit handler in preview.tsx.
@@ -201,6 +233,11 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     if (!drag || drag.pointerId !== e.pointerId) return;
     orbitDragRef.current = null;
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (drag.pendingDot) {
+      // True click on a dot — fire the snap now.
+      fireAxisSnap(drag.pendingDot);
+      return;
+    }
     onCommit();
   };
 
