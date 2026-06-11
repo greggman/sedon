@@ -20,6 +20,10 @@ import { bevelNode } from './bevel.js';
 import { boxNode } from './box.js';
 import { boxFacePointsNode } from './box-face-points.js';
 import { vec3FromFloatsNode } from './vec3-from-floats.js';
+import { floatsFromVec3Node } from './floats-from-vec3.js';
+import { geomAabbNode } from './geom-aabb.js';
+import { pointsAabbNode } from './points-aabb.js';
+import { sceneAabbNode } from './scene-aabb.js';
 import { coneNode } from './cone.js';
 import { computeNormalsNode } from './compute-normals.js';
 import { cornerPointsNode } from './corner-points.js';
@@ -124,6 +128,10 @@ export const CORE_NODES = [
   boxNode,
   boxFacePointsNode,
   vec3FromFloatsNode,
+  floatsFromVec3Node,
+  geomAabbNode,
+  pointsAabbNode,
+  sceneAabbNode,
   cylinderNode,
   coneNode,
   planeNode,
