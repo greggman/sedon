@@ -191,7 +191,10 @@ export function ScenePreview({
       return;
     }
     const aspect = canvas.width / canvas.height;
-    const projection = perspective(PREVIEW_FOV_Y, aspect, 0.1, Math.max(200, cam.distance * 4));
+    // Matches preview-tile.tsx + preview.tsx — generous zFar floor
+    // so dollying close to a large scene (city / terrain thumbnails)
+    // doesn't shrink zFar below scene extent.
+    const projection = perspective(PREVIEW_FOV_Y, aspect, 0.1, Math.max(10000, cam.distance * 4));
     const modelView = multiply(
       multiply(
         multiply(translation(0, 0, -cam.distance), rotationX(cam.pitch)),

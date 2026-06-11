@@ -569,8 +569,11 @@ export function Preview({ panelId }: PreviewProps = {}) {
     const PREVIEW_NEAR = 0.1;
     // Adaptive far plane — matches the colour-render frustum in
     // preview-tile.tsx so the picking ray traverses the same depth
-    // range the user sees. A fixed 100m cap clipped 200m+ scenes.
-    const previewFar = (distance: number) => Math.max(200, distance * 4);
+    // range the user sees. Floor sized to cover Sedon's largest
+    // open-world demos (city, terrain) so dollying in doesn't
+    // shrink zFar below scene extent — without it, far buildings
+    // would clip the moment the user zoomed close.
+    const previewFar = (distance: number) => Math.max(10000, distance * 4);
 
     // Walk the registered tiles and return the one whose canvas
     // contains `clientX, clientY`. Returns the canvas rect + entry so

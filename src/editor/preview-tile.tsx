@@ -222,12 +222,20 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       debug(() => `[PreviewTile draw] label="${label}" yaw=${cam.yaw.toFixed(3)} pitch=${cam.pitch.toFixed(3)} dist=${cam.distance.toFixed(3)} target=[${cam.target.map((v) => v.toFixed(2)).join(',')}]`);
       const aspect = canvas.width / canvas.height;
       // zFar scales with orbit distance so the far plane never clips
-      // the scene back. Reverse-Z + depth32float keeps precision fine
-      // out to many km; the `max(200, …)` floor keeps tiny camera
-      // distances from collapsing the depth budget to nothing.
-      // Matches scene-preview.tsx's adaptive formula.
+      // the scene back when the user zooms out. Reverse-Z +
+      // depth32float keeps near-plane precision essentially perfect
+      // regardless of how big zFar is, so we can afford a generous
+      // floor. The floor matters when the user DOLLIES IN on a large
+      // scene (city demo, terrain): orbit distance drops, but the
+      // scene's far reaches don't — without the floor, the formula's
+      // `distance * 4` would shrink zFar below the scene extent and
+      // far buildings would clip.
+      // 10000 m comfortably covers Sedon's largest open-world demos;
+      // bump again if/when scenes get larger.
+      // Matches preview.tsx's previewFar (pick frustum) and
+      // scene-preview.tsx (thumbnail). All three must move in lockstep.
       const fovY = (60 * Math.PI) / 180;
-      const zFar = Math.max(200, cam.distance * 4);
+      const zFar = Math.max(10000, cam.distance * 4);
       // Ortho frustum is centred on the optical axis (target sits in
       // the middle of the view), with height locked to orthoHeight so
       // pixel scale only changes when the user dollies. Width tracks
