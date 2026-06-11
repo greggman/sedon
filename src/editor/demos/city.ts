@@ -4,10 +4,15 @@ import type { CameraState } from '../store.js';
 import {
   buildApartmentBuildingSubgraph,
   buildOfficeBuildingSubgraph,
-  buildParametricOfficeBuildingSubgraph,
   buildShopBuildingSubgraph,
   buildTowerBuildingSubgraph,
 } from './city-buildings.js';
+import {
+  buildOfficeAssembledSubgraph,
+  buildOfficeGroundFloorSubgraph,
+  buildOfficeRoofCapSubgraph,
+  buildOfficeUpperFloorSubgraph,
+} from './city-office.js';
 import {
   buildCarSubgraph,
   buildFireHydrantSubgraph,
@@ -107,9 +112,11 @@ function buildLotBodySubgraph(bodyId: string, officeDepth: number): SubgraphDef 
   const outputNode = addNode(g, `subgraph-output/${bodyId}`, { position: { x: COL * 6, y: ROW } });
 
   // Parametric office wrapper. Inputs come from this body's
-  // subgraph-input boundary; the wrapper resolves to the actual
-  // city-bldg-parametric-office subgraph the bridge knows about.
-  const wrap = addNode(g, 'subgraph/city-bldg-parametric-office', {
+  // subgraph-input boundary; the wrapper resolves to the `office-
+  // assembled` subgraph (composed of office-ground-floor / office-
+  // upper-floor / office-roof-cap modules) registered with the
+  // project.
+  const wrap = addNode(g, 'subgraph/office-assembled', {
     position: { x: COL, y: 0 },
     inputValues: { depth: officeDepth },
   });
@@ -332,7 +339,18 @@ export function createCityDemo(): {
   // iteration — it's the only one currently driven by polygon-edge-
   // lots. The hand-authored variants above remain available as
   // Assets the user can drag/instantiate directly.
-  const parametricOffice = buildParametricOfficeBuildingSubgraph();
+  //
+  // Decomposed Houdini-style into four subgraphs:
+  //   • office-ground-floor — 5 m storefront band
+  //   • office-upper-floor  — one 3.5 m floor (instanced N times)
+  //   • office-roof-cap     — parapet + HVAC + water tanks
+  //   • office-assembled    — composes them + facade decorations
+  // All four are registered so each wrapper inside office-assembled
+  // resolves at eval time.
+  const officeGroundFloor = buildOfficeGroundFloorSubgraph();
+  const officeUpperFloor = buildOfficeUpperFloorSubgraph();
+  const officeRoofCap = buildOfficeRoofCapSubgraph();
+  const parametricOffice = buildOfficeAssembledSubgraph();
   // Rooftop fittings. The parametric office's body wires a scatter
   // of these on its +Y face, so registering them here is what makes
   // the `subgraph/city-roof-hvac` wrapper inside the office resolve
@@ -645,7 +663,8 @@ export function createCityDemo(): {
     rootNodeId: output.id,
     subgraphs: [
       sidewalk, longStreet, shortStreet, intersection,
-      tower, office, apartment, shop, parametricOffice,
+      tower, office, apartment, shop,
+      officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
       hvacUnit, waterTank, awning, wallAc,
       fireFloorMod, fireBottomMod, fireTopMod, fireEscape,
       lampPost, trafficSignal, fireHydrant, car,

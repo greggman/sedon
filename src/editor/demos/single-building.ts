@@ -2,8 +2,11 @@ import { addEdge, addNode, createGraph, type Graph } from '../../core/graph.js';
 import type { SubgraphDef } from '../../core/subgraph.js';
 import type { CameraState } from '../store.js';
 import {
-  buildParametricOfficeBuildingSubgraph,
-} from './city-buildings.js';
+  buildOfficeAssembledSubgraph,
+  buildOfficeGroundFloorSubgraph,
+  buildOfficeRoofCapSubgraph,
+  buildOfficeUpperFloorSubgraph,
+} from './city-office.js';
 import {
   buildFireEscapeAssembledSubgraph,
   buildFireEscapeBottomModuleSubgraph,
@@ -34,7 +37,15 @@ export function createSingleBuildingDemo(): {
   // All the building-internal subgraphs the parametric office wires
   // wrappers to. They have to be in the project's subgraphs list so
   // each `subgraph/<id>` reference resolves at eval time.
-  const parametricOffice = buildParametricOfficeBuildingSubgraph();
+  //
+  // The parametric office is now decomposed Houdini-style — its
+  // assembled subgraph references three module subgraphs (ground
+  // floor / upper floor / roof cap), each of which must also be
+  // registered so the wrappers resolve.
+  const officeGroundFloor = buildOfficeGroundFloorSubgraph();
+  const officeUpperFloor = buildOfficeUpperFloorSubgraph();
+  const officeRoofCap = buildOfficeRoofCapSubgraph();
+  const parametricOffice = buildOfficeAssembledSubgraph();
   const hvacUnit = buildHvacUnitSubgraph();
   const waterTank = buildWaterTankSubgraph();
   const awning = buildAwningSubgraph();
@@ -98,7 +109,7 @@ export function createSingleBuildingDemo(): {
     graph: g,
     rootNodeId: output.id,
     subgraphs: [
-      parametricOffice,
+      officeGroundFloor, officeUpperFloor, officeRoofCap, parametricOffice,
       hvacUnit, waterTank, awning, wallAc,
       fireFloor, fireBottom, fireTop, fireEscape,
     ],
