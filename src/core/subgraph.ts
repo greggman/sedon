@@ -315,10 +315,31 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
   // subgraph: editing cabinet-cell would change cabinet-cell.version but
   // NOT the bridge subgraph's version above it, so a for-each-point
   // wrapping the bridge would cache-hit and silently swallow the change.
+  // Wrapper input list: same as the subgraph's declared inputs, BUT
+  // mark any unwired Material / Texture2D input as `optional` so the
+  // parent evaluator passes them through as `undefined` (instead of
+  // skipping the wrapper entirely with `canEvaluate = false`). The
+  // wrapper's evaluate forwards undefined to the inner via
+  // `subgraphInputs`, and `resolveBoundaryInputs` in the boundary node
+  // then injects a 1×1 grey preview Material/Texture — so the wrapper
+  // PREVIEWS even when its Material/Texture2D inputs aren't wired.
+  // This is the same lazy-default behaviour the standalone preview
+  // already enjoys; without it, dropping e.g. `subgraph/cushion` onto
+  // a canvas with no material wired gives a blank node thumbnail.
+  // Inputs whose author already supplied a `default` (or which the
+  // wrapper hits an inputValue for) take that path first; optional
+  // only matters when nothing else resolves.
+  const wrapperInputs = def.inputs.map<InputDef>((i) => {
+    if (i.default !== undefined || i.optional) return i;
+    if (i.type === 'Material' || i.type === 'Texture2D') {
+      return { ...i, optional: true };
+    }
+    return i;
+  });
   const wrapper: NodeDef = {
     id: wrapperKind,
     category: def.category,
-    inputs: def.inputs,
+    inputs: wrapperInputs,
     outputs: def.outputs,
     version: transitiveSubgraphVersion(def, registry),
     async evaluate(ctx, inputs) {
