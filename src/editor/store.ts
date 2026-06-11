@@ -49,11 +49,19 @@ const coreTypes = createCoreTypeRegistry();
 // around; yaw/pitch/distance describe its position relative to that point.
 // Stored per editing context (main + each subgraph) so navigating back to a
 // graph restores how you had it framed.
+//
+// `mode` toggles between perspective and orthographic projection (Blender
+// numpad-5 / camera gizmo). In ortho mode, `orthoHeight` is the world-space
+// height of the view frustum at the target plane; we keep distance in sync
+// for ray casting / picking but the projection ignores it. Both fields are
+// optional so older saves load cleanly as perspective.
 export interface CameraState {
   yaw: number;
   pitch: number;
   distance: number;
   target: [number, number, number];
+  mode?: 'persp' | 'ortho';
+  orthoHeight?: number;
 }
 
 // React Flow viewport (graph canvas pan + zoom). Stored per editing

@@ -5,12 +5,14 @@ import { configureCanvas, type GpuDevice } from '../render/device.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import {
   multiply,
+  orthographic,
   perspective,
   rotationX,
   rotationY,
   translation,
 } from '../render/mat4.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { CameraGizmos } from './camera-gizmos.js';
 import { animationTime, currentForceSerial, requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
@@ -32,6 +34,12 @@ interface PreviewTileProps {
    * the cursor is over and drives pickAt against its renderer.
    */
   onTileReady?: (info: { canvas: HTMLCanvasElement; renderer: SceneRenderer } | null) => void;
+  /**
+   * Persist the current camera (called by the gizmo overlay when a
+   * drag or click finishes). Mirrors the commitCamera calls the parent
+   * Preview makes from its canvas pointer/keyboard handlers.
+   */
+  onCameraCommit: () => void;
 }
 
 // One renderable preview. Owns its own canvas, GPU context, depth texture
@@ -39,7 +47,7 @@ interface PreviewTileProps {
 // any tile (or moving via WASD) updates every tile uniformly. All input
 // handling lives in the parent Preview's wrapper div — tile canvases are
 // pure render targets.
-export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPreview, onTileReady }: PreviewTileProps) {
+export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPreview, onTileReady, onCameraCommit }: PreviewTileProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rendererRef = useRef<SceneRenderer | null>(null);
@@ -153,6 +161,8 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
     width: 0, height: 0,
     time: Number.NaN,
     forceSerial: -1,
+    mode: '' as '' | 'persp' | 'ortho',
+    orthoHeight: Number.NaN,
   });
   useEffect(() => {
     const draw = () => {
@@ -166,6 +176,8 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       const t = animationTime();
       const fs = currentForceSerial();
       const last = lastDrawRef.current;
+      const camMode = cam.mode ?? 'persp';
+      const camOrthoH = cam.orthoHeight ?? Number.NaN;
       if (
         last.scene === scene
         && last.yaw === cam.yaw
@@ -178,6 +190,8 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         && last.height === canvas.height
         && last.time === t
         && last.forceSerial === fs
+        && last.mode === camMode
+        && (last.orthoHeight === camOrthoH || (Number.isNaN(last.orthoHeight) && Number.isNaN(camOrthoH)))
       ) {
         return;
       }
@@ -212,7 +226,22 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       // out to many km; the `max(200, …)` floor keeps tiny camera
       // distances from collapsing the depth budget to nothing.
       // Matches scene-preview.tsx's adaptive formula.
-      const projection = perspective((60 * Math.PI) / 180, aspect, 0.1, Math.max(200, cam.distance * 4));
+      const fovY = (60 * Math.PI) / 180;
+      const zFar = Math.max(200, cam.distance * 4);
+      // Ortho frustum is centred on the optical axis (target sits in
+      // the middle of the view), with height locked to orthoHeight so
+      // pixel scale only changes when the user dollies. Width tracks
+      // aspect. If orthoHeight wasn't initialised yet, derive it from
+      // the perspective frustum at the target plane so the flip is
+      // continuous.
+      const projection =
+        cam.mode === 'ortho'
+          ? (() => {
+              const h = (cam.orthoHeight ?? cam.distance * 2 * Math.tan(fovY / 2)) / 2;
+              const w = h * aspect;
+              return orthographic(-w, w, -h, h, -zFar, zFar);
+            })()
+          : perspective(fovY, aspect, 0.1, zFar);
       // modelView = trans(0,0,-distance) * rotX(pitch) * rotY(yaw) * trans(-target)
       const modelView = multiply(
         multiply(
@@ -247,6 +276,8 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
       last.height = canvas.height;
       last.time = t;
       last.forceSerial = fs;
+      last.mode = camMode;
+      last.orthoHeight = camOrthoH;
     };
     const unsubscribe = subscribeRender(draw);
     // Initial paint for this scene/lighting/flatPreview combination.
@@ -267,6 +298,7 @@ export function PreviewTile({ gpu, scene, lighting, cameraRef, label, flatPrevie
         <canvas ref={canvasRef} className="sedon-preview-canvas" />
       </div>
       <div className="sedon-preview-tile-label">{label}</div>
+      <CameraGizmos cameraRef={cameraRef} onCommit={onCameraCommit} />
     </div>
   );
 }

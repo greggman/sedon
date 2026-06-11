@@ -62,15 +62,19 @@ const DEFAULT_CAMERA: OrbitCamera = {
   pitch: 0.4,
   distance: 3,
   target: [0, 0, 0],
+  mode: 'persp',
 };
 
 function cloneCamera(c: OrbitCamera): OrbitCamera {
-  return {
+  const out: OrbitCamera = {
     yaw: c.yaw,
     pitch: c.pitch,
     distance: c.distance,
     target: [c.target[0], c.target[1], c.target[2]],
+    mode: c.mode ?? 'persp',
   };
+  if (c.orthoHeight !== undefined) out.orthoHeight = c.orthoHeight;
+  return out;
 }
 
 interface PreviewProps {
@@ -371,16 +375,27 @@ export function Preview({ panelId }: PreviewProps = {}) {
     };
 
     const onPointerDown = (e: PointerEvent) => {
-      // Touch pointers report button=-1; pen/mouse use 0 for primary. We
-      // accept both — touch wouldn't pinch otherwise.
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      // Touch pointers report button=-1; pen/mouse use 0 for primary;
+      // middle-mouse (button=1) is accepted too and forced into pan
+      // mode, matching the Blender / CAD convention.
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
+      // Skip events that originated in the camera gizmo overlay so the
+      // grid doesn't capture the pointer away from the orbit / dolly /
+      // pan SVGs. (We can't rely on React's stopPropagation here — this
+      // listener is attached via addEventListener and fires during
+      // native bubbling, before any synthetic dispatch.)
+      const targetEl = e.target as Element | null;
+      if (targetEl && targetEl.closest && targetEl.closest('.sedon-camera-gizmos')) return;
+      const middleMouse = e.pointerType === 'mouse' && e.button === 1;
+      // Middle-mouse may begin scrolling on some hosts; suppress.
+      if (middleMouse) e.preventDefault();
       wrapper.focus();
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { grid.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 
       if (pointers.size === 1) {
         mode = 'drag';
-        panning = e.metaKey || e.ctrlKey;
+        panning = middleMouse || e.metaKey || e.ctrlKey;
         // Shift held at drag-start ⇒ FPS-style mouse-look (camera
         // rotates in place; orbit target slides along the new view
         // direction so subsequent orbit/pan starts from the new
@@ -816,6 +831,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
     // contains the header chrome (Play/Pause, pin dropdown), so if
     // pointerdown listened on the wrapper, button clicks would
     // bubble in and setPointerCapture would steal their pointerup.
+    // Suppress middle-click autoscroll (Firefox/Windows) before the
+    // pointerdown path takes over. preventDefault on pointerdown alone
+    // doesn't always block the autoscroll widget; mousedown does.
+    const onMouseDownAux = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    grid.addEventListener('mousedown', onMouseDownAux);
     grid.addEventListener('pointerdown', onPointerDown);
     grid.addEventListener('pointermove', onPointerMove);
     grid.addEventListener('pointerup', onPointerUp);
@@ -827,6 +849,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     wrapper.addEventListener('blur', onBlur);
 
     return () => {
+      grid.removeEventListener('mousedown', onMouseDownAux);
       grid.removeEventListener('pointerdown', onPointerDown);
       grid.removeEventListener('pointermove', onPointerMove);
       grid.removeEventListener('pointerup', onPointerUp);
@@ -1102,6 +1125,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
               label={t.name}
               flatPreview={t.flatPreview}
               onTileReady={tileRegistrarFor(t.name)}
+              onCameraCommit={() => commitCamera(effectiveGraphIdRef.current, cameraRef.current)}
             />
           ))}
       </div>

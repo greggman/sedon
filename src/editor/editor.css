@@ -1914,13 +1914,87 @@
 .sedon-preview-tile-label {
   position: absolute;
   top: 4px;
-  left: 4px;
+  right: 4px;
   padding: 2px 6px;
   background: rgba(0, 0, 0, 0.6);
   color: #ddd;
   font-size: 11px;
   border-radius: 2px;
   pointer-events: none;
+}
+
+/* ─── Camera gizmos (Blender-style overlay, upper-left of each tile) ─── */
+.sedon-camera-gizmos {
+  position: absolute;
+  top: calc(6px * 2 + 1em);
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  pointer-events: none;
+  user-select: none;
+}
+.sedon-gizmo-orbit,
+.sedon-gizmo-ctrl {
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: none;
+}
+.sedon-gizmo-orbit {
+  cursor: grab;
+}
+.sedon-gizmo-orbit:active {
+  cursor: grabbing;
+}
+.sedon-gizmo-disc {
+  /* invisible — only there to widen the disc-drag hit area beyond the
+     axis arms. Pointer events still hit it because SVG <circle> with
+     fill: rgba(0,0,0,0) is hit-testable. */
+  fill: rgba(20, 20, 20, 0);
+}
+.sedon-gizmo-orbit-frame:hover {
+  .sedon-gizmo-disc {
+    fill: rgba(20, 20, 20, 0.35);
+  }
+}
+
+.sedon-gizmo-axis-back {
+  opacity: 0.45;
+}
+.sedon-gizmo-axis-dot-outline {
+  cursor: pointer;
+}
+.sedon-gizmo-axis-label-positive {
+  fill: rgba(0, 0, 0, 0.9);
+}
+.sedon-gizmo-axis-label-negative {
+  fill: rgba(0, 0, 0, 0.0);
+}
+.sedon-gizmo-axis-dot-outline:hover {
+  .sedon-gizmo-axis-label-positive {
+    fill: #fff;
+  }
+  .sedon-gizmo-axis-label-negative {
+    fill: #fff;
+  }
+}
+.sedon-gizmo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sedon-gizmo-bg {
+  fill: rgba(20, 20, 20, 0.55);
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 1;
+}
+.sedon-gizmo-ctrl:hover .sedon-gizmo-bg {
+  fill: rgba(40, 40, 40, 0.7);
+}
+.sedon-gizmo-ctrl.is-active .sedon-gizmo-bg {
+  fill: rgba(70, 110, 170, 0.7);
+  stroke: rgba(140, 180, 230, 0.6);
 }
 
 .sedon-preview-error {
