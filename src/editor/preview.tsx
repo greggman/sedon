@@ -471,7 +471,10 @@ export function Preview({ panelId }: PreviewProps = {}) {
         applyLookAround(cam, dx, dy, 0.005);
       } else {
         const sens = 0.005;
-        cam.yaw += dx * sens;
+        // Horizontal drag flips sign: dragging right rotates the camera
+        // LEFT around the target (matches Blender / Maya — the scene
+        // moves with the cursor, the camera moves against it).
+        cam.yaw -= dx * sens;
         cam.pitch = Math.max(
           -Math.PI / 2 + 0.01,
           Math.min(Math.PI / 2 - 0.01, cam.pitch + dy * sens),

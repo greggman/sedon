@@ -191,7 +191,8 @@ export function CameraGizmos({ cameraRef, onCommit }: CameraGizmosProps) {
     drag.lastY = e.clientY;
     const c = cameraRef.current;
     const sens = 0.01;
-    c.yaw += dx * sens;
+    // Horizontal sign matches the canvas-orbit handler in preview.tsx.
+    c.yaw -= dx * sens;
     c.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, c.pitch + dy * sens));
     requestRender();
   };
