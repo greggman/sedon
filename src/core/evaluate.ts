@@ -62,6 +62,19 @@ export interface EvaluateOptions {
    *     output and shouldn't run.
    */
   scope?: 'all' | 'rootAncestors';
+  /**
+   * When true, suppress the per-node `console.error("evaluation of … failed", e)`
+   * log emitted on a caught node-level exception. Callers that expect
+   * some sample graphs to fail evaluation (e.g. the Nodes browser
+   * preview thumbnails, where an incomplete `doc.sampleGraph` should
+   * just fall back to a glyph) set this to keep the console clean.
+   *
+   * The exception is still caught and the evaluator still continues
+   * with the remaining nodes — quiet only affects logging. Defaults to
+   * false so the regular editor / project evaluation surfaces every
+   * authoring failure loudly.
+   */
+  quiet?: boolean;
 }
 
 export interface EvaluateResult {
@@ -593,7 +606,9 @@ export async function evaluateGraph(
         cache.lastFingerprintByNodeId.set(trackerKey, fp);
       }
     } catch (e) {
-      console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
+      if (!options.quiet) {
+        console.error(`evaluation of ${def.id} (${nodeId}) failed:`, e);
+      }
     } finally {
       // Remove the pending entry once we're past it — entries.has(fp)
       // now serves the same role for any future evaluator. Guard against

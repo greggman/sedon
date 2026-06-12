@@ -1,32 +1,48 @@
 import { useEffect, useMemo, useState } from 'react';
+import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
-import type { NodeDef, NodeRegistry } from '../core/node-def.js';
-import type { Texture2DValue } from '../core/resources.js';
+import type { NodeDef, NodeOutputs, NodeRegistry } from '../core/node-def.js';
+import type {
+  GeometryValue,
+  SceneValue,
+  Texture2DValue,
+} from '../core/resources.js';
 import { createCoreNodeRegistry } from '../nodes/index.js';
+import { MeshPreview } from './mesh-preview.js';
+import { buildRegistry } from './registry.js';
+import { ScenePreview } from './scene-preview.js';
+import type { CameraState } from './store.js';
 import { useEditorStore } from './store.js';
 import { TexturePreview } from './texture-preview.js';
 
 // Live thumbnail of a core node's sample graph, for the Nodes browser.
-// Mirrors AssetThumbnail's "eval the graph and render its output" shape,
-// but specialised to the Texture2D case (which is the only output type
-// that produces a meaningful at-a-glance preview from a default-input
-// sample graph).
+// Mirrors the docs-page preview policy so the Nodes-tab tiles look
+// identical to what users see when they drill into a node's docs:
 //
-// Eligibility: the node must declare a `doc.sampleGraph` (otherwise
-// we have nothing to render) AND its first output must be `Texture2D`.
-// All texture/generators and texture/filters qualify; math, geom, point,
-// scene, and iteration nodes fall back to the supplied glyph.
+//   • Texture2D → flat 2D blit (TexturePreview)
+//   • Geometry  → wireframe (MeshPreview, same as docs page)
+//   • Scene     → auto-framed 3D scene (ScenePreview)
+//   • Other types (Material, Float, Vec*, Path, …) → glyph fallback
 //
-// Caching strategy: every thumbnail uses ITS OWN ephemeral eval — no
-// shared cache with the project's working set. The sample graphs are
-// tiny single-tex pipelines, so eval cost is negligible (~1ms), and a
-// fresh-cache approach keeps preview state cleanly isolated from the
-// user's editor cache (no risk of touching its sweep set, no
-// fingerprint collisions with user-authored nodes).
+// We deliberately picked the docs-style PER-OUTPUT scanner (find the
+// first output that's previewable) rather than "first output only" so
+// nodes with a numeric-then-geometry pair still surface a preview.
 //
-// We DO share a single core-only NodeRegistry across all thumbnails
-// since every sample graph only references core node kinds, and
-// rebuilding 50× per Nodes-tab-open would just be waste.
+// Eligibility: `def.doc?.sampleGraph` must exist (we need a graph to
+// run) and at least one declared output must be a previewable type.
+// The expensive eval runs only when both pass.
+//
+// Caching strategy: each thumbnail does its own ephemeral eval — no
+// shared cache with the project's working set. Sample graphs are tiny
+// (~1ms eval), and isolating them keeps preview state cleanly
+// separated from the user's editor cache.
+
+const DEFAULT_THUMB_CAMERA: CameraState = {
+  yaw: 0.5,
+  pitch: 0.3,
+  distance: 1, // overridden by ScenePreview's auto-frame.
+  target: [0, 0, 0],
+};
 
 let coreRegistryCache: NodeRegistry | null = null;
 function getSharedCoreRegistry(): NodeRegistry {
@@ -34,8 +50,51 @@ function getSharedCoreRegistry(): NodeRegistry {
   return coreRegistryCache;
 }
 
-function firstOutputIsTexture(def: NodeDef): boolean {
-  return def.outputs[0]?.type === 'Texture2D';
+// Type guards mirroring docs-sample-preview's set so the docs and the
+// Nodes panel agree on what counts as previewable.
+function isTexture2D(v: unknown): v is Texture2DValue {
+  return typeof v === 'object' && v !== null && 'texture' in v && 'format' in v;
+}
+function isGeometry(v: unknown): v is GeometryValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'positionBuffer' in v &&
+    'indexCount' in v
+  );
+}
+function isScene(v: unknown): v is SceneValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    Array.isArray((v as { entities?: unknown }).entities)
+  );
+}
+
+type PreviewTarget =
+  | { kind: 'texture'; value: Texture2DValue }
+  | { kind: 'geometry'; value: GeometryValue }
+  | { kind: 'scene'; value: SceneValue };
+
+// Pick the first previewable output. Texture beats Geometry beats Scene
+// — same priority the docs page uses. Returns null when no output has a
+// renderable shape (the caller falls back to the glyph).
+function previewTargetFor(outputs: NodeOutputs): PreviewTarget | null {
+  for (const v of Object.values(outputs)) {
+    if (isTexture2D(v)) return { kind: 'texture', value: v };
+    if (isGeometry(v)) return { kind: 'geometry', value: v };
+    if (isScene(v)) return { kind: 'scene', value: v };
+  }
+  return null;
+}
+
+// Eligibility check before eval: do ANY of the declared output types
+// look previewable? Skipping ineligible defs early avoids ~50 wasted
+// preview-eval rounds on nodes that can never produce a thumbnail.
+const PREVIEWABLE_TYPES = new Set(['Texture2D', 'Geometry', 'Scene']);
+function hasPreviewableOutput(def: NodeDef): boolean {
+  if (!def.doc?.sampleGraph) return false;
+  return def.outputs.some((o) => PREVIEWABLE_TYPES.has(o.type));
 }
 
 interface NodeThumbnailProps {
@@ -47,44 +106,38 @@ interface NodeThumbnailProps {
 
 export function NodeThumbnail({ def, size, fallback }: NodeThumbnailProps) {
   const device = useEditorStore((s) => s.device);
-  const [texValue, setTexValue] = useState<Texture2DValue | null>(null);
+  const [target, setTarget] = useState<PreviewTarget | null>(null);
 
-  // Eligibility is a property of the def itself, not of any state, so
-  // memoize for the lifetime of the def — avoids retrying ineligible
-  // nodes' "is sample graph there?" check on every render.
-  const eligible = useMemo(
-    () => Boolean(def.doc?.sampleGraph) && firstOutputIsTexture(def),
-    [def],
-  );
+  const eligible = useMemo(() => hasPreviewableOutput(def), [def]);
 
   useEffect(() => {
     if (!device || !eligible) {
-      setTexValue(null);
+      setTarget(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
         const sample = def.doc!.sampleGraph!();
-        const registry = getSharedCoreRegistry();
+        const registry =
+          sample.subgraphs && sample.subgraphs.length > 0
+            ? buildRegistry(sample.subgraphs)
+            : getSharedCoreRegistry();
         const result = await evaluateGraph(sample.graph, registry, {
           rootNodeId: sample.rootNodeId,
           context: { device },
+          // Some sample graphs ship deliberately under-wired (the docs
+          // show the source; eval isn't the point). Their failures
+          // should fall back to the glyph silently, not pollute the
+          // global console.
+          quiet: true,
         });
         if (cancelled) return;
-        const firstOutName = def.outputs[0]?.name;
-        if (!firstOutName) return;
-        const out = result.outputs[firstOutName] as Texture2DValue | undefined;
-        if (out && out.texture) {
-          setTexValue(out);
-        }
+        const next = previewTargetFor(result.outputs);
+        if (next) setTarget(next);
       } catch (err) {
-        // Sample graphs are author-tested; a failure here means a
-        // regression the author should see during dev. In production
-        // we silently fall back to the glyph.
-        // eslint-disable-next-line no-console
-        console.warn(`NodeThumbnail "${def.id}": sample-graph eval failed`, err);
-        if (!cancelled) setTexValue(null);
+        debug(() => `NodeThumbnail "${def.id}": sample-graph eval failed: ${String(err)}`);
+        if (!cancelled) setTarget(null);
       }
     })();
     return () => {
@@ -92,10 +145,33 @@ export function NodeThumbnail({ def, size, fallback }: NodeThumbnailProps) {
     };
   }, [device, def, eligible]);
 
-  if (!device || !texValue) return <>{fallback}</>;
+  if (!device || !target) return <>{fallback}</>;
+
+  // lineHeight: 0 keeps the surrounding tile's text line-height from
+  // leaving a sliver of whitespace under the canvas.
+  if (target.kind === 'texture') {
+    return (
+      <div style={{ width: size, height: size, lineHeight: 0 }}>
+        <TexturePreview device={device} value={target.value} size={size} />
+      </div>
+    );
+  }
+  if (target.kind === 'geometry') {
+    // MeshPreview needs CPU-side mesh data to expand into triangles for
+    // the barycentric wireframe trick. GPU-only geometries (e.g.
+    // heightfield-to-mesh with cpu_access:false) can't be previewed —
+    // fall back to the glyph rather than render a blank canvas.
+    if (!target.value.mesh) return <>{fallback}</>;
+    return (
+      <div style={{ width: size, height: size, lineHeight: 0 }}>
+        <MeshPreview device={device} geometry={target.value} />
+      </div>
+    );
+  }
+  // Scene
   return (
     <div style={{ width: size, height: size, lineHeight: 0 }}>
-      <TexturePreview device={device} value={texValue} size={size} />
+      <ScenePreview device={device} scene={target.value} camera={DEFAULT_THUMB_CAMERA} />
     </div>
   );
 }
