@@ -29,15 +29,22 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   // present), the way a VSCode-ish palette does it. A plain substring
   // search would force the user to know our exact label format
   // ("Add:" vs "Add").
+  // Drop `paletteHidden` actions up front so they neither show in the
+  // empty-query catalog nor compete with query matches. The Demos
+  // submenu in the File menu still surfaces them.
+  const palette = useMemo(
+    () => actions.filter((a) => a.paletteHidden !== true),
+    [actions],
+  );
   const filtered = useMemo<Action[]>(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return actions;
+    if (!q) return palette;
     const tokens = q.split(/\s+/).filter(Boolean);
-    return actions.filter((a) => {
+    return palette.filter((a) => {
       const label = a.label.toLowerCase();
       return tokens.every((t) => label.includes(t));
     });
-  }, [actions, query]);
+  }, [palette, query]);
 
   // Reset state + focus the input every time the palette opens. Without
   // resetting, reopening retains the previous query — not what users

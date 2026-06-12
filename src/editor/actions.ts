@@ -124,16 +124,18 @@ export function buildActions(input: ActionsInput): Action[] {
     );
 
     // ── Demos ────────────────────────────────────────────
-    // One action per demo so the palette is searchable ("furniture"
-    // matches "File: Load Demo — Furniture"). The Demos submenu in
-    // app-menus.tsx references these by id with the short label.
+    // One action per demo so the Demos submenu in app-menus.tsx can
+    // reference them by id. The palette form is documented but the
+    // entries are HIDDEN from the palette — too many demo labels
+    // (furniture / city / trees / …) collide with real-command
+    // searches and steal priority. Users find demos through the
+    // File → Demos submenu instead.
     for (const d of DEMOS) {
       actions.push({
         id: `demo.${d.id}`,
-        // Palette form is the searchable phrase; menu form is just
-        // the demo's name (the Demos submenu is the category).
         label: `File: Load Demo — ${d.label}`,
         menuLabel: d.label,
+        paletteHidden: true,
         run: () => { void loadDemoById(d.id); },
       });
     }

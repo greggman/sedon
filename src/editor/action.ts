@@ -39,6 +39,14 @@ export interface Action {
    *  menu and the palette but is rendered dimmed and click-through is
    *  suppressed. */
   enabled?: boolean;
+  /** Default false. When true, the action is omitted from the
+   *  command palette but still appears in menus / wherever else the
+   *  registry is consumed. Use for high-volume, low-utility entries
+   *  that would otherwise crowd palette search results — the demo
+   *  loaders are the canonical case: the user already reaches them
+   *  via File → Demos, and "furniture" / "city" / "trees" matching
+   *  the palette steals priority from real commands. */
+  paletteHidden?: boolean;
   run: () => void | Promise<void>;
 }
 
