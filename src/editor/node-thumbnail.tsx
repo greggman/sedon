@@ -88,13 +88,31 @@ function previewTargetFor(outputs: NodeOutputs): PreviewTarget | null {
   return null;
 }
 
-// Eligibility check before eval: do ANY of the declared output types
-// look previewable? Skipping ineligible defs early avoids ~50 wasted
-// preview-eval rounds on nodes that can never produce a thumbnail.
+// Eligibility check before eval: does the SAMPLE GRAPH's root node
+// declare a previewable output? Not the host node's outputs — a
+// branch/recursive node outputs BranchGraph, but its sample graph
+// chains through branch/tube whose Geometry is what we actually want
+// to render. The author already encoded the "what to preview" decision
+// by picking `rootNodeId`; we just have to follow it.
 const PREVIEWABLE_TYPES = new Set(['Texture2D', 'Geometry', 'Scene']);
 function hasPreviewableOutput(def: NodeDef): boolean {
   if (!def.doc?.sampleGraph) return false;
-  return def.outputs.some((o) => PREVIEWABLE_TYPES.has(o.type));
+  try {
+    const sample = def.doc.sampleGraph();
+    const rootNode = sample.graph.nodes.find((n) => n.id === sample.rootNodeId);
+    if (!rootNode) return false;
+    // Pull from the same registry the eval will use so we agree about
+    // sample-graph subgraphs.
+    const registry =
+      sample.subgraphs && sample.subgraphs.length > 0
+        ? buildRegistry(sample.subgraphs)
+        : getSharedCoreRegistry();
+    const rootDef = registry.get(rootNode.kind);
+    if (!rootDef) return false;
+    return rootDef.outputs.some((o) => PREVIEWABLE_TYPES.has(o.type));
+  } catch {
+    return false;
+  }
 }
 
 interface NodeThumbnailProps {

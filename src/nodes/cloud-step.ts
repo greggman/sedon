@@ -82,22 +82,7 @@ ground").
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'tex/solid-color', {
-        id: 'basecolor',
-        position: { x: 0, y: 380 },
-        inputValues: { color: [0.45, 0.32, 0.12, 1], resolution: 32 },
-      });
-      const material = addNode(g, 'material/pbr', {
-        id: 'material',
-        position: { x: 280, y: 380 },
-        inputValues: { roughness: 0.6, metallic: 0 },
-      });
-      const entity = addNode(g, 'scene/entity', {
-        id: 'entity',
-        position: { x: 560, y: 200 },
-        inputValues: {},
-      });
-      const inst = addNode(g, 'scene/instance-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 1120, y: 100 },
         inputValues: { scale: 0.05, align: true, seed: 0 },
@@ -105,11 +90,8 @@ ground").
       addEdge(g, { node: sphere.id, socket: 'geometry' }, { node: points.id, socket: 'geometry' });
       addEdge(g, { node: points.id, socket: 'points' }, { node: randomFloat.id, socket: 'points' });
       addEdge(g, { node: randomFloat.id, socket: 'values' }, { node: step.id, socket: 'values' });
-      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
-      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
-      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
       addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
-      addEdge(g, { node: entity.id, socket: 'scene' }, { node: inst.id, socket: 'instance' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
       addEdge(g, { node: step.id, socket: 'mask' }, { node: inst.id, socket: 'per_point_active' });
       return { graph: g, rootNodeId: 'inst' };
     },

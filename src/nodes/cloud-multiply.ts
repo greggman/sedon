@@ -95,22 +95,7 @@ guard against accidentally crossing two different point sets.
         position: { x: 0, y: 200 },
         inputValues: { size: 1 },
       });
-      const basecolor = addNode(g, 'tex/solid-color', {
-        id: 'basecolor',
-        position: { x: 0, y: 400 },
-        inputValues: { color: [0.15, 0.15, 0.5, 1], resolution: 32 },
-      });
-      const material = addNode(g, 'material/pbr', {
-        id: 'material',
-        position: { x: 280, y: 400 },
-        inputValues: { roughness: 0.5, metallic: 0 },
-      });
-      const entity = addNode(g, 'scene/entity', {
-        id: 'entity',
-        position: { x: 560, y: 400 },
-        inputValues: {},
-      });
-      const inst = addNode(g, 'scene/instance-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
         position: { x: 1400, y: 200 },
         inputValues: { scale: 0.05, align: true, seed: 0 },
@@ -122,11 +107,8 @@ guard against accidentally crossing two different point sets.
       addEdge(g, { node: altitude.id, socket: 'values' }, { node: highMask.id, socket: 'values' });
       addEdge(g, { node: flatMask.id, socket: 'mask' }, { node: combined.id, socket: 'a' });
       addEdge(g, { node: highMask.id, socket: 'mask' }, { node: combined.id, socket: 'b' });
-      addEdge(g, { node: basecolor.id, socket: 'texture' }, { node: material.id, socket: 'basecolor' });
-      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
-      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
       addEdge(g, { node: points.id, socket: 'points' }, { node: inst.id, socket: 'points' });
-      addEdge(g, { node: entity.id, socket: 'scene' }, { node: inst.id, socket: 'instance' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
       addEdge(g, { node: combined.id, socket: 'values' }, { node: inst.id, socket: 'per_point_active' });
       return { graph: g, rootNodeId: 'inst' };
     },
