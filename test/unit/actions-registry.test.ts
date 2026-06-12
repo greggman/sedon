@@ -197,9 +197,11 @@ test('actions.ts: demo actions carry the bare demo label for menus', () => {
 test('MenuEntry shape: leaves are pure action refs (no inline run, no label override)', () => {
   // Compile-time guarantee via the MenuEntry union; mirror it at
   // runtime in case anyone bypasses TS. A leaf must be ONLY
-  // { kind: 'action', actionId } — no display strings at the menu
-  // tree level. The action itself owns label / menuLabel / shortcut
-  // / enabled; the menu just references by id.
+  // { kind: 'action', actionId, [checked?] } — the menu tree owns
+  // no display strings (label / menuLabel / shortcut / enabled all
+  // live on the action), but DOES own checkmark state, since "is
+  // this row checked" is a menu-display concern the action stays
+  // oblivious to.
   const actions = makeActions({ macrosAllowed: true });
   const menus = makeMenus(actions);
   const walk = (items: MenuEntry[]): void => {
@@ -211,7 +213,7 @@ test('MenuEntry shape: leaves are pure action refs (no inline run, no label over
       }
       assert.equal(e.kind, 'action');
       const keys = Object.keys(e).sort();
-      const allowed = keys.every((k) => k === 'kind' || k === 'actionId');
+      const allowed = keys.every((k) => k === 'kind' || k === 'actionId' || k === 'checked');
       assert.ok(allowed, `MenuEntry leaf has unexpected keys: ${keys.join(',')}`);
     }
   };

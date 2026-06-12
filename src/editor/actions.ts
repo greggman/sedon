@@ -207,6 +207,18 @@ export function buildActions(input: ActionsInput): Action[] {
     // ── View ─────────────────────────────────────────────
     actions.push(
       { id: 'view.frame-selected', label: 'View: Frame Selected', shortcut: 'F', run: () => frameSelectedInActiveCanvas() },
+      {
+        // The action doesn't know about its checked state — that's a
+        // menu-display concern (see MenuActionRef.checked + the
+        // showLiveNodePreviews handling in app-menus.tsx). Action
+        // stays focused on "what does the run do."
+        id: 'view.animate-node-previews',
+        label: 'View: Animate Node Previews',
+        run: () => {
+          const cur = useLayoutStore.getState().showLiveNodePreviews;
+          useLayoutStore.getState().setShowLiveNodePreviews(!cur);
+        },
+      },
       { id: 'view.cleanup', label: 'View: Cleanup (Auto-layout)', run: () => cleanupActiveGraph() },
       { id: 'view.split-right', label: 'View: Split Right', run: () => splitActivePanel('right') },
       { id: 'view.split-down', label: 'View: Split Down', run: () => splitActivePanel('below') },

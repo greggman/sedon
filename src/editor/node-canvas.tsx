@@ -229,7 +229,13 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   // Same role as the preview's animFrameGen — re-fires the canvas
   // eval each frame while playing so time-driven node thumbnails
   // (worley flicker, animated procedural noise) update live.
+  // User-toggleable via View → Animate Node Previews. When off, the
+  // hook still returns its frozen counter, but we omit it from the
+  // dep list so the effect doesn't re-fire per frame. The Preview
+  // pane animates regardless (separate eval path).
+  const showLiveNodePreviews = useLayoutStore((s) => s.showLiveNodePreviews);
   const animFrameGen = useAnimFrameGeneration();
+  const animFrameGenForDep = showLiveNodePreviews ? animFrameGen : 0;
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -285,7 +291,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     // canvas must re-run when the subgraph's input defaults change,
     // even though `panelGraph` (the inner graph) stays the same.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey, imageLoadGen, animFrameGen]);
+  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey, imageLoadGen, animFrameGenForDep]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-

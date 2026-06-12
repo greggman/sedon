@@ -7,7 +7,8 @@ import {
 } from '../render/gpu-cache.js';
 import autoLevelShader from './texture-auto-level.wgsl';
 import blitShader from './blit.wgsl';
-import { subscribeRender } from './render-bus.js';
+import { isAnimating, subscribeRender } from './render-bus.js';
+import { useLayoutStore } from './layout-store.js';
 
 // Per-pipeline explicit bind-group layouts. Each pipeline declares
 // only the bindings it actually reads — the bind group's entries
@@ -330,7 +331,27 @@ export function TexturePreview({ device, value, size, width, height }: TexturePr
     drawRef.current();
   }, [device, value]);
 
-  useEffect(() => subscribeRender(() => drawRef.current()), []);
+  // Per-frame redraw subscription. The eval cache mutates texture
+  // CONTENT in place across re-evals (worley / blend / colorize all
+  // re-render into the existing GPUTexture rather than allocating
+  // fresh), so when the preview pane's animation loop is driving
+  // per-frame evals, our texture's pixels change underneath even
+  // though the JS handle stays the same — and a blind redraw here
+  // would show the new pixels.
+  //
+  // When the user has unchecked View → Animate Node Previews,
+  // they're explicitly opting out of that. While the preview pane
+  // is playing, skip the redraw so the thumbnail freezes at its
+  // last-rendered state. The `value` useEffect above still fires
+  // when the handle itself swaps (a new node wired in), so genuine
+  // value changes still propagate.
+  const showLiveNodePreviews = useLayoutStore((s) => s.showLiveNodePreviews);
+  const showLiveRef = useRef(showLiveNodePreviews);
+  showLiveRef.current = showLiveNodePreviews;
+  useEffect(() => subscribeRender(() => {
+    if (isAnimating() && !showLiveRef.current) return;
+    drawRef.current();
+  }), []);
 
   const dpr = window.devicePixelRatio || 1;
   return (

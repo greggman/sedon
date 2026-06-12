@@ -52,6 +52,13 @@ export interface MenuActionRef {
    *  set `Action.menuLabel` for cases where the menu form differs
    *  more substantially from the palette form. */
   actionId: string;
+  /** When set, the row renders a leading ✓ glyph (or its absence
+   *  reserves the glyph cell so checked/unchecked siblings align).
+   *  Lives on the menu tree — NOT on the Action — because "is this
+   *  row checked" is a menu-display concern; the action itself is
+   *  oblivious. The menu builder reads UI-layer state once and
+   *  stamps this flag on the rows it wants ticked. */
+  checked?: boolean;
 }
 
 export interface MenuSeparator {
@@ -81,6 +88,7 @@ interface ResolvedLeaf {
   label: string;
   shortcut?: string;
   disabled?: boolean;
+  checked?: boolean;
   run: () => void | Promise<void>;
 }
 
@@ -131,6 +139,7 @@ function resolveEntries(
     };
     if (action.shortcut !== undefined) leaf.shortcut = action.shortcut;
     if (action.enabled === false) leaf.disabled = true;
+    if (e.checked !== undefined) leaf.checked = e.checked;
     return leaf;
   });
 }
@@ -493,6 +502,9 @@ function MenuRow({
         if (!entry.disabled && entry.kind === 'item') onClick();
       }}
     >
+      {entry.kind === 'item' && entry.checked && (
+        <span className="sedon-menu-row-check" aria-hidden="true">✓</span>
+      )}
       <span className="sedon-menu-row-label">{entry.label}</span>
       {entry.kind === 'item' && entry.shortcut && (
         <span className="sedon-menu-row-shortcut">{entry.shortcut}</span>

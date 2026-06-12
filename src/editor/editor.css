@@ -651,6 +651,15 @@
   flex: 1 1 auto;
 }
 
+/* Leading ✓ glyph for `checked` menu rows. Sits in the row's flex
+ * flow before the label; absent on unchecked rows (no gutter
+ * reserved — single-toggle menus look cleaner without empty space). */
+.sedon-menu-row-check {
+  flex: 0 0 auto;
+  margin-right: 6px;
+  color: #ddd;
+}
+
 .sedon-menu-row-shortcut {
   margin-left: 24px;
   color: #888;

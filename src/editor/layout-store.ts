@@ -150,6 +150,21 @@ export interface LayoutState {
   setAssetsTreeWidth: (px: number) => void;
 
   /**
+   * Whether node-canvas thumbnails re-evaluate every animation frame
+   * when an `anim/*` node is in the graph. When false, only the
+   * dedicated Preview pane animates and node thumbnails freeze at
+   * their last-evaluated value. Default true so the feature is
+   * discoverable; the user toggles off via View → Animate Node
+   * Previews when a busy graph makes per-thumbnail eval expensive.
+   *
+   * Session-only (the layout store doesn't persist) — reloads reset
+   * to the default. If users start asking for it to stick, lift it
+   * into a persisted preferences slice.
+   */
+  showLiveNodePreviews: boolean;
+  setShowLiveNodePreviews: (on: boolean) => void;
+
+  /**
    * Clear the per-session, per-graph camera + viewport state.
    * Project-level state (DockView layout, panel pins) is preserved —
    * the user keeps the same workspace shape across project switches.
@@ -173,6 +188,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   previewCameras: {},
   recentPreviewCameras: {},
   assetsTreeWidth: 200,
+  showLiveNodePreviews: true,
   lastActiveCanvasPanelId: null,
   lastActivePreviewPanelId: null,
 
@@ -311,6 +327,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     const clamped = Math.max(80, Math.min(600, Math.round(px)));
     set({ assetsTreeWidth: clamped });
   },
+
+  setShowLiveNodePreviews: (on) => set({ showLiveNodePreviews: on }),
 
   resetForNewProject: () =>
     set({

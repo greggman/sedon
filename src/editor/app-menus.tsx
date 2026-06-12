@@ -4,6 +4,7 @@ import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph
 import { useActionMap } from './actions.js';
 import { DEMOS } from './demos/index.js';
 import type { Action } from './action.js';
+import { useLayoutStore } from './layout-store.js';
 import type { MenuEntry, TopMenu } from './menubar.js';
 import { useRegistry } from './registry.js';
 
@@ -38,10 +39,20 @@ export interface AppMenusInput {
   actionMap: ReadonlyMap<string, Action>;
   /** Drives the Add menu's category grouping. */
   registry: NodeRegistry;
+  /** UI-layer state that drives menu check marks (no effect on
+   *  action enable/disable). Lives here, not on ActionsInput,
+   *  because "is this row checked" is a menu-display concern and
+   *  the action registry stays oblivious to chrome.
+   *
+   *  Default true to match the layout store's default, so test
+   *  fixtures that build menus without a renderer get sensible
+   *  output without restating the value. */
+  showLiveNodePreviews?: boolean;
 }
 
 export function buildAppMenus(input: AppMenusInput): TopMenu[] {
   const { actionMap, registry } = input;
+  const showLiveNodePreviews = input.showLiveNodePreviews ?? true;
 
   // ── File ─────────────────────────────────────────────
   const demoItems: MenuEntry[] = DEMOS.map((d) => actionItem(`demo.${d.id}`));
@@ -113,6 +124,10 @@ export function buildAppMenus(input: AppMenusInput): TopMenu[] {
     items: [
       actionItem('view.frame-selected'),
       actionItem('view.cleanup'),
+      // Long form (rather than `actionItem`) so we can pass
+      // `checked` — the menu-layer affordance for "this toggle is
+      // currently on." The action itself stays a plain run handler.
+      { kind: 'action', actionId: 'view.animate-node-previews', checked: showLiveNodePreviews },
       SEPARATOR,
       actionItem('view.split-right'),
       actionItem('view.split-down'),
@@ -164,9 +179,13 @@ export function useAppMenus(): TopMenu[] {
   // subgraph adds an Add: <kind> entry the Add submenu indexes).
   const actionMap = useActionMap();
   const registry = useRegistry();
+  // UI-layer flag that drives the View → Animate Node Previews
+  // check mark. Subscribed here (not via ActionsInput) so the
+  // action registry stays clean of menu-display concerns.
+  const showLiveNodePreviews = useLayoutStore((s) => s.showLiveNodePreviews);
   return useMemo(
-    () => buildAppMenus({ actionMap, registry }),
-    [actionMap, registry],
+    () => buildAppMenus({ actionMap, registry, showLiveNodePreviews }),
+    [actionMap, registry, showLiveNodePreviews],
   );
 }
 
