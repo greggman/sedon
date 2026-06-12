@@ -11,6 +11,7 @@ import {
 } from '../render/mat4.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
 import { createSceneRenderer, type SceneRenderer } from '../render/scene.js';
+import { useLayoutStore } from './layout-store.js';
 import { currentForceSerial, requestRender, subscribeRender } from './render-bus.js';
 import type { CameraState } from './store.js';
 
@@ -157,12 +158,16 @@ export function ScenePreview({
   // texture but the Scene wrapper stays reference-equal. Such call
   // sites use `requestRender({ force: true })` to bump the serial, and
   // we redraw on the mismatch.
+  // Read the preview-sky preference once per render. Tracked in
+  // lastDrawRef so a preference flip triggers a repaint.
+  const disablePreviewSky = useLayoutStore((s) => s.disablePreviewSky);
   const lastDrawRef = useRef({
     scene: null as SceneValue | null,
     yaw: Number.NaN, pitch: Number.NaN, distance: Number.NaN,
     tx: Number.NaN, ty: Number.NaN, tz: Number.NaN,
     width: 0, height: 0,
     forceSerial: -1,
+    disablePreviewSky: false,
   });
   const drawRef = useRef<() => void>(() => {});
   drawRef.current = () => {
@@ -187,6 +192,7 @@ export function ScenePreview({
       && last.width === canvas.width
       && last.height === canvas.height
       && last.forceSerial === fs
+      && last.disablePreviewSky === disablePreviewSky
     ) {
       return;
     }
@@ -213,6 +219,11 @@ export function ScenePreview({
       projection,
       cameraTarget: [cam.target[0], cam.target[1], cam.target[2]],
       lighting: defaultLighting(),
+      // Sky-only switch: when the user has the preview-sky preference
+      // off (default), the background pass uses the flat checkerboard
+      // instead of the atmospheric sky. Tonemap + grass + terrain keep
+      // running as normal — only the sky disappears.
+      useFlatBackground: disablePreviewSky,
       // Frozen at 0 — animation is a Preview-pane concern, not a node-
       // preview / asset-thumbnail one. Watching water ripple inside
       // every tiny node preview is distracting and confusing about
@@ -232,6 +243,7 @@ export function ScenePreview({
     last.width = canvas.width;
     last.height = canvas.height;
     last.forceSerial = fs;
+    last.disablePreviewSky = disablePreviewSky;
     // See preview-tile.tsx for the same one-extra-paint warmup: some
     // WebGPU canvas swap chains don't show the first submit until the
     // second compositing pass. One extra rAF after the first paint
@@ -239,10 +251,12 @@ export function ScenePreview({
     if (wasFirstPaint) requestRender();
   };
 
-  // Repaint on scene / camera changes — the existing fast-path.
+  // Repaint on scene / camera / preference changes — the existing
+  // fast-path. `disablePreviewSky` flips trigger a repaint via the
+  // dirty check inside drawRef.
   useEffect(() => {
     drawRef.current();
-  }, [device, scene, framedCamera]);
+  }, [device, scene, framedCamera, disablePreviewSky]);
 
   // Repaint on render-bus ticks. The bus fires when ANY canvas eval
   // finishes (see node-canvas.tsx) or when the Preview pane's eval

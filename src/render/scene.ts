@@ -123,10 +123,27 @@ export interface SceneRenderer {
      *     the sky doesn't compete with the asset)
      *   - composite skips Khronos Neutral tonemap so authored values
      *     round-trip identity through srgb_to_linear ↔ linear_to_srgb
+     *   - grass / terrain renderers are skipped (their shaders are
+     *     keyed to the atmospheric model)
      *
      * Defaults to false; normal scenes get sky + tonemap as before.
      */
     flatPreview?: boolean;
+    /**
+     * Sky-only switch for "look at the geometry, not the sky" previews
+     * (Nodes-panel thumbnails, in-canvas custom-node Scene previews,
+     * asset thumbnails). When true:
+     *   - background pass uses the same flat checkerboard as
+     *     `flatPreview`
+     *   - EVERYTHING ELSE behaves normally — tonemap stays on, grass
+     *     and terrain still render, alpha-blended pipelines aren't
+     *     forced.
+     *
+     * Use this when the rayleigh sky is competing with the asset but
+     * you still want the scene tonemapped + fully populated. Ignored
+     * (redundant) when `flatPreview` is also true. Defaults to false.
+     */
+    useFlatBackground?: boolean;
     /**
      * Elapsed seconds, fed into the grass wind animation. Advances
      * only while the user has animation playing; frozen (constant)
@@ -1997,7 +2014,7 @@ export function createSceneRenderer(
     setSelection,
     getSelectionBounds,
     getSceneBounds,
-    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, time = 0 }) {
+    render({ encoder, colorView, size, modelView, projection, cameraTarget, lighting, flatPreview = false, useFlatBackground = false, time = 0 }) {
       const [width, height] = size;
       // Acquire intermediates for THIS size. If we previously held a
       // different size's ref, release it first so a canvas resize
@@ -2270,9 +2287,10 @@ export function createSceneRenderer(
       });
 
       // Background fill first. Atmosphere sky for normal scenes; flat
-      // checkerboard for asset-inspection tiles. flatBackgroundPipeline
+      // checkerboard for asset-inspection tiles or any caller that asked
+      // to suppress the sky (useFlatBackground). flatBackgroundPipeline
       // has no uniforms so we don't bind a group for it.
-      if (flatPreview) {
+      if (flatPreview || useFlatBackground) {
         pass.setPipeline(flatBackgroundPipeline);
         pass.draw(3);
       } else {

@@ -174,6 +174,25 @@ export interface LayoutState {
   setShowLiveNodePreviews: (on: boolean) => void;
 
   /**
+   * Whether ScenePreview-based thumbnails (Nodes-panel tiles, in-canvas
+   * custom-node Scene previews, asset thumbnails) replace the
+   * atmospheric rayleigh sky with a flat gray checkerboard. True means
+   * "no sky" — geometry reads against a calm background instead of a
+   * bright blue sky that fights for visual weight in tiny tiles.
+   *
+   * Tonemap, grass, terrain, and the rest of the scene-renderer chain
+   * all stay live; this is purely the background-fill pass switching
+   * between sky and checkerboard. The main Preview pane keeps the
+   * atmospheric sky because that's where authoring decisions about
+   * lighting + sky are made.
+   *
+   * Defaults to true. Session-only (the layout store doesn't persist);
+   * a future preferences UI would lift this to a stored toggle.
+   */
+  disablePreviewSky: boolean;
+  setDisablePreviewSky: (on: boolean) => void;
+
+  /**
    * Clear the per-session, per-graph camera + viewport state.
    * Project-level state (DockView layout, panel pins) is preserved —
    * the user keeps the same workspace shape across project switches.
@@ -199,6 +218,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   assetsTreeWidth: 200,
   nodesTreeWidth: 200,
   showLiveNodePreviews: true,
+  disablePreviewSky: false,
   lastActiveCanvasPanelId: null,
   lastActivePreviewPanelId: null,
 
@@ -344,6 +364,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   },
 
   setShowLiveNodePreviews: (on) => set({ showLiveNodePreviews: on }),
+
+  setDisablePreviewSky: (on) => set({ disablePreviewSky: on }),
 
   resetForNewProject: () =>
     set({
