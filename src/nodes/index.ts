@@ -10,6 +10,7 @@ import { hexTileNode } from './hex-tile.js';
 import { hueSatShiftNode } from './hue-sat-shift.js';
 import { invertNode } from './invert.js';
 import { linearGradientNode } from './linear-gradient.js';
+import { polyTileNode } from './poly-tile.js';
 import { radialGradientNode } from './radial-gradient.js';
 import { texTransformNode } from './tex-transform.js';
 import { thresholdNode } from './threshold.js';
@@ -195,6 +196,7 @@ export const CORE_NODES = [
   dotsNode,
   hexTileNode,
   linearGradientNode,
+  polyTileNode,
   radialGradientNode,
   whiteNoiseNode,
   checkerNode,
@@ -289,6 +291,7 @@ export {
   hueSatShiftNode,
   invertNode,
   linearGradientNode,
+  polyTileNode,
   radialGradientNode,
   texTransformNode,
   thresholdNode,

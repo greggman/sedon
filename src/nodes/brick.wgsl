@@ -30,12 +30,10 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
   let row = floor(in.uv.y * params.divisions.y);
-  // Every other row shifts by `row_offset` of a brick width — gives the
-  // running-bond brick pattern. fract(row * 0.5) is 0 on even rows,
-  // 0.5 on odd rows; multiplying by 2 yields {0, 1}, then we pick the
-  // user-supplied offset for the odd rows.
-  let is_odd = fract(row * 0.5) * 2.0;
-  let shift = is_odd * params.row_offset;
+  // Each row N shifts by `N * row_offset` of a brick width. Under
+  // fract that gives 2-row running bond at 0.5, third bond at 1/3,
+  // 4-row diagonal at 0.25, etc. Integer values wrap back to stack.
+  let shift = row * params.row_offset;
   let shifted_uv_x = fract(in.uv.x + shift);
 
   // Cell-local UV in [0, 1] for both axes.

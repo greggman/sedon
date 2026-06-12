@@ -7,7 +7,9 @@ struct Params {
   // mortar half-thickness as a fraction of a cell's "radius" (in the
   // hex-distance sense). 0 = no mortar; 0.1 = 10% of cell.
   mortar: f32,
-  _pad: f32,
+  // rotation of each hex around its own centre, in radians. 0 = the
+  // shipped flat-top orientation; π/6 (30°) = pointy-top.
+  angle: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -51,9 +53,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let use_a = length(a) < length(b);
   let local = select(b, a, use_a);
 
+  // Rotate the local point around the cell centre. Rotating the
+  // input by -angle makes the shape appear to rotate by +angle.
+  let c_a = cos(-params.angle);
+  let s_a = sin(-params.angle);
+  let rotated = vec2f(c_a * local.x - s_a * local.y, s_a * local.x + c_a * local.y);
+
   // hex_dist of the local point: 0 at the cell centre, 0.5 at the
   // cell edge. Mortar lives in the band (0.5 - mortar .. 0.5).
-  let d = hex_dist(local);
+  let d = hex_dist(rotated);
   let in_mortar = d > (0.5 - params.mortar);
   return select(params.hex_color, params.mortar_color, in_mortar);
 }

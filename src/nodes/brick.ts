@@ -55,7 +55,7 @@ export const brickNode: NodeDef = {
       default: 0.5,
       min: 0,
       max: 1,
-      description: 'horizontal shift between alternating rows, as a fraction of one brick. 0 = stack bond (bricks line up vertically); 0.5 = running bond (the everyday bricklayer\'s pattern); 0.33 = third bond',
+      description: 'per-row horizontal shift in brick units. Row N is shifted by N·row_offset under fract. 0 = stack bond (bricks line up vertically); 0.5 = running bond (2-row alternation); 1/3 ≈ 0.333 = third bond (3-row diagonal); 0.25 = quarter bond (4-row diagonal); integer values wrap back to stack',
     },
     {
       name: 'resolution',
@@ -75,8 +75,10 @@ export const brickNode: NodeDef = {
   doc: {
     summary: 'A parametric brick-wall texture — bricks, mortar, offset bond.',
     description: `
-Standard brick wall: rectangular tiles separated by a mortar gap, with
-alternating rows shifted by \`row_offset\` for that running-bond look.
+Standard brick wall: rectangular tiles separated by a mortar gap. Each
+row is shifted by \`N · row_offset\` (mod 1) — 0.5 gives the everyday
+running bond, 1/3 gives third bond, 0.25 gives a four-row diagonal
+sweep, 0 stacks straight up.
 
 For a real wall, pair with [tex/normal-from-height](../../tex/normal-from-height)
 fed by this same texture to get the mortar-recess shading. For visual

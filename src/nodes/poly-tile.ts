@@ -8,10 +8,10 @@ import {
   reusableTexture,
 } from '../core/resources.js';
 import { ShaderStage, getPipelineWithLayout, getShaderModule } from '../render/gpu-cache.js';
-import shader from './hex-tile.wgsl';
+import shader from './poly-tile.wgsl';
 
 const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
-  label: 'hex-tile-bgl',
+  label: 'poly-tile-bgl',
   entries: [
     { binding: 0, visibility: ShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
   ],
@@ -19,27 +19,35 @@ const UNIFORM_FRAG_BGL: GPUBindGroupLayoutDescriptor = {
 
 const TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
-export const hexTileNode: NodeDef = {
-  id: 'tex/hex-tile',
+export const polyTileNode: NodeDef = {
+  id: 'tex/poly-tile',
   category: 'Texture/Generators',
   inputs: [
     {
-      name: 'hex_color',
+      name: 'poly_color',
       type: 'Color',
       default: [0.85, 0.55, 0.30, 1],
-      description: 'colour of each hexagonal tile',
+      description: 'colour of each polygon tile',
     },
     {
       name: 'mortar_color',
       type: 'Color',
       default: [0.15, 0.15, 0.15, 1],
-      description: 'colour of the mortar / gap between tiles',
+      description: 'colour of the mortar / gap. For N≠4, this also fills the corner gaps where the polygons don\'t tile',
     },
     {
       name: 'divisions',
       type: 'Vec2',
       default: [10, 10],
-      description: 'approximate hex divisions across the texture. Tiles stay regular regardless of aspect because V is scaled internally by √3/2',
+      description: 'square grid divisions: tiles across × down',
+    },
+    {
+      name: 'sides',
+      type: 'Int',
+      default: 6,
+      min: 3,
+      max: 16,
+      description: 'number of polygon sides. 3 = triangle, 4 = square (perfect tile at angle=0), 5 = pentagon, 6 = hexagon, 8 = octagon. For N ≠ 4, gaps fill with mortar_color',
     },
     {
       name: 'mortar',
@@ -47,13 +55,21 @@ export const hexTileNode: NodeDef = {
       default: 0.06,
       min: 0,
       max: 0.5,
-      description: 'mortar thickness as a fraction of cell radius. 0 = no mortar; 0.06 = thin grout line; 0.2 = thick gap',
+      description: 'extra mortar thickness as a fraction of cell radius. 0 = polygons touch their cell bounds; > 0 = visible mortar band inside each cell',
     },
     {
       name: 'angle',
       type: 'Float',
       default: 0,
-      description: 'rotation of each hex around its own centre, in degrees. 0 = flat-top (vertical left and right edges); 30 = pointy-top. The grid layout itself stays put',
+      description: 'rotation of each polygon around its centre, in degrees. Use to align orientation: N=4 at 0 = axis-aligned square; N=6 at 0 = flat-top hex; N=3 at 0 = triangle pointing right (set ±90 for up/down)',
+    },
+    {
+      name: 'row_offset',
+      type: 'Float',
+      default: 0,
+      min: 0,
+      max: 1,
+      description: 'per-row horizontal shift in cell units. Each row N gets shifted by N·row_offset under fract. 0 = aligned; 0.5 = 2-row alternation (running-bond brick); 1/3 ≈ 0.333 = 3-row diagonal sweep; 0.25 = 4-row sweep; 1 wraps back to aligned',
     },
     {
       name: 'resolution',
@@ -67,38 +83,45 @@ export const hexTileNode: NodeDef = {
     {
       name: 'texture',
       type: 'Texture2D',
-      description: 'a regular hexagonal-tile pattern with mortar gaps',
+      description: 'a regular polygon tiled on a square grid. Tiles cleanly for N=4; other N produces decorative non-tiling polygon shapes with mortar in the gaps',
     },
   ],
   doc: {
-    summary: 'Regular hexagonal tiling — bathroom-tile / honeycomb / strategy-game-grid pattern.',
+    summary: 'Regular N-sided polygons stamped on a square grid — triangle / square / pentagon / hex / octagon.',
     description: `
-Standard pointy-top hex grid via the "two offset rectangular lattices,
-keep the closer cell" construction. Tiles are regular regardless of
-output aspect ratio: V gets a √3/2 internal scale so a square texture
-shows square-aspect hexes, not stretched ones.
+A single N-sided regular polygon is drawn in each cell of a square grid.
+For \`sides = 4\` and \`angle = 0\`, the polygons are axis-aligned squares
+that tile the plane with no gaps (modulo \`mortar\`). For other \`sides\`,
+the polygons don't naturally tile the plane — the corner gaps fill with
+\`mortar_color\`, which reads as a decorative pattern.
 
-For randomised per-tile colour (e.g. hex tile floor with variation),
-chain through [tex/colorize](../../tex/colorize) with a noise that
-matches the hex frequency. For random per-tile rotation/offset stamps,
-use [tex/tile-with-jitter](../../tex/tile-with-jitter) (square grid) —
-this node is just the pattern.
+For a TRUE hex tiling (no gaps), use [tex/hex-tile](../../tex/hex-tile).
+This node trades that geometric truth for shape flexibility.
+
+Common uses:
+
+- triangle pattern: \`sides = 3\`, \`angle = 90\` for up-pointing
+- decorative octagon-and-square (Moroccan-style) look: \`sides = 8\`,
+  rotate to taste
+- "studded" look: \`sides = 6\`, large \`mortar\` so the hexes float
 `,
     sampleGraph: () => {
       const g = createGraph();
-      addNode(g, 'tex/hex-tile', {
-        id: 'hex',
+      addNode(g, 'tex/poly-tile', {
+        id: 'poly',
         position: { x: 0, y: 0 },
         inputValues: {
-          hex_color: [0.85, 0.55, 0.30, 1],
+          poly_color: [0.85, 0.55, 0.30, 1],
           mortar_color: [0.15, 0.15, 0.15, 1],
-          divisions: [10, 10],
+          divisions: [8, 8],
+          sides: 6,
           mortar: 0.08,
           angle: 0,
+          row_offset: 0,
           resolution: 512,
         },
       });
-      return { graph: g, rootNodeId: 'hex' };
+      return { graph: g, rootNodeId: 'poly' };
     },
   },
   evaluate(ctx, inputs): {
@@ -107,11 +130,13 @@ this node is just the pattern.
     __bindGroup?: ReusableBindGroup;
   } {
     const device = requireDevice(ctx);
-    const hex = inputs.hex_color as [number, number, number, number];
+    const poly = inputs.poly_color as [number, number, number, number];
     const mortar_c = inputs.mortar_color as [number, number, number, number];
     const divisions = inputs.divisions as [number, number];
+    const sides = inputs.sides as number;
     const mortar = inputs.mortar as number;
     const angle = inputs.angle as number;
+    const rowOffset = inputs.row_offset as number;
     const resolution = inputs.resolution as number;
 
     const prev = ctx.previousOutput as {
@@ -120,7 +145,7 @@ this node is just the pattern.
       __bindGroup?: ReusableBindGroup;
     } | undefined;
     const out = reusableTexture(device, prev?.texture, {
-      label: 'hex-tile-output-tex',
+      label: 'poly-tile-output-tex',
       width: resolution,
       height: resolution,
       format: TEXTURE_FORMAT,
@@ -130,15 +155,18 @@ this node is just the pattern.
         GPUTextureUsage.COPY_SRC,
     });
 
-    // vec4 hex (16) + vec4 mortar (16) + vec2 div (8) + f32 mortar (4) +
-    // f32 angle (4) = 48 bytes.
-    const uniformData = new Float32Array(12);
-    uniformData.set(hex, 0);
+    // vec4 poly (16) + vec4 mortar (16) + vec2 div (8) + f32 mortar (4) +
+    // f32 sides (4) + f32 angle (4) + 12 pad = 64 bytes (next vec4
+    // alignment boundary).
+    const uniformData = new Float32Array(16);
+    uniformData.set(poly, 0);
     uniformData.set(mortar_c, 4);
     uniformData[8] = divisions[0];
     uniformData[9] = divisions[1];
     uniformData[10] = mortar;
-    uniformData[11] = angle * (Math.PI / 180);
+    uniformData[11] = sides;
+    uniformData[12] = angle * (Math.PI / 180);
+    uniformData[13] = rowOffset;
 
     const uniformBuffer = reusableBuffer(
       device,
@@ -152,7 +180,7 @@ this node is just the pattern.
       device,
       UNIFORM_FRAG_BGL,
       (layout) => ({
-        label: 'hex-tile-pipeline',
+        label: 'poly-tile-pipeline',
         layout,
         vertex: { module },
         fragment: { module, targets: [{ format: TEXTURE_FORMAT }] },
@@ -167,9 +195,9 @@ this node is just the pattern.
       () => [{ binding: 0, resource: uniformBuffer }],
     );
 
-    const encoder = device.createCommandEncoder({ label: 'hex-tile-encoder' });
+    const encoder = device.createCommandEncoder({ label: 'poly-tile-encoder' });
     const pass = encoder.beginRenderPass({
-      label: 'hex-tile-pass',
+      label: 'poly-tile-pass',
       colorAttachments: [
         {
           view: out.texture,
