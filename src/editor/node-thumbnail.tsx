@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import type { NodeDef, NodeOutputs, NodeRegistry } from '../core/node-def.js';
@@ -125,11 +125,49 @@ interface NodeThumbnailProps {
 export function NodeThumbnail({ def, size, fallback }: NodeThumbnailProps) {
   const device = useEditorStore((s) => s.device);
   const [target, setTarget] = useState<PreviewTarget | null>(null);
+  // Whether this tile has ever been in the viewport. Eval is gated on
+  // this so a freshly-mounted Nodes panel (e.g. when the tab is hidden
+  // in a dockview group, or scrolled off-screen in a long folder)
+  // doesn't fire 100+ GPU evals on page load — which used to drown out
+  // unrelated UI work on slower CI runners and time tests out. Once a
+  // tile becomes visible it stays "armed" so scrolling back doesn't
+  // re-trigger the eval.
+  const [hasBeenVisible, setHasBeenVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const eligible = useMemo(() => hasPreviewableOutput(def), [def]);
 
   useEffect(() => {
-    if (!device || !eligible) {
+    if (hasBeenVisible) return;
+    const el = containerRef.current;
+    if (!el) return;
+    // IntersectionObserver with a small rootMargin pre-mounts the eval
+    // a hair before the tile actually scrolls into view, so the swap
+    // from glyph → preview happens before the user fixates on the
+    // tile.
+    if (typeof IntersectionObserver === 'undefined') {
+      // No-op fallback for environments without IO — eval immediately.
+      setHasBeenVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setHasBeenVisible(true);
+            observer.disconnect();
+            return;
+          }
+        }
+      },
+      { rootMargin: '100px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasBeenVisible]);
+
+  useEffect(() => {
+    if (!device || !eligible || !hasBeenVisible) {
       setTarget(null);
       return;
     }
@@ -161,9 +199,18 @@ export function NodeThumbnail({ def, size, fallback }: NodeThumbnailProps) {
     return () => {
       cancelled = true;
     };
-  }, [device, def, eligible]);
+  }, [device, def, eligible, hasBeenVisible]);
 
-  if (!device || !target) return <>{fallback}</>;
+  // Always wrap in a sized ref'd container so the IntersectionObserver
+  // has a stable target even before the eval finishes. The fallback
+  // (glyph + tint) shows through until the live preview is ready.
+  if (!device || !target) {
+    return (
+      <div ref={containerRef} style={{ width: size, height: size, lineHeight: 0 }}>
+        {fallback}
+      </div>
+    );
+  }
 
   // lineHeight: 0 keeps the surrounding tile's text line-height from
   // leaving a sliver of whitespace under the canvas.
