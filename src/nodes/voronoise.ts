@@ -35,8 +35,7 @@ export const voronoiseNode: NodeDef = {
       type: 'Float',
       default: 1,
       min: 0,
-      max: 1,
-      description: 'feature-point irregularity. 0 = regular grid; 1 = fully random scatter (voronoi-like). Continuous between',
+      description: 'feature-point irregularity. 0 = regular grid; 1 = fully random scatter (voronoi-like); > 1 overshoots into "scattered cluster" chaos as feature points spill across cell boundaries',
     },
     {
       name: 'v',
@@ -74,11 +73,13 @@ Iñigo Quilez's [voronoise](https://iquilezles.org/articles/voronoise/) —
 a single noise function with two continuous parameters that sweep through
 several familiar types:
 
-- \`u = 0, v = 0\` → smooth value noise (no cells visible)
+- \`u = 0, v = 0\` → smooth blended grid (value-noise look)
 - \`u = 0, v = 1\` → sharp regular-grid cells
 - \`u = 1, v = 0\` → smoothed-out voronoi
 - \`u = 1, v = 1\` → classic voronoi (matches [tex/worley](../../tex/worley)
   with octaves = 1)
+- \`u > 1\` overshoots — feature points spill across cell boundaries
+  for "scattered cluster" patterns
 
 The two-parameter space is unique and useful when authoring textures — you
 can dial in exactly the look you want without picking a discrete noise

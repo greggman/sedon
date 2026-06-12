@@ -47,8 +47,8 @@ export const causticsNode: NodeDef = {
       type: 'Int',
       default: 3,
       min: 1,
-      max: 6,
-      description: 'fbm octaves on the warp field. Higher = more detail / less computable; 3 is a good baseline',
+      max: 8,
+      description: 'fbm octaves on the warp field. Higher = more detail (and more shader work; capped at 8 inside the shader); 3 is a good baseline',
     },
     {
       name: 'intensity',

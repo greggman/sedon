@@ -47,8 +47,7 @@ export const voronoiEdgesNode: NodeDef = {
       type: 'Float',
       default: 0.04,
       min: 0,
-      max: 0.5,
-      description: 'half-width of the edge band in cell-space units. 0 = pure binary lines (aliased); 0.04 = AA-style; 0.15+ = thick "ridge" look',
+      description: 'half-width of the edge band in cell-space units. 0 = pure binary lines (aliased); 0.04 = AA-style; 0.15+ = thick "ridge" look; very large values fade the edges out (the smoothstep never reaches 1)',
     },
     {
       name: 'jitter',

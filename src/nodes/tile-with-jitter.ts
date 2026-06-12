@@ -65,8 +65,7 @@ export const tileWithJitterNode: NodeDef = {
       type: 'Float',
       default: 0,
       min: 0,
-      max: 1,
-      description: 'per-tile hue shift in turns. 0 = no shift; 0.2 = ±0.1 turn around the colour wheel; 1 = full wheel',
+      description: 'per-tile hue shift in turns. 0 = no shift; 0.2 = ±0.1 turn around the colour wheel; 1 = full wheel. Values > 1 wrap (the hue is `fract`-ed)',
     },
     {
       name: 'seed',

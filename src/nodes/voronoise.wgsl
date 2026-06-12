@@ -1,12 +1,14 @@
 struct Params {
   // cell density across the texture.
   scale: f32,
-  // 0..1 irregularity. 0 = regular grid (the underlying lattice
-  // hashes still drive the cell values, just at fixed positions);
-  // 1 = full voronoi-style scatter.
+  // irregularity. 0 = regular grid (cell values still vary, just at
+  // fixed lattice positions); 1 = full voronoi-style scatter; > 1
+  // overshoots into "scattered cluster" chaos.
   u: f32,
-  // 0..1 smoothness. 0 = smoothly blended cells; 1 = hard voronoi
-  // edges. Continuous between.
+  // 0..1 hardness. 0 = smooth blend across cells (value-noise look);
+  // 1 = hard voronoi edges. Continuous between. Capped at 1: the
+  // pow(v, 4) weight formula gives k → 64 at v=1 (sharp) and k = 1 at
+  // v=0 (smooth); values past 1 just clip back to v=1.
   v: f32,
   // random seed.
   seed: f32,
@@ -45,10 +47,11 @@ fn hash3(p: vec2f) -> vec3f {
 // cells. See https://iquilezles.org/articles/voronoise/
 //
 // `u` controls feature-point IRREGULARITY (0 = perfect grid, 1 =
-// fully random). `v` controls CELL HARDNESS via the weighting power
-// (0 = smooth blend across cells, 1 = sharp voronoi-like cells).
+// fully random; > 1 = increasingly chaotic). `v` controls CELL
+// HARDNESS via the weighting power (0 = smooth blend across cells,
+// 1 = sharp voronoi-like cells).
 fn voronoise(p: vec2f, u: f32, v: f32) -> f32 {
-  let k = 1.0 + 63.0 * pow(1.0 - clamp(v, 0.0, 1.0), 4.0);
+  let k = 1.0 + 63.0 * pow(clamp(v, 0.0, 1.0), 4.0);
   let i = floor(p);
   let f = p - i;
 

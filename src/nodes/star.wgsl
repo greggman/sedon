@@ -82,7 +82,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
   let p = vec2f(c * p_raw.x - s * p_raw.y, s * p_raw.x + c * p_raw.y);
 
   let n = max(params.points, 3.0);
-  let ratio = clamp(params.inner_ratio, 0.05, 0.95);
+  let ratio = clamp(params.inner_ratio, 0.05, 1.0);
   let d = sd_star(p, params.outer_radius, ratio, n);
 
   // d < 0 = inside. Mix from star to bg across the softness band.

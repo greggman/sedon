@@ -54,8 +54,7 @@ export const brickNode: NodeDef = {
       type: 'Float',
       default: 0.5,
       min: 0,
-      max: 1,
-      description: 'per-row horizontal shift in brick units. Row N is shifted by N·row_offset under fract. 0 = stack bond (bricks line up vertically); 0.5 = running bond (2-row alternation); 1/3 ≈ 0.333 = third bond (3-row diagonal); 0.25 = quarter bond (4-row diagonal); integer values wrap back to stack',
+      description: 'per-row horizontal shift in brick units. Row N is shifted by N·row_offset under fract. 0 = stack bond (bricks line up vertically); 0.5 = running bond (2-row alternation); 1/3 ≈ 0.333 = third bond (3-row diagonal); 0.25 = quarter bond (4-row diagonal); integer values wrap back to stack. Values > 1 also wrap (fract handles it)',
     },
     {
       name: 'resolution',

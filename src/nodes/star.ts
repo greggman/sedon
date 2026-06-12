@@ -46,7 +46,6 @@ export const starNode: NodeDef = {
       type: 'Int',
       default: 5,
       min: 3,
-      max: 32,
       description: 'number of star points. 5 = classic; 6 = Star of David; 8 = compass; high values approach a sun/burst',
     },
     {
@@ -54,16 +53,15 @@ export const starNode: NodeDef = {
       type: 'Float',
       default: 0.4,
       min: 0,
-      max: 1,
-      description: 'distance from centre to the outer star points, in UV units',
+      description: 'distance from centre to the outer star points, in UV units. > 1 pushes points off-canvas',
     },
     {
       name: 'inner_ratio',
       type: 'Float',
       default: 0.4,
       min: 0.05,
-      max: 0.95,
-      description: 'ratio of inner-valley radius to outer-point radius. 0.38 ≈ the classic 5-point regular star; lower = spikier; higher = chunkier (toward a regular polygon)',
+      max: 1,
+      description: 'ratio of inner-valley radius to outer-point radius. 0.38 ≈ the classic 5-point regular star; lower = spikier; 1 = a regular polygon (inner valley = outer point). Floor of 0.05 keeps the spikes visible; the shader clamps internally',
     },
     {
       name: 'angle',
@@ -76,8 +74,7 @@ export const starNode: NodeDef = {
       type: 'Float',
       default: 0.004,
       min: 0,
-      max: 0.1,
-      description: 'edge softness in UV units. 0 = pure binary (aliased) edge; 0.004 ≈ 2-pixel AA at 512px; higher = soft glowy stars',
+      description: 'edge softness in UV units. 0 = pure binary (aliased) edge; 0.004 ≈ 2-pixel AA at 512px; higher = soft glowy stars; large values bleed into a halo',
     },
     {
       name: 'resolution',

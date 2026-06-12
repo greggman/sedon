@@ -43,8 +43,7 @@ export const thresholdNode: NodeDef = {
       type: 'Float',
       default: 0,
       min: 0,
-      max: 0.5,
-      description: 'half-width of the smoothstep band around `threshold`. 0 = pure binary cutoff (aliased edges); 0.02 = AA-style; 0.1+ = soft blended transition',
+      description: 'half-width of the smoothstep band around `threshold`. 0 = pure binary cutoff (aliased edges); 0.02 = AA-style; 0.1+ = soft blended transition; very large values produce a near-uniform mix',
     },
     {
       name: 'channel',

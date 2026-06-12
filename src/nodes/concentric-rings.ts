@@ -46,16 +46,14 @@ export const concentricRingsNode: NodeDef = {
       type: 'Float',
       default: 0,
       min: 0,
-      max: 1,
-      description: 'radius at which the first ring starts. 0 = rings begin at the centre',
+      description: 'radius at which the first ring starts. 0 = rings begin at the centre. > 1 pushes them off-canvas',
     },
     {
       name: 'outer_radius',
       type: 'Float',
       default: 0.45,
       min: 0,
-      max: 1,
-      description: 'radius at which the last ring ends. Beyond this, gap_color',
+      description: 'radius at which the last ring ends. Beyond this, gap_color. > 1 is allowed (rings extend past the visible texture)',
     },
     {
       name: 'ring_count',
@@ -77,8 +75,7 @@ export const concentricRingsNode: NodeDef = {
       type: 'Float',
       default: 0.003,
       min: 0,
-      max: 0.05,
-      description: 'edge softness in UV units. 0 = pure binary edges; 0.003 ≈ 1-pixel AA at 512px',
+      description: 'edge softness in UV units. 0 = pure binary edges; 0.003 ≈ 1-pixel AA at 512px; larger values bleed rings together for a glowy look',
     },
     {
       name: 'resolution',

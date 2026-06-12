@@ -46,8 +46,7 @@ export const polyTileNode: NodeDef = {
       type: 'Int',
       default: 6,
       min: 3,
-      max: 16,
-      description: 'number of polygon sides. 3 = triangle, 4 = square (perfect tile at angle=0), 5 = pentagon, 6 = hexagon, 8 = octagon. For N ≠ 4, gaps fill with mortar_color',
+      description: 'number of polygon sides. 3 = triangle, 4 = square (perfect tile at angle=0), 5 = pentagon, 6 = hexagon, 8 = octagon, high values approach circles. For N ≠ 4, gaps fill with mortar_color',
     },
     {
       name: 'mortar',
@@ -68,8 +67,7 @@ export const polyTileNode: NodeDef = {
       type: 'Float',
       default: 0,
       min: 0,
-      max: 1,
-      description: 'per-row horizontal shift in cell units. Each row N gets shifted by N·row_offset under fract. 0 = aligned; 0.5 = 2-row alternation (running-bond brick); 1/3 ≈ 0.333 = 3-row diagonal sweep; 0.25 = 4-row sweep; 1 wraps back to aligned',
+      description: 'per-row horizontal shift in cell units. Each row N gets shifted by N·row_offset under fract. 0 = aligned; 0.5 = 2-row alternation (running-bond brick); 1/3 ≈ 0.333 = 3-row diagonal sweep; 0.25 = 4-row sweep; integer values wrap back to aligned',
     },
     {
       name: 'resolution',

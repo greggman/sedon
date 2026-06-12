@@ -69,8 +69,7 @@ export const marbleNode: NodeDef = {
       type: 'Float',
       default: 0.08,
       min: 0.001,
-      max: 1,
-      description: 'half-width of the smoothstep band around each vein. 0.02 = razor-sharp; 0.08 = classic; 0.3 = soft watercolour wash',
+      description: 'half-width of the smoothstep band around each vein. 0.02 = razor-sharp; 0.08 = classic; 0.3 = soft watercolour wash; > 1 bleeds the veins into the base (almost flat)',
     },
     {
       name: 'angle',

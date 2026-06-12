@@ -68,7 +68,7 @@ fn fbm(p_in: vec2f, octaves: i32) -> f32 {
   var sum = 0.0;
   var amp = 1.0;
   var p = p_in;
-  let n = clamp(octaves, 1, 6);
+  let n = clamp(octaves, 1, 8);
   for (var k = 0; k < n; k = k + 1) {
     sum = sum + amp * perlin(p);
     p = p * 2.0;

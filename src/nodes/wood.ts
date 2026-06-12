@@ -89,8 +89,7 @@ export const woodNode: NodeDef = {
       type: 'Float',
       default: 0.05,
       min: 0.001,
-      max: 1,
-      description: 'half-width of the smoothstep band on each ring edge. Smaller = harder ring transitions',
+      description: 'half-width of the smoothstep band on each ring edge. Smaller = harder ring transitions; > 1 bleeds rings into a uniform tone',
     },
     {
       name: 'seed',

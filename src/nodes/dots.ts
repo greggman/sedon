@@ -54,8 +54,7 @@ export const dotsNode: NodeDef = {
       type: 'Float',
       default: 0,
       min: 0,
-      max: 0.5,
-      description: 'edge softness in cell-uv units. 0 = hard pixel edges; 0.03 = AA-style smoothing; 0.1+ = soft bokeh / film-grain halo',
+      description: 'edge softness in cell-uv units. 0 = hard pixel edges; 0.03 = AA-style smoothing; 0.1+ = soft bokeh / film-grain halo; > 0.5 bleeds dots into each other',
     },
     {
       name: 'resolution',
