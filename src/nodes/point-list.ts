@@ -1,4 +1,4 @@
-import { addNode, createGraph } from '../core/graph.js';
+import { addEdge, addNode, createGraph } from '../core/graph.js';
 import type { NodeDef } from '../core/node-def.js';
 import type { PointCloudValue } from '../core/resources.js';
 
@@ -110,12 +110,35 @@ place; baking Y into the authored points would lock you to a specific
 heightfield revision.
 `,
     sampleGraph: () => {
+      // Authored 3×3 grid of points piped into a small-cube instance
+      // chain so the preview pane has something visually meaningful to
+      // render. The list itself defaults to empty — without these
+      // input values the sample shows nothing.
       const g = createGraph();
-      addNode(g, 'points/list', {
+      const pts = addNode(g, 'points/list', {
         id: 'pts',
         position: { x: 0, y: 0 },
+        inputValues: {
+          points: [
+            [-1, 0, -1], [0, 0, -1], [1, 0, -1],
+            [-1, 0,  0], [0, 0,  0], [1, 0,  0],
+            [-1, 0,  1], [0, 0,  1], [1, 0,  1],
+          ],
+        },
       });
-      return { graph: g, rootNodeId: 'pts' };
+      const cube = addNode(g, 'geom/cube', {
+        id: 'cube',
+        position: { x: 0, y: 240 },
+        inputValues: { size: 0.2 },
+      });
+      const inst = addNode(g, 'geom/instance-on-points', {
+        id: 'inst',
+        position: { x: 280, y: 0 },
+        inputValues: { scale: 1 },
+      });
+      addEdge(g, { node: pts.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
     },
   },
   evaluate(_ctx, inputs): { points: PointCloudValue } {

@@ -208,24 +208,13 @@ facade composition path.
         position: { x: 0, y: 180 },
         inputValues: { size: 0.4 },
       });
-      const mat = addNode(g, 'material/pbr', {
-        id: 'mat',
-        position: { x: 0, y: 360 },
-        inputValues: { basecolor: [0.45, 0.65, 0.85, 1], roughness: 0.4, metallic: 0 },
-      });
-      const ent = addNode(g, 'scene/entity', {
-        id: 'ent',
-        position: { x: 280, y: 180 },
-      });
-      const inst = addNode(g, 'scene/instance-on-points', {
+      const inst = addNode(g, 'geom/instance-on-points', {
         id: 'inst',
-        position: { x: 560, y: 0 },
+        position: { x: 280, y: 0 },
         inputValues: { scale: 1, align: true },
       });
-      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: ent.id, socket: 'geometry' });
-      addEdge(g, { node: mat.id, socket: 'material' }, { node: ent.id, socket: 'material' });
       addEdge(g, { node: pts.id, socket: 'points' }, { node: inst.id, socket: 'points' });
-      addEdge(g, { node: ent.id, socket: 'scene' }, { node: inst.id, socket: 'instance' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
       return { graph: g, rootNodeId: 'inst' };
     },
   },

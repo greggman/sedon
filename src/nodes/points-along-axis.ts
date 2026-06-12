@@ -69,6 +69,11 @@ float-cloud, projection of a 1D function (height samples) into 3D
 positions, conversion of a sorted scan to per-point world positions.
 `,
     sampleGraph: () => {
+      // The points themselves aren't directly previewable (PointCloud
+      // isn't a render target), so we instance small cubes on them and
+      // return the merged geometry — the wireframe preview reads as
+      // "irregular row of dots along +X" which is what this node
+      // actually produces.
       const g = createGraph();
       const r = addNode(g, 'cloud/random-float', {
         id: 'r',
@@ -85,9 +90,20 @@ positions, conversion of a sorted scan to per-point world positions.
         position: { x: 560, y: 0 },
         inputValues: { origin: [0, 0, 0], axis: [1, 0, 0] },
       });
+      const cube = addNode(g, 'geom/cube', {
+        id: 'cube',
+        position: { x: 560, y: 220 },
+        inputValues: { size: 0.05 },
+      });
+      const inst = addNode(g, 'geom/instance-on-points', {
+        id: 'inst',
+        position: { x: 840, y: 0 },
+      });
       addEdge(g, { node: r.id, socket: 'values' }, { node: a.id, socket: 'values' });
       addEdge(g, { node: a.id, socket: 'values' }, { node: p.id, socket: 'offsets' });
-      return { graph: g, rootNodeId: 'p' };
+      addEdge(g, { node: p.id, socket: 'points' }, { node: inst.id, socket: 'points' });
+      addEdge(g, { node: cube.id, socket: 'geometry' }, { node: inst.id, socket: 'instance' });
+      return { graph: g, rootNodeId: 'inst' };
     },
   },
   evaluate(_ctx, inputs): { points: PointCloudValue } {

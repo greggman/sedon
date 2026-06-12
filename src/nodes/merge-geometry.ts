@@ -51,10 +51,10 @@ merges together.
         position: { x: 0, y: 0 },
         inputValues: { radius: 0.4, segments: 24, rings: 12 },
       });
-      const cube = addNode(g, 'geom/cube', {
+      const cube = addNode(g, 'geom/box', {
         id: 'cube',
         position: { x: 0, y: 220 },
-        inputValues: { size: 0.6 },
+        inputValues: { height: 0.1 },
       });
       const merge = addNode(g, 'geom/merge', {
         id: 'merge',

@@ -145,21 +145,10 @@ shapes (a "C" channel) disable caps and emit them separately.
           cap_end: true,
         },
       });
-      const mat = addNode(g, 'material/pbr', {
-        id: 'material',
-        position: { x: 280, y: 440 },
-        inputValues: { basecolor: [0.6, 0.45, 0.3, 1], roughness: 0.6, metallic: 0 },
-      });
-      const entity = addNode(g, 'scene/entity', {
-        id: 'entity',
-        position: { x: 840, y: 100 },
-      });
       addEdge(g, { node: pts.id, socket: 'points' }, { node: spline.id, socket: 'points' });
       addEdge(g, { node: spline.id, socket: 'path' }, { node: ext.id, socket: 'path' });
       addEdge(g, { node: section.id, socket: 'path' }, { node: ext.id, socket: 'section' });
-      addEdge(g, { node: ext.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
-      addEdge(g, { node: mat.id, socket: 'material' }, { node: entity.id, socket: 'material' });
-      return { graph: g, rootNodeId: 'entity' };
+      return { graph: g, rootNodeId: 'extrude' };
     },
   },
   evaluate(ctx, inputs): { geometry: GeometryValue } {
