@@ -5,10 +5,17 @@ import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
 import { brickNode } from './brick.js';
 import { dotsNode } from './dots.js';
+import { edgeDetectNode } from './edge-detect.js';
+import { hexTileNode } from './hex-tile.js';
+import { hueSatShiftNode } from './hue-sat-shift.js';
+import { invertNode } from './invert.js';
 import { linearGradientNode } from './linear-gradient.js';
 import { radialGradientNode } from './radial-gradient.js';
 import { texTransformNode } from './tex-transform.js';
 import { thresholdNode } from './threshold.js';
+import { tileWithJitterNode } from './tile-with-jitter.js';
+import { uvMirrorNode } from './uv-mirror.js';
+import { uvPolarNode } from './uv-polar.js';
 import { whiteNoiseNode } from './white-noise.js';
 import { branchMergeNode } from './branch-merge.js';
 import { branchPalmNode } from './branch-palm.js';
@@ -186,6 +193,7 @@ export const CORE_NODES = [
   gridNode,
   brickNode,
   dotsNode,
+  hexTileNode,
   linearGradientNode,
   radialGradientNode,
   whiteNoiseNode,
@@ -200,8 +208,14 @@ export const CORE_NODES = [
   blendNode,
   blendMaskNode,
   blurNode,
+  edgeDetectNode,
+  hueSatShiftNode,
+  invertNode,
   texTransformNode,
   thresholdNode,
+  tileWithJitterNode,
+  uvMirrorNode,
+  uvPolarNode,
   branchMergeNode,
   branchPalmNode,
   branchRecursiveNode,
@@ -270,10 +284,17 @@ export {
   blurNode,
   brickNode,
   dotsNode,
+  edgeDetectNode,
+  hexTileNode,
+  hueSatShiftNode,
+  invertNode,
   linearGradientNode,
   radialGradientNode,
   texTransformNode,
   thresholdNode,
+  tileWithJitterNode,
+  uvMirrorNode,
+  uvPolarNode,
   whiteNoiseNode,
   branchMergeNode,
   branchPalmNode,
