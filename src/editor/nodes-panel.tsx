@@ -4,6 +4,7 @@ import { docsUrlFor } from '../docs/doc-paths.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
 import { getNodeIcon } from './node-icons.js';
+import { outputBarBackground } from './node-output-color.js';
 import { NodeThumbnail } from './node-thumbnail.js';
 
 // =========================================================================
@@ -472,6 +473,12 @@ function NodeTile(props: {
   const lastSlash = props.def.id.lastIndexOf('/');
   const name = lastSlash < 0 ? props.def.id : props.def.id.slice(lastSlash + 1);
   const prefix = lastSlash < 0 ? '' : props.def.id.slice(0, lastSlash);
+  // Output-type stripe across the top of the tile, mirroring the
+  // canvas node's output bar so users learn one palette. Solid colour
+  // for a single output, hard-stop gradient for multi-output nodes —
+  // each output segment is the same width as it would be on the
+  // canvas, so the visual maps 1:1.
+  const stripeBg = outputBarBackground(props.def);
   return (
     <div
       className={cls}
@@ -480,6 +487,7 @@ function NodeTile(props: {
       onContextMenu={props.onContextMenu}
       title={`${props.def.id}\n${props.def.category}\n\nDrag onto the canvas to add.`}
     >
+      <div className="sedon-nodes-tile-output-bar" style={{ background: stripeBg }} />
       {icon}
       <span className="sedon-assets-tile-label">{name}</span>
       <span className="sedon-assets-tile-type">{prefix}</span>

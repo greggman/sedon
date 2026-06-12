@@ -193,7 +193,7 @@
   padding: 8px;
 }
 .sedon-assets-grid {
-  gap: 4px;
+  gap: 6px;
 }
 .sedon-assets-grid--icons {
   display: grid;
@@ -204,13 +204,28 @@
   flex-direction: column;
 }
 .sedon-assets-tile {
-  background: #1f1f28;
+  background: #333;
   border: 1px solid #2c2c38;
   border-radius: 4px;
   cursor: grab;
   user-select: none;
   position: relative;
   color: #ddd;
+}
+/* Output-type colour stripe across the top of a Nodes-panel tile,
+ * mirroring the canvas custom-node's output bar. Positioned absolutely
+ * so it spans the full tile width without being affected by the tile's
+ * padding (which would leave gaps on the sides). The 3-px height
+ * matches the canvas convention scaled down for the smaller tile. */
+.sedon-nodes-tile-output-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+  pointer-events: none;
 }
 .sedon-assets-tile:hover {
   border-color: #555;
@@ -230,7 +245,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   padding: 8px 6px;
   text-align: center;
 }

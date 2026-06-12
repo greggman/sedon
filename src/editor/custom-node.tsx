@@ -14,6 +14,7 @@ import type {
 import { getIterKindInfo } from '../core/iter-family.js';
 import { isSubgraphInstanceKind, subgraphIdFromKind } from '../core/subgraph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
+import { outputBarBackground, typeColor } from './node-output-color.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
 import { useCanvasPanelId, useDocsLocation } from './canvas-panel-context.js';
 import { useCanvasNode, useCanvasNodeOutput } from './canvas-data.js';
@@ -91,27 +92,9 @@ const NODE_RADIUS = 4;
 const NODE_BORDER = 1;
 const SECTION_BORDER = 1;
 
-function typeColor(typeId: string): string {
-  return types.get(typeId)?.color ?? '#888';
-}
-
-// Hard-stop gradient where each output occupies an equal-width segment of
-// the bar, in declared order. Single-output nodes get a solid color.
-function outputBarBackground(def: NodeDef): string {
-  if (def.outputs.length === 0) return 'transparent';
-  if (def.outputs.length === 1) {
-    return typeColor(def.outputs[0]!.type);
-  }
-  const stops: string[] = [];
-  const n = def.outputs.length;
-  for (let i = 0; i < n; i++) {
-    const color = typeColor(def.outputs[i]!.type);
-    const a = (i / n) * 100;
-    const b = ((i + 1) / n) * 100;
-    stops.push(`${color} ${a}%`, `${color} ${b}%`);
-  }
-  return `linear-gradient(to right, ${stops.join(', ')})`;
-}
+// `typeColor` and `outputBarBackground` live in node-output-color.ts so
+// the Nodes-panel browser tiles can reuse the same colour palette
+// without dragging this entire React surface as a dependency.
 
 function getSocketType(
   registry: import('../core/node-def.js').NodeRegistry,
