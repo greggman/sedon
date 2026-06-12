@@ -3,8 +3,6 @@
 - [ ] need preferences (saved in local storage?)
   - [ ] default sky settings (used in all node previews)
   - [ ] default material color (should not be white)
-- [ ] what other texture nodes exist in blender/houdini/substance-designer?
-- [ ] move options to hash
 - [ ] need LODs so trees work?
 - [ ] add more tests - we called "scripts/verify-outline-clamp.mjs"
   a regression test but it's not useful if it's not run. We need to run
@@ -127,6 +125,40 @@
 
 ## --- done ---
 
+- [*] adding a node that is auto-connected to a selected connection should center on the connection
+- [*] color nodes by output in nodes
+  - [*] and assets?
+- [*] nodes (remove prefix?)
+- [*] nodes need context menu "docs"
+- [*] fix node icon space is it's 64x64
+- [*] nodes (previews don't need rayleigh background. Use gray/darkgray checkerboard CSS or rendered) - try this. It looked worse. It's an option but no UI yet.
+- [x] move options to hash (discussed this and decided no)
+- [*] other texture nodes
+  - [*] hex tile
+  - [*] checker
+  - [*] stripes
+  - [*] brick
+  - [*] polka dots
+  - [*] linear gradients (we have ramp, seems the same?)
+  - [*] radial gradients 
+  - [*] white noise
+  - [*] blend
+    - [*] multiply
+    - [*] screen
+    - [*] overlay
+    - [*] dodge
+    - [*] burn
+  - [*] threshold
+  - [*] UV transforms
+    - [*] (scale/rotate/translate UVs)
+    - [*] polar coordinates
+    - [*] mirror
+    - [*] tile-with-jitter
+  - [*] Filters
+    - [*] hue/sat shift
+    - [*] invert
+    - [*] edge detect
+- [*] add an animation-time node?
 - [*] demos scene should not show up in command palette
 - [*] path/curve-2d, should have a preview_texture like points/list does?
 - [*] points/list shift-drag should also select (currently drag selects)
