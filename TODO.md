@@ -3,6 +3,7 @@
 - [ ] need preferences (saved in local storage?)
   - [ ] default sky settings (used in all node previews)
   - [ ] default material color (should not be white)
+- [ ] what other texture nodes exist in blender/houdini/substance-designer?
 - [ ] move options to hash
 - [ ] need LODs so trees work?
 - [ ] add more tests - we called "scripts/verify-outline-clamp.mjs"
@@ -126,6 +127,23 @@
 
 ## --- done ---
 
+- [*] demos scene should not show up in command palette
+- [*] path/curve-2d, should have a preview_texture like points/list does?
+- [*] points/list shift-drag should also select (currently drag selects)
+- [*] path/curve-2d, what is ⇧+click=toggle
+- [*] points/list->edit->click gets error
+- [*] points/list 'f' should frame (currently falls through to view behind)
+- [*] points/list 'f' should frame selected (current frames all)
+- [*] points/list control click - should not bring up context menu behind editor
+- [*] path/curve-2d sometimes stops updating - repo:
+  1. click to add point (a)
+  2. click to add point (b)
+  3. ctrl-click (a) to delete (a)
+  4. ctrl-click (b) to delete (b)
+  5. click to add point (c)
+  6. click to add point (d)
+  Result: (d) does not appear. click to add more points. They don't appear.
+  Drag a point. They all suddenly appear.
 - [*] persp camera changes zFar?
 - [*] ortho drag should stick to stuff
 - [*] zoom (dolly) doesn't work in ortho mod
