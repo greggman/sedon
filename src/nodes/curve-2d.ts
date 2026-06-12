@@ -123,19 +123,8 @@ silhouette.
         position: { x: 280, y: 0 },
         inputValues: { segments: 32 },
       });
-      const material = addNode(g, 'material/pbr', {
-        id: 'material',
-        position: { x: 280, y: 240 },
-        inputValues: { basecolor: [0.55, 0.36, 0.20, 1], roughness: 0.6, metallic: 0 },
-      });
-      const entity = addNode(g, 'scene/entity', {
-        id: 'entity',
-        position: { x: 560, y: 120 },
-      });
       addEdge(g, { node: curve.id, socket: 'path' }, { node: lathe.id, socket: 'profile' });
-      addEdge(g, { node: lathe.id, socket: 'geometry' }, { node: entity.id, socket: 'geometry' });
-      addEdge(g, { node: material.id, socket: 'material' }, { node: entity.id, socket: 'material' });
-      return { graph: g, rootNodeId: 'entity' };
+      return { graph: g, rootNodeId: 'lathe' };
     },
   },
   evaluate(_ctx, inputs): { path: PathValue } {
