@@ -26,5 +26,17 @@ export function createRegistryForTests(): NodeRegistry {
       scene: { entities: [{ tag: inputs.tag } as unknown as never] },
     }),
   });
+  // Emits `{ color: undefined }` — used to simulate a subgraph
+  // wrapper whose declared output socket has no inner wire feeding
+  // it (e.g. after the user deletes the only node that was producing
+  // the output). The node evaluates fine, it just doesn't materialise
+  // a value for that socket.
+  r.register({
+    id: 'test/empty-color-output',
+    category: 'Test',
+    inputs: [],
+    outputs: [{ name: 'color', type: 'Color' }],
+    evaluate: () => ({}),
+  });
   return r;
 }

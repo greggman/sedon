@@ -362,10 +362,22 @@ export async function evaluateGraph(
         const upstream = upstreams[0];
         const upstreamOutputs = outputs.get(upstream.node);
         if (upstreamOutputs) {
-          inputs[input.name] = upstreamOutputs[upstream.socket];
-          const upFp = fingerprints.get(upstream.node);
-          if (upFp !== undefined) upstreamFingerprints[input.name] = upFp;
-          resolved = true;
+          const val = upstreamOutputs[upstream.socket];
+          // Only treat the wire as "resolved" when the upstream
+          // actually produced a value for THIS socket. An undefined
+          // here means the upstream evaluated but had nothing for the
+          // requested output — common when a subgraph wrapper's
+          // boundary-output has no inner-graph wire into it (e.g. the
+          // user deleted the node that used to feed the output). Fall
+          // through to the inputValue/default/optional chain the same
+          // way we do when the upstream failed to evaluate at all, so
+          // a hole in a subgraph doesn't black out the consumer.
+          if (val !== undefined) {
+            inputs[input.name] = val;
+            const upFp = fingerprints.get(upstream.node);
+            if (upFp !== undefined) upstreamFingerprints[input.name] = upFp;
+            resolved = true;
+          }
         }
       }
       if (!resolved) {

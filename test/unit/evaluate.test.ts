@@ -145,6 +145,32 @@ test('a broken upstream on an OPTIONAL input is treated as unwired (downstream s
   assert.equal(scene.entities[0]!.tag, 1);
 });
 
+test('upstream that evaluates but emits no value for the wired socket falls back to default', async () => {
+  // Regression: "Extract to Subgraph" → "Edit subgraph" → delete the
+  // only inner node feeding an output crashed downstream consumers
+  // with `Cannot read properties of undefined (reading 'texture')`.
+  // The wrapper still evaluated (its outputs map existed) but the
+  // specific output socket was undefined. The resolver used to mark
+  // the input "resolved" anyway and skip the inputValue / default /
+  // optional chain — material/pbr then saw `basecolor: undefined`
+  // and downstream `material.basecolor.texture` blew up.
+  //
+  // This pins the fix: a wired socket whose upstream returns undefined
+  // for THAT socket should be treated the same as "upstream failed"
+  // — fall through to defaults so the consumer can still evaluate.
+  const nodes = createRegistryForTests();
+  const g = createGraph();
+  const empty = addNode(g, 'test/empty-color-output');
+  const mix = addNode(g, 'math/mix');
+  // Wire empty.color to mix.a. mix.a's default is [0,0,0,1]; with no
+  // value from upstream, the resolver should fall back to that.
+  addEdge(g, { node: empty.id, socket: 'color' }, { node: mix.id, socket: 'a' });
+
+  const result = await evaluateGraph(g, nodes, { rootNodeId: mix.id });
+  // a default [0,0,0,1], b default [1,1,1,1], factor default 0.5 → [0.5, 0.5, 0.5, 1]
+  approxEqual(result.outputs.result as number[], [0.5, 0.5, 0.5, 1]);
+});
+
 test('a broken upstream on a REQUIRED input still kills the consumer (when there is no default)', async () => {
   // The flip side of the fix: "broken upstream = treated as unwired"
   // means a required-with-no-default input STILL fails — same
