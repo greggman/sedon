@@ -311,8 +311,13 @@ export function App() {
       if (!active) return;
       // Preview handles its own F via the wrapper-level keydown
       // listener in preview.tsx (it also drives the FPS WASD keys
-      // from that same listener), so we only run for the canvas case.
-      if (active.view.contentComponent !== 'node-canvas') return;
+      // from that same listener), so we bail when Preview is active.
+      // Anything else — canvas, assets, nodes browser, or whatever
+      // dockview happens to have activated at startup — falls through
+      // to the canvas frame action. `frameSelectedInActiveCanvas`
+      // resolves the canvas via lastActiveCanvasPanelId / fallback,
+      // so this works even when the activePanel isn't a canvas itself.
+      if (active.view.contentComponent === 'preview') return;
       e.preventDefault();
       frameSelectedInActiveCanvas();
     };

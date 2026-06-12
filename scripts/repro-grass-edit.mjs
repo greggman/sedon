@@ -13,7 +13,7 @@ console.log('dev server:', server.url);
 const browser = await puppeteer.launch({
   headless: false,
   defaultViewport: null,
-  args: ['--window-size=1600,1000', '--enable-unsafe-webgpu'],
+  args: ['--window-size=1600,1000'],
 });
 const page = await browser.newPage();
 const gpuErrors = [];

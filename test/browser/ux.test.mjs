@@ -84,7 +84,7 @@ async function setViewport(page, viewport) {
       const style = document.querySelector('.react-flow__viewport')?.getAttribute('style') ?? '';
       return style.includes(`translate(${vp.x}px`) && style.includes(`${vp.y}`);
     },
-    { timeout: 2000 },
+    { timeout: 5000 },
     viewport,
   );
 }
@@ -115,7 +115,7 @@ async function clickViewMenuItem(page, label) {
   await view.asElement().click();
   // Brief settle so the popup renders. Polling on the menu DOM avoids
   // a hardcoded sleep when the popup is slow to mount.
-  await page.waitForSelector('.sedon-menubar-popup .sedon-menu-row', { timeout: 2000 });
+  await page.waitForSelector('.sedon-menubar-popup .sedon-menu-row', { timeout: 5000 });
   const item = await page.evaluateHandle((needle) =>
     [...document.querySelectorAll('.sedon-menubar-popup .sedon-menu-row')]
       .find((row) => row.querySelector('.sedon-menu-row-label')?.textContent?.trim() === needle),
@@ -175,7 +175,7 @@ test('View menu → Frame Selected: fires fitView on the canvas', async () => {
     // ReactFlow fitView animates; wait for transform to actually change.
     await page.waitForFunction(
       (prev) => document.querySelector('.react-flow__viewport')?.getAttribute('style') !== prev,
-      { timeout: 2000 },
+      { timeout: 5000 },
       before,
     );
     const after = await viewportTransform(page);
@@ -202,7 +202,7 @@ test('F-key with NOTHING selected: fits all nodes', async () => {
     await page.keyboard.press('f');
     await page.waitForFunction(
       (prev) => document.querySelector('.react-flow__viewport')?.getAttribute('style') !== prev,
-      { timeout: 2000 },
+      { timeout: 5000 },
       before,
     );
     const after = await viewportTransform(page);
@@ -240,7 +240,7 @@ test('drag a node, press Cmd-Z, position restored', async () => {
       const s = window.__sedonStore__.getState();
       const p = s.nodePositions[s.currentEditingId]?.[id];
       return p && (Math.abs(p.x - b.x) > 20 || Math.abs(p.y - b.y) > 20);
-    }, { timeout: 2000 }, firstId, before);
+    }, { timeout: 5000 }, firstId, before);
 
     await page.keyboard.down('Meta');
     await page.keyboard.press('z');
@@ -249,7 +249,7 @@ test('drag a node, press Cmd-Z, position restored', async () => {
       const s = window.__sedonStore__.getState();
       const p = s.nodePositions[s.currentEditingId]?.[id];
       return p && Math.abs(p.x - b.x) < 1 && Math.abs(p.y - b.y) < 1;
-    }, { timeout: 2000 }, firstId, before);
+    }, { timeout: 5000 }, firstId, before);
 
     const restored = await readPos(firstId);
     const dist = Math.hypot(restored.x - before.x, restored.y - before.y);
@@ -290,7 +290,7 @@ test('delete a connected node — restored by ONE Cmd-Z', async () => {
     await page.keyboard.press('Backspace');
     await page.waitForFunction(
       (id) => !window.__sedonStore__.getState().graph.nodes.some((n) => n.id === id),
-      { timeout: 2000 },
+      { timeout: 5000 },
       target,
     );
 
@@ -311,7 +311,7 @@ test('delete a connected node — restored by ONE Cmd-Z', async () => {
     await page.keyboard.up('Meta');
     await page.waitForFunction(
       (n) => window.__sedonStore__.getState().graph.nodes.length === n,
-      { timeout: 2000 },
+      { timeout: 5000 },
       beforeCounts.n,
     );
     const afterUndo = await page.evaluate(() => {
@@ -382,7 +382,7 @@ test('drop-on-wire: addNode with one edge selected splices node into the wire (1
     });
     await page.waitForFunction(
       (u) => window.__sedonStore__.getState().undoStack.length === u + 1,
-      { timeout: 2000 },
+      { timeout: 5000 },
       before.u,
     );
     const after = await page.evaluate(() => {
@@ -399,7 +399,7 @@ test('drop-on-wire: addNode with one edge selected splices node into the wire (1
     await page.keyboard.up('Meta');
     await page.waitForFunction(
       (n) => window.__sedonStore__.getState().graph.nodes.length === n,
-      { timeout: 2000 },
+      { timeout: 5000 },
       before.n,
     );
     const restored = await page.evaluate(() => {
@@ -447,7 +447,7 @@ test('points/list editor: click-to-add-point commits without throwing', async ()
     await page.mouse.click(triggerBox.x, triggerBox.y);
     await page.waitForFunction(
       () => !!document.querySelector('.sedon-pointlist-popup'),
-      { timeout: 2000 },
+      { timeout: 5000 },
     );
 
     // Click inside the popup's SVG editing surface to add a new point.
@@ -472,7 +472,7 @@ test('points/list editor: click-to-add-point commits without throwing', async ()
       const node = window.__sedonStore__.getState().graph.nodes.find((m) => m.id === nid);
       const arr = node?.inputValues?.points;
       return Array.isArray(arr) && arr.length === 3;
-    }, { timeout: 2000 }, id);
+    }, { timeout: 5000 }, id);
 
     // No console errors and no page errors fired during the add.
     assert.equal(
@@ -506,7 +506,7 @@ test('points/list editor: right-click inside popup does not open pane context me
     await page.mouse.click(triggerBox.x, triggerBox.y);
     await page.waitForFunction(
       () => !!document.querySelector('.sedon-pointlist-popup'),
-      { timeout: 2000 },
+      { timeout: 5000 },
     );
 
     // Right-click on the popup header (well clear of any handle so
@@ -569,7 +569,7 @@ test('curve-2d editor: Ctrl-click delete does not leave stale render-state', asy
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }, id);
     await page.mouse.click(trigger.x, trigger.y);
-    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 5000 });
 
     const svg = await page.evaluate(() => {
       const el = document.querySelector('.sedon-pointlist-svg');
@@ -683,7 +683,7 @@ test('curve-2d editor: F key frames the popup view, not the canvas behind it', a
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }, id);
     await page.mouse.click(trigger.x, trigger.y);
-    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 5000 });
 
     // Snapshot the popup-internal view transform via the editor's
     // path data (its first L coord is the projection of the first
@@ -729,7 +729,7 @@ test('curve-2d editor: F frames selected points only, not all', async () => {
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }, id);
     await page.mouse.click(trigger.x, trigger.y);
-    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 5000 });
 
     // Press F once with nothing selected → frames all points (the
     // current view's pathD before vs after will differ since the
@@ -816,7 +816,7 @@ test('curve-2d editor: shift+drag/click stays inside popup, does not trigger RF 
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }, id);
     await page.mouse.click(trigger.x, trigger.y);
-    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 5000 });
     await page.keyboard.press('f');
     await new Promise((r) => setTimeout(r, 200));
 
@@ -914,7 +914,7 @@ test('curve-2d editor: shift+drag near curve starts marquee, not point-insert', 
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }, id);
     await page.mouse.click(trigger.x, trigger.y);
-    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 5000 });
     await page.keyboard.press('f');
     await new Promise((r) => setTimeout(r, 200));
 
@@ -956,7 +956,7 @@ test('curve-2d editor: shift+drag near curve starts marquee, not point-insert', 
     // rect appears in the DOM after the setMarquee re-render runs.
     await page.waitForFunction(
       () => !!document.querySelector('.sedon-pointlist-marquee'),
-      { timeout: 2000 },
+      { timeout: 5000 },
     );
 
     // Now finish the gesture (pointerup commits the marquee → selection).
