@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeDef } from '../core/node-def.js';
+import { docsUrlFor } from '../docs/doc-paths.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
 import { NodeThumbnail } from './node-thumbnail.js';
@@ -201,6 +202,43 @@ export function NodesPanel() {
     [],
   );
 
+  // Right-click context menu state — { x, y } in client coords plus
+  // the def the menu targets. Same dismissal pattern AssetsPanel uses:
+  // capture-phase mousedown walks the click target's ancestor chain
+  // for `data-menu-popup-root="1"` to keep the menu alive when the
+  // click lands inside it; Esc also dismisses.
+  const [contextMenu, setContextMenu] = useState<
+    { x: number; y: number; def: NodeDef } | null
+  >(null);
+  const onTileContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>, def: NodeDef) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, def });
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onDown = (e: MouseEvent) => {
+      let n: HTMLElement | null = e.target as HTMLElement | null;
+      while (n) {
+        if (n.dataset && n.dataset.menuPopupRoot === '1') return;
+        n = n.parentElement;
+      }
+      setContextMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('mousedown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
+
   return (
     <div className="sedon-assets">
       <div className="sedon-assets-toolbar">
@@ -267,9 +305,18 @@ export function NodesPanel() {
             cat={selected}
             viewMode={viewMode}
             onDragStart={onTileDragStart}
+            onContextMenu={onTileContextMenu}
           />
         </div>
       </div>
+      {contextMenu && (
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          def={contextMenu.def}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -340,6 +387,7 @@ function NodesContents(props: {
   cat: CategoryNode;
   viewMode: ViewMode;
   onDragStart: (e: React.DragEvent<HTMLDivElement>, def: NodeDef) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLDivElement>, def: NodeDef) => void;
 }) {
   if (props.cat.allNodes.length === 0) {
     return <div className="sedon-assets-empty">No nodes here.</div>;
@@ -360,6 +408,7 @@ function NodesContents(props: {
           def={def}
           viewMode={props.viewMode}
           onDragStart={(e) => props.onDragStart(e, def)}
+          onContextMenu={(e) => props.onContextMenu(e, def)}
         />
       ))}
     </div>
@@ -375,31 +424,92 @@ function NodeTile(props: {
   def: NodeDef;
   viewMode: ViewMode;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
+  onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const cls = `sedon-assets-tile sedon-assets-tile--${props.viewMode} sedon-assets-tile--node`;
   // Icon-mode tiles get a live preview from the node's docs sample graph
   // when available. List mode stays text-only (a 14px texture render is
   // just noise at the list row's icon column).
+  //
+  // Both the preview path and the glyph fallback occupy the SAME
+  // NODE_THUMB_PX-square box so labels line up across the grid whether
+  // or not a tile happens to have a renderable preview.
+  const placeholder = (
+    <div
+      style={{
+        width: NODE_THUMB_PX,
+        height: NODE_THUMB_PX,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <span className="sedon-assets-tile-icon">◆</span>
+    </div>
+  );
   const icon =
     props.viewMode === 'icons' ? (
       <NodeThumbnail
         def={props.def}
         size={NODE_THUMB_PX}
-        fallback={<span className="sedon-assets-tile-icon">◆</span>}
+        fallback={placeholder}
       />
     ) : (
       <span className="sedon-assets-tile-icon">◆</span>
     );
+
+  // Split the id at its last '/': the suffix (node name) becomes the
+  // top label, the prefix (category path) becomes the smaller subline.
+  // Most ids have exactly one slash; multi-slash ids (none today, but
+  // permitted by the schema) collapse all preceding segments into the
+  // subline.
+  const lastSlash = props.def.id.lastIndexOf('/');
+  const name = lastSlash < 0 ? props.def.id : props.def.id.slice(lastSlash + 1);
+  const prefix = lastSlash < 0 ? '' : props.def.id.slice(0, lastSlash);
   return (
     <div
       className={cls}
       draggable
       onDragStart={props.onDragStart}
+      onContextMenu={props.onContextMenu}
       title={`${props.def.id}\n${props.def.category}\n\nDrag onto the canvas to add.`}
     >
       {icon}
-      <span className="sedon-assets-tile-label">{props.def.id}</span>
-      <span className="sedon-assets-tile-type">{props.def.category}</span>
+      <span className="sedon-assets-tile-label">{name}</span>
+      <span className="sedon-assets-tile-type">{prefix}</span>
+    </div>
+  );
+}
+
+function NodeContextMenu(props: {
+  x: number;
+  y: number;
+  def: NodeDef;
+  onClose: () => void;
+}) {
+  const docsUrl = docsUrlFor(props.def.id, 'site-root');
+  return (
+    <div
+      className="sedon-assets-context-menu"
+      style={{ left: props.x, top: props.y }}
+      // Ancestor walk in NodesPanel's onMouseDown handler looks for
+      // this attribute to keep the menu alive when clicked.
+      data-menu-popup-root="1"
+      onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="sedon-assets-context-menu-title">{props.def.id}</div>
+      <button
+        type="button"
+        className="sedon-assets-context-menu-item"
+        onClick={(e) => {
+          e.stopPropagation();
+          window.open(docsUrl, '_blank', 'noreferrer');
+          props.onClose();
+        }}
+      >
+        Docs
+      </button>
     </div>
   );
 }
