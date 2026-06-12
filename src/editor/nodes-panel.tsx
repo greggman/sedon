@@ -3,6 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
+import { getNodeIcon } from './node-icons.js';
 import { NodeThumbnail } from './node-thumbnail.js';
 
 // =========================================================================
@@ -433,7 +434,12 @@ function NodeTile(props: {
   //
   // Both the preview path and the glyph fallback occupy the SAME
   // NODE_THUMB_PX-square box so labels line up across the grid whether
-  // or not a tile happens to have a renderable preview.
+  // or not a tile happens to have a renderable preview. For nodes
+  // whose Sample-graph output isn't visually previewable (math, anim,
+  // vec conversions, paths, …), a hand-picked icon from
+  // `getNodeIcon(id)` reads the node's identity better than the
+  // generic ◆ — and falls back to ◆ when no icon is registered.
+  const customIcon = getNodeIcon(props.def.id);
   const placeholder = (
     <div
       style={{
@@ -444,7 +450,7 @@ function NodeTile(props: {
         justifyContent: 'center',
       }}
     >
-      <span className="sedon-assets-tile-icon">◆</span>
+      {customIcon ?? <span className="sedon-assets-tile-icon">◆</span>}
     </div>
   );
   const icon =
