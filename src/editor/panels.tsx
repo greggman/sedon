@@ -6,6 +6,11 @@ import { AddNodeMenu } from './add-node-menu.js';
 import { AssetsPanel, ASSET_DND_TYPE, type AssetDndItem } from './assets-panel.js';
 import { useLayoutStore } from './layout-store.js';
 import { NodeCanvas } from './node-canvas.js';
+import {
+  NodesPanel,
+  NODE_KIND_DND_TYPE,
+  type NodeKindDndItem,
+} from './nodes-panel.js';
 import { Preview } from './preview.js';
 import { useEditorStore } from './store.js';
 
@@ -81,24 +86,59 @@ function NodeCanvasPanelInner({ panelId }: { panelId: string }) {
   // never let the user author the cycle in the first place. Cycle
   // failures in a multi-drop skip just the offending item; the rest
   // still drop.
+  // Canvas accepts two DnD payloads:
+  //   • ASSET_DND_TYPE     — from the Assets panel; instantiates a
+  //                          subgraph wrapper at the drop point.
+  //   • NODE_KIND_DND_TYPE — from the Nodes panel; instantiates a core
+  //                          node of the given kind at the drop point.
+  // Each branch reads its own MIME from the DataTransfer; the dragenter
+  // / dragover handlers accept either to show the user a copy cursor.
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes(ASSET_DND_TYPE)) {
+    const types = e.dataTransfer.types;
+    if (
+      types.includes(ASSET_DND_TYPE) ||
+      types.includes(NODE_KIND_DND_TYPE)
+    ) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
   };
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    const raw = e.dataTransfer.getData(ASSET_DND_TYPE);
-    if (!raw) return;
+    const nodeRaw = e.dataTransfer.getData(NODE_KIND_DND_TYPE);
+    const assetRaw = e.dataTransfer.getData(ASSET_DND_TYPE);
+    if (!nodeRaw && !assetRaw) return;
     e.preventDefault();
+    const basePosition = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+
+    // Node-kind drop: single node from the Nodes panel.
+    if (nodeRaw) {
+      let item: NodeKindDndItem;
+      try {
+        item = JSON.parse(nodeRaw) as NodeKindDndItem;
+      } catch {
+        return;
+      }
+      const id = crypto.randomUUID();
+      rf.addNodes({
+        id,
+        type: 'sedon',
+        position: basePosition,
+        data: { kind: item.kind },
+      });
+      addNode({ id, kind: item.kind, position: basePosition });
+      return;
+    }
+
+    // Asset drop: 1+ subgraph wrappers, possibly mixed with folder/main
+    // items the canvas ignores. Multi-drop stagger keeps overlapping
+    // wrappers visible.
     let items: AssetDndItem[];
     try {
-      items = JSON.parse(raw) as AssetDndItem[];
+      items = JSON.parse(assetRaw) as AssetDndItem[];
     } catch {
       return;
     }
     const state = useEditorStore.getState();
-    const basePosition = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const offsetStep = 24;
     let placed = 0;
     const skipped: string[] = [];
@@ -200,10 +240,19 @@ export function AssetsPanelWrapper(_props: IDockviewPanelProps) {
   );
 }
 
+export function NodesPanelWrapper(_props: IDockviewPanelProps) {
+  return (
+    <div className="sedon-panel sedon-panel--assets">
+      <NodesPanel />
+    </div>
+  );
+}
+
 // Registry passed to <DockviewReact components={...}>. Each key is the
 // `component` string referenced when calling `api.addPanel({...})`.
 export const PANEL_COMPONENTS = {
   'node-canvas': NodeCanvasPanel,
   preview: PreviewPanel,
   assets: AssetsPanelWrapper,
+  nodes: NodesPanelWrapper,
 };

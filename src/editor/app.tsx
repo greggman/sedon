@@ -122,6 +122,19 @@ export function App() {
       // isn't readable (server-side render guard).
       initialHeight: Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.25),
     });
+    // Nodes browser as a sibling TAB in the same group as Assets, so
+    // the user toggles between "my saved subgraphs" and "all available
+    // node kinds" at the same dock slot. `direction: 'within'` keeps
+    // the new panel in the existing group instead of opening a new
+    // split. Assets stays the active tab on load (this panel is added
+    // second, but the api respects the initial activation order).
+    event.api.addPanel({
+      id: 'nodes-main',
+      component: 'nodes',
+      title: 'Nodes',
+      position: { referencePanel: 'assets-main', direction: 'within' },
+      inactive: true,
+    });
   }, []);
   useEffect(() => () => setDockviewApi(null), []);
 

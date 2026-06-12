@@ -150,6 +150,15 @@ export interface LayoutState {
   setAssetsTreeWidth: (px: number) => void;
 
   /**
+   * Width (in CSS pixels) of the Nodes-panel category tree. Mirrors
+   * `assetsTreeWidth` but kept independent so the two panels can have
+   * different splits (the asset and node hierarchies often want
+   * different left-column widths). Default 200 px to match assets.
+   */
+  nodesTreeWidth: number;
+  setNodesTreeWidth: (px: number) => void;
+
+  /**
    * Whether node-canvas thumbnails re-evaluate every animation frame
    * when an `anim/*` node is in the graph. When false, only the
    * dedicated Preview pane animates and node thumbnails freeze at
@@ -188,6 +197,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   previewCameras: {},
   recentPreviewCameras: {},
   assetsTreeWidth: 200,
+  nodesTreeWidth: 200,
   showLiveNodePreviews: true,
   lastActiveCanvasPanelId: null,
   lastActivePreviewPanelId: null,
@@ -326,6 +336,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     // 1fr behaviour as long as the body isn't itself extremely narrow.
     const clamped = Math.max(80, Math.min(600, Math.round(px)));
     set({ assetsTreeWidth: clamped });
+  },
+
+  setNodesTreeWidth: (px) => {
+    const clamped = Math.max(80, Math.min(600, Math.round(px)));
+    set({ nodesTreeWidth: clamped });
   },
 
   setShowLiveNodePreviews: (on) => set({ showLiveNodePreviews: on }),
