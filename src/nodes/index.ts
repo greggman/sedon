@@ -3,6 +3,13 @@ import { animDeltaNode, animLfoNode, animSineNode, animTimeNode } from './anim.j
 import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
+import { brickNode } from './brick.js';
+import { dotsNode } from './dots.js';
+import { linearGradientNode } from './linear-gradient.js';
+import { radialGradientNode } from './radial-gradient.js';
+import { texTransformNode } from './tex-transform.js';
+import { thresholdNode } from './threshold.js';
+import { whiteNoiseNode } from './white-noise.js';
 import { branchMergeNode } from './branch-merge.js';
 import { branchPalmNode } from './branch-palm.js';
 import { branchRecursiveNode } from './branch-recursive.js';
@@ -177,6 +184,11 @@ export const CORE_NODES = [
   textureToHeightfieldMeshNode,
   solidColorNode,
   gridNode,
+  brickNode,
+  dotsNode,
+  linearGradientNode,
+  radialGradientNode,
+  whiteNoiseNode,
   checkerNode,
   dashedStripeNode,
   imageNode,
@@ -188,6 +200,8 @@ export const CORE_NODES = [
   blendNode,
   blendMaskNode,
   blurNode,
+  texTransformNode,
+  thresholdNode,
   branchMergeNode,
   branchPalmNode,
   branchRecursiveNode,
@@ -254,6 +268,13 @@ export {
   blendMaskNode,
   blendNode,
   blurNode,
+  brickNode,
+  dotsNode,
+  linearGradientNode,
+  radialGradientNode,
+  texTransformNode,
+  thresholdNode,
+  whiteNoiseNode,
   branchMergeNode,
   branchPalmNode,
   branchRecursiveNode,

@@ -52,6 +52,15 @@ export const blendNode: NodeDef = {
         { value: 1, label: 'add' },
         { value: 2, label: 'multiply' },
         { value: 3, label: 'screen' },
+        { value: 4, label: 'overlay' },
+        { value: 5, label: 'difference' },
+        { value: 6, label: 'color dodge' },
+        { value: 7, label: 'color burn' },
+        { value: 8, label: 'lighten (max)' },
+        { value: 9, label: 'darken (min)' },
+        { value: 10, label: 'subtract' },
+        { value: 11, label: 'soft light' },
+        { value: 12, label: 'hard light' },
       ],
     },
     {
@@ -72,11 +81,23 @@ export const blendNode: NodeDef = {
   doc: {
     summary: 'Combine two textures pixelwise under a chosen blend mode.',
     description: `
-Blend modes: mix (linear interpolation), add (a + factor·b), multiply
-(a · ((1−factor) + factor·b)), screen (1 − (1−a)·(1−factor·b)). The mix mode
-is what most users want by default; multiply is the classic "mask" operation
-(use a = colour, b = greyscale mask); add brightens; screen brightens while
-staying soft at the top end.
+Blend modes:
+
+- mix (linear interpolation)
+- add (a + factor·b) — brightens
+- multiply (a · ((1−factor) + factor·b)) — classic mask op (a = colour,
+  b = greyscale mask)
+- screen — brightens while staying soft at the top end (opposite of multiply)
+- overlay — multiply below 0.5, screen above (classic Photoshop look)
+- difference — \`|a − b|\`, symmetric, useful for compares
+- color dodge / burn — strong brighten / darken
+- lighten / darken — per-channel max / min
+- subtract — a − factor·b, clamped
+- soft / hard light — gentler / harsher overlay variants
+
+For all non-mix modes, \`factor\` controls how much the blended result
+replaces \`a\` (0 = pure a, 1 = pure blended). Most users want mix by
+default; reach for the others when you specifically need their look.
 
 Inputs are sampled with linear filtering and repeat addressing, so blending
 two textures of different resolutions still works — the smaller one tiles to
