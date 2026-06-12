@@ -212,12 +212,13 @@
   position: relative;
   color: #ddd;
 }
-/* Output-type colour stripe across the top of a Nodes-panel tile,
- * mirroring the canvas custom-node's output bar. Positioned absolutely
- * so it spans the full tile width without being affected by the tile's
- * padding (which would leave gaps on the sides). The 3-px height
- * matches the canvas convention scaled down for the smaller tile. */
-.sedon-nodes-tile-output-bar {
+/* Output-type colour stripe across the top of a Nodes-panel or
+ * Assets-panel subgraph tile, mirroring the canvas custom-node's
+ * output bar. Positioned absolutely so it spans the full tile width
+ * without being affected by the tile's padding (which would leave
+ * gaps on the sides). The 3-px height matches the canvas convention
+ * scaled down for the smaller tile. */
+.sedon-tile-output-bar {
   position: absolute;
   top: 0;
   left: 0;

@@ -1,16 +1,18 @@
-import type { NodeDef } from '../core/node-def.js';
+import type { OutputDef } from '../core/node-def.js';
 import { createCoreTypeRegistry } from '../core/types.js';
 
 // Output-bar colour helpers, shared between:
 //   • the in-canvas custom-node renderer (the 5-px stripe at the top
-//     of every node header), and
+//     of every node header),
 //   • the Nodes-panel browser tiles (a 3-px stripe across the top of
 //     each tile, mirroring the canvas convention so users learn one
-//     palette once).
+//     palette once),
+//   • the Assets-panel subgraph tiles (same 3-px stripe, driven by the
+//     subgraph wrapper's outputs).
 //
 // Keeping these in their own JSX-free module avoids dragging
-// custom-node's entire React surface into the Nodes panel just to read
-// a colour.
+// custom-node's entire React surface into the panels just to read a
+// colour.
 
 const types = createCoreTypeRegistry();
 
@@ -22,7 +24,7 @@ export function typeColor(typeId: string): string {
 }
 
 /**
- * CSS `background` value for a node's output bar.
+ * CSS `background` value for an output-type bar.
  *
  *   • 0 outputs → 'transparent'
  *   • 1 output  → solid `typeColor(...)`
@@ -32,8 +34,14 @@ export function typeColor(typeId: string): string {
  * The hard-stop gradient (no smooth interpolation) is what makes a
  * multi-output node read as N discrete coloured bands rather than a
  * blurry sweep.
+ *
+ * Accepts anything with an `outputs` array — `NodeDef`, `SubgraphDef`,
+ * or any other shape that carries the same structural slice. The
+ * actual function only ever reads `.outputs[i].type`.
  */
-export function outputBarBackground(def: NodeDef): string {
+export function outputBarBackground(def: {
+  outputs: ReadonlyArray<OutputDef>;
+}): string {
   if (def.outputs.length === 0) return 'transparent';
   if (def.outputs.length === 1) {
     return typeColor(def.outputs[0]!.type);

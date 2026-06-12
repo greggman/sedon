@@ -16,6 +16,7 @@ import type { AssetSelection } from './asset-ops.js';
 import { AssetThumbnail } from './asset-thumbnail.js';
 import { buildAssetInstancesFragment, serializeFragment } from './fragment.js';
 import { useLayoutStore } from './layout-store.js';
+import { outputBarBackground } from './node-output-color.js';
 import { openGraphInCanvas, openGraphInPreview } from './open-graph.js';
 import { useRenameBus } from './rename-bus.js';
 import { useEditorStore } from './store.js';
@@ -1397,6 +1398,11 @@ function SubgraphTile(p: SubgraphTileProps) {
       <span className="sedon-assets-tile-icon">◇</span>
     );
   const typeLabel = subgraphTypeLabel(p.sg);
+  // Output-type stripe across the top of the tile, mirroring the
+  // canvas custom-node header and the Nodes-panel tiles. Lets the user
+  // tell at a glance what each subgraph produces (Scene vs Texture2D
+  // vs Geometry vs …) without reading the "Type" label.
+  const stripeBg = outputBarBackground(p.sg);
   return (
     <div
       className={tileClass(p.viewMode, 'subgraph', p.selected, p.isCut)}
@@ -1409,6 +1415,7 @@ function SubgraphTile(p: SubgraphTileProps) {
       onContextMenu={p.onContextMenu}
       title={`Drag onto a canvas to instance this subgraph; double-click to edit (outputs: ${typeLabel})`}
     >
+      <div className="sedon-tile-output-bar" style={{ background: stripeBg }} />
       {icon}
       {p.renaming ? (
         <RenameInput

@@ -413,13 +413,40 @@ function tryInsertOnSelectedEdge(
   const inputEdgeId = crypto.randomUUID();
   const outputEdgeId = crypto.randomUUID();
 
-  // Visual update first so the new node appears at `position` even if
-  // the syncCounter effect lags a frame. Store dispatch fires the
-  // batched undo entry.
-  rf.addNodes({ id: newNodeId, type: 'sedon', position, data: { kind } });
+  // Override the caller's `position` (which is typically the canvas
+  // viewport centre — meaningful for a plain add, but disconnected
+  // from where the user is actually looking when splicing) with the
+  // visual midpoint of the two endpoint nodes. Reads measured
+  // dimensions from RF; falls back to a typical node footprint when a
+  // node hasn't been measured yet. The new node's own width/height
+  // get a default estimate too — RF re-measures after mount, so any
+  // small drift will look the same as the user just dragging the
+  // node a few pixels.
+  const fromRf = rf.getNode(fromNode.id);
+  const toRf = rf.getNode(toNode.id);
+  const DEFAULT_NODE_W = 220;
+  const DEFAULT_NODE_H = 80;
+  let splicePosition = position;
+  if (fromRf && toRf) {
+    const fromW = fromRf.measured?.width ?? DEFAULT_NODE_W;
+    const fromH = fromRf.measured?.height ?? DEFAULT_NODE_H;
+    const toW = toRf.measured?.width ?? DEFAULT_NODE_W;
+    const toH = toRf.measured?.height ?? DEFAULT_NODE_H;
+    const midCx = (fromRf.position.x + fromW / 2 + toRf.position.x + toW / 2) / 2;
+    const midCy = (fromRf.position.y + fromH / 2 + toRf.position.y + toH / 2) / 2;
+    splicePosition = {
+      x: midCx - DEFAULT_NODE_W / 2,
+      y: midCy - DEFAULT_NODE_H / 2,
+    };
+  }
+
+  // Visual update first so the new node appears at `splicePosition`
+  // even if the syncCounter effect lags a frame. Store dispatch fires
+  // the batched undo entry.
+  rf.addNodes({ id: newNodeId, type: 'sedon', position: splicePosition, data: { kind } });
   useEditorStore.getState().insertNodeOnEdge({
     oldEdgeId: graphEdge.id,
-    newNode: { id: newNodeId, kind, position },
+    newNode: { id: newNodeId, kind, position: splicePosition },
     inputEdgeId,
     outputEdgeId,
     newInputSocket: matchInput.name,

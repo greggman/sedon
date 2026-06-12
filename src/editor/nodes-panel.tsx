@@ -493,7 +493,7 @@ function NodeTile(props: {
       onContextMenu={props.onContextMenu}
       title={`${props.def.id}\n${props.def.category}\n\nDrag onto the canvas to add.`}
     >
-      <div className="sedon-nodes-tile-output-bar" style={{ background: stripeBg }} />
+      <div className="sedon-tile-output-bar" style={{ background: stripeBg }} />
       {icon}
       <span className="sedon-assets-tile-label">{name}</span>
       <span className="sedon-assets-tile-type">{prefix}</span>
