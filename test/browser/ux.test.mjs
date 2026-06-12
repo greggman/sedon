@@ -752,3 +752,203 @@ test('curve-2d editor: F frames selected points only, not all', async () => {
     await page.close();
   }
 });
+
+// -----------------------------------------------------------------
+// points-list popup: shift+drag near the curve must still start a
+// marquee. The segment-hit zones are a 12px-wide invisible stroke
+// running along every segment; without the shift-pass-through, any
+// drag-near-the-curve was eaten by `onSegmentPointerDown` (which
+// stopPropagation + inserts a point), so shift+drag silently
+// "did nothing".
+// -----------------------------------------------------------------
+
+// -----------------------------------------------------------------
+// points-list popup: shift+drag and shift+click must NOT trigger
+// React Flow's pane selection-rectangle on the canvas BEHIND the
+// popup. RF's Pane uses `onPointerDownCapture` (CAPTURE phase, runs
+// BEFORE the popup's bubble-phase stopPropagation), so the popup
+// declares `.nokey .nopan .nodrag` on its wrapper — RF's pane
+// handler reads `event.target.closest('.nokey')` and early-outs.
+// Regression for "shift+click on a point does nothing" and
+// "shift+drag drags the canvas behind".
+// -----------------------------------------------------------------
+
+test('curve-2d editor: shift+drag/click stays inside popup, does not trigger RF selection', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
+    assert.ok(id);
+
+    const trigger = await page.evaluate((nid) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nid}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(trigger.x, trigger.y);
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.keyboard.press('f');
+    await new Promise((r) => setTimeout(r, 200));
+
+    const handles = await page.evaluate(() => {
+      const els = [...document.querySelectorAll('.sedon-pointlist-handle')];
+      return els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+    });
+    assert.ok(handles.length >= 4, 'need a few handles to test toggling');
+
+    // Plain click → [0] selected.
+    await page.mouse.click(handles[0].x, handles[0].y);
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Shift-click on h3 → toggle ON. Must NOT trigger RF's
+    // selection rect on the canvas behind.
+    await page.keyboard.down('Shift');
+    await page.mouse.click(handles[3].x, handles[3].y);
+    await page.keyboard.up('Shift');
+    await new Promise((r) => setTimeout(r, 200));
+
+    let sel = await page.evaluate(() => {
+      const els = [...document.querySelectorAll('.sedon-pointlist-handle')];
+      const out = [];
+      els.forEach((el, i) => {
+        if (el.classList.contains('sedon-pointlist-handle--selected')) out.push(i);
+      });
+      return out;
+    });
+    assert.deepEqual(sel, [0, 3], `shift-click must TOGGLE point 3 into selection (got ${JSON.stringify(sel)})`);
+
+    // Shift-click on h0 → toggle OFF.
+    await page.keyboard.down('Shift');
+    await page.mouse.click(handles[0].x, handles[0].y);
+    await page.keyboard.up('Shift');
+    await new Promise((r) => setTimeout(r, 200));
+
+    sel = await page.evaluate(() => {
+      const els = [...document.querySelectorAll('.sedon-pointlist-handle')];
+      const out = [];
+      els.forEach((el, i) => {
+        if (el.classList.contains('sedon-pointlist-handle--selected')) out.push(i);
+      });
+      return out;
+    });
+    assert.deepEqual(sel, [3], `shift-click must TOGGLE point 0 out of selection (got ${JSON.stringify(sel)})`);
+
+    // Shift+drag in empty area of the popup's SVG → marquee, NOT
+    // the React Flow pane's selection rect.
+    const svgBox = await page.evaluate(() => {
+      const el = document.querySelector('.sedon-pointlist-svg');
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const dragStart = { x: svgBox.x + svgBox.w * 0.05, y: svgBox.y + svgBox.h * 0.05 };
+    const dragEnd   = { x: svgBox.x + svgBox.w * 0.95, y: svgBox.y + svgBox.h * 0.95 };
+
+    await page.keyboard.down('Shift');
+    await page.mouse.move(dragStart.x, dragStart.y);
+    await page.mouse.down({ button: 'left' });
+    await page.mouse.move(dragEnd.x, dragEnd.y, { steps: 12 });
+    const midDrag = await page.evaluate(() => ({
+      popupMarquee: !!document.querySelector('.sedon-pointlist-marquee'),
+      rfSelection: !!document.querySelector('.react-flow__selection'),
+    }));
+    await page.mouse.up({ button: 'left' });
+    await page.keyboard.up('Shift');
+    await new Promise((r) => setTimeout(r, 200));
+
+    assert.equal(
+      midDrag.popupMarquee, true,
+      'shift+drag in popup empty area must paint the editor marquee rect',
+    );
+    assert.equal(
+      midDrag.rfSelection, false,
+      'shift+drag in popup must NOT trigger React Flow pane selection rect (canvas behind)',
+    );
+  } finally {
+    await page.close();
+  }
+});
+
+test('curve-2d editor: shift+drag near curve starts marquee, not point-insert', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
+    assert.ok(id);
+
+    const trigger = await page.evaluate((nid) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nid}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(trigger.x, trigger.y);
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+    await page.keyboard.press('f');
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Snapshot pre-drag point count.
+    const countBefore = await page.evaluate((nid) => {
+      const node = window.__sedonStore__.getState().graph.nodes.find((m) => m.id === nid);
+      return Array.isArray(node?.inputValues?.points) ? node.inputValues.points.length : 0;
+    }, id);
+
+    // Dispatch the shift+drag chain synthetically against the
+    // segment-hit element. Puppeteer's real mouse + keyboard.down('Shift')
+    // doesn't reliably propagate shiftKey through React's synthetic
+    // pointer dispatch on SVG <line> elements in headless Chromium
+    // (confirmed via probe — the doc-level listener sees shift=true
+    // but neither the segment nor the SVG React handler fires).
+    // Synthetic dispatch exercises the same JS paths a real
+    // interactive user hits on macOS.
+    const setup = await page.evaluate(() => {
+      const seg = document.querySelector('.sedon-pointlist-segment-hit');
+      if (!seg) return { ok: false, reason: 'no-segment' };
+      const r = seg.getBoundingClientRect();
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      const opts = {
+        bubbles: true, cancelable: true, button: 0, buttons: 1,
+        clientX: cx, clientY: cy, shiftKey: true,
+        pointerType: 'mouse', pointerId: 1, isPrimary: true,
+      };
+      seg.dispatchEvent(new PointerEvent('pointerdown', opts));
+      const svg = document.querySelector('.sedon-pointlist-svg');
+      svg?.dispatchEvent(new PointerEvent('pointermove', {
+        ...opts, clientX: cx + 40, clientY: cy + 40,
+      }));
+      return { ok: true, cx, cy };
+    });
+    assert.ok(setup.ok, `setup: ${setup.reason ?? ''}`);
+
+    // Wait for React's state update + re-render to land. The marquee
+    // rect appears in the DOM after the setMarquee re-render runs.
+    await page.waitForFunction(
+      () => !!document.querySelector('.sedon-pointlist-marquee'),
+      { timeout: 2000 },
+    );
+
+    // Now finish the gesture (pointerup commits the marquee → selection).
+    await page.evaluate((s) => {
+      const svg = document.querySelector('.sedon-pointlist-svg');
+      svg?.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true, cancelable: true, button: 0, buttons: 0,
+        clientX: s.cx + 40, clientY: s.cy + 40, shiftKey: true,
+        pointerType: 'mouse', pointerId: 1, isPrimary: true,
+      }));
+    }, setup);
+
+    await new Promise((r) => setTimeout(r, 200));
+    const countAfter = await page.evaluate((nid) => {
+      const node = window.__sedonStore__.getState().graph.nodes.find((m) => m.id === nid);
+      return Array.isArray(node?.inputValues?.points) ? node.inputValues.points.length : 0;
+    }, id);
+    assert.equal(
+      countAfter, countBefore,
+      `shift+drag must NOT insert a point (count went from ${countBefore} to ${countAfter})`,
+    );
+  } finally {
+    await page.close();
+  }
+});

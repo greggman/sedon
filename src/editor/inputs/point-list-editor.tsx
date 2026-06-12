@@ -636,7 +636,14 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
   //   • Drag (movement past threshold)         → marquee.
   //   • Click with shift, no movement          → no-op.
   const onCanvasPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.target !== e.currentTarget) return; // a handle or segment caught it
+    // Accept events whose target is the SVG itself, OR a segment-hit
+    // child that chose to forward the event (shift held → see
+    // onSegmentPointerDown). Handles always stopPropagation in their
+    // own pointerdown so they never reach here.
+    const target = e.target as Element | null;
+    const fromSegmentForward =
+      target?.classList.contains('sedon-pointlist-segment-hit');
+    if (e.target !== e.currentTarget && !fromSegmentForward) return; // a handle or segment caught it
     const isPan = e.button === 1 || (e.button === 0 && spaceHeld);
     if (isPan) {
       e.preventDefault();
@@ -955,6 +962,13 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
   const onSegmentPointerDown = useCallback(
     (segIdx: number, e: React.PointerEvent<SVGLineElement>) => {
       if (e.button !== 0) return;
+      // Shift = "I'm selecting, not inserting." Bubble up to the SVG
+      // canvas handler so the user can shift+click to start a
+      // marquee that crosses the curve. Without this gate, the 12-px-
+      // wide invisible segment-hit zone running along every segment
+      // swallows any shift+drag the user starts NEAR the curve and
+      // silently inserts a point instead.
+      if (e.shiftKey) return;
       e.stopPropagation();
       // Insert a new point at the click position, between segIdx and
       // segIdx+1, and select it for an immediate drag.
@@ -1133,7 +1147,18 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
   return createPortal(
     <div
       ref={popupRef}
-      className="sedon-pointlist-popup"
+      // `nokey` + `nopan` + `nodrag` are React Flow magic classnames the
+      // pane's onPointerDownCapture checks via `closest()` on the
+      // event target. Without them, any shift+pointerdown anywhere
+      // inside the popup is captured by RF (because the pane handler
+      // runs in CAPTURE phase, BEFORE our bubble-phase
+      // stopPropagation), starting RF's selection-rectangle drag on
+      // the canvas BEHIND the popup. With them, RF early-outs and the
+      // popup's own marquee / toggle logic runs as authored.
+      //   nokey  → skip selection rectangle when selectionKey held
+      //   nopan  → skip pan-on-drag handler
+      //   nodrag → skip node-drag handler
+      className="sedon-pointlist-popup nokey nopan nodrag"
       style={{ left: pos.x, top: pos.y, width: size.w, height: size.h }}
       tabIndex={0}
       onKeyDown={onPopupKeyDown}
