@@ -4,6 +4,7 @@ import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
 import { brickNode } from './brick.js';
+import { causticsNode } from './caustics.js';
 import { concentricRingsNode } from './concentric-rings.js';
 import { dotsNode } from './dots.js';
 import { edgeDetectNode } from './edge-detect.js';
@@ -11,6 +12,7 @@ import { hexTileNode } from './hex-tile.js';
 import { hueSatShiftNode } from './hue-sat-shift.js';
 import { invertNode } from './invert.js';
 import { linearGradientNode } from './linear-gradient.js';
+import { marbleNode } from './marble.js';
 import { polyTileNode } from './poly-tile.js';
 import { radialGradientNode } from './radial-gradient.js';
 import { starNode } from './star.js';
@@ -19,8 +21,10 @@ import { thresholdNode } from './threshold.js';
 import { tileWithJitterNode } from './tile-with-jitter.js';
 import { uvMirrorNode } from './uv-mirror.js';
 import { uvPolarNode } from './uv-polar.js';
+import { voronoiEdgesNode } from './voronoi-edges.js';
 import { waveformNode } from './waveform.js';
 import { whiteNoiseNode } from './white-noise.js';
+import { woodNode } from './wood.js';
 import { branchMergeNode } from './branch-merge.js';
 import { branchPalmNode } from './branch-palm.js';
 import { branchRecursiveNode } from './branch-recursive.js';
@@ -196,15 +200,19 @@ export const CORE_NODES = [
   solidColorNode,
   gridNode,
   brickNode,
+  causticsNode,
   concentricRingsNode,
   dotsNode,
   hexTileNode,
   linearGradientNode,
+  marbleNode,
   polyTileNode,
   radialGradientNode,
   starNode,
+  voronoiEdgesNode,
   waveformNode,
   whiteNoiseNode,
+  woodNode,
   checkerNode,
   dashedStripeNode,
   imageNode,
@@ -291,6 +299,7 @@ export {
   blendNode,
   blurNode,
   brickNode,
+  causticsNode,
   concentricRingsNode,
   dotsNode,
   edgeDetectNode,
@@ -298,6 +307,7 @@ export {
   hueSatShiftNode,
   invertNode,
   linearGradientNode,
+  marbleNode,
   polyTileNode,
   radialGradientNode,
   starNode,
@@ -306,8 +316,10 @@ export {
   tileWithJitterNode,
   uvMirrorNode,
   uvPolarNode,
+  voronoiEdgesNode,
   waveformNode,
   whiteNoiseNode,
+  woodNode,
   branchMergeNode,
   branchPalmNode,
   branchRecursiveNode,
