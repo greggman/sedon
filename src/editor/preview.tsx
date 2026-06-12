@@ -4,6 +4,7 @@ import type { Graph } from '../core/graph.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
+import { useAnimFrameGeneration } from './use-anim-frame.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
 import { beginCacheEval, endCacheEval, useCacheConsumer } from './cache-coordinator.js';
@@ -14,7 +15,7 @@ import { registerPreview, unregisterPreview } from './preview-registry.js';
 import { PreviewTile } from './preview-tile.js';
 import { synthesizeTiles, type PreviewTileSpec } from './preview-synth.js';
 import { useRegistry } from './registry.js';
-import { isAnimating, requestRender, setAnimating, subscribeAnimating } from './render-bus.js';
+import { animationDelta, animationTime, isAnimating, requestRender, setAnimating, subscribeAnimating } from './render-bus.js';
 import { useEditorStore, type CameraState } from './store.js';
 
 // Play/pause for time-driven effects (grass wind). Off by default so
@@ -1069,6 +1070,12 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // whole graph — cheap re-eval that swaps the placeholder for the
   // real texture.
   const imageLoadGen = useImageLoadGeneration();
+  // Bumps once per frame while the preview's Play/Pause is Playing.
+  // Put in this effect's dep list so the graph re-evaluates each
+  // frame the clock advances — only `anim/*` outputs (and their
+  // downstream) actually re-run; everything else cache-hits.
+  // Frozen while paused, so a paused preview costs nothing extra.
+  const animFrameGen = useAnimFrameGeneration();
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
@@ -1086,7 +1093,14 @@ export function Preview({ panelId }: PreviewProps = {}) {
       try {
         result = await evaluateGraph(graph, registryRef.current, {
           rootNodeId,
-          context: { device: gpu.device },
+          context: {
+            device: gpu.device,
+            // anim/* nodes read these. Frozen values while paused so
+            // the displayed frame holds. Re-fired each tick while
+            // playing via the animFrameGen dep below.
+            animationTime: animationTime(),
+            animationDelta: animationDelta(),
+          },
           cache: evalCacheRef.current,
           touched,
         });
@@ -1138,7 +1152,7 @@ export function Preview({ panelId }: PreviewProps = {}) {
     // when nothing the current graph references actually changed
     // (every node's fingerprint stays put → cache hits all the way).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gpu, graph, rootNodeId, rootDef, reportWorking, subgraphs, imageLoadGen]);
+  }, [gpu, graph, rootNodeId, rootDef, reportWorking, subgraphs, imageLoadGen, animFrameGen]);
 
   return (
     <div

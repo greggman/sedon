@@ -24,6 +24,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
+import { animationDelta, animationTime } from './render-bus.js';
+import { useAnimFrameGeneration } from './use-anim-frame.js';
 import { canonicalJson } from '../core/eval-cache.js';
 import { findNode, findOutputOnNode, type Graph } from '../core/graph.js';
 import { createCoreTypeRegistry } from '../core/types.js';
@@ -224,6 +226,10 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const evalCacheRef = useRef(evalCache);
   evalCacheRef.current = evalCache;
   const imageLoadGen = useImageLoadGeneration();
+  // Same role as the preview's animFrameGen — re-fires the canvas
+  // eval each frame while playing so time-driven node thumbnails
+  // (worley flicker, animated procedural noise) update live.
+  const animFrameGen = useAnimFrameGeneration();
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -233,7 +239,11 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
       try {
         const result = await evaluateGraph(panelGraph, registryRef.current, {
           rootNodeId: panelRootNodeId,
-          context: { device },
+          context: {
+            device,
+            animationTime: animationTime(),
+            animationDelta: animationDelta(),
+          },
           cache: evalCacheRef.current,
           touched,
           scope: 'all',
@@ -275,7 +285,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     // canvas must re-run when the subgraph's input defaults change,
     // even though `panelGraph` (the inner graph) stays the same.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey, imageLoadGen]);
+  }, [device, panelGraph, panelRootNodeId, reportWorking, subgraphInputsKey, imageLoadGen, animFrameGen]);
 
   // External graph changes (load, undo, redo, drag-create) reach React
   // Flow via this useEffect. It runs AFTER React commits the store-

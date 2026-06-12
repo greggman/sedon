@@ -251,6 +251,23 @@ export interface NodeContext {
    */
   nodeId?: string;
   /**
+   * Current animation time in seconds — driven by the editor's
+   * preview Play/Pause toggle (see render-bus.animationTime()).
+   * Frozen while paused so a paused preview shows a static frame.
+   * Consumed by `anim/*` nodes; threaded through every subgraph
+   * recursion so nested time-driven nodes evaluate against the
+   * same clock as the top-level graph.
+   * Undefined when the eval caller didn't supply one — anim nodes
+   * fall back to 0.
+   */
+  animationTime?: number;
+  /**
+   * Most recent inter-frame delta in seconds (or 0 while paused).
+   * Consumed by `anim/delta` for time-step integration. Same
+   * subgraph-propagation rules as `animationTime`.
+   */
+  animationDelta?: number;
+  /**
    * Chain of subgraph wrapper instances from outermost to innermost,
    * representing where in the project this evaluation is happening.
    * Empty at the top level. The subgraph wrapper appends one entry

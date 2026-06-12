@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { debug } from '../core/debug.js';
 import { evaluateGraph } from '../core/evaluate.js';
+import { animationDelta, animationTime } from './render-bus.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
 import { defaultLighting, type SceneValue } from '../core/resources.js';
 import { gpuObjectId } from '../render/gpu-cache.js';
@@ -113,7 +114,17 @@ export function AssetThumbnail({ target, size, fallback }: AssetThumbnailProps) 
       try {
         result = await evaluateGraph(resolved.graph, registryRef.current, {
           rootNodeId: resolved.rootNodeId,
-          context: { device },
+          context: {
+            device,
+            // Thumbnails don't subscribe to the anim-frame bus —
+            // continuously re-rendering every asset chip every tick
+            // would chew GPU and visually distract from authoring.
+            // We do still PASS the current values so any
+            // anim/* node in the asset returns something sane
+            // rather than 0.
+            animationTime: animationTime(),
+            animationDelta: animationDelta(),
+          },
           cache: evalCacheRef.current,
           touched,
         });

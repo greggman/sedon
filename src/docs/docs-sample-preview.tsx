@@ -24,6 +24,7 @@ import { CanvasPanelContext } from '../editor/canvas-panel-context.js';
 import { clearCanvasData, setCanvasGraph, setCanvasOutputs } from '../editor/canvas-data.js';
 import { CustomNode } from '../editor/custom-node.js';
 import { MeshPreview } from '../editor/mesh-preview.js';
+import { animationDelta, animationTime } from '../editor/render-bus.js';
 import { PathPreview } from '../editor/path-preview.js';
 import { graphToRfEdges, graphToRfNodes } from '../editor/rf-conversion.js';
 import { ScenePreview } from '../editor/scene-preview.js';
@@ -196,7 +197,14 @@ function DocsSamplePreviewInner(props: DocsSamplePreviewProps) {
       try {
         const result = await evaluateGraph(liveGraph, registry, {
           rootNodeId: liveRootNodeId,
-          context: { device },
+          context: {
+            device,
+            // Frozen snapshot — docs pages render once on load and
+            // never re-eval per frame. anim/* nodes will return a
+            // sane value rather than 0.
+            animationTime: animationTime(),
+            animationDelta: animationDelta(),
+          },
           scope: 'all',
         });
         if (cancelled) return;

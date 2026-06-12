@@ -1,4 +1,5 @@
 import { createNodeRegistry, type NodeRegistry } from '../core/node-def.js';
+import { animDeltaNode, animLfoNode, animSineNode, animTimeNode } from './anim.js';
 import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
@@ -119,6 +120,10 @@ import { warpNode } from './warp.js';
 import { worleyNode } from './worley.js';
 
 export const CORE_NODES = [
+  animTimeNode,
+  animDeltaNode,
+  animSineNode,
+  animLfoNode,
   mixNode,
   multiplyNode,
   scalarAddNode,

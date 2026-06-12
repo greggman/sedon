@@ -49,11 +49,41 @@ export function currentForceSerial(): number {
 let playing = false;
 let elapsed = 0; // seconds
 let lastFrameMs: number | null = null;
+let lastDeltaSeconds = 0; // most recent inter-frame delta while playing
+let animFrameCounter = 0; // bumps once per rAF tick while playing
 const animListeners = new Set<(playing: boolean) => void>();
+const animFrameListeners = new Set<(frame: number) => void>();
 
 /** Current animation time in seconds. Frozen while paused. */
 export function animationTime(): number {
   return elapsed;
+}
+
+/** Most recent inter-frame delta in seconds while playing — 0 while
+ *  paused (delta is "the time elapsed THIS frame", and a paused
+ *  preview consumes no frames). Useful for time-step integration
+ *  (physics, sweep integrators) that wants the actual frame budget
+ *  rather than a fixed step. */
+export function animationDelta(): number {
+  return playing ? lastDeltaSeconds : 0;
+}
+
+/** Monotonic per-frame counter that bumps once per rAF tick while
+ *  the animation loop is running. Frozen while paused. Used by the
+ *  preview eval effect's dep list — when this changes, the effect
+ *  re-fires and the graph re-evaluates against the new animation
+ *  time. Nodes upstream of any anim/* output cache-hit; only the
+ *  time-dependent subgraph actually re-evaluates. */
+export function currentAnimFrame(): number {
+  return animFrameCounter;
+}
+
+/** Subscribe to per-frame bumps while playing. Returns an unsubscribe
+ *  function — call from your effect's cleanup. The callback receives
+ *  the new frame counter value. */
+export function subscribeAnimFrame(cb: (frame: number) => void): () => void {
+  animFrameListeners.add(cb);
+  return () => { animFrameListeners.delete(cb); };
 }
 
 /** Whether the animation loop is currently running. */
@@ -108,8 +138,18 @@ export function requestRender(opts?: { force?: boolean }): void {
     pendingRaf = null;
     // Advance the animation clock by the real frame delta while playing.
     if (playing) {
-      if (lastFrameMs !== null) elapsed += (nowMs - lastFrameMs) / 1000;
+      if (lastFrameMs !== null) {
+        lastDeltaSeconds = (nowMs - lastFrameMs) / 1000;
+        elapsed += lastDeltaSeconds;
+      } else {
+        lastDeltaSeconds = 0;
+      }
       lastFrameMs = nowMs;
+      animFrameCounter++;
+      // Notify subscribers AFTER the clock is up to date so an effect
+      // re-firing in response reads the fresh animationTime() /
+      // animationDelta() values.
+      for (const cb of [...animFrameListeners]) cb(animFrameCounter);
     }
     frameSerial++;
     // Snapshot so subscribers are free to add/remove during the tick.
