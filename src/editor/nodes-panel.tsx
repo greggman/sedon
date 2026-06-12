@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NodeDef } from '../core/node-def.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
+import { NodeThumbnail } from './node-thumbnail.js';
 
 // =========================================================================
 // NodesPanel — Phase 1 of the Node Browser
@@ -365,12 +366,30 @@ function NodesContents(props: {
   );
 }
 
+// Pixel size of the live preview rendered inside an icon-mode tile.
+// Matches roughly the natural icon area set by the assets-grid CSS so
+// the texture isn't upscaled past its rendered size.
+const NODE_THUMB_PX = 64;
+
 function NodeTile(props: {
   def: NodeDef;
   viewMode: ViewMode;
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
 }) {
   const cls = `sedon-assets-tile sedon-assets-tile--${props.viewMode} sedon-assets-tile--node`;
+  // Icon-mode tiles get a live preview from the node's docs sample graph
+  // when available. List mode stays text-only (a 14px texture render is
+  // just noise at the list row's icon column).
+  const icon =
+    props.viewMode === 'icons' ? (
+      <NodeThumbnail
+        def={props.def}
+        size={NODE_THUMB_PX}
+        fallback={<span className="sedon-assets-tile-icon">◆</span>}
+      />
+    ) : (
+      <span className="sedon-assets-tile-icon">◆</span>
+    );
   return (
     <div
       className={cls}
@@ -378,7 +397,7 @@ function NodeTile(props: {
       onDragStart={props.onDragStart}
       title={`${props.def.id}\n${props.def.category}\n\nDrag onto the canvas to add.`}
     >
-      <span className="sedon-assets-tile-icon">◆</span>
+      {icon}
       <span className="sedon-assets-tile-label">{props.def.id}</span>
       <span className="sedon-assets-tile-type">{props.def.category}</span>
     </div>
