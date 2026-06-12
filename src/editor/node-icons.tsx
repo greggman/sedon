@@ -344,3 +344,59 @@ export function getNodeIcon(id: string): ReactNode | null {
   const factory = ICONS[id];
   return factory ? factory() : null;
 }
+
+// Pastel tints by id prefix. These complement the canvas-style output
+// stripe at the top of each tile: the stripe says "what comes out"
+// (Float / Texture2D / Geometry / …), while the tint says "what family
+// is this in" (math vs anim vs path vs geom vs …). Without the tint,
+// two nodes from different families that share an output type read as
+// the same colour — e.g. all `anim/*` and `math/*` nodes produce Float
+// and would look identical on the stripe alone.
+//
+// Tints are deliberately low-saturation pastels so they don't fight the
+// dark UI background, and `currentColor` plumbing in `SvgIcon` and
+// `TextIcon` means the entry here is the single point of truth.
+// Saturated pastels — strong enough to distinguish adjacent families at
+// a glance (the previous near-grey set let anim/math/path bleed into
+// each other). Lightness stays high (~70%) so they still read against
+// the dark UI; saturation bumped from ~30% to ~55%.
+//
+// Hue pairs that previously collided:
+//   • math/leaf/points/scene (all greenish) → split into green / lime /
+//     mint / teal at distinct hues
+//   • anim/tex (both pinkish)               → rose vs coral
+//   • iter/cloud (both purple)              → blue-violet vs magenta
+//   • geom/material/terrain/branch (earthy) → orange / yellow / sand / wood
+const CATEGORY_TINTS: Record<string, string> = {
+  math: '#8edda3',     // sage / green
+  anim: '#f0a3c0',     // rose / pink
+  path: '#8dcfe0',     // sky / cyan
+  geom: '#f0a878',     // orange-peach
+  iter: '#a890e8',     // blue-violet
+  points: '#8ee0d4',   // mint
+  cloud: '#d4a0ec',    // magenta-lean lilac
+  branch: '#c89868',   // wood / warm brown
+  poly: '#a8bfd8',     // slate-blue
+  polyline: '#a8bfd8', // slate-blue (same family as poly)
+  material: '#ecd078', // yellow
+  scene: '#80c8c2',    // teal
+  terrain: '#d8a868',  // sandy
+  water: '#85b4e0',    // blue
+  leaf: '#a8e078',     // lime green
+  core: '#bcbcbc',     // neutral grey
+  tex: '#e88c8c',      // coral (mostly unused — texture tiles show live previews)
+};
+
+const FALLBACK_TINT = '#cccccc';
+
+/**
+ * Category tint for a node id (the colour SVG strokes / text icons
+ * should pick up). Looks up the prefix-before-first-/ in
+ * `CATEGORY_TINTS`. Unrecognised prefixes fall back to a neutral grey
+ * — better than throwing for an opt-in cosmetic feature.
+ */
+export function categoryColorFor(id: string): string {
+  const slash = id.indexOf('/');
+  const prefix = slash < 0 ? id : id.slice(0, slash);
+  return CATEGORY_TINTS[prefix] ?? FALLBACK_TINT;
+}

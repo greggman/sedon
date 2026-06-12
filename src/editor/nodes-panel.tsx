@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
-import { getNodeIcon } from './node-icons.js';
+import { categoryColorFor, getNodeIcon } from './node-icons.js';
 import { outputBarBackground } from './node-output-color.js';
 import { NodeThumbnail } from './node-thumbnail.js';
 
@@ -441,6 +441,11 @@ function NodeTile(props: {
   // `getNodeIcon(id)` reads the node's identity better than the
   // generic ◆ — and falls back to ◆ when no icon is registered.
   const customIcon = getNodeIcon(props.def.id);
+  // Category tint on the icon-fallback path only. SVG strokes and
+  // text icons both inherit through `currentColor`, so setting the
+  // wrapper's `color` is enough. Live texture/geom previews ignore
+  // this — those tiles are already visually distinct via their
+  // rendered content.
   const placeholder = (
     <div
       style={{
@@ -449,6 +454,7 @@ function NodeTile(props: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        color: categoryColorFor(props.def.id),
       }}
     >
       {customIcon ?? <span className="sedon-assets-tile-icon">◆</span>}
