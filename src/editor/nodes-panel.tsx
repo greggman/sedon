@@ -3,7 +3,7 @@ import type { NodeDef } from '../core/node-def.js';
 import { docsUrlFor } from '../docs/doc-paths.js';
 import { CORE_NODES } from '../nodes/index.js';
 import { useLayoutStore } from './layout-store.js';
-import { categoryColorFor, getNodeIcon } from './node-icons.js';
+import { categoryColorFor, getNodeIcon, hasNodeIcon } from './node-icons.js';
 import { outputBarBackground } from './node-output-color.js';
 import { NodeThumbnail } from './node-thumbnail.js';
 
@@ -460,13 +460,22 @@ function NodeTile(props: {
       {customIcon ?? <span className="sedon-assets-tile-icon">◆</span>}
     </div>
   );
+  // When the registry has an author-provided icon, prefer it over the
+  // live preview entirely. The icon is the explicit "this is what the
+  // node DOES" signal — overrides the sample-graph thumbnail when both
+  // exist (e.g. math/vec3-from-floats whose preview is a generic cube).
+  const iconWins = hasNodeIcon(props.def.id);
   const icon =
     props.viewMode === 'icons' ? (
-      <NodeThumbnail
-        def={props.def}
-        size={NODE_THUMB_PX}
-        fallback={placeholder}
-      />
+      iconWins ? (
+        placeholder
+      ) : (
+        <NodeThumbnail
+          def={props.def}
+          size={NODE_THUMB_PX}
+          fallback={placeholder}
+        />
+      )
     ) : (
       <span className="sedon-assets-tile-icon">◆</span>
     );

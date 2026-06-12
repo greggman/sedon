@@ -321,6 +321,22 @@ const ICONS: Record<string, () => ReactNode> = {
     </SvgIcon>
   ),
 
+  // ----- points -----
+  'points/transform': () => (
+    // 3-axis manipulator gizmo: X right, Y up, Z into the screen at
+    // 45°. Differentiates from geom/transform's 2D 4-arrow cross by
+    // showing the depth axis explicitly — these are PointCloud
+    // transforms in 3D, not 2D drag handles.
+    <SvgIcon>
+      <line x1="12" y1="12" x2="22" y2="12" />
+      <line x1="12" y1="12" x2="12" y2="2" />
+      <line x1="12" y1="12" x2="5" y2="19" />
+      <polyline points="20,10 22,12 20,14" />
+      <polyline points="10,4 12,2 14,4" />
+      <polyline points="7,17 5,19 7,21" />
+    </SvgIcon>
+  ),
+
   // ----- cloud (FloatCloud / Vec3Cloud) -----
   'cloud/accumulate': () => <TextIcon text="∑" />,
   'cloud/vec3-from-floats': () => (
@@ -343,6 +359,17 @@ const ICONS: Record<string, () => ReactNode> = {
 export function getNodeIcon(id: string): ReactNode | null {
   const factory = ICONS[id];
   return factory ? factory() : null;
+}
+
+/**
+ * Cheap predicate: is `id` in the icon registry? Lets `NodeTile`
+ * short-circuit out of the live-preview path when an author-provided
+ * icon is the better representation (e.g. `math/vec3-from-floats`,
+ * whose sample graph evaluates to a generic cube — the icon shows
+ * what the node actually DOES).
+ */
+export function hasNodeIcon(id: string): boolean {
+  return id in ICONS;
 }
 
 // Pastel tints by id prefix. These complement the canvas-style output

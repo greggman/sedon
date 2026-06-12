@@ -109,7 +109,7 @@ function pointBasis(
 // share (geometry, material) refs across points get drawn together.
 export const instanceSceneOnPointsNode: NodeDef = {
   id: 'scene/instance-on-points',
-  category: 'Geometry/Distribution',
+  category: 'Scene',
   // Stamps placement provenance referencing this distribute's nodeId
   // and ctx.subgraphPath — output is context-dependent.
   provenanceDependent: true,

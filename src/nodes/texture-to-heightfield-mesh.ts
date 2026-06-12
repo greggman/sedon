@@ -88,7 +88,7 @@ function allocOrReuseBuffer(
 
 export const textureToHeightfieldMeshNode: NodeDef = {
   id: 'geom/heightfield-from-texture',
-  category: 'Texture/Convert',
+  category: 'Geometry/Primitives',
   inputs: [
     {
       name: 'texture',

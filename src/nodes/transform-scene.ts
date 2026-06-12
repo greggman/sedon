@@ -27,7 +27,7 @@ function composeTransform(
 
 export const transformSceneNode: NodeDef = {
   id: 'scene/transform',
-  category: 'Geometry/Modifiers',
+  category: 'Scene',
   inputs: [
     {
       name: 'scene',
