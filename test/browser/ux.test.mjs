@@ -67,6 +67,28 @@ async function openPage(query = '') {
   return { page, errs };
 }
 
+// Set a known viewport via React Flow's API rather than synthesising
+// a middle-button pan. The pan path used to be `panCanvas` (kept for
+// non-viewport-asserting cases) but middle-button events occasionally
+// don't register in headless CI; tests that need a KNOWN viewport
+// for an assertion should pin it deterministically here.
+async function setViewport(page, viewport) {
+  await page.evaluate((vp) => {
+    const rf = window.__sedonGetActiveRf__?.();
+    rf?.setViewport(vp);
+  }, viewport);
+  // Wait for RF to write the transform to the DOM so a subsequent
+  // viewportTransform() read sees the pinned value, not a stale one.
+  await page.waitForFunction(
+    (vp) => {
+      const style = document.querySelector('.react-flow__viewport')?.getAttribute('style') ?? '';
+      return style.includes(`translate(${vp.x}px`) && style.includes(`${vp.y}`);
+    },
+    { timeout: 2000 },
+    viewport,
+  );
+}
+
 async function panCanvas(page, dx, dy) {
   const pane = await page.$('.react-flow__pane');
   const box = await pane.boundingBox();
@@ -141,7 +163,13 @@ test('scene=basic loads — eval produces non-empty outputs at root', async () =
 test('View menu → Frame Selected: fires fitView on the canvas', async () => {
   const { page } = await openPage('scene=basic');
   try {
-    await panCanvas(page, 2000, 2000);
+    // Pin the viewport via the RF API so the assertion has a
+    // deterministic `before` value to compare against — synthetic
+    // middle-button pans occasionally don't register in headless CI,
+    // leaving the viewport at its initial framed position, in which
+    // case the F-key fitView lands on the same view and the test
+    // false-fails on `before !== after`.
+    await setViewport(page, { x: 1000, y: 1000, zoom: 1 });
     const before = await viewportTransform(page);
     await clickViewMenuItem(page, 'Frame Selected');
     // ReactFlow fitView animates; wait for transform to actually change.
@@ -168,7 +196,8 @@ test('F-key with NOTHING selected: fits all nodes', async () => {
     const box = await pane.boundingBox();
     // Click empty area to deselect.
     await page.mouse.click(box.x + box.width * 0.9, box.y + box.height * 0.1);
-    await panCanvas(page, 2000, 2000);
+    // Pin the viewport — same race avoidance as the menu-Frame-Selected test.
+    await setViewport(page, { x: 1000, y: 1000, zoom: 1 });
     const before = await viewportTransform(page);
     await page.keyboard.press('f');
     await page.waitForFunction(
@@ -635,12 +664,13 @@ test('curve-2d editor: Ctrl-click delete does not leave stale render-state', asy
 test('curve-2d editor: F key frames the popup view, not the canvas behind it', async () => {
   const { page } = await openPage('scene=basic');
   try {
-    // Pan first so the canvas viewport transform is in a known non-
-    // default state. The canvas's F handler would re-frame and CHANGE
-    // it — our popup handler must prevent that. addNodeAtCanvasCenter
-    // resolves to the current visible centre, so the trigger button
-    // stays clickable.
-    await panCanvas(page, 800, 800);
+    // Pin the canvas viewport to a known non-default state. The
+    // canvas's F handler would re-frame and CHANGE this; our popup
+    // handler must prevent that. Using setViewport (RF API) rather
+    // than panCanvas (synthetic middle-button drag) so the initial
+    // state is deterministic — without it the test could silently
+    // pass for the wrong reason when the pan fails to register.
+    await setViewport(page, { x: 800, y: 800, zoom: 1 });
     const canvasBefore = await viewportTransform(page);
 
     const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
