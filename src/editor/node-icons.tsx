@@ -217,10 +217,121 @@ const ICONS: Record<string, () => ReactNode> = {
       <polyline points="4,8 6,10 8,8" />
     </SvgIcon>
   ),
+  'iter/for-each-polygon': () => (
+    // Triangle (polygon) traversed by a curved loop arrow.
+    <SvgIcon>
+      <polygon points="12,4 19,9 16,17 8,17 5,9" />
+      <path d="M 19 13 A 9 9 0 1 1 7 13" stroke="currentColor" />
+      <polyline points="5,11 7,13 9,11" />
+    </SvgIcon>
+  ),
   'core/output': () => (
     // Play-triangle pointing right — the universal "this is the output" mark.
     <SvgIcon>
       <polygon points="6,4 6,20 20,12" fill="currentColor" />
+    </SvgIcon>
+  ),
+
+  // ----- selection -----
+  'geom/select-by-angle': () => (
+    // Two intersecting edges with an angle arc — the "select faces
+    // whose dihedral angle …" idea.
+    <SvgIcon>
+      <line x1="3" y1="20" x2="21" y2="20" />
+      <line x1="3" y1="20" x2="14" y2="6" />
+      <path d="M 11 20 A 8 8 0 0 0 8 14" />
+    </SvgIcon>
+  ),
+  'geom/select-by-normal': () => (
+    // Surface with a normal arrow plus a small selection dot.
+    <SvgIcon>
+      <line x1="3" y1="18" x2="21" y2="18" />
+      <line x1="12" y1="18" x2="12" y2="6" />
+      <polyline points="9,9 12,6 15,9" />
+      <circle cx="18" cy="6" r="1.8" fill="currentColor" />
+    </SvgIcon>
+  ),
+  'geom/select-combine': () => (
+    // Venn-style overlapping circles — union / intersection / xor
+    // are all combinations of two selection sets.
+    <SvgIcon>
+      <circle cx="9" cy="12" r="6" />
+      <circle cx="15" cy="12" r="6" />
+    </SvgIcon>
+  ),
+  'geom/select-invert': () => (
+    // Filled disc with a hollow ring around it — "the OTHER part".
+    <SvgIcon>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+    </SvgIcon>
+  ),
+
+  // ----- material -----
+  'material/pbr': () => (
+    // Sphere with a soft shading hint — the standard PBR ball preview.
+    <SvgIcon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M 6 10 A 7 7 0 0 1 14 6" strokeWidth="2.5" />
+    </SvgIcon>
+  ),
+  'material/terrain': () => (
+    // Three horizontal stacked layers — the multi-layer terrain
+    // material concept (rock / soil / vegetation).
+    <SvgIcon>
+      <path d="M 2 18 Q 8 16 12 18 T 22 18" />
+      <path d="M 2 13 Q 8 11 12 13 T 22 13" />
+      <path d="M 2 8 Q 8 6 12 8 T 22 8" />
+    </SvgIcon>
+  ),
+
+  // ----- polygons -----
+  'poly/list': () => (
+    // Three overlapping triangles — a list of polygons.
+    <SvgIcon>
+      <polygon points="4,18 12,4 18,14" />
+      <polygon points="9,20 17,8 21,18" />
+    </SvgIcon>
+  ),
+  'poly/from-points': () => (
+    // Four dots wired up into a polygon outline.
+    <SvgIcon>
+      <polygon points="5,18 12,4 20,10 16,20" />
+      <circle cx="5" cy="18" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+      <circle cx="20" cy="10" r="1.5" fill="currentColor" />
+      <circle cx="16" cy="20" r="1.5" fill="currentColor" />
+    </SvgIcon>
+  ),
+  'poly/offset': () => (
+    // Inner polygon with an outset (offset) outline.
+    <SvgIcon>
+      <polygon points="8,16 12,8 17,15" />
+      <polygon points="4,19 12,3 21,17" strokeDasharray="2,2" />
+    </SvgIcon>
+  ),
+  'poly/grid-subdivide': () => (
+    // Triangle with internal cross-hatched grid lines.
+    <SvgIcon>
+      <polygon points="4,20 12,4 20,20" />
+      <line x1="8" y1="20" x2="11" y2="12" />
+      <line x1="12" y1="20" x2="13" y2="12" />
+      <line x1="16" y1="20" x2="15" y2="12" />
+      <line x1="9" y1="16" x2="15" y2="16" />
+    </SvgIcon>
+  ),
+
+  // ----- cloud (FloatCloud / Vec3Cloud) -----
+  'cloud/accumulate': () => <TextIcon text="∑" />,
+  'cloud/vec3-from-floats': () => (
+    // Three dotted streams converging — same shape as math version
+    // but stroke-dashed to read as "cloud / per-element" data.
+    <SvgIcon>
+      <line x1="4" y1="5" x2="14" y2="12" strokeDasharray="2,2" />
+      <line x1="4" y1="12" x2="14" y2="12" strokeDasharray="2,2" />
+      <line x1="4" y1="19" x2="14" y2="12" strokeDasharray="2,2" />
+      <line x1="14" y1="12" x2="22" y2="12" strokeDasharray="2,2" />
+      <polyline points="19,10 22,12 19,14" />
     </SvgIcon>
   ),
 };
