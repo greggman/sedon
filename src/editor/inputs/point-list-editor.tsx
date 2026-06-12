@@ -474,6 +474,18 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       useEditorStore.getState().redo();
       return;
     }
+    // F = frame all points (mirrors the canvas's F = frame selected
+    // shortcut). Skips when a modifier is held so Cmd+F (browser find)
+    // and friends pass through. stopPropagation prevents the canvas's
+    // window-level F handler from ALSO firing — its frameSelected
+    // operates on the graph behind the popup, which is clearly wrong
+    // when the user is editing inside the popup.
+    if (!mod && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      e.stopPropagation();
+      fitView();
+      return;
+    }
     // T cycles handle type for every selected anchor (curve-2d). The
     // cycle decreases smoothness on each press:
     //   AUTO → ALIGNED → FREE → CORNER → AUTO
@@ -525,7 +537,7 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       onChange(next, COMMIT_OPTS);
       return;
     }
-  }, [onClose, selection, value, onChange, worldSize, bezierHandles, closed]);
+  }, [onClose, selection, value, onChange, worldSize, bezierHandles, closed, fitView]);
 
   // ─ View transform: zoom (wheel) + pan (space-drag / middle-drag) ─
 

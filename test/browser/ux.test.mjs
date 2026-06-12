@@ -623,3 +623,59 @@ test('curve-2d editor: Ctrl-click delete does not leave stale render-state', asy
     await page.close();
   }
 });
+
+// -----------------------------------------------------------------
+// points-list popup: 'f' frames the points list, NOT the canvas
+// behind it. The popup auto-focuses on open and owns the keyboard
+// while it's visible; without the popup-side F handler + stop-
+// propagation, the canvas's window-level F handler would frame the
+// graph behind the popup (visibly wrong).
+// -----------------------------------------------------------------
+
+test('curve-2d editor: F key frames the popup view, not the canvas behind it', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    // Pan first so the canvas viewport transform is in a known non-
+    // default state. The canvas's F handler would re-frame and CHANGE
+    // it — our popup handler must prevent that. addNodeAtCanvasCenter
+    // resolves to the current visible centre, so the trigger button
+    // stays clickable.
+    await panCanvas(page, 800, 800);
+    const canvasBefore = await viewportTransform(page);
+
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
+    assert.ok(id);
+
+    const trigger = await page.evaluate((nid) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nid}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(trigger.x, trigger.y);
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+
+    // Snapshot the popup-internal view transform via the editor's
+    // path data (its first L coord is the projection of the first
+    // anchor and changes when the view re-frames).
+    const pathBefore = await page.evaluate(
+      () => document.querySelector('.sedon-pointlist-segments')?.getAttribute('d')?.slice(0, 64) ?? '',
+    );
+
+    // Press F. The popup auto-focuses on mount so the keydown lands
+    // on the popup wrapper, which calls fitView and stops propagation
+    // — the canvas's window-level handler must NOT see it.
+    await page.keyboard.press('f');
+    await new Promise((r) => setTimeout(r, 300));
+
+    const pathAfter = await page.evaluate(
+      () => document.querySelector('.sedon-pointlist-segments')?.getAttribute('d')?.slice(0, 64) ?? '',
+    );
+    assert.notEqual(pathBefore, pathAfter, 'popup view must change when F frames the points');
+
+    const canvasAfter = await viewportTransform(page);
+    assert.equal(canvasAfter, canvasBefore, 'canvas viewport must NOT change — popup owned the F keystroke');
+  } finally {
+    await page.close();
+  }
+});
