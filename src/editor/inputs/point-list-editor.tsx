@@ -785,6 +785,21 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
         }
         return next;
       });
+      // A Ctrl-click / right-click on a handle dispatches BOTH a
+      // pointerdown (which set handleDrag and may have set
+      // draggedPoints if the cursor wobbled) AND a contextmenu (here).
+      // The handle then unmounts because we just removed it; the
+      // pointerup that would normally clear that drag state lands on
+      // a stale unmounted element and never fires our handler.
+      // Without clearing here, draggedPoints survives stale —
+      // subsequent click-to-add commits write to `value`, but the
+      // render uses `points = draggedPoints ?? value` (still pointing
+      // at the old length-N list), so any new point goes invisible
+      // until another handle drag re-snapshots the current value.
+      setHandleDrag(null);
+      setTangentDrag(null);
+      setDraggedPoints(null);
+      pendingClickRef.current = null;
     },
     [value, onChange],
   );
@@ -1102,6 +1117,16 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       tabIndex={0}
       onKeyDown={onPopupKeyDown}
       onPointerDown={(e) => e.stopPropagation()}
+      // Right-click (or Ctrl-click on macOS) anywhere on the popup
+      // background dispatches a `contextmenu` event that bubbles
+      // independently of the pointerdown chain above. Without
+      // stopping it here, the React Flow pane behind the popup
+      // opens ITS context menu — clearly wrong. Per-handle
+      // right-click (delete a point) calls preventDefault +
+      // stopPropagation in its own handler so it still wins; this
+      // wrapper-level guard only catches right-clicks on EMPTY
+      // popup chrome (the header, blank canvas, segments).
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
       <div
         className="sedon-pointlist-header"

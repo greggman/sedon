@@ -454,3 +454,172 @@ test('points/list editor: click-to-add-point commits without throwing', async ()
     await page.close();
   }
 });
+
+// -----------------------------------------------------------------
+// points/list editor: right-click (or Ctrl-click on macOS) anywhere
+// inside the popup must NOT open the React Flow pane's context menu
+// behind it. The popup wrapper stops pointerdown, but `contextmenu`
+// is dispatched separately and was bubbling to the canvas pane.
+// -----------------------------------------------------------------
+
+test('points/list editor: right-click inside popup does not open pane context menu', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('points/list'));
+    assert.ok(id);
+
+    const triggerBox = await page.evaluate((nodeId) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(triggerBox.x, triggerBox.y);
+    await page.waitForFunction(
+      () => !!document.querySelector('.sedon-pointlist-popup'),
+      { timeout: 2000 },
+    );
+
+    // Right-click on the popup header (well clear of any handle so
+    // the per-handle "delete point" path isn't involved — we're
+    // testing the wrapper-level guard).
+    const headerBox = await page.evaluate(() => {
+      const el = document.querySelector('.sedon-pointlist-header');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + 20, y: r.y + r.height / 2 };
+    });
+    await page.mouse.click(headerBox.x, headerBox.y, { button: 'right' });
+    await new Promise((r) => setTimeout(r, 400));
+
+    let ctxMenuOpen = await page.evaluate(
+      () => !!document.querySelector('.sedon-menu-popup'),
+    );
+    assert.equal(ctxMenuOpen, false, 'right-click on popup header must not open pane context menu');
+
+    // Same check inside the SVG canvas (off any handle / segment).
+    const svgBox = await page.evaluate(() => {
+      const svg = document.querySelector('.sedon-pointlist-svg');
+      if (!svg) return null;
+      const r = svg.getBoundingClientRect();
+      return { x: r.x + r.width * 0.35, y: r.y + r.height * 0.7 };
+    });
+    await page.mouse.click(svgBox.x, svgBox.y, { button: 'right' });
+    await new Promise((r) => setTimeout(r, 400));
+    ctxMenuOpen = await page.evaluate(
+      () => !!document.querySelector('.sedon-menu-popup'),
+    );
+    assert.equal(ctxMenuOpen, false, 'right-click in popup canvas must not open pane context menu');
+  } finally {
+    await page.close();
+  }
+});
+
+// -----------------------------------------------------------------
+// path/curve-2d (bezier-handles point-list): Ctrl+click on a handle
+// on macOS dispatches BOTH a left-button pointerdown AND a
+// contextmenu, with no pointerup landing back on the handle (it
+// unmounts when we delete the point). The handle's drag state used
+// to survive that — the next click-to-add wrote to `value` but
+// rendering kept reading `draggedPoints` (stale, shorter than
+// value), so subsequent points went invisible until any handle
+// drag re-snapshotted from value. Regression for the user-reported
+// "delete two newly-added points, add more, they don't appear".
+// -----------------------------------------------------------------
+
+test('curve-2d editor: Ctrl-click delete does not leave stale render-state', async () => {
+  const { page, errs } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
+    assert.ok(id);
+
+    const trigger = await page.evaluate((nodeId) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(trigger.x, trigger.y);
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+
+    const svg = await page.evaluate(() => {
+      const el = document.querySelector('.sedon-pointlist-svg');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    assert.ok(svg, 'pointlist editor SVG rendered');
+
+    async function clickInSvg(fx, fy) {
+      await page.mouse.click(svg.x + svg.w * fx, svg.y + svg.h * fy);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    // Add A and B in empty canvas areas.
+    await clickInSvg(0.25, 0.6);
+    await clickInSvg(0.5, 0.4);
+
+    // Ctrl+click delete on the two LAST handles (the ones we just
+    // added). Dispatch via raw events so we get the macOS-style
+    // sequence on Linux: button=0 pointerdown + wobble pointermove
+    // + contextmenu, with NO pointerup back on the (now unmounted)
+    // handle.
+    async function ctrlClickHandle(idx) {
+      return page.evaluate((i) => {
+        const els = [...document.querySelectorAll('.sedon-pointlist-handle')];
+        const el = els[i];
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        const cx = r.x + r.width / 2;
+        const cy = r.y + r.height / 2;
+        const opts = {
+          bubbles: true, cancelable: true, button: 0, buttons: 1,
+          clientX: cx, clientY: cy, ctrlKey: true,
+          pointerType: 'mouse', pointerId: 1, isPrimary: true,
+        };
+        el.dispatchEvent(new PointerEvent('pointerdown', opts));
+        el.dispatchEvent(new PointerEvent('pointermove', {
+          ...opts, clientX: cx + 2, clientY: cy + 1,
+        }));
+        el.dispatchEvent(new MouseEvent('contextmenu', { ...opts, button: 0 }));
+        return true;
+      }, idx);
+    }
+    let last = await page.evaluate(() => document.querySelectorAll('.sedon-pointlist-handle').length) - 1;
+    assert.ok(await ctrlClickHandle(last));
+    await new Promise((r) => setTimeout(r, 200));
+    last = await page.evaluate(() => document.querySelectorAll('.sedon-pointlist-handle').length) - 1;
+    assert.ok(await ctrlClickHandle(last));
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Add C and D. With the bug, the curve's pathD stops at A's
+    // (stale) position; the new handles get appended to value but
+    // the rendered curve never reaches them. With the fix the
+    // pathD ends exactly at D's screen position.
+    await clickInSvg(0.7, 0.5);
+    const expectedDX = svg.w * 0.8;
+    const expectedDY = svg.h * 0.7;
+    await clickInSvg(0.8, 0.7);
+
+    const pathD = await page.evaluate(() =>
+      document.querySelector('.sedon-pointlist-segments')?.getAttribute('d') ?? '',
+    );
+    // Parse the last L command's coords.
+    const m = pathD.match(/L\s*([\d.-]+)\s*,\s*([\d.-]+)\s*$/);
+    assert.ok(m, `pathD must end with an L command (got "${pathD.slice(-80)}")`);
+    const endX = parseFloat(m[1]);
+    const endY = parseFloat(m[2]);
+    // 5 px tolerance for bezier-sampling fudge.
+    assert.ok(
+      Math.abs(endX - expectedDX) < 5,
+      `curve must end at D's x (expected ~${expectedDX.toFixed(1)}, got ${endX.toFixed(1)} — the stale-draggedPoints bug is back)`,
+    );
+    assert.ok(
+      Math.abs(endY - expectedDY) < 5,
+      `curve must end at D's y (expected ~${expectedDY.toFixed(1)}, got ${endY.toFixed(1)})`,
+    );
+    assert.equal(errs.length, 0, `no errors: ${errs.join(' | ')}`);
+  } finally {
+    await page.close();
+  }
+});
