@@ -42,6 +42,13 @@ export const curve2dNode: NodeDef = {
         'control points in the XY plane. X / Y are the position; the third tuple component encodes the handle type (0 = smooth, 1 = corner). The 2D editor only authors X and Y today — per-point handle-type UI is a follow-up; until then, all points are smooth',
     },
     {
+      name: 'preview_texture',
+      type: 'Texture2D',
+      optional: true,
+      description:
+        'optional backdrop drawn under the editor canvas — trace from a reference photo (a vase silhouette, candlestick outline, chair-leg profile) or any 2D scalar. The texture\'s aspect is stretched to match `world_size`. Same input the [points/list](../../points/list) editor uses; recipe is identical: wire `tex/image` or any Texture2D-producing node here, set `world_size` to match the reference\'s real-world span, then click control points along the silhouette',
+    },
+    {
       // The `point-list` widget reads `world_size` to scale the editor
       // canvas to author coordinates. Default 1.2×1.2m suits typical
       // furniture-profile scale (chair legs, candlesticks, vases under
