@@ -389,3 +389,68 @@ test('drop-on-wire: addNode with one edge selected splices node into the wire (1
 // Unit tests in test/unit/setInputValue-coalesce.test.ts pin the
 // store-level coalescing rule + markUndoBarrier semantics. We'll add
 // a browser-level check once a dedicated test-fixture scene exists.
+
+// -----------------------------------------------------------------
+// points/list 2D editor: clicking inside the popup canvas to add a
+// point must NOT throw. The store's setInputValue runs a value-shape
+// check by socket type; widget-driven inputs (point-list stores a
+// Point[] under a placeholder `type: 'Vec3'`) would otherwise fail
+// that check on every commit. Regression for the "add points/list,
+// click Edit, click canvas → console error" bug.
+// -----------------------------------------------------------------
+
+test('points/list editor: click-to-add-point commits without throwing', async () => {
+  const { page, errs } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('points/list'));
+    assert.ok(id, 'points/list node added');
+
+    // Click the in-row "Edit points" trigger. Real mouse click — the
+    // popup opens on the trigger's onClick which is gated on a real
+    // pointer event chain.
+    const triggerBox = await page.evaluate((nodeId) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    assert.ok(triggerBox, 'trigger button rendered');
+    await page.mouse.click(triggerBox.x, triggerBox.y);
+    await page.waitForFunction(
+      () => !!document.querySelector('.sedon-pointlist-popup'),
+      { timeout: 2000 },
+    );
+
+    // Click inside the popup's SVG editing surface to add a new point.
+    // Off-centre to avoid hitting an axis line or an existing point.
+    // Defaults to 2 points (from the InputDef's default — not yet
+    // materialised onto the node's inputValues), so the first commit
+    // adds the third point and writes the whole list to inputValues.
+    const svgBox = await page.evaluate(() => {
+      const svg = document.querySelector('.sedon-pointlist-svg');
+      if (!svg) return null;
+      const r = svg.getBoundingClientRect();
+      return { x: r.x + r.width * 0.3, y: r.y + r.height * 0.3 };
+    });
+    assert.ok(svgBox, 'pointlist editor SVG rendered');
+    await page.mouse.click(svgBox.x, svgBox.y);
+
+    // After the click, the store must hold the materialised point
+    // list — defaults (2) + the one just clicked = 3. Without the
+    // setInputValue widget-guard fix, the validator throws on the
+    // commit instead and inputValues.points stays unset.
+    await page.waitForFunction((nid) => {
+      const node = window.__sedonStore__.getState().graph.nodes.find((m) => m.id === nid);
+      const arr = node?.inputValues?.points;
+      return Array.isArray(arr) && arr.length === 3;
+    }, { timeout: 2000 }, id);
+
+    // No console errors and no page errors fired during the add.
+    assert.equal(
+      errs.length, 0,
+      `clicking the points/list editor must not throw: ${errs.join(' | ')}`,
+    );
+  } finally {
+    await page.close();
+  }
+});

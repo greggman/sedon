@@ -2087,7 +2087,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const registry = buildRegistry(state.subgraphs);
       const def = assertKnownKind(registry, node.kind);
       const socket = assertInputSocketExists(node, def, name);
-      assertValueShapeForType(socket.type, value);
+      // Skip the socket-type shape check when the input is driven by
+      // a custom widget. Widget inputs carry their own value shape
+      // (e.g. point-list stores Point[] under a placeholder
+      // `type: 'Vec3'` — the type is just the closest single-value
+      // cousin since hideSocket prevents any incoming wire from
+      // mattering). The validator would otherwise reject every
+      // widget commit on shape grounds; it's the widget's job to
+      // produce a value its node's evaluate() understands.
+      if (socket.widget === undefined) {
+        assertValueShapeForType(socket.type, value);
+      }
       const before = node.inputValues?.[name];
       if (before === value) return;
       const cmd: import('./command.js').Command = { kind: 'setInputValue', nodeId, name, before, after: value };
