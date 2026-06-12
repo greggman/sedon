@@ -4,6 +4,7 @@ import { blendMaskNode } from './blend-mask.js';
 import { blendNode } from './blend.js';
 import { blurNode } from './blur.js';
 import { brickNode } from './brick.js';
+import { concentricRingsNode } from './concentric-rings.js';
 import { dotsNode } from './dots.js';
 import { edgeDetectNode } from './edge-detect.js';
 import { hexTileNode } from './hex-tile.js';
@@ -12,11 +13,13 @@ import { invertNode } from './invert.js';
 import { linearGradientNode } from './linear-gradient.js';
 import { polyTileNode } from './poly-tile.js';
 import { radialGradientNode } from './radial-gradient.js';
+import { starNode } from './star.js';
 import { texTransformNode } from './tex-transform.js';
 import { thresholdNode } from './threshold.js';
 import { tileWithJitterNode } from './tile-with-jitter.js';
 import { uvMirrorNode } from './uv-mirror.js';
 import { uvPolarNode } from './uv-polar.js';
+import { waveformNode } from './waveform.js';
 import { whiteNoiseNode } from './white-noise.js';
 import { branchMergeNode } from './branch-merge.js';
 import { branchPalmNode } from './branch-palm.js';
@@ -193,11 +196,14 @@ export const CORE_NODES = [
   solidColorNode,
   gridNode,
   brickNode,
+  concentricRingsNode,
   dotsNode,
   hexTileNode,
   linearGradientNode,
   polyTileNode,
   radialGradientNode,
+  starNode,
+  waveformNode,
   whiteNoiseNode,
   checkerNode,
   dashedStripeNode,
@@ -285,6 +291,7 @@ export {
   blendNode,
   blurNode,
   brickNode,
+  concentricRingsNode,
   dotsNode,
   edgeDetectNode,
   hexTileNode,
@@ -293,11 +300,13 @@ export {
   linearGradientNode,
   polyTileNode,
   radialGradientNode,
+  starNode,
   texTransformNode,
   thresholdNode,
   tileWithJitterNode,
   uvMirrorNode,
   uvPolarNode,
+  waveformNode,
   whiteNoiseNode,
   branchMergeNode,
   branchPalmNode,
