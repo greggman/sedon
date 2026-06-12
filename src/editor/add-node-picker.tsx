@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { NodeDef } from '../core/node-def.js';
 import { isSubgraphInstanceKind, isSubgraphInternalKind } from '../core/subgraph.js';
-import { addNodeAtFlowPosition } from './commands.js';
+import { createCoreTypeRegistry } from '../core/types.js';
+import { addNodeAtFlowPosition, getSelectedEdgeSpliceConstraint } from './commands.js';
 import { useRegistry } from './registry.js';
 
 // Portal'd, position-aware Add-Node picker. Same search-and-filter UX
@@ -43,6 +44,15 @@ export function AddNodePicker({
   const popupRef = useRef<HTMLDivElement>(null);
   const registry = useRegistry();
 
+  // Snapshot the splice constraint at mount: if the user has exactly
+  // one edge selected when the picker opens, restrict the candidate
+  // list to nodes that could actually splice between the wire's
+  // endpoints (has an input that accepts the source's output type
+  // AND an output that produces the target's input type). When no
+  // edge is selected, the constraint is null and the full registry
+  // shows.
+  const spliceConstraint = useMemo(() => getSelectedEdgeSpliceConstraint(), []);
+
   const allDefs = useMemo(() => {
     const defs: NodeDef[] = [];
     for (const def of registry.list()) {
@@ -50,11 +60,33 @@ export function AddNodePicker({
       if (isSubgraphInstanceKind(def.id)) continue;
       defs.push(def);
     }
+    if (spliceConstraint) {
+      // Same compatibility rule the splice path uses: source's output
+      // → candidate input (input check), candidate output → target's
+      // input (output check). Both must pass for the node to be
+      // spliceable. createCoreTypeRegistry is the cheap singleton
+      // also used by tryInsertOnSelectedEdge; the type table is
+      // module-static so this is a quick lookup.
+      const types = createCoreTypeRegistry();
+      const filtered = defs.filter((d) => {
+        const acceptsFrom = d.inputs.some((i) =>
+          types.isCompatible(spliceConstraint.fromType, i.type),
+        );
+        const producesTo = d.outputs.some((o) =>
+          types.isCompatible(o.type, spliceConstraint.toType),
+        );
+        return acceptsFrom && producesTo;
+      });
+      filtered.sort((a, b) =>
+        a.category === b.category ? a.id.localeCompare(b.id) : a.category.localeCompare(b.category),
+      );
+      return filtered;
+    }
     defs.sort((a, b) =>
       a.category === b.category ? a.id.localeCompare(b.id) : a.category.localeCompare(b.category),
     );
     return defs;
-  }, [registry]);
+  }, [registry, spliceConstraint]);
 
   // Tokenized substring filter — same shape as the command palette.
   const filtered = useMemo<NodeDef[]>(() => {
@@ -204,6 +236,14 @@ export function AddNodePicker({
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKeyDown}
       />
+      {spliceConstraint && (
+        // Small hint that the result set is restricted to splice-
+        // eligible kinds — without this, "where's the node I just
+        // added?" becomes a guessing game when an edge is selected.
+        <div className="sedon-add-node-constraint">
+          Splice {spliceConstraint.fromType} → {spliceConstraint.toType}
+        </div>
+      )}
       <div className="sedon-add-node-results">
         {filtered.length === 0 ? (
           <div className="sedon-add-node-empty">No matching nodes</div>

@@ -370,10 +370,21 @@ export function addNodeAtFlowPosition(
 // (Float → Vec3, Color ↔ Vec4 etc.) work for free. First-matching
 // input/output wins; if the wrong one is chosen, the two new edges
 // are SELECTED so a single Delete removes them.
-function tryInsertOnSelectedEdge(
-  kind: string,
-  position: { x: number; y: number },
-): string | null {
+/**
+ * Inspect the currently-selected edge on the active canvas and return
+ * the type pair `{ fromType, toType }` a candidate node would need to
+ * sit between to splice in. Returns null when the conditions for a
+ * splice can't be satisfied (no canvas, not exactly one selected edge,
+ * edge endpoints missing, sockets unresolved). Shared between
+ * `tryInsertOnSelectedEdge` (which goes on to look up the kind and do
+ * the actual insert) and `AddNodePicker` (which uses it to filter the
+ * search results to only show splice-eligible kinds when the user
+ * right-clicks the edge).
+ */
+export function getSelectedEdgeSpliceConstraint(): {
+  fromType: string;
+  toType: string;
+} | null {
   const rf = getActiveCanvasRf();
   if (!rf) return null;
   const selectedEdges = rf.getEdges().filter((e) => e.selected);
@@ -390,8 +401,7 @@ function tryInsertOnSelectedEdge(
   const registry = buildRegistry(state.subgraphs);
   const fromDef = registry.get(fromNode.kind);
   const toDef = registry.get(toNode.kind);
-  const newDef = registry.get(kind);
-  if (!fromDef || !toDef || !newDef) return null;
+  if (!fromDef || !toDef) return null;
 
   // Resolve endpoint types — output side may live on extraOutputs
   // (for-each-* lifted outputs), input side on extraInputs.
@@ -400,6 +410,33 @@ function tryInsertOnSelectedEdge(
   const toIn = toDef.inputs.find((i) => i.name === graphEdge.to.socket)
     ?? toNode.extraInputs?.find((i) => i.name === graphEdge.to.socket);
   if (!fromOut || !toIn) return null;
+
+  return { fromType: fromOut.type, toType: toIn.type };
+}
+
+function tryInsertOnSelectedEdge(
+  kind: string,
+  position: { x: number; y: number },
+): string | null {
+  const rf = getActiveCanvasRf();
+  if (!rf) return null;
+  const constraint = getSelectedEdgeSpliceConstraint();
+  if (!constraint) return null;
+  const selectedEdges = rf.getEdges().filter((e) => e.selected);
+  const rfEdge = selectedEdges[0]!;
+
+  const state = useEditorStore.getState();
+  const graphEdge = state.graph.edges.find((e) => e.id === rfEdge.id);
+  if (!graphEdge) return null;
+  const fromNode = state.graph.nodes.find((n) => n.id === graphEdge.from.node);
+  const toNode = state.graph.nodes.find((n) => n.id === graphEdge.to.node);
+  if (!fromNode || !toNode) return null;
+
+  const registry = buildRegistry(state.subgraphs);
+  const newDef = registry.get(kind);
+  if (!newDef) return null;
+  const fromOut = { type: constraint.fromType };
+  const toIn = { type: constraint.toType };
 
   // First-matching socket on the new node. Type direction matters:
   // input check is "source's output → candidate input"; output check

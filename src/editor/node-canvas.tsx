@@ -835,6 +835,33 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   );
   const onPaneContextMenu = onCanvasOrSelectionContextMenu;
   const onSelectionContextMenu = onCanvasOrSelectionContextMenu;
+  // Right-click on an edge → context menu at cursor. First select
+  // the edge (so the picker's splice-constraint filter and the
+  // existing `addNodeAtFlowPosition` → `tryInsertOnSelectedEdge`
+  // splice path both see it), then open the same menu the pane uses.
+  // Deselecting nodes keeps the edge as the lone selection — without
+  // this, a pre-existing selection from before the right-click would
+  // confuse Cut/Copy/Extract which operate on selected nodes.
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: { id: string }) => {
+      event.preventDefault();
+      rf.setEdges((edges) =>
+        edges.map((e) => {
+          if (e.id === edge.id) return e.selected ? e : { ...e, selected: true };
+          return e.selected ? { ...e, selected: false } : e;
+        }),
+      );
+      rf.setNodes((nodes) => nodes.map((n) => (n.selected ? { ...n, selected: false } : n)));
+      const flow = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setPaneMenu({
+        screenX: event.clientX,
+        screenY: event.clientY,
+        flowX: flow.x,
+        flowY: flow.y,
+      });
+    },
+    [rf],
+  );
   const paneMenuItems = useMemo(() => {
     if (!paneMenu) return [];
     return buildCanvasMenuItems({
@@ -891,6 +918,7 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
           onSelectionDragStop={onSelectionDragStop}
           onPaneContextMenu={onPaneContextMenu}
           onSelectionContextMenu={onSelectionContextMenu}
+          onEdgeContextMenu={onEdgeContextMenu}
           proOptions={{ hideAttribution: true }}
           selectionMode={SelectionMode.Partial}
           minZoom={0.1}

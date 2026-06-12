@@ -567,6 +567,15 @@
   font-size: 11px;
   font-style: italic;
 }
+/* Splice-constraint hint shown when the picker was opened with a
+ * single edge selected — explains why the result list is short. */
+.sedon-add-node-constraint {
+  padding: 4px 10px 6px;
+  color: #b9a3ec;
+  font-size: 10px;
+  border-bottom: 1px solid #2c2c38;
+  font-family: var(--sedon-mono, ui-monospace, monospace);
+}
 
 .sedon-add-node-category {
   padding: 6px 10px 2px;
