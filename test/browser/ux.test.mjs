@@ -679,3 +679,76 @@ test('curve-2d editor: F key frames the popup view, not the canvas behind it', a
     await page.close();
   }
 });
+
+// -----------------------------------------------------------------
+// points-list popup: F frames just the SELECTED points (matches
+// the canvas's "F = frame selected" convention). Without a
+// selection it falls back to framing every point.
+// -----------------------------------------------------------------
+
+test('curve-2d editor: F frames selected points only, not all', async () => {
+  const { page } = await openPage('scene=basic');
+  try {
+    const id = await page.evaluate(() => window.__sedonAddNodeAtCanvasCenter__('path/curve-2d'));
+    assert.ok(id);
+
+    const trigger = await page.evaluate((nid) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nid}"] .sedon-pointlist-trigger`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, id);
+    await page.mouse.click(trigger.x, trigger.y);
+    await page.waitForFunction(() => !!document.querySelector('.sedon-pointlist-popup'), { timeout: 2000 });
+
+    // Press F once with nothing selected → frames all points (the
+    // current view's pathD before vs after will differ since the
+    // popup opens at a default view).
+    const pathInitial = await page.evaluate(
+      () => document.querySelector('.sedon-pointlist-segments')?.getAttribute('d')?.slice(0, 64) ?? '',
+    );
+    await page.keyboard.press('f');
+    await new Promise((r) => setTimeout(r, 200));
+    const pathFramedAll = await page.evaluate(
+      () => document.querySelector('.sedon-pointlist-segments')?.getAttribute('d')?.slice(0, 64) ?? '',
+    );
+    // pathFramedAll is the "frame ALL" view; we'll compare against
+    // it once we select a single point and press F again.
+    assert.notEqual(pathInitial, pathFramedAll, 'first F must reframe (nothing selected → frame all)');
+
+    // Click a single handle to select it. The handle's
+    // onPointerDown handles selection.
+    await page.evaluate(() => {
+      const els = [...document.querySelectorAll('.sedon-pointlist-handle')];
+      const el = els[0];
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      const opts = {
+        bubbles: true, cancelable: true, button: 0, buttons: 1,
+        clientX: cx, clientY: cy,
+        pointerType: 'mouse', pointerId: 1, isPrimary: true,
+      };
+      el.dispatchEvent(new PointerEvent('pointerdown', opts));
+      el.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }));
+    });
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Press F → frame just the selected single point. With a single
+    // point, the framing math sets a 1m span floor and centres on
+    // that point. The resulting view differs from "frame all" — so
+    // pathFramedAll !== pathFramedSel.
+    await page.keyboard.press('f');
+    await new Promise((r) => setTimeout(r, 200));
+    const pathFramedSel = await page.evaluate(
+      () => document.querySelector('.sedon-pointlist-segments')?.getAttribute('d')?.slice(0, 64) ?? '',
+    );
+    assert.notEqual(
+      pathFramedSel, pathFramedAll,
+      'F with a selection must frame ONLY the selected point — got the same view as frame-all',
+    );
+  } finally {
+    await page.close();
+  }
+});

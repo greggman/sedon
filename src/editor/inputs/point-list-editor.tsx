@@ -317,8 +317,11 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
     return { x: clientX - rect.left, y: clientY - rect.top };
   }, []);
 
-  // Frame all points: pick (zoom, offset) so every point fits inside
-  // the canvas with a 10% margin. Empty list → reset to defaults.
+  // Frame the SELECTION when there is one, otherwise every point —
+  // matches the canvas's "F = frame selected" / "F with nothing
+  // selected = frame all" convention. Picks (zoom, offset) so the
+  // chosen set fits inside the canvas with a 10% margin. Empty list
+  // → reset to defaults.
   // Inverse of worldToPx for a chosen (zoom, offset) — see the
   // derivation in worldToPx above.
   const fitView = useCallback(() => {
@@ -327,8 +330,14 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       setViewOffset({ x: 0, y: 0 });
       return;
     }
+    // When the user has any points selected, frame just those.
+    // Falls back to the full list when nothing's selected so a
+    // first-open `F` still does something useful.
+    const frameAll = selection.size === 0;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const p of value) {
+    for (let i = 0; i < value.length; i++) {
+      if (!frameAll && !selection.has(i)) continue;
+      const p = value[i]!;
       if (p[0] < minX) minX = p[0];
       if (p[0] > maxX) maxX = p[0];
       if (p[2] < minZ) minZ = p[2];
@@ -355,7 +364,7 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
       x: canvasW / 2 - ux * newZoom,
       y: canvasH / 2 - uy * newZoom,
     });
-  }, [value, worldSize, canvasW, canvasH, flipY]);
+  }, [value, selection, worldSize, canvasW, canvasH, flipY]);
 
   // Displayed points: during a handle-drag, the selected points are
   // translated by the live delta; everything else is unchanged. Commit
@@ -1314,7 +1323,7 @@ function PointListPopup({ value, onChange, onClose, anchorRect, nodeId, panelId 
           className="sedon-pointlist-reset-view"
           onClick={fitView}
           onPointerDown={(e) => e.stopPropagation()}
-          title="Frame all points in the canvas"
+          title="Frame selected points — or all of them when nothing's selected (also: F)"
         >
           fit
         </button>
