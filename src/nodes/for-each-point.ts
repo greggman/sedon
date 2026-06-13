@@ -226,7 +226,14 @@ by re-wiring its bridge.
     const bridgeId = (inputs.__bridgeId as string | undefined) ?? '';
     const bridgeDef = ctx.registry?.get(`bridge-eval/${bridgeId}`);
     const bridgeVer = bridgeDef?.version ?? '';
-    return `bridge:${bridgeId}@${bridgeVer}`;
+    // Mix animationTime when the bridge's inner graph contains anim
+    // activity — same rationale as subgraph wrappers: the iter's
+    // per-iteration eval can produce different output per frame when
+    // its body wraps an animated subgraph, but without an outer-fp
+    // shift the iter node cache-hits and never re-runs.
+    const aff = ctx.affectedByGraphId?.get(bridgeId);
+    const animPart = aff && aff.size > 0 ? `|anim:${ctx.animationTime ?? 0}` : '';
+    return `bridge:${bridgeId}@${bridgeVer}${animPart}`;
   },
   async evaluate(ctx, inputs): Promise<Record<string, unknown>> {
     const pc = inputs.points as PointCloudValue | undefined;

@@ -342,6 +342,29 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
     inputs: wrapperInputs,
     outputs: def.outputs,
     version: transitiveSubgraphVersion(def, registry),
+    // When the wrapped subgraph contains anim activity (anim/* node
+    // anywhere inside, transitively), this wrapper's OUTPUT value
+    // changes per animation frame even when its outer inputs are
+    // stable — the inner anim node's eval produces new pixels per
+    // frame, the boundary forwards them, the wrapper returns them.
+    // Without mixing time into the outer fingerprint, the outer cache
+    // hits and the wrapper's evaluate never re-runs, so the inner
+    // graph never re-walks, and the animation freezes at the wrapper
+    // boundary. The Phase 2 affectedSet fast-path inside the inner
+    // eval still skips every non-affected node, so the per-frame work
+    // is proportional only to the affected slice — not the whole
+    // subgraph.
+    //
+    // Gated on `affectedByGraphId.get(def.id).size > 0` so that
+    // animation-free subgraphs keep the normal cache behaviour (fp
+    // stable, single cache slot, no per-frame invalidation).
+    dynamicFingerprintExtra(_inputs, ctx) {
+      const aff = ctx.affectedByGraphId?.get(def.id);
+      if (aff && aff.size > 0) {
+        return `anim:${ctx.animationTime ?? 0}`;
+      }
+      return '';
+    },
     async evaluate(ctx, inputs) {
       const depth = (ctx.subgraphDepth ?? 0) + 1;
       if (depth > MAX_SUBGRAPH_DEPTH) {
@@ -380,6 +403,15 @@ export function defineSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDe
       };
       if (ctx.evalCache !== undefined) innerOptions.cache = ctx.evalCache;
       if (ctx.evalTouched !== undefined) innerOptions.touched = ctx.evalTouched;
+      // Forward the per-graph affected-set map so the fast-path applies
+      // inside subgraphs too. Without this, the wrapper itself short-
+      // circuits at the top level but its inner walk still re-evaluates
+      // every node — for the city scene with anim buried 2+ levels
+      // deep, that's the bulk of the per-frame cost.
+      if (ctx.affectedByGraphId !== undefined) {
+        const innerAffected = ctx.affectedByGraphId.get(def.id);
+        if (innerAffected !== undefined) innerOptions.affectedSet = innerAffected;
+      }
       const result = await evaluateGraph(def.graph, registry, innerOptions);
       return result.outputs;
     },
@@ -566,6 +598,16 @@ function defineBridgeSubgraph(def: SubgraphDef, registry: NodeRegistry): NodeDef
       };
       if (ctx.evalCache !== undefined) innerOptions.cache = ctx.evalCache;
       if (ctx.evalTouched !== undefined) innerOptions.touched = ctx.evalTouched;
+      // Forward the per-graph affected-set map so the bridge's inner
+      // graph (which wraps the iteration body subgraph) gets the same
+      // animation fast-path the regular wrapper recursion does.
+      // Without this, iter/for-each-* iterations walk every node in
+      // their body every frame, even when nothing inside is anim-
+      // affected.
+      if (ctx.affectedByGraphId !== undefined) {
+        const innerAffected = ctx.affectedByGraphId.get(def.id);
+        if (innerAffected !== undefined) innerOptions.affectedSet = innerAffected;
+      }
       const result = await evaluateGraph(def.graph, registry, innerOptions);
       return result.outputs;
     },

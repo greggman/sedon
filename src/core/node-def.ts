@@ -219,6 +219,22 @@ export interface NodeContext {
    */
   evalTouched?: Set<string>;
   /**
+   * "Forward-reachable from an anim/* node" set per graph id, for
+   * skipping unaffected nodes on purely animation-driven re-evals.
+   * The top-level caller (preview / canvas) computes this per project
+   * mutation and threads it through every nested `evaluateGraph` call:
+   *   - For the top-level eval, the matching set is passed as
+   *     `options.affectedSet`.
+   *   - For subgraph wrapper recursion (`subgraph.ts`), the wrapper
+   *     looks up its inner graph's set via `affectedByGraphId.get(def.id)`
+   *     and forwards it as the inner `options.affectedSet`.
+   *
+   * Graph id is `'main'` for the project's main graph or the
+   * `SubgraphDef.id` otherwise. Undefined disables the fast-path
+   * everywhere — the evaluator behaves exactly as before.
+   */
+  affectedByGraphId?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
    * This node's own upstream input fingerprints — set per-node by the
    * evaluator right before calling `def.evaluate`. The subgraph wrapper
    * reads this and forwards it as `subgraphInputFingerprints` into the

@@ -4,6 +4,7 @@ import type { Graph } from '../core/graph.js';
 import { evaluateGraph } from '../core/evaluate.js';
 import { defaultLighting, type LightingValue } from '../core/resources.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
+import { useProjectAnimReachability } from './anim-reachability.js';
 import { useAnimFrameGeneration } from './use-anim-frame.js';
 import { acquireGpuDevice, type GpuDevice } from '../render/device.js';
 import { multiply, rotationX, rotationY, translation } from '../render/mat4.js';
@@ -1076,6 +1077,24 @@ export function Preview({ panelId }: PreviewProps = {}) {
   // downstream) actually re-run; everything else cache-hits.
   // Frozen while paused, so a paused preview costs nothing extra.
   const animFrameGen = useAnimFrameGeneration();
+  // Forward-reachable-from-anim node sets across the project. The eval
+  // below passes the current graph's set as `affectedSet` ONLY when
+  // this round is a pure animation re-eval (no graph mutation, image
+  // load, etc.) — see `pureAnimRef` below. Inside subgraphs, the
+  // wrapper looks up its inner graph's set from `affectedByGraphId`
+  // on the context.
+  const { perGraphAffected } = useProjectAnimReachability();
+  // Track the deps that mark a re-eval as NOT-purely-anim: graph,
+  // subgraphs, imageLoadGen. When any of these change vs. the
+  // previous round, the round can't use the fast-path (cache for the
+  // skipped nodes may be stale). When they all match, only
+  // `animFrameGen` (or nothing) moved, and the fast-path is safe.
+  const pureAnimRef = useRef({ graph, subgraphs, imageLoadGen });
+  const isPureAnimReeval =
+    pureAnimRef.current.graph === graph &&
+    pureAnimRef.current.subgraphs === subgraphs &&
+    pureAnimRef.current.imageLoadGen === imageLoadGen;
+  pureAnimRef.current = { graph, subgraphs, imageLoadGen };
   useEffect(() => {
     if (!gpu) return;
     let cancelled = false;
@@ -1091,6 +1110,15 @@ export function Preview({ panelId }: PreviewProps = {}) {
       const touched = new Set<string>();
       let result;
       try {
+        // Animation fast-path: on pure-anim re-evals we mark nodes
+        // outside the affected set so the evaluator copies their
+        // cached output without recomputing fingerprints — the
+        // dominant cost on big scenes like city. Falls back to the
+        // full path on cache miss, so a stale set just degrades to
+        // existing behaviour rather than serving wrong values.
+        const currentAffected = isPureAnimReeval
+          ? perGraphAffected.get(effectiveGraphId)
+          : undefined;
         result = await evaluateGraph(graph, registryRef.current, {
           rootNodeId,
           context: {
@@ -1100,9 +1128,13 @@ export function Preview({ panelId }: PreviewProps = {}) {
             // playing via the animFrameGen dep below.
             animationTime: animationTime(),
             animationDelta: animationDelta(),
+            // Forwarded so subgraph wrappers can apply the same
+            // skip-unaffected fast-path inside their inner evals.
+            affectedByGraphId: perGraphAffected,
           },
           cache: evalCacheRef.current,
           touched,
+          ...(currentAffected ? { affectedSet: currentAffected } : {}),
         });
       } catch (e) {
         if (cancelled) return;

@@ -32,6 +32,24 @@ function isRgbaArray(v: unknown): boolean {
   return true;
 }
 
+// Identity key for `cache.lastFingerprintByNodeId` lookups. Must
+// uniquely identify (node × evaluation context) so that two distinct
+// evaluations of the same node in one cache lifetime don't clobber
+// each other's "previous fingerprint." Without iteration scoping, a
+// for-each-* node's body re-evaluates N times per round; each
+// iteration's `set(trackerKey, fp)` overwrote the previous, leaving
+// only the LAST iteration's fp visible to subsequent rounds — so the
+// anim-fast-path on the next frame returned iter-N's output for every
+// iteration, stacking all instances at the last lot's position.
+function buildTrackerKey(nodeId: string, ctx: NodeContext): string {
+  const sg = ctx.subgraphInputFingerprints;
+  const iter = ctx.iterationContextFingerprints;
+  if (!sg && !iter) return nodeId;
+  const sgPart = sg ? JSON.stringify(sg) : '';
+  const iterPart = iter ? JSON.stringify(iter) : '';
+  return `${nodeId}|${sgPart}|${iterPart}`;
+}
+
 export interface EvaluateOptions {
   rootNodeId: string;
   context?: NodeContext;
@@ -62,6 +80,26 @@ export interface EvaluateOptions {
    *     output and shouldn't run.
    */
   scope?: 'all' | 'rootAncestors';
+  /**
+   * "Forward-reachable from animation" node ids for THIS graph. When
+   * present, every node whose id is NOT in the set is fast-pathed: the
+   * evaluator copies the cached output from the previous round (looked
+   * up by the cache's `lastFingerprintByNodeId`) without recomputing
+   * its fingerprint or collecting its inputs. Skipped nodes still get
+   * their fingerprint recorded in the per-eval `fingerprints` map so
+   * downstream consumers' fingerprints resolve correctly.
+   *
+   * Pass this ONLY when the caller knows the round is purely
+   * animation-driven (no graph mutation, no input change, no image
+   * load since the last full eval). Falling back to the full path on
+   * cache miss is safe but wasteful — the caller's job is to skip the
+   * fast-path entirely after a mutation, not to rely on the fallback.
+   *
+   * Composes with `affectedByGraphId` on the context — wrappers
+   * reading the inner graph's set forward it as `affectedSet` to the
+   * recursive `evaluateGraph` call.
+   */
+  affectedSet?: ReadonlySet<string>;
   /**
    * When true, suppress the per-node `console.error("evaluation of … failed", e)`
    * log emitted on a caught node-level exception. Callers that expect
@@ -270,6 +308,42 @@ export async function evaluateGraph(
     if (!node) continue;
     const def = registry.get(node.kind);
     if (!def) continue;
+
+    // Animation fast-path. When the caller marks which nodes COULD
+    // have changed this round (via `options.affectedSet`), nodes
+    // outside the set are guaranteed to produce the same output as
+    // last round — they have no upstream that depends on
+    // `animationTime` / `animationDelta`. Skip the fingerprint
+    // collection + computation entirely and copy the cached entry the
+    // previous round wrote. Saves the O(inputs) per-node walk that
+    // dominates per-frame cost on big graphs (city: ~80% of the
+    // per-frame eval budget).
+    //
+    // Safety: only the caller can know this is a "pure animation
+    // re-eval" (no graph mutation, input change, image load, etc.).
+    // We trust them — on a cache miss we fall through to the normal
+    // path so a stale set just degrades to the existing behaviour
+    // rather than serving wrong data.
+    if (options.affectedSet && !options.affectedSet.has(nodeId) && cache) {
+      // Tracker key matches the one computed below; recomputed here
+      // because we want to skip the input-collection block entirely.
+      const fastTrackerKey = buildTrackerKey(nodeId, sharedCtx);
+      const lastFp = cache.lastFingerprintByNodeId.get(fastTrackerKey);
+      if (lastFp !== undefined) {
+        const cached = cache.entries.get(lastFp);
+        if (cached !== undefined) {
+          outputs.set(nodeId, cached as NodeOutputs);
+          fingerprints.set(nodeId, lastFp);
+          if (touched) touched.add(lastFp);
+          cache.stats.nodeEvals++;
+          cache.stats.cacheHits++;
+          continue;
+        }
+      }
+      // Cold cache for this node — fall through to the full path
+      // (which will populate the cache on this round so the next
+      // round's fast-path lands cleanly).
+    }
 
     // Resolve inputs. If any required input has no source, skip this node so a
     // node that just got added with required Texture2D inputs (e.g. Material
@@ -497,13 +571,17 @@ export async function evaluateGraph(
 
     // Per-context tracker key. The same inner-graph nodeId can evaluate
     // multiple times per round when the same subgraph is instantiated
-    // by several wrappers (each pass with different parent inputs);
-    // scoping the tracker by `subgraphInputFingerprints` keeps those
-    // evaluations from clobbering each other's "previous output."
+    // by several wrappers (each pass with different parent inputs), AND
+    // multiple times per iteration when invoked from a for-each-* node.
+    // Scoping by `subgraphInputFingerprints` keeps wrapper instances
+    // separate; scoping by `iterationContextFingerprints` keeps
+    // iterations separate. Without the latter, every iteration's
+    // `lastFingerprintByNodeId.set` overwrites the previous's — so a
+    // fast-path lookup on the next frame returns the LAST iteration's
+    // output for every iteration, stacking all instances at the last
+    // lot's position (the "90% of buildings disappear on play" bug).
     // Top-level nodes get an empty context key, which is fine.
-    const trackerKey = sharedCtx.subgraphInputFingerprints
-      ? `${nodeId}|${JSON.stringify(sharedCtx.subgraphInputFingerprints)}`
-      : nodeId;
+    const trackerKey = buildTrackerKey(nodeId, sharedCtx);
 
     if (cache && cache.entries.has(fp)) {
       outputs.set(nodeId, cache.entries.get(fp) as NodeOutputs);

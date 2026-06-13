@@ -174,7 +174,13 @@ emits a Scene. The for-each merges them into the city.
     const bridgeId = (inputs.__bridgeId as string | undefined) ?? '';
     const bridgeDef = ctx.registry?.get(`bridge-eval/${bridgeId}`);
     const bridgeVer = bridgeDef?.version ?? '';
-    return `bridge:${bridgeId}@${bridgeVer}`;
+    // See for-each-point.ts for the rationale: mix animationTime when
+    // the bridge's inner graph contains anim activity so the iter
+    // node's outer fingerprint moves per frame and animation
+    // propagates through the iteration body.
+    const aff = ctx.affectedByGraphId?.get(bridgeId);
+    const animPart = aff && aff.size > 0 ? `|anim:${ctx.animationTime ?? 0}` : '';
+    return `bridge:${bridgeId}@${bridgeVer}${animPart}`;
   },
   async evaluate(ctx, inputs): Promise<Record<string, unknown>> {
     const list = inputs.polygons as PolygonListValue | undefined;

@@ -25,6 +25,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { evaluateGraph } from '../core/evaluate.js';
 import { useImageLoadGeneration } from '../nodes/image.js';
 import { animationDelta, animationTime } from './render-bus.js';
+import { useProjectAnimReachability } from './anim-reachability.js';
 import { useAnimFrameGeneration } from './use-anim-frame.js';
 import { canonicalJson } from '../core/eval-cache.js';
 import { findNode, findOutputOnNode, type Graph } from '../core/graph.js';
@@ -236,6 +237,25 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
   const showLiveNodePreviews = useLayoutStore((s) => s.showLiveNodePreviews);
   const animFrameGen = useAnimFrameGeneration();
   const animFrameGenForDep = showLiveNodePreviews ? animFrameGen : 0;
+  // Same affected-set fast-path the preview uses — skip fingerprint
+  // collection for nodes outside the anim-reachable slice during
+  // pure-animation re-evals.
+  const { perGraphAffected } = useProjectAnimReachability();
+  const subgraphsForRef = useEditorStore((s) => s.subgraphs);
+  const canvasPureAnimRef = useRef({
+    graph: panelGraph,
+    subgraphs: subgraphsForRef,
+    imageLoadGen,
+  });
+  const isCanvasPureAnimReeval =
+    canvasPureAnimRef.current.graph === panelGraph &&
+    canvasPureAnimRef.current.subgraphs === subgraphsForRef &&
+    canvasPureAnimRef.current.imageLoadGen === imageLoadGen;
+  canvasPureAnimRef.current = {
+    graph: panelGraph,
+    subgraphs: subgraphsForRef,
+    imageLoadGen,
+  };
   useEffect(() => {
     if (!device) return;
     let cancelled = false;
@@ -243,16 +263,22 @@ export function NodeCanvas({ panelId }: NodeCanvasProps) {
     void (async () => {
       const touched = new Set<string>();
       try {
+        const currentAffected = isCanvasPureAnimReeval
+          ? perGraphAffected.get(effectiveGraphId)
+          : undefined;
         const result = await evaluateGraph(panelGraph, registryRef.current, {
           rootNodeId: panelRootNodeId,
           context: {
             device,
             animationTime: animationTime(),
             animationDelta: animationDelta(),
+            // Forward so nested wrappers inherit the same fast-path.
+            affectedByGraphId: perGraphAffected,
           },
           cache: evalCacheRef.current,
           touched,
           scope: 'all',
+          ...(currentAffected ? { affectedSet: currentAffected } : {}),
         });
         if (cancelled) return;
         reportWorking(touched);

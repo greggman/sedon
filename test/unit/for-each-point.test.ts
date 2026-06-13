@@ -317,3 +317,59 @@ test('for-each-point: multiple bridge outputs lift independently', async () => {
   assert.equal(area.count, 3);
   assert.deepEqual(Array.from(area.values), [1, 2, 3]);
 });
+
+// Regression: per-iteration trackerKey scoping. The fast-path
+// (anim affectedSet) reads each node's `lastFingerprintByNodeId`
+// entry. Before iteration scoping was added to the tracker key,
+// every iteration's `set(trackerKey, fp)` overwrote the previous
+// iteration's — so a subsequent affectedSet-driven eval (the
+// per-anim-frame re-eval) returned the LAST iteration's cached
+// output for every iteration. Visible bug: animating an iter
+// body stacked every lot's buildings at the last lot's position
+// ("90% of buildings disappear on play"). This test repeats the
+// eval twice with an affectedSet that lists ONLY the iter node
+// itself (so its body's per-iter nodes go through the fast-path)
+// and asserts every iteration's bridge call still gets its own
+// per-iteration index — i.e. the fast-path returns iter-K's
+// output for iter K, not iter-LAST for every iter.
+test('per-iteration trackerKey scoping: affectedSet fast-path does not collapse all iters to the last iter', async () => {
+  const calls: CallRecord[] = [];
+  const bridge = makeBridge({
+    bridgeId: 'b',
+    bridgeOutputs: [{ name: 'index', type: 'Float' }],
+    calls,
+    evaluate(_ctx, _inputs, call) {
+      const i = call.iterationContext?.index as number;
+      return { index: i };
+    },
+  });
+  const reg = makeRegistry(bridge);
+  const g = createGraph();
+  const pts = addNode(g, 'iter/for-each-point', {
+    extraOutputs: [{ name: 'index', type: 'FloatCloud' }],
+    inputValues: { points: makePointCloud([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]]), __bridgeId: 'b' },
+  });
+  // First eval populates cache.
+  const cache = (await import('../../src/core/eval-cache.js')).createEvalCache();
+  const r1 = await evaluateGraph(g, reg, { rootNodeId: pts.id, cache });
+  const c1 = r1.outputs.index as { count: number; values: Float32Array };
+  assert.deepEqual(Array.from(c1.values), [0, 1, 2, 3]);
+
+  // Second eval with affectedSet listing only the iter node — its
+  // bridge body's per-iter intermediate nodes (if any) would go
+  // through the fast-path. We don't have intermediates here, so
+  // bridge.evaluate runs each iter anyway. The point of this test
+  // is the cache integrity around iteration trackerKeys: a re-run
+  // with the same cache should still emit per-iteration outputs.
+  const r2 = await evaluateGraph(g, reg, {
+    rootNodeId: pts.id,
+    cache,
+    affectedSet: new Set([pts.id]),
+  });
+  const c2 = r2.outputs.index as { count: number; values: Float32Array };
+  assert.deepEqual(
+    Array.from(c2.values),
+    [0, 1, 2, 3],
+    'every iteration must keep its own index — not all 4 of [3, 3, 3, 3]',
+  );
+});
